@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Payment Confirmed — KenyaVault</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+<style>
+
+/* ── CONFIRMATION PAGE ── */
+.confirm-page {
+  min-height: 100vh;
+  background: var(--surface);
+  display: flex; flex-direction: column;
+}
+
+/* PROGRESS BAR */
+.confirm-progress {
+  background: var(--white);
+  border-bottom: 1px solid var(--border);
+  padding: 16px 0;
+}
+.progress-steps {
+  display: flex; align-items: center;
+  justify-content: center; gap: 0;
+  max-width: 520px; margin: 0 auto; padding: 0 5%;
+}
+.progress-step {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 6px; flex: 1;
+}
+.ps-dot {
+  width: 32px; height: 32px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Sora', sans-serif; font-weight: 700; font-size: 0.78rem;
+  transition: var(--transition);
+}
+.ps-dot.done { background: var(--green); color: var(--white); }
+.ps-dot.active { background: var(--gold); color: var(--dark); }
+.ps-dot.pending { background: var(--border); color: var(--muted); }
+.ps-label { font-size: 0.72rem; color: var(--muted); font-weight: 500; text-align: center; }
+.ps-label.done { color: var(--green); font-weight: 600; }
+.ps-label.active { color: var(--gold); font-weight: 700; }
+.progress-line {
+  height: 2px; flex: 1; margin: 0 6px; margin-bottom: 22px;
+  border-radius: 99px;
+}
+.progress-line.done { background: var(--green); }
+.progress-line.pending { background: var(--border); }
+
+/* HERO SUCCESS */
+.confirm-hero {
+  background: var(--dark);
+  background-image:
+    radial-gradient(ellipse 60% 70% at 50% 40%, rgba(13,110,63,0.3), transparent 65%),
+    radial-gradient(ellipse 40% 40% at 80% 80%, rgba(212,160,23,0.1), transparent 60%);
+  padding: 64px 5% 56px;
+  text-align: center;
+  position: relative; overflow: hidden;
+}
+
+.confirm-checkmark {
+  width: 90px; height: 90px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--green), var(--green-light));
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 24px;
+  box-shadow: 0 0 0 12px rgba(13,110,63,0.15), 0 0 0 24px rgba(13,110,63,0.07);
+  animation: popIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  font-size: 2.4rem;
+}
+@keyframes popIn {
+  from { transform: scale(0); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.confirm-hero h1 {
+  font-size: clamp(1.8rem, 4vw, 2.8rem); font-weight: 800;
+  color: var(--white); margin-bottom: 12px; letter-spacing: -0.8px;
+}
+.confirm-hero h1 em { font-style: normal; color: var(--gold-light); }
+.confirm-hero p { font-size: 1rem; color: #8FBAA6; max-width: 480px; margin: 0 auto 32px; line-height: 1.75; }
+
+/* Confetti dots (CSS only) */
+.confetti-wrap {
+  position: absolute; inset: 0; pointer-events: none; overflow: hidden;
+}
+.confetti-dot {
+  position: absolute; width: 8px; height: 8px; border-radius: 50%;
+  animation: confettiFall linear infinite;
+  opacity: 0;
+}
+@keyframes confettiFall {
+  0% { transform: translateY(-20px) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+}
+
+/* ORDER SUMMARY CARD */
+.confirm-body {
+  max-width: 700px; margin: 0 auto; padding: 40px 5% 60px;
+  display: flex; flex-direction: column; gap: 24px;
+}
+
+.order-card {
+  background: var(--white); border: 1.5px solid var(--border);
+  border-radius: 18px; overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+.order-card-header {
+  background: var(--green-pale); border-bottom: 1px solid var(--border);
+  padding: 16px 24px;
+  display: flex; align-items: center; gap: 10px;
+}
+.order-card-header h3 {
+  font-family: 'Sora', sans-serif; font-weight: 700;
+  font-size: 0.88rem; color: var(--green);
+  text-transform: uppercase; letter-spacing: 0.8px;
+}
+.order-card-body { padding: 24px; }
+
+/* Product summary */
+.order-product {
+  display: flex; align-items: center; gap: 16px;
+  padding: 16px; background: var(--surface); border-radius: 12px;
+  margin-bottom: 20px;
+}
+.op-icon {
+  width: 56px; height: 56px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 2rem; flex-shrink: 0;
+  background: linear-gradient(135deg, #EFF6FF, #BFDBFE);
+}
+.op-info { flex: 1; }
+.op-title {
+  font-family: 'Sora', sans-serif; font-weight: 700;
+  font-size: 0.95rem; color: var(--dark); margin-bottom: 4px;
+}
+.op-meta { font-size: 0.8rem; color: var(--muted); }
+.op-price {
+  font-family: 'Sora', sans-serif; font-weight: 800;
+  font-size: 1.15rem; color: var(--green); flex-shrink: 0;
+}
+
+/* Order details table */
+.order-details { display: flex; flex-direction: column; gap: 0; }
+.od-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 0; border-bottom: 1px solid var(--border);
+  font-size: 0.87rem;
+}
+.od-row:last-child { border-bottom: none; }
+.od-label { color: var(--muted); font-weight: 500; }
+.od-value { color: var(--text); font-weight: 600; }
+.od-value.green { color: var(--green); }
+.od-value.gold { color: var(--gold); font-weight: 700; }
+
+/* DOWNLOAD CARD */
+.download-card {
+  background: linear-gradient(135deg, #0B1A12, #1A3327);
+  border: 1px solid rgba(212,160,23,0.25);
+  border-radius: 18px; padding: 32px;
+  text-align: center;
+  box-shadow: var(--shadow-md);
+}
+.download-card h3 {
+  font-size: 1.3rem; font-weight: 800;
+  color: var(--white); margin-bottom: 8px;
+}
+.download-card p {
+  font-size: 0.9rem; color: #7AAB92;
+  line-height: 1.7; margin-bottom: 24px;
+}
+.btn-download-main {
+  display: inline-flex; align-items: center; gap: 10px;
+  background: var(--gold); color: var(--dark);
+  padding: 16px 36px; border-radius: 12px;
+  font-family: 'Sora', sans-serif; font-weight: 800; font-size: 1rem;
+  transition: var(--transition); margin-bottom: 14px;
+  box-shadow: 0 6px 24px rgba(212,160,23,0.35);
+}
+.btn-download-main:hover {
+  background: var(--gold-light); transform: translateY(-2px);
+  box-shadow: 0 10px 32px rgba(212,160,23,0.45);
+}
+.download-note {
+  font-size: 0.78rem; color: #6B9980;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.download-expiry {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: rgba(212,160,23,0.12); border: 1px solid rgba(212,160,23,0.2);
+  color: var(--gold-light); font-size: 0.75rem; font-weight: 600;
+  padding: 5px 14px; border-radius: 99px; margin-top: 14px;
+}
+
+/* WHAT NEXT CARD */
+.next-steps-card {
+  background: var(--white); border: 1.5px solid var(--border);
+  border-radius: 18px; padding: 28px;
+}
+.next-steps-card h3 {
+  font-family: 'Sora', sans-serif; font-weight: 700;
+  font-size: 1rem; color: var(--dark); margin-bottom: 20px;
+}
+.next-steps-list { display: flex; flex-direction: column; gap: 14px; }
+.ns-item {
+  display: flex; align-items: flex-start; gap: 14px;
+  padding: 14px 16px; border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--border);
+  transition: var(--transition);
+}
+.ns-item:hover { border-color: var(--green); background: var(--green-pale); }
+.ns-icon {
+  width: 38px; height: 38px; border-radius: 9px;
+  background: var(--white); border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.1rem; flex-shrink: 0;
+}
+.ns-text h4 {
+  font-family: 'Sora', sans-serif; font-weight: 700;
+  font-size: 0.88rem; color: var(--dark); margin-bottom: 3px;
+}
+.ns-text p { font-size: 0.8rem; color: var(--muted); line-height: 1.55; }
+.ns-link {
+  margin-left: auto; flex-shrink: 0;
+  font-family: 'Sora', sans-serif; font-weight: 700; font-size: 0.78rem;
+  color: var(--green); padding: 6px 12px; border-radius: 7px;
+  border: 1px solid var(--border); transition: var(--transition);
+  white-space: nowrap; align-self: center;
+}
+.ns-link:hover { background: var(--green); color: var(--white); border-color: var(--green); }
+
+/* SHARE CARD */
+.share-card {
+  background: var(--white); border: 1.5px solid var(--border);
+  border-radius: 18px; padding: 28px; text-align: center;
+}
+.share-card h3 {
+  font-family: 'Sora', sans-serif; font-weight: 700;
+  font-size: 1rem; color: var(--dark); margin-bottom: 6px;
+}
+.share-card p { font-size: 0.85rem; color: var(--muted); margin-bottom: 20px; line-height: 1.6; }
+.share-buttons { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.share-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 11px 20px; border-radius: 9px; border: 1.5px solid var(--border);
+  font-family: 'Sora', sans-serif; font-weight: 600; font-size: 0.83rem;
+  color: var(--text); background: var(--white); cursor: pointer;
+  transition: var(--transition);
+}
+.share-btn:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
+.share-wa { border-color: #25D366; color: #128C7E; }
+.share-wa:hover { background: #25D366; color: var(--white); border-color: #25D366; }
+.share-fb { border-color: #1877F2; color: #1877F2; }
+.share-fb:hover { background: #1877F2; color: var(--white); }
+.share-copy { }
+.share-copy:hover { border-color: var(--green); color: var(--green); }
+
+/* RELATED IN CONFIRMATION */
+.confirm-related { max-width: 700px; margin: 0 auto; padding: 0 5% 64px; }
+.confirm-related h3 {
+  font-family: 'Sora', sans-serif; font-weight: 700;
+  font-size: 1.1rem; color: var(--dark); margin-bottom: 18px;
+}
+.confirm-related-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
+}
+.mini-card {
+  background: var(--white); border: 1.5px solid var(--border);
+  border-radius: 12px; overflow: hidden;
+  transition: var(--transition); text-decoration: none; color: inherit;
+}
+.mini-card:hover { border-color: var(--green); box-shadow: var(--shadow-sm); transform: translateY(-2px); }
+.mini-banner {
+  height: 56px; display: flex; align-items: center;
+  justify-content: center; font-size: 1.6rem;
+}
+.mini-body { padding: 12px 14px; }
+.mini-body h4 {
+  font-family: 'Sora', sans-serif; font-weight: 700;
+  font-size: 0.8rem; color: var(--dark); margin-bottom: 4px; line-height: 1.3;
+}
+.mini-footer {
+  padding: 9px 14px; background: var(--surface);
+  border-top: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.mini-price {
+  font-family: 'Sora', sans-serif; font-weight: 800;
+  color: var(--green); font-size: 0.88rem;
+}
+.mini-buy {
+  font-family: 'Sora', sans-serif; font-weight: 700; font-size: 0.7rem;
+  color: var(--white); background: var(--green);
+  padding: 5px 10px; border-radius: 6px; transition: var(--transition);
+}
+.mini-buy:hover { background: var(--green-light); }
+
+/* Timer */
+.download-timer {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  font-size: 0.82rem; color: #7AAB92; margin-top: 10px;
+}
+.timer-count {
+  font-family: 'Sora', sans-serif; font-weight: 800;
+  color: var(--gold-light); font-size: 1rem;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .confirm-related-grid { grid-template-columns: 1fr 1fr; }
+  .share-buttons { flex-direction: column; align-items: center; }
+  .progress-steps { gap: 0; }
+  .ns-link { display: none; }
+}
+@media (max-width: 400px) {
+  .confirm-related-grid { grid-template-columns: 1fr; }
+}
+
+</style>
+</head>
+<body class="confirm-page">
+
+<!-- MINIMAL NAV -->
+<nav class="navbar" id="navbar">
+  <div class="nav-container">
+    <a class="nav-logo" href="index.html">Kenya<span>Vault</span></a>
+    <ul class="nav-links">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="shop.html">Shop</a></li>
+      <li><a href="about.html">About</a></li>
+      <li><a href="contact.html">Contact</a></li>
+    </ul>
+    <div class="nav-actions">
+      <a href="shop.html" class="btn-nav-cta">Buy More →</a>
+      <button class="hamburger" id="hamburger"><span></span><span></span><span></span></button>
+    </div>
+  </div>
+</nav>
+
+<div class="mobile-menu" id="mobileMenu">
+  <ul>
+    <li><a href="index.html">Home</a></li>
+    <li><a href="shop.html">Shop</a></li>
+    <li><a href="about.html">About</a></li>
+    <li><a href="contact.html">Contact</a></li>
+    <li><a href="shop.html" class="mobile-cta">Buy More →</a></li>
+  </ul>
+</div>
+
+<!-- PROGRESS BAR -->
+<div class="confirm-progress">
+  <div class="progress-steps">
+    <div class="progress-step">
+      <div class="ps-dot done">✓</div>
+      <div class="ps-label done">Browse</div>
+    </div>
+    <div class="progress-line done"></div>
+    <div class="progress-step">
+      <div class="ps-dot done">✓</div>
+      <div class="ps-label done">Payment</div>
+    </div>
+    <div class="progress-line done"></div>
+    <div class="progress-step">
+      <div class="ps-dot active">⬇</div>
+      <div class="ps-label active">Download</div>
+    </div>
+    <div class="progress-line pending"></div>
+    <div class="progress-step">
+      <div class="ps-dot pending">4</div>
+      <div class="ps-label">Study</div>
+    </div>
+  </div>
+</div>
+
+<!-- SUCCESS HERO -->
+<div class="confirm-hero">
+  <!-- Confetti dots -->
+  <div class="confetti-wrap" id="confettiWrap"></div>
+
+  <div class="confirm-checkmark">✅</div>
+  <h1>Payment <em>Confirmed!</em></h1>
+  <p>Your M-PESA payment has been received. Your download is ready below. Check your phone for the M-PESA confirmation SMS.</p>
+</div>
+
+<!-- BODY CONTENT -->
+<div class="confirm-body">
+
+  <!-- ORDER SUMMARY -->
+  <div class="order-card">
+    <div class="order-card-header">
+      <span>🧾</span>
+      <h3>Order Summary</h3>
+    </div>
+    <div class="order-card-body">
+      <div class="order-product">
+        <div class="op-icon">🔬</div>
+        <div class="op-info">
+          <div class="op-title" id="orderProductTitle">KCSE Biology Past Papers 2018–2024 + Marking Schemes</div>
+          <div class="op-meta" id="orderProductMeta">Biology · Form 3–4 · 72 pages · PDF</div>
+        </div>
+        <div class="op-price" id="orderProductPrice">KSh 350</div>
+      </div>
+      <div class="order-details">
+        <div class="od-row">
+          <span class="od-label">Order Reference</span>
+          <span class="od-value gold" id="orderRef">KV-2025-00847</span>
+        </div>
+        <div class="od-row">
+          <span class="od-label">M-PESA Transaction</span>
+          <span class="od-value" id="mpesaCode">QHK7892XPL</span>
+        </div>
+        <div class="od-row">
+          <span class="od-label">Phone Number</span>
+          <span class="od-value" id="orderPhone">07** *** 678</span>
+        </div>
+        <div class="od-row">
+          <span class="od-label">Amount Paid</span>
+          <span class="od-value green" id="orderAmount">KSh 350</span>
+        </div>
+        <div class="od-row">
+          <span class="od-label">Date & Time</span>
+          <span class="od-value" id="orderDate">—</span>
+        </div>
+        <div class="od-row">
+          <span class="od-label">Status</span>
+          <span class="od-value green">✅ Payment Confirmed</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DOWNLOAD CARD -->
+  <div class="download-card">
+    <h3>⬇️ Your File is Ready</h3>
+    <p>Click the button below to download your PDF. The file will open in your browser — tap and hold on mobile to save it to your phone.</p>
+    <a href="#" class="btn-download-main" id="downloadBtn">
+      ⬇️ Download Your PDF Now
+    </a>
+    <br/>
+    <div class="download-note">
+      🔒 Secure download · PDF format · Works on all devices
+    </div>
+    <div class="download-expiry">
+      ⏱️ Download link active for <span class="timer-count" id="timerCount">23:59:47</span>
+    </div>
+  </div>
+
+  <!-- WHAT TO DO NEXT -->
+  <div class="next-steps-card">
+    <h3>📌 What to Do Next</h3>
+    <div class="next-steps-list">
+      <div class="ns-item">
+        <div class="ns-icon">📥</div>
+        <div class="ns-text">
+          <h4>Save the PDF to your phone</h4>
+          <p>On Android: tap the download, then "Open with" → Files. On iPhone: tap the share icon → Save to Files.</p>
+        </div>
+      </div>
+      <div class="ns-item">
+        <div class="ns-icon">🖨️</div>
+        <div class="ns-text">
+          <h4>Print it out (optional but recommended)</h4>
+          <p>Printed notes are easier to highlight and annotate. Most cyber cafes in Kenya print for KSh 5–10 per page.</p>
+        </div>
+      </div>
+      <div class="ns-item">
+        <div class="ns-icon">📅</div>
+        <div class="ns-text">
+          <h4>Create a revision schedule</h4>
+          <p>Use the topic index inside the document to plan which sections to revise each day. Consistency beats cramming.</p>
+        </div>
+      </div>
+      <div class="ns-item">
+        <div class="ns-icon">💬</div>
+        <div class="ns-text">
+          <h4>Need help? Contact us</h4>
+          <p>If your download has an issue or you have questions, WhatsApp us immediately — we respond within minutes.</p>
+        </div>
+        <a href="https://wa.me/254768515494" target="_blank" class="ns-link">WhatsApp Us</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- SHARE CARD -->
+  <div class="share-card">
+    <h3>🙌 Help a Classmate</h3>
+    <p>Know another student who needs these resources? Share KenyaVault with them. Every student in Kenya deserves quality revision materials.</p>
+    <div class="share-buttons">
+      <a href="https://wa.me/?text=I%20just%20bought%20revision%20notes%20from%20KenyaVault%20-%20quality%20CBC%20and%20KCSE%20resources%20for%20Kenyan%20students!%20Check%20it%20out%3A%20https%3A%2F%2Fkenyavault.co.ke"
+         target="_blank" class="share-btn share-wa">
+        📱 Share on WhatsApp
+      </a>
+      <a href="https://www.facebook.com/sharer/sharer.php?u=https://kenyavault.co.ke"
+         target="_blank" class="share-btn share-fb">
+        📘 Share on Facebook
+      </a>
+      <button class="share-btn share-copy" id="copyLinkBtn">
+        🔗 Copy Link
+      </button>
+    </div>
+  </div>
+
+</div>
+
+<!-- RELATED PRODUCTS -->
+<div class="confirm-related">
+  <h3>📚 You May Also Need</h3>
+  <div class="confirm-related-grid">
+    <a class="mini-card" href="product.html">
+      <div class="mini-banner" style="background:linear-gradient(135deg,#EFF6FF,#DBEAFE)">🧬</div>
+      <div class="mini-body"><h4>Cell Biology & Genetics — Grade 9 Integrated Science</h4></div>
+      <div class="mini-footer"><span class="mini-price">KSh 90</span><span class="mini-buy">Buy</span></div>
+    </a>
+    <a class="mini-card" href="product.html">
+      <div class="mini-banner" style="background:linear-gradient(135deg,#FFF1F2,#FFE4E6)">📐</div>
+      <div class="mini-body"><h4>Grade 9 Mathematics — KJSEA Final Revision</h4></div>
+      <div class="mini-footer"><span class="mini-price">KSh 150</span><span class="mini-buy">Buy</span></div>
+    </a>
+    <a class="mini-card" href="product.html">
+      <div class="mini-banner" style="background:linear-gradient(135deg,#EDE9FE,#C4B5FD)">🏆</div>
+      <div class="mini-body"><h4>KJSEA 2025 Full Bundle — All 9 Subjects</h4></div>
+      <div class="mini-footer"><span class="mini-price">KSh 1,800</span><span class="mini-buy">Buy</span></div>
+    </a>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<footer class="footer">
+  <div class="footer-bottom" style="max-width:1240px;margin:0 auto;padding:20px 5%;">
+    <span>© 2025 KenyaVault. All rights reserved.</span>
+    <span>Made with ❤️ in Kenya 🇰🇪</span>
+  </div>
+</footer>
+
+<script src="script.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+
+  /* ── ORDER DATE ── */
+  const dateEl = document.getElementById('orderDate');
+  if (dateEl) {
+    const now = new Date();
+    dateEl.textContent = now.toLocaleString('en-KE', {
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    });
+  }
+
+  /* ── ORDER REF: random ── */
+  const refEl = document.getElementById('orderRef');
+  if (refEl) {
+    refEl.textContent = 'KV-2025-' + Math.floor(10000 + Math.random() * 90000);
+  }
+
+  /* ── MPESA CODE: random ── */
+  const mpesaEl = document.getElementById('mpesaCode');
+  if (mpesaEl) {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ123456789';
+    let code = '';
+    for (let i = 0; i < 10; i++) code += chars[Math.floor(Math.random() * chars.length)];
+    mpesaEl.textContent = code;
+  }
+
+  /* ── DOWNLOAD COUNTDOWN (24hr) ── */
+  const timerEl = document.getElementById('timerCount');
+  if (timerEl) {
+    let total = 24 * 60 * 60 - 13; // 23:59:47
+    const tick = () => {
+      if (total <= 0) { timerEl.textContent = 'Expired'; return; }
+      const h = Math.floor(total / 3600);
+      const m = Math.floor((total % 3600) / 60);
+      const s = total % 60;
+      timerEl.textContent =
+        String(h).padStart(2,'0') + ':' +
+        String(m).padStart(2,'0') + ':' +
+        String(s).padStart(2,'0');
+      total--;
+    };
+    tick();
+    setInterval(tick, 1000);
+  }
+
+  /* ── COPY LINK ── */
+  const copyBtn = document.getElementById('copyLinkBtn');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText('https://kenyavault.co.ke').then(() => {
+        copyBtn.textContent = '✅ Copied!';
+        setTimeout(() => { copyBtn.textContent = '🔗 Copy Link'; }, 2500);
+      });
+    });
+  }
+
+  /* ── CONFETTI ── */
+  const wrap = document.getElementById('confettiWrap');
+  if (wrap) {
+    const colors = ['#0D6E3F','#D4A017','#F5C842','#3B82F6','#EC4899','#10B981'];
+    for (let i = 0; i < 40; i++) {
+      const dot = document.createElement('div');
+      dot.className = 'confetti-dot';
+      dot.style.cssText = `
+        left: ${Math.random() * 100}%;
+        background: ${colors[Math.floor(Math.random() * colors.length)]};
+        width: ${4 + Math.random() * 8}px;
+        height: ${4 + Math.random() * 8}px;
+        animation-duration: ${2 + Math.random() * 4}s;
+        animation-delay: ${Math.random() * 3}s;
+        border-radius: ${Math.random() > 0.5 ? '50%' : '2px'};
+      `;
+      wrap.appendChild(dot);
+    }
+  }
+
+  /* ── DOWNLOAD BUTTON ── */
+  const dlBtn = document.getElementById('downloadBtn');
+  if (dlBtn) {
+    dlBtn.addEventListener('click', e => {
+      e.preventDefault();
+      dlBtn.textContent = '⏳ Preparing download...';
+      setTimeout(() => {
+        dlBtn.textContent = '✅ Download Started!';
+        dlBtn.style.background = 'var(--green)';
+        dlBtn.style.color = 'white';
+        /*
+          REAL INTEGRATION:
+          Replace with actual file URL from your server/Gumroad:
+          window.location.href = 'YOUR_FILE_DOWNLOAD_URL';
+        */
+      }, 1500);
+    });
+  }
+
+});
+</script>
+</body>
+</html>
