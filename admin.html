@@ -205,34 +205,118 @@ a{text-decoration:none;color:inherit;}
 .form-hint{font-size:0.72rem;color:var(--muted);margin-top:3px;}
 
 /* ── FILE UPLOAD ── */
-.file-upload-area{
-  border:2px dashed var(--border);border-radius:10px;
-  padding:28px 20px;text-align:center;cursor:pointer;
-  transition:all 0.2s;background:var(--surface);
-}
-.file-upload-area:hover,.file-upload-area.dragover{
-  border-color:var(--green);background:var(--green-pale);
-}
-.fua-icon{font-size:2rem;margin-bottom:8px;}
-.fua-text{font-size:0.85rem;color:var(--muted);}
-.fua-text strong{color:var(--green);}
-.fua-sub{font-size:0.72rem;color:var(--muted);margin-top:4px;}
+  document.getElementById('uploadBtn').addEventListener('click', async () => {
+       const title   = document.getElementById('resTitle').value.trim();
+       const price   = document.getElementById('resPrice').value;
+       const level   = document.getElementById('resLevel').value;
+       const subject = document.getElementById('resSubject').value;
 
-.file-preview{
-  display:none;align-items:center;gap:12px;
-  background:var(--green-pale);border:1px solid rgba(13,110,63,0.2);
-  border-radius:8px;padding:12px 14px;margin-top:10px;
-}
-.fp-icon{font-size:1.5rem;flex-shrink:0;}
-.fp-info{flex:1;}
-.fp-name{font-size:0.85rem;font-weight:600;color:var(--dark);}
-.fp-size{font-size:0.72rem;color:var(--muted);}
-.fp-remove{color:var(--red);cursor:pointer;font-size:1.1rem;flex-shrink:0;padding:4px;}
+          if (!title || !price || !level || !subject) {
+            showToast('Please fill: Title, Price, Level and Subject', 'error'); return;
+           }
+          if (!selectedFile) {
+          showToast('Please select a PDF file to upload', 'error'); return;
+          }
 
-.upload-progress{margin-top:10px;display:none;}
-.up-bar-track{height:6px;background:var(--border);border-radius:99px;overflow:hidden;}
-.up-bar-fill{height:100%;background:var(--green);border-radius:99px;width:0%;transition:width 0.4s;}
-.up-text{font-size:0.75rem;color:var(--muted);margin-top:5px;}
+       const btn = document.getElementById('uploadBtn');
+       btn.disabled    = true;
+       btn.textContent = '⏳ Uploading...';
+       document.getElementById('uploadProgress').style.display = 'block';
+
+     const bar  = document.getElementById('uploadBar');
+     const text = document.getElementById('uploadText');
+
+      bar.style.width  = '20%';
+      text.textContent = 'Uploading file... 20%';
+
+     // ==== MATCH YOUR EXACT TABLE SCHEMA ====
+      const resourceData = {
+    title: title,
+    description: document.getElementById('resDesc').value || '',
+    price: parseInt(price),
+    level: level,
+    subject: subject,
+    grade: document.getElementById('resGrade').value || '',
+    type: document.getElementById('resType').value || 'notes',
+    badge: document.getElementById('resBadge').value || 'new',
+    emoji: document.getElementById('resEmoji').value || '📄',
+    file_size: selectedFile.size,
+    pages: 0, // You can add a field for pages if needed
+    downloads: 0,
+    published: document.getElementById('togPublish').classList.contains('on'),
+    featured: document.getElementById('togFeatured').classList.contains('on'),
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
+
+  if (sbClient) {
+    try {
+      bar.style.width  = '40%';
+      text.textContent = 'Uploading to storage... 40%';
+
+      // Clean filename and upload to Supabase Storage
+      const cleanFileName = selectedFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const filePath = `resources/${level}/${subject}/${Date.now()}_${cleanFileName}`;
+      
+      const { error: storageErr } = await sbClient.storage
+        .from('kenyavault-pdfs')
+        .upload(filePath, selectedFile, { 
+          cacheControl: '3600', 
+          upsert: false,
+          contentType: 'application/pdf'
+        });
+
+      if (storageErr) throw storageErr;
+
+      bar.style.width  = '70%';
+      text.textContent = 'Saving to database... 70%';
+
+      // Get public URL
+      const { data: urlData } = sbClient.storage
+        .from('kenyavault-pdfs')
+        .getPublicUrl(filePath);
+
+      resourceData.file_path = filePath;
+      resourceData.file_url = urlData.publicUrl;
+
+      // Insert into database - MATCHING YOUR EXACT TABLE
+      const { error: dbErr } = await sbClient
+        .from('resources')
+        .insert([resourceData]);
+
+      if (dbErr) {
+        console.error('Database Error:', dbErr);
+        throw dbErr;
+      }
+
+      bar.style.width  = '100%';
+      text.textContent = 'Complete! ✅';
+      showToast(`"${title}" uploaded to Supabase!`, 'success');
+
+    } catch(e) {
+      console.error('Upload error:', e);
+      showToast('Upload error: ' + e.message, 'error');
+      btn.disabled    = false;
+      btn.textContent = '⬆️ Upload & Save Resource';
+      return;
+    }
+  } else {
+    // Demo mode — save locally
+    bar.style.width  = '100%';
+    text.textContent = 'Saved (demo mode) ✅';
+    demoStore.resources.push({ ...resourceData, id: Date.now().toString() });
+    showToast(`"${title}" saved in demo mode (not persisted)`, 'info');
+  }
+
+  btn.disabled    = false;
+  btn.textContent = '⬆️ Upload & Save Resource';
+  clearUploadForm();
+  setTimeout(() => {
+    document.getElementById('uploadProgress').style.display = 'none';
+    bar.style.width = '0%';
+    switchPage('resources');
+  }, 1500);
+});
 
 /* ── BUTTONS ── */
 .btn-primary{
@@ -623,118 +707,28 @@ a{text-decoration:none;color:inherit;}
             </div>
 
             <!-- FILE UPLOAD ZONE -->
-              document.getElementById('uploadBtn').addEventListener('click', async () => {
-              const title   = document.getElementById('resTitle').value.trim();
-              const price   = document.getElementById('resPrice').value;
-              const level   = document.getElementById('resLevel').value;
-              const subject = document.getElementById('resSubject').value;
+            <div class="form-group" style="margin-bottom:14px;">
+              <label class="form-label">PDF File <span class="req">*</span></label>
+              <div class="file-upload-area" id="fileDropZone">
+                <input type="file" id="pdfInput" accept=".pdf" style="display:none;"/>
+                <div class="fua-icon">📄</div>
+                <div class="fua-text"><strong>Click to choose PDF</strong> or drag and drop here</div>
+                <div class="fua-sub">PDF only · Maximum 20 MB</div>
+              </div>
+              <div class="file-preview" id="filePreview">
+                <span class="fp-icon">📄</span>
+                <div class="fp-info">
+                  <div class="fp-name" id="fpName">filename.pdf</div>
+                  <div class="fp-size" id="fpSize">0 MB</div>
+                </div>
+                <span class="fp-remove" id="fpRemove" title="Remove file">✕</span>
+              </div>
+              <div class="upload-progress" id="uploadProgress">
+                <div class="up-bar-track"><div class="up-bar-fill" id="uploadBar"></div></div>
+                <div class="up-text" id="uploadText">Uploading... 0%</div>
+              </div>
+            </div>
 
-             if (!title || !price || !level || !subject) {
-            showToast('Please fill: Title, Price, Level and Subject', 'error'); return;
-           }
-          if (!selectedFile) {
-          showToast('Please select a PDF file to upload', 'error'); return;
-          }
-
-       const btn = document.getElementById('uploadBtn');
-       btn.disabled    = true;
-       btn.textContent = '⏳ Uploading...';
-       document.getElementById('uploadProgress').style.display = 'block';
-
-     const bar  = document.getElementById('uploadBar');
-     const text = document.getElementById('uploadText');
-
-      bar.style.width  = '20%';
-      text.textContent = 'Uploading file... 20%';
-
-     // ==== MATCH YOUR EXACT TABLE SCHEMA ====
-      const resourceData = {
-    title: title,
-    description: document.getElementById('resDesc').value || '',
-    price: parseInt(price),
-    level: level,
-    subject: subject,
-    grade: document.getElementById('resGrade').value || '',
-    type: document.getElementById('resType').value || 'notes',
-    badge: document.getElementById('resBadge').value || 'new',
-    emoji: document.getElementById('resEmoji').value || '📄',
-    file_size: selectedFile.size,
-    pages: 0, // You can add a field for pages if needed
-    downloads: 0,
-    published: document.getElementById('togPublish').classList.contains('on'),
-    featured: document.getElementById('togFeatured').classList.contains('on'),
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  };
-
-  if (sbClient) {
-    try {
-      bar.style.width  = '40%';
-      text.textContent = 'Uploading to storage... 40%';
-
-      // Clean filename and upload to Supabase Storage
-      const cleanFileName = selectedFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const filePath = `resources/${level}/${subject}/${Date.now()}_${cleanFileName}`;
-      
-      const { error: storageErr } = await sbClient.storage
-        .from('kenyavault-pdfs')
-        .upload(filePath, selectedFile, { 
-          cacheControl: '3600', 
-          upsert: false,
-          contentType: 'application/pdf'
-        });
-
-      if (storageErr) throw storageErr;
-
-      bar.style.width  = '70%';
-      text.textContent = 'Saving to database... 70%';
-
-      // Get public URL
-      const { data: urlData } = sbClient.storage
-        .from('kenyavault-pdfs')
-        .getPublicUrl(filePath);
-
-      resourceData.file_path = filePath;
-      resourceData.file_url = urlData.publicUrl;
-
-      // Insert into database - MATCHING YOUR EXACT TABLE
-      const { error: dbErr } = await sbClient
-        .from('resources')
-        .insert([resourceData]);
-
-      if (dbErr) {
-        console.error('Database Error:', dbErr);
-        throw dbErr;
-      }
-
-      bar.style.width  = '100%';
-      text.textContent = 'Complete! ✅';
-      showToast(`"${title}" uploaded to Supabase!`, 'success');
-
-    } catch(e) {
-      console.error('Upload error:', e);
-      showToast('Upload error: ' + e.message, 'error');
-      btn.disabled    = false;
-      btn.textContent = '⬆️ Upload & Save Resource';
-      return;
-    }
-  } else {
-    // Demo mode — save locally
-    bar.style.width  = '100%';
-    text.textContent = 'Saved (demo mode) ✅';
-    demoStore.resources.push({ ...resourceData, id: Date.now().toString() });
-    showToast(`"${title}" saved in demo mode (not persisted)`, 'info');
-  }
-
-  btn.disabled    = false;
-  btn.textContent = '⬆️ Upload & Save Resource';
-  clearUploadForm();
-  setTimeout(() => {
-    document.getElementById('uploadProgress').style.display = 'none';
-    bar.style.width = '0%';
-    switchPage('resources');
-  }, 1500);
-});
             <!-- TOGGLES -->
             <div style="display:flex;gap:28px;margin-bottom:22px;flex-wrap:wrap;">
               <div class="toggle-group">
