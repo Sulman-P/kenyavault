@@ -623,31 +623,118 @@ a{text-decoration:none;color:inherit;}
             </div>
 
             <!-- FILE UPLOAD ZONE -->
-          const cleanFileName = selectedFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-          const timestamp = Date.now();
-           const filePath = `resources/${level}/${subject}/${timestamp}_${cleanFileName}`;
+              document.getElementById('uploadBtn').addEventListener('click', async () => {
+              const title   = document.getElementById('resTitle').value.trim();
+              const price   = document.getElementById('resPrice').value;
+              const level   = document.getElementById('resLevel').value;
+              const subject = document.getElementById('resSubject').value;
 
-           // Upload to Supabase Storage
-           const { error: storageErr } = await sbClient.storage
-                   .from('kenyavault-pdfs')
-                   .upload(filePath, selectedFile, {
-                      cacheControl: '3600',
-                      upsert: false,
-                      contentType: 'application/pdf'
-            });
+             if (!title || !price || !level || !subject) {
+            showToast('Please fill: Title, Price, Level and Subject', 'error'); return;
+           }
+          if (!selectedFile) {
+          showToast('Please select a PDF file to upload', 'error'); return;
+          }
 
-          if (storageErr) {
-             console.error('Storage Error:', storageErr);
-             throw storageErr;
-       }
+       const btn = document.getElementById('uploadBtn');
+       btn.disabled    = true;
+       btn.textContent = '⏳ Uploading...';
+       document.getElementById('uploadProgress').style.display = 'block';
 
-         // Get public URL
-         const { data: urlData } = sbClient.storage
-             .from('kenyavault-pdfs')
-             .getPublicUrl(filePath);
+     const bar  = document.getElementById('uploadBar');
+     const text = document.getElementById('uploadText');
 
-       resourceData.file_url = urlData.publicUrl;
-        resourceData.file_path = filePath;
+      bar.style.width  = '20%';
+      text.textContent = 'Uploading file... 20%';
+
+     // ==== MATCH YOUR EXACT TABLE SCHEMA ====
+      const resourceData = {
+    title: title,
+    description: document.getElementById('resDesc').value || '',
+    price: parseInt(price),
+    level: level,
+    subject: subject,
+    grade: document.getElementById('resGrade').value || '',
+    type: document.getElementById('resType').value || 'notes',
+    badge: document.getElementById('resBadge').value || 'new',
+    emoji: document.getElementById('resEmoji').value || '📄',
+    file_size: selectedFile.size,
+    pages: 0, // You can add a field for pages if needed
+    downloads: 0,
+    published: document.getElementById('togPublish').classList.contains('on'),
+    featured: document.getElementById('togFeatured').classList.contains('on'),
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
+
+  if (sbClient) {
+    try {
+      bar.style.width  = '40%';
+      text.textContent = 'Uploading to storage... 40%';
+
+      // Clean filename and upload to Supabase Storage
+      const cleanFileName = selectedFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const filePath = `resources/${level}/${subject}/${Date.now()}_${cleanFileName}`;
+      
+      const { error: storageErr } = await sbClient.storage
+        .from('kenyavault-pdfs')
+        .upload(filePath, selectedFile, { 
+          cacheControl: '3600', 
+          upsert: false,
+          contentType: 'application/pdf'
+        });
+
+      if (storageErr) throw storageErr;
+
+      bar.style.width  = '70%';
+      text.textContent = 'Saving to database... 70%';
+
+      // Get public URL
+      const { data: urlData } = sbClient.storage
+        .from('kenyavault-pdfs')
+        .getPublicUrl(filePath);
+
+      resourceData.file_path = filePath;
+      resourceData.file_url = urlData.publicUrl;
+
+      // Insert into database - MATCHING YOUR EXACT TABLE
+      const { error: dbErr } = await sbClient
+        .from('resources')
+        .insert([resourceData]);
+
+      if (dbErr) {
+        console.error('Database Error:', dbErr);
+        throw dbErr;
+      }
+
+      bar.style.width  = '100%';
+      text.textContent = 'Complete! ✅';
+      showToast(`"${title}" uploaded to Supabase!`, 'success');
+
+    } catch(e) {
+      console.error('Upload error:', e);
+      showToast('Upload error: ' + e.message, 'error');
+      btn.disabled    = false;
+      btn.textContent = '⬆️ Upload & Save Resource';
+      return;
+    }
+  } else {
+    // Demo mode — save locally
+    bar.style.width  = '100%';
+    text.textContent = 'Saved (demo mode) ✅';
+    demoStore.resources.push({ ...resourceData, id: Date.now().toString() });
+    showToast(`"${title}" saved in demo mode (not persisted)`, 'info');
+  }
+
+  btn.disabled    = false;
+  btn.textContent = '⬆️ Upload & Save Resource';
+  clearUploadForm();
+  setTimeout(() => {
+    document.getElementById('uploadProgress').style.display = 'none';
+    bar.style.width = '0%';
+    switchPage('resources');
+  }, 1500);
+});
             <!-- TOGGLES -->
             <div style="display:flex;gap:28px;margin-bottom:22px;flex-wrap:wrap;">
               <div class="toggle-group">
