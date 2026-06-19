@@ -272,7 +272,6 @@
   cursor: pointer;
 }
 .btn-buy:hover { background: var(--green-light); }
-.btn-buy.paid { background: var(--muted); cursor: default; }
 
 /* ── PAYMENT MODAL ── */
 .modal-overlay {
@@ -311,7 +310,6 @@
 .modal-close:hover { background: rgba(255,255,255,0.2); }
 .modal-body { padding: 24px; }
 
-/* Payment Details */
 .payment-details {
   background: var(--surface); border-radius: 12px;
   padding: 20px; margin-bottom: 20px;
@@ -643,41 +641,12 @@
   <div class="modal">
     <div class="modal-header">
       <div>
-        <h3>📱 Pay with M-PESA</h3>
+        <h3>📱 Purchase Document</h3>
         <p id="modalProductTitle">Complete your purchase</p>
       </div>
       <button class="modal-close" id="modalClose">✕</button>
     </div>
     <div class="modal-body">
-
-      <!-- Product Details -->
-      <div class="payment-details">
-        <div class="pd-row"><span class="pd-label">Item</span><span class="pd-value" id="pdTitle">—</span></div>
-        <div class="pd-row"><span class="pd-label">Amount</span><span class="pd-value highlight" id="pdPrice">KES 0</span></div>
-      </div>
-
-      <!-- Phone Input -->
-      <div class="form-group">
-        <label class="modal-label">M-PESA Phone Number</label>
-        <input class="modal-input" type="tel" id="mpesaPhone" 
-               placeholder="0712 345 678" maxlength="12"/>
-        <p class="modal-hint">Enter the number registered to your M-PESA account</p>
-      </div>
-
-      <!-- Actions -->
-      <div class="payment-actions">
-        <button class="btn-mpesa" id="payNowBtn">
-          💳 Pay KSh <span id="payAmount">0</span> Now
-        </button>
-        <div class="modal-note">
-          🔒 You'll receive an M-PESA prompt on your phone.<br/>
-          Enter your PIN to complete the payment.
-          </div>
-         </div>
-
-        </div>
-       </div>
-      </div>
 
       <!-- Product Details -->
       <div class="payment-details">
@@ -771,17 +740,18 @@
   </div>
 </footer>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script>
 /* ════════════════════════════════════════
    SHOP PAGE - LOADS DATA FROM SUPABASE
+   FIXED VERSION
 ════════════════════════════════════════ */
 
 'use strict';
 
 // ── SUPABASE CONFIG ──
-const SUPABASE_URL = localStorage.getItem('kv_sb_url') || 'https://rewpminmqnrtwdvglxxr.supabase.co';
-const SUPABASE_KEY = localStorage.getItem('kv_sb_key') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
+// Hardcode the Supabase credentials here for reliability
+const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
 
 let sbClient = null;
 let allResources = [];
@@ -790,118 +760,15 @@ let currentPage = 1;
 const itemsPerPage = 20;
 let currentProduct = null;
 
-// ── TOAST ──
-function showToast(msg, type = 'success') {
-  const icons = { success:'✅', error:'❌', info:'ℹ️', warning:'⚠️' };
-  document.getElementById('toastIcon').textContent = icons[type] || '✅';
-  document.getElementById('toastMsg').textContent = msg;
-  const t = document.getElementById('toast');
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 3800);
-}
-
-// In your classes.html or shop.html
-
-async function initiatePayment(phoneNumber) {
-  const amount = currentClass?.price || currentProduct?.price || 0;
-  const resourceId = currentClass?.id || currentProduct?.id;
-  const title = currentClass?.title || currentProduct?.title;
-
-  try {
-    const response = await fetch('/api/payment/initiate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        phoneNumber: phoneNumber,
-        amount: amount,
-        resourceId: resourceId,
-        resourceTitle: title
-      })
-    });
-
-    const result = await response.json();
-
-    if (result.success) {
-      showToast('📱 Check your phone for M-PESA prompt', 'success');
-      
-      // Start polling for status
-      pollPaymentStatus(result.checkoutId);
-      
-      // Close the modal
-      closePaymentModal();
-    } else {
-      showToast('❌ Payment initiation failed: ' + result.error, 'error');
-    }
-
-  } catch (error) {
-    console.error('Payment initiation error:', error);
-    showToast('❌ Payment service error. Please try again.', 'error');
-  }
-}
-
-async function pollPaymentStatus(checkoutId, attempts = 0) {
-  if (attempts > 30) {
-    showToast('⏰ Payment confirmation timeout. Please check your M-PESA messages.', 'warning');
-    return;
-  }
-
-  setTimeout(async () => {
-    try {
-      const response = await fetch(`/api/payment/status/${checkoutId}`);
-      const result = await response.json();
-
-      if (result.success) {
-        if (result.status === 'completed' || result.status === 'success') {
-          showToast('✅ Payment successful! Downloading resource...', 'success');
-          // Handle successful payment - deliver resource
-          if (currentClass) {
-            // Send WhatsApp message with meeting link
-            await sendMeetingLinkViaWhatsApp(currentClass, checkoutId);
-          } else if (currentProduct) {
-            // Deliver product download
-            deliverProduct(currentProduct);
-          }
-          return;
-        } else if (result.status === 'failed' || result.status === 'cancelled') {
-          showToast('❌ Payment failed or cancelled. Please try again.', 'error');
-          return;
-        }
-      }
-
-      // Still pending - poll again
-      pollPaymentStatus(checkoutId, attempts + 1);
-
-    } catch (error) {
-      console.error('Status poll error:', error);
-      pollPaymentStatus(checkoutId, attempts + 1);
-    }
-  }, 3000); // Poll every 3 seconds
-}
-  
-  // Update WhatsApp link
-  const waBtn = document.getElementById('whatsappConfirmBtn');
-  const msg = `Hello KenyaVault,\n\nI would like to purchase:\n📚 ${product.title}\n📖 ${product.subject}\n🎓 ${getLevelDisplay(product.level)}\n💰 KES ${product.price || 0}\n\nI have sent payment via Pochi la Biashara (0701710662 - SULMAN).\nPlease confirm and send the download link.`;
-  waBtn.href = `https://wa.me/254768515494?text=${encodeURIComponent(msg)}`;
-  
-  document.getElementById('paymentModal').classList.add('open');
-  document.body.style.overflow = 'hidden';
-}
-
-// ── CLOSE PAYMENT MODAL ──
-function closePaymentModal() {
-  document.getElementById('paymentModal').classList.remove('open');
-  document.body.style.overflow = '';
-  currentProduct = null;
-}
-
-function getLevelDisplay(level) {
-  const map = { kjsea:'🏆 KJSEA 2025', junior:'🏫 Junior School', senior:'🎓 Senior School', '844':'📚 8-4-4' };
-  return map[level] || level || 'All Levels';
-}
-
 // ── INIT ──
 async function init() {
+  console.log('📚 Shop page initializing...');
+  
   try {
+    // Load Supabase library from CDN
+    await loadSupabaseLibrary();
+    
+    // Initialize Supabase client
     sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
       auth: {
         autoRefreshToken: true,
@@ -909,10 +776,15 @@ async function init() {
       }
     });
     
+    console.log('✅ Supabase client initialized');
+    
+    // Load resources
     await loadResources();
+    
+    // Setup event listeners
     setupEventListeners();
     
-    console.log('✅ Shop page initialized');
+    console.log('✅ Shop page fully initialized');
   } catch(e) {
     console.error('Init error:', e);
     document.getElementById('productsGrid').innerHTML = `
@@ -926,34 +798,58 @@ async function init() {
   }
 }
 
+// ── LOAD SUPABASE LIBRARY ──
+function loadSupabaseLibrary() {
+  return new Promise((resolve, reject) => {
+    // Check if Supabase is already loaded
+    if (window.supabase) {
+      resolve();
+      return;
+    }
+    
+    // Load Supabase from CDN
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
+
 // ── LOAD RESOURCES ──
 async function loadResources() {
   const grid = document.getElementById('productsGrid');
   grid.innerHTML = `<div class="loading-spinner"><i class="fas fa-spinner fa-pulse"></i> Loading resources...</div>`;
   
   try {
+    console.log('📤 Fetching resources from Supabase...');
+    
     const { data, error } = await sbClient
       .from('resources')
       .select('*')
-      .eq('published', true)
       .order('created_at', { ascending: false });
     
-    if (error) throw error;
+    if (error) {
+      console.error('Supabase error:', error);
+      throw error;
+    }
     
-    allResources = data || [];
+    // Filter to only show published resources
+    allResources = data ? data.filter(r => r.published !== false) : [];
     filteredResources = [...allResources];
+    
+    console.log(`✅ Loaded ${allResources.length} published resources`);
     
     updateCounts();
     renderPage();
     
-    console.log(`✅ Loaded ${allResources.length} resources`);
   } catch(e) {
     console.error('Load error:', e);
     grid.innerHTML = `
       <div class="empty-state">
         <i class="fas fa-exclamation-circle"></i>
         <h3>Error Loading Resources</h3>
-        <p>${e.message}</p>
+        <p>${e.message || 'Please refresh and try again.'}</p>
         <button onclick="loadResources()" style="margin-top:10px;padding:10px 20px;background:#4F46E5;color:white;border:none;border-radius:8px;cursor:pointer;">Retry</button>
       </div>
     `;
@@ -1008,6 +904,7 @@ function renderPage() {
     
     const priceDisplay = r.price === 0 ? 'FREE' : `KSh ${r.price}`;
     const isFree = r.price === 0;
+    const fileUrl = r.file_url || '#';
     
     return `
       <div class="product-card" data-level="${r.level}" data-subject="${r.subject}">
@@ -1030,7 +927,7 @@ function renderPage() {
         <div class="pc-footer">
           <span class="pc-price">${priceDisplay}</span>
           ${isFree 
-            ? `<a href="${r.file_url || '#'}" target="_blank" class="btn-buy">Download</a>`
+            ? `<a href="${fileUrl}" target="_blank" class="btn-buy">Download</a>`
             : `<button class="btn-buy" onclick='openPaymentModal(${JSON.stringify(r).replace(/'/g, "\\'")})'>📱 Buy Now</button>`
           }
         </div>
@@ -1079,6 +976,47 @@ function getTextColor(subject) {
     'physics': 'phys-text'
   };
   return map[subject] || 'tech-text';
+}
+
+// ── OPEN PAYMENT MODAL ──
+function openPaymentModal(product) {
+  currentProduct = product;
+  
+  document.getElementById('modalProductTitle').textContent = product.title || 'Document Purchase';
+  document.getElementById('pdTitle').textContent = product.title || '—';
+  document.getElementById('pdSubject').textContent = product.subject || '—';
+  document.getElementById('pdLevel').textContent = getLevelDisplay(product.level);
+  document.getElementById('pdPrice').textContent = `KES ${product.price || 0}`;
+  document.getElementById('instructionPrice').textContent = `KES ${product.price || 0}`;
+  
+  // Update WhatsApp link
+  const waBtn = document.getElementById('whatsappConfirmBtn');
+  const msg = `Hello KenyaVault,\n\nI would like to purchase:\n📚 ${product.title}\n📖 ${product.subject}\n🎓 ${getLevelDisplay(product.level)}\n💰 KES ${product.price || 0}\n\nI have sent payment via Pochi la Biashara (0701710662 - SULMAN).\nPlease confirm and send the download link.`;
+  waBtn.href = `https://wa.me/254768515494?text=${encodeURIComponent(msg)}`;
+  
+  document.getElementById('paymentModal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closePaymentModal() {
+  document.getElementById('paymentModal').classList.remove('open');
+  document.body.style.overflow = '';
+  currentProduct = null;
+}
+
+function getLevelDisplay(level) {
+  const map = { kjsea:'🏆 KJSEA 2025', junior:'🏫 Junior School', senior:'🎓 Senior School', '844':'📚 8-4-4' };
+  return map[level] || level || 'All Levels';
+}
+
+// ── TOAST ──
+function showToast(msg, type = 'success') {
+  const icons = { success:'✅', error:'❌', info:'ℹ️', warning:'⚠️' };
+  document.getElementById('toastIcon').textContent = icons[type] || '✅';
+  document.getElementById('toastMsg').textContent = msg;
+  const t = document.getElementById('toast');
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3800);
 }
 
 // ── SETUP EVENTS ──
@@ -1245,9 +1183,14 @@ function applyFilters() {
 // ── MAKE FUNCTIONS GLOBAL ──
 window.openPaymentModal = openPaymentModal;
 window.closePaymentModal = closePaymentModal;
+window.init = init;
 
-// ── INIT ──
-document.addEventListener('DOMContentLoaded', init);
+// ── INIT ON PAGE LOAD ──
+document.addEventListener('DOMContentLoaded', function() {
+  console.log('📚 DOM loaded, initializing shop...');
+  init();
+});
+
 console.log('📚 KenyaVault Shop - Loading from Supabase...');
 </script>
 </body>
