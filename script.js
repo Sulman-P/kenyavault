@@ -225,3 +225,103 @@ const preloaderLogo = document.querySelector('.preloader-logo');
 if (preloaderLogo && preloaderLogo.textContent.includes('KCSE')) {
   preloaderLogo.innerHTML = 'Kenya<span style="color:var(--gold-light)">Vault</span>';
 }
+/* ════════════════════════════════════════
+   KENYAVAULT - SHARED SUPABASE FUNCTIONS
+════════════════════════════════════════ */
+
+// ── SUPABASE CONFIG ──
+const KV_SUPABASE_URL = localStorage.getItem('kv_sb_url') || 'https://rewpminmqnrtwdvglxxr.supabase.co';
+const KV_SUPABASE_KEY = localStorage.getItem('kv_sb_key') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
+
+let kvSupabase = null;
+
+// ── INIT SUPABASE ──
+function initKvSupabase() {
+  if (!kvSupabase) {
+    try {
+      kvSupabase = window.supabase.createClient(KV_SUPABASE_URL, KV_SUPABASE_KEY);
+      console.log('✅ Supabase initialized from script.js');
+    } catch(e) {
+      console.error('Supabase init error:', e);
+    }
+  }
+  return kvSupabase;
+}
+
+// ── GET RESOURCES ──
+async function getKvResources() {
+  const client = initKvSupabase();
+  if (!client) return [];
+  try {
+    const { data, error } = await client
+      .from('resources')
+      .select('*')
+      .eq('published', true)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  } catch(e) {
+    console.error('Get resources error:', e);
+    return [];
+  }
+}
+
+// ── GET CLASSES ──
+async function getKvClasses() {
+  const client = initKvSupabase();
+  if (!client) return [];
+  try {
+    const { data, error } = await client
+      .from('classes')
+      .select('*')
+      .order('date', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  } catch(e) {
+    console.error('Get classes error:', e);
+    return [];
+  }
+}
+
+// ── GET TUTORS ──
+async function getKvTutors() {
+  const client = initKvSupabase();
+  if (!client) return [];
+  try {
+    const { data, error } = await client
+      .from('tutors')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  } catch(e) {
+    console.error('Get tutors error:', e);
+    return [];
+  }
+}
+
+// ── FORMAT LEVEL ──
+function formatLevel(level) {
+  const map = {
+    'kjsea': '🏆 KJSEA 2025',
+    'junior': '🏫 Junior School',
+    'senior': '🎓 Senior School',
+    '844': '📚 8-4-4'
+  };
+  return map[level] || level;
+}
+
+// ── FORMAT BADGE ──
+function getBadgeClass(badge) {
+  const map = {
+    'new': 'badge-new',
+    'popular': 'badge-popular',
+    'hot': 'badge-hot',
+    'exam': 'badge-exam',
+    'kjsea': 'badge-kjsea',
+    'bundle': 'badge-bundle'
+  };
+  return map[badge] || 'badge-new';
+}
+
+console.log('📚 KenyaVault shared functions loaded');
