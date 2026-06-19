@@ -5,12 +5,16 @@
 export default {
   async fetch(request, env) {
     // ── ACCESS ENVIRONMENT VARIABLES ──
-    const {
-      MEGAPAY_API_KEY,
-      MEGAPAY_PAYBILL,
-      MEGAPAY_BASE_URL = 'https://api.megapay.co.ke/api/v1',
-      MEGAPAY_CALLBACK_URL
-    } = env;
+    // At the top of your index.js
+const MEGAPAY_CONFIG = {
+  API_KEY: 'MGPYDSg2lIYA',
+  PAYBILL: '522522',
+  ACCOUNT: 'KenyaVault',
+  BASE_URL: 'https://api.megapay.co.ke/api/v1',
+  CALLBACK_URL: 'https://kcsevault.odhiambosulman3.workers.dev/api/payment/callback'
+};
+
+// Then use MEGAPAY_CONFIG everywhere in your code
 
     // HARDCODED CREDENTIALS (since they're provided)
     const MEGAPAY_API_SECRET = 'MGPYDSg2lIYA';
@@ -264,5 +268,31 @@ export default {
       error: 'Endpoint not found',
       available: ['/api', '/api/payment/initiate', '/api/payment/status/:id']
     }), { status: 404, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+  }
+};
+// index.js
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    
+    // ── API ROUTES ──
+    if (url.pathname === '/api/payment/initiate' && request.method === 'POST') {
+      // Even without env variables, you can still use hardcoded or the env param
+      const apiKey = env.MEGAPAY_API_KEY || 'MGPYDSg2lIYA';
+      const paybill = env.MEGAPAY_PAYBILL || '522522';
+      
+      // Your payment logic here
+      // ...
+    }
+    
+    if (url.pathname === '/api/payment/callback' && request.method === 'POST') {
+      // Handle callback
+      // ...
+    }
+    
+    // ── STATIC ASSETS ──
+    // Since you have static assets, Cloudflare automatically serves them
+    // Just return a 404 for unmatched routes
+    return new Response('Page not found', { status: 404 });
   }
 };
