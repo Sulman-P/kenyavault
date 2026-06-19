@@ -902,62 +902,192 @@ function markError(id) {
   const el = document.getElementById(id);
   if (el) { el.classList.add('has-error'); setTimeout(() => el.classList.remove('has-error'), 3000); }
 }
-// ── HANDLE PASSWORD RESET ──
-// This runs when the page loads
-window.addEventListener('load', async function() {
-  // Check if we have a hash fragment from Supabase
-  if (window.location.hash) {
-    const params = new URLSearchParams(window.location.hash.substring(1));
-    const accessToken = params.get('access_token');
-    const refreshToken = params.get('refresh_token');
-    const type = params.get('type');
+// ────────────────────────────────────────
+// SUPABASE AUTH HANDLING
+// ────────────────────────────────────────
+// Check for auth callback on page load
+async function handleAuthCallback() {
+  // Check URL hash (PKCE flow)
+  const hashParams = new URLSearchParams(window.location.hash.substring(1));
+  const accessToken = hashParams.get('access_token');
+  const refreshToken = hashParams.get('refresh_token');
+  const type = hashParams.get('type');
+  
+  // Also check URL search params (implicit flow)
+  const searchParams = new URLSearchParams(window.location.search);
+  const searchAccessToken = searchParams.get('access_token');
+  const searchRefreshToken = searchParams.get('refresh_token');
+  
+  const token = accessToken || searchAccessToken;
+  const refresh = refreshToken || searchRefreshToken;
+  
+  if (token && refresh) {
+    console.log('🔄 Auth callback detected, processing...');
     
-    if (accessToken && type === 'recovery') {
-      // This is a password reset callback
-      try {
-        const { data, error } = await sbClient.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken
-        });
-        
-        if (error) {
-          console.error('Session error:', error);
-          showToast('Error setting session. Please try again.', 'error');
-        } else {
-          showToast('Password reset link verified! You can now set a new password.', 'success');
-          // Remove the hash from URL
-          window.history.replaceState({}, document.title, window.location.pathname);
-          // Open settings page to change password
-          setTimeout(() => {
-            switchPage('settings');
-          }, 1500);
-        }
-      } catch(e) {
-        console.error('Error:', e);
-        showToast('Connection error. Please try again.', 'error');
+    try {
+      const { data, error } = await sbClient.auth.setSession({
+        access_token: token,
+        refresh_token: refresh
+      });
+      
+      if (error) {
+        console.error('Session error:', error);
+        showToast('Authentication failed. Please try again.', 'error');
+        // Clear the URL parameters
+        window.history.replaceState({}, document.title, window.location.pathname);
+        return;
       }
+      
+      if (data.user) {
+        console.log('✅ User authenticated:', data.user.email);
+        showPanel(data.user.email);
+        showToast('Welcome back!', 'success');
+        // Clear the URL parameters
+        window.history.replaceState({}, document.title, window.location.pathname);
+        return;
+      }
+    } catch(e) {
+      console.error('Auth error:', e);
+      showToast('Connection error. Please try again.', 'error');
+      window.history.replaceState({}, document.title, window.location.pathname);
     }
   }
-});
-  // ── HANDLE SUPABASE AUTH REDIRECTS ──
-const params = new URLSearchParams(window.location.search);
-const accessToken = params.get('access_token');
-const refreshToken = params.get('refresh_token');
-
-if (accessToken) {
-  // Handle the auth callback
-  sbClient.auth.setSession({
-    access_token: accessToken,
-    refresh_token: refreshToken
-  }).then(({ data, error }) => {
-    if (error) {
-      console.error('Auth error:', error);
-    } else {
-      // Redirect to admin panel
-      window.location.href = '/admin.html';
+  
+  // Check if we already have a session
+  if (sbClient) {
+    const { data: { session } } = await sbClient.auth.getSession();
+    if (session) {
+      console.log('✅ Existing session found:', session.user.email);
+      showPanel(session.user.email);
     }
-  });
+  }
 }
+
+// ── AUTH HANDLER FOR LOGIN ──
+document.getElementById('loginBtn').addEventListener('click', async () => {
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const btn = document.getElementById('loginBtn');
+  const errEl = document.getElementById('loginError');
+
+  errEl.style.display = 'none';
+
+  if (!email || !password) {
+    showLoginError('Please enter your email and password.');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Signing in...';
+
+  // Try Supabase first if configured
+  const savedUrl = localStorage.getItem('kv_sb_url');
+  const savedKey = localStorage.getItem('kv_sb_key');
+
+  if (savedUrl && savedKey && savedUrl !== 'YOUR_SUPABASE_URL') {
+    try {
+      // Create client with redirect URL
+      const client = window.supabase.createClient(savedUrl, savedKey, {
+        auth: {
+          autoRefreshToken: true,
+          persistSession: true,
+          detectSessionInUrl: true,
+          flowType: 'pkce',
+          redirectTo: 'https://kcsevault.odhiambosulman3.workers.dev/admin.html'
+        }
+      });
+      
+      const { data, error } = await client.auth.signInWithPassword({ 
+        email, 
+        password 
+      });
+      
+      if (!error && data.user) {
+        sbClient = client;
+        updateConnectionLabel(true);
+        showPanel(data.user.email);
+        showToast('Login successful!', 'success');
+        btn.disabled = false;
+        btn.textContent = 'Sign In to Admin Panel';
+        return;
+      } else if (error) {
+        console.error('Login error:', error);
+        // Don't fall through to demo if Supabase is configured
+        showLoginError('Invalid credentials. Please try again.');
+        btn.disabled = false;
+        btn.textContent = 'Sign In to Admin Panel';
+        return;
+      }
+    } catch(e) {
+      console.warn('Supabase login error:', e);
+    }
+  }
+
+  // Fallback: demo credentials
+  if (email === DEMO_EMAIL && password === DEMO_PASS) {
+    updateConnectionLabel(false);
+    showPanel(email);
+    showToast('Demo mode login successful', 'info');
+    btn.disabled = false;
+    btn.textContent = 'Sign In to Admin Panel';
+    return;
+  }
+
+  // Both failed
+  showLoginError('Incorrect email or password. Demo: admin@kenyavault.co.ke / Admin2025!');
+  btn.disabled = false;
+  btn.textContent = 'Sign In to Admin Panel';
+});
+
+// ── UPDATE ADMIN SETTINGS WITH CORRECT REDIRECT ──
+document.getElementById('saveSupabaseBtn').addEventListener('click', async () => {
+  const url = document.getElementById('sbUrl').value.trim();
+  const key = document.getElementById('sbKey').value.trim();
+  const status = document.getElementById('connStatus');
+
+  if (!url || !key) {
+    showToast('Enter both Supabase URL and anon key', 'error'); 
+    return;
+  }
+  if (!url.startsWith('https://')) {
+    showToast('URL must start with https://', 'error'); 
+    return;
+  }
+
+  status.textContent = '⏳ Testing connection...';
+  status.style.color = 'var(--muted)';
+
+  try {
+    const client = window.supabase.createClient(url, key, {
+      auth: {
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: true,
+        flowType: 'pkce',
+        redirectTo: 'https://kcsevault.odhiambosulman3.workers.dev/admin.html'
+      }
+    });
+    
+    // Test the connection
+    const { error } = await client.from('resources').select('id').limit(1);
+    if (error && error.code !== 'PGRST116' && error.code !== '42P01') throw error;
+
+    localStorage.setItem('kv_sb_url', url);
+    localStorage.setItem('kv_sb_key', key);
+    sbClient = client;
+    updateConnectionLabel(true);
+    status.textContent = '✅ Connected!';
+    status.style.color = 'var(--green)';
+    document.getElementById('uploadAlertText').textContent =
+      'Supabase connected. Real PDF uploads are now enabled.';
+    document.getElementById('uploadAlert').className = 'alert alert-success';
+    showToast('Supabase connected successfully!', 'success');
+  } catch(e) {
+    status.textContent = '❌ Failed: ' + (e.message || 'Check URL and key');
+    status.style.color = 'var(--red)';
+    showToast('Connection failed — check your URL and key', 'error');
+  }
+});
 // ══════════════════════════════
 // NAVIGATION
 // ══════════════════════════════
@@ -1061,20 +1191,23 @@ function setConnLabel(live) {
 }
 
 // ══════════════════════════════
-// SUPABASE CONFIG
+// ── SUPABASE SETUP ──
 const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
-const SUPABASE_KEY = 'your-anon-key-here';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
 
-// Initialize Supabase with correct redirect
+// Initialize Supabase with correct redirect for your domain
 if (typeof supabase !== 'undefined') {
   const client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
     auth: {
       autoRefreshToken: true,
       persistSession: true,
       detectSessionInUrl: true,
-      flowType: 'pkce' // Important for password reset flows
+      flowType: 'pkce',
+      // IMPORTANT: Set the correct redirect URL
+      redirectTo: 'https://kcsevault.odhiambosulman3.workers.dev/admin.html'
     }
   });
+}
 }
   if (url) document.getElementById('sbUrl').value = url;
   if (key) document.getElementById('sbKey').value = key;
