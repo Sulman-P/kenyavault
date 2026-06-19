@@ -341,17 +341,83 @@ function showToast(msg, type = 'success') {
   setTimeout(() => t.classList.remove('show'), 3800);
 }
 
-// ── OPEN PAYMENT MODAL ──
-function openPaymentModal(classData) {
-  currentClass = classData;
-  
-  document.getElementById('modalClassTitle').textContent = classData.title || 'Class Booking';
-  document.getElementById('pdClass').textContent = classData.title || '—';
-  document.getElementById('pdTutor').textContent = classData.tutor || '—';
-  document.getElementById('pdDateTime').textContent = `${classData.date || ''} ${classData.time || ''}`;
-  document.getElementById('pdAmount').textContent = `KES ${classData.price || 0}`;
-  document.getElementById('instructionAmount').textContent = `KES ${classData.price || 0}`;
-  
+// In your classes.html or shop.html
+
+async function initiatePayment(phoneNumber) {
+  const amount = currentClass?.price || currentProduct?.price || 0;
+  const resourceId = currentClass?.id || currentProduct?.id;
+  const title = currentClass?.title || currentProduct?.title;
+
+  try {
+    const response = await fetch('/api/payment/initiate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        phoneNumber: phoneNumber,
+        amount: amount,
+        resourceId: resourceId,
+        resourceTitle: title
+      })
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      showToast('📱 Check your phone for M-PESA prompt', 'success');
+      
+      // Start polling for status
+      pollPaymentStatus(result.checkoutId);
+      
+      // Close the modal
+      closePaymentModal();
+    } else {
+      showToast('❌ Payment initiation failed: ' + result.error, 'error');
+    }
+
+  } catch (error) {
+    console.error('Payment initiation error:', error);
+    showToast('❌ Payment service error. Please try again.', 'error');
+  }
+}
+
+async function pollPaymentStatus(checkoutId, attempts = 0) {
+  if (attempts > 30) {
+    showToast('⏰ Payment confirmation timeout. Please check your M-PESA messages.', 'warning');
+    return;
+  }
+
+  setTimeout(async () => {
+    try {
+      const response = await fetch(`/api/payment/status/${checkoutId}`);
+      const result = await response.json();
+
+      if (result.success) {
+        if (result.status === 'completed' || result.status === 'success') {
+          showToast('✅ Payment successful! Downloading resource...', 'success');
+          // Handle successful payment - deliver resource
+          if (currentClass) {
+            // Send WhatsApp message with meeting link
+            await sendMeetingLinkViaWhatsApp(currentClass, checkoutId);
+          } else if (currentProduct) {
+            // Deliver product download
+            deliverProduct(currentProduct);
+          }
+          return;
+        } else if (result.status === 'failed' || result.status === 'cancelled') {
+          showToast('❌ Payment failed or cancelled. Please try again.', 'error');
+          return;
+        }
+      }
+
+      // Still pending - poll again
+      pollPaymentStatus(checkoutId, attempts + 1);
+
+    } catch (error) {
+      console.error('Status poll error:', error);
+      pollPaymentStatus(checkoutId, attempts + 1);
+    }
+  }, 3000); // Poll every 3 seconds
+}
   // Update WhatsApp link
   const waBtn = document.getElementById('whatsappConfirmBtn');
   const msg = `Hello KenyaVault,\n\nI would like to book:\n📚 ${classData.title}\n👤 ${classData.tutor}\n📅 ${classData.date || ''} ${classData.time || ''}\n💰 KES ${classData.price || 0}\n\nI have sent payment via Pochi la Biashara (0701710662 - SULMAN).\nPlease confirm and send the meeting link.`;
