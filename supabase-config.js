@@ -5,8 +5,8 @@
 
 // ⚠️ REPLACE THESE WITH YOUR REAL SUPABASE VALUES
 // Get them from: Supabase Dashboard → Settings → API
-const KV_SUPABASE_URL = 'https://YOUR_PROJECT_REF.supabase.co';
-const KV_SUPABASE_ANON_KEY = 'YOUR_ANON_PUBLIC_KEY_HERE';
+const KV_SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
+const KV_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
 
 let kvClient = null;
 
