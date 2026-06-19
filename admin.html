@@ -215,7 +215,7 @@ a{text-decoration:none;color:inherit;}
     <input class="login-input" type="password" id="loginPassword" placeholder="Password" autocomplete="current-password"/>
     <button class="btn-login" id="loginBtn">Sign In to Admin Panel</button>
     <div class="login-error" id="loginError"></div>
-    <div class="login-hint">Demo: <strong>admin@kenyavault.co.ke</strong> / <strong>Admin2025!</strong></div>
+    <div class="login-hint">Demo: <strong>admin@kenyavault.co.ke</strong> / <strong>!</strong></div>
   </div>
 </div>
 
@@ -902,7 +902,43 @@ function markError(id) {
   const el = document.getElementById(id);
   if (el) { el.classList.add('has-error'); setTimeout(() => el.classList.remove('has-error'), 3000); }
 }
-
+// ── HANDLE PASSWORD RESET ──
+// This runs when the page loads
+window.addEventListener('load', async function() {
+  // Check if we have a hash fragment from Supabase
+  if (window.location.hash) {
+    const params = new URLSearchParams(window.location.hash.substring(1));
+    const accessToken = params.get('access_token');
+    const refreshToken = params.get('refresh_token');
+    const type = params.get('type');
+    
+    if (accessToken && type === 'recovery') {
+      // This is a password reset callback
+      try {
+        const { data, error } = await sbClient.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken
+        });
+        
+        if (error) {
+          console.error('Session error:', error);
+          showToast('Error setting session. Please try again.', 'error');
+        } else {
+          showToast('Password reset link verified! You can now set a new password.', 'success');
+          // Remove the hash from URL
+          window.history.replaceState({}, document.title, window.location.pathname);
+          // Open settings page to change password
+          setTimeout(() => {
+            switchPage('settings');
+          }, 1500);
+        }
+      } catch(e) {
+        console.error('Error:', e);
+        showToast('Connection error. Please try again.', 'error');
+      }
+    }
+  }
+});
 // ══════════════════════════════
 // NAVIGATION
 // ══════════════════════════════
@@ -1007,10 +1043,20 @@ function setConnLabel(live) {
 
 // ══════════════════════════════
 // SUPABASE CONFIG
-// ══════════════════════════════
-function loadSavedConfig() {
-  const url = localStorage.getItem('kv_url') || '';
-  const key = localStorage.getItem('kv_key') || '';
+const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
+const SUPABASE_KEY = 'your-anon-key-here';
+
+// Initialize Supabase with correct redirect
+if (typeof supabase !== 'undefined') {
+  const client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+    auth: {
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: true,
+      flowType: 'pkce' // Important for password reset flows
+    }
+  });
+}
   if (url) document.getElementById('sbUrl').value = url;
   if (key) document.getElementById('sbKey').value = key;
   if (url && key) {
