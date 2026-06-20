@@ -655,8 +655,8 @@
   <div class="modal">
     <div class="modal-header">
       <div>
-        <h3>📱 Purchase Document</h3>
-        <p id="modalProductTitle">Complete your purchase</p>
+        <h3>📱 Complete Your Purchase</h3>
+        <p id="modalProductTitle">Enter your details to continue</p>
       </div>
       <button class="modal-close" id="modalClose">✕</button>
     </div>
@@ -669,9 +669,28 @@
         <div class="pd-row"><span class="pd-label">Price</span><span class="pd-value highlight" id="pdPrice">KES 0</span></div>
       </div>
 
+      <!-- Phone Number Input -->
+      <div class="form-group" style="margin-bottom: 16px;">
+        <label class="form-label" style="font-weight: 600; display: block; margin-bottom: 5px;">
+          📱 Your WhatsApp Number <span style="color: red;">*</span>
+        </label>
+        <input 
+          type="tel" 
+          id="customerPhone" 
+          class="form-input" 
+          placeholder="0712 345 678" 
+          style="width: 100%; padding: 12px; border: 1.5px solid #D0E4D8; border-radius: 8px; font-size: 1rem;"
+          required
+        />
+        <div style="font-size: 0.78rem; color: #5A7265; margin-top: 5px;">
+          ⚠️ We'll send your download link to this WhatsApp number
+        </div>
+      </div>
+
       <div class="payment-instructions">
-        <h4>📱 Pay via M-PESA</h4>
+        <h4>📱 How to Complete Payment</h4>
         <ol>
+          <li>Enter your WhatsApp number above</li>
           <li>Click the "Pay with M-PESA" button below</li>
           <li>Enter your phone number on the Megapay page</li>
           <li>Complete payment on your phone</li>
@@ -680,18 +699,17 @@
       </div>
 
       <div class="payment-actions">
-        <a href="#" id="megapayBtn" target="_blank" class="btn-mpesa">
+        <button class="btn-mpesa" id="payNowBtn">
           💳 Pay with M-PESA
-        </a>
+        </button>
         <div class="modal-note">
-          ⚡ After payment, you'll receive the download link via WhatsApp.
+          🔒 Your number is only used for sending the download link
         </div>
       </div>
 
     </div>
   </div>
 </div>
-
 <!-- TOAST -->
 <div class="toast" id="toast">
   <span id="toastIcon">✅</span>
@@ -967,15 +985,13 @@ function getTextColor(subject) {
   return map[subject] || 'tech-text';
 }
 
-  // ── OPEN PAYMENT MODAL ──
+ // ── OPEN PAYMENT MODAL ──
 function openPaymentModal(product) {
   // Check if terms are accepted
   const termsAccepted = localStorage.getItem('kv_terms_accepted') === 'true';
   if (!termsAccepted) {
     showToast('⚠️ Please accept Terms & Conditions first.', 'warning');
-    // Open T&C modal
-    if (window.showTerms) window.showTerms();
-    // Store product for later
+    if (window.showTermsModal) window.showTermsModal();
     sessionStorage.setItem('pendingProduct', JSON.stringify(product));
     return;
   }
@@ -988,33 +1004,74 @@ function openPaymentModal(product) {
   document.getElementById('pdLevel').textContent = getLevelDisplay(product.level);
   document.getElementById('pdPrice').textContent = `KES ${product.price || 0}`;
   
-  const megapayBtn = document.getElementById('megapayBtn');
-  megapayBtn.href = MEGAPAY_LINK;
-  megapayBtn.onclick = function(e) {
-    recordOrder(product);
-    showToast('📤 Order recorded! Complete payment on Megapay.', 'info');
-    return true;
+  // Clear previous phone number
+  document.getElementById('customerPhone').value = '';
+  document.getElementById('customerPhone').focus();
+  
+  // Set up pay button
+  const payBtn = document.getElementById('payNowBtn');
+  payBtn.onclick = function() {
+    processPaymentWithPhone();
   };
   
   document.getElementById('paymentModal').classList.add('open');
   document.body.style.overflow = 'hidden';
 }
 
-function closePaymentModal() {
-  document.getElementById('paymentModal').classList.remove('open');
-  document.body.style.overflow = '';
-  currentProduct = null;
+// ── PROCESS PAYMENT WITH PHONE NUMBER ──
+function processPaymentWithPhone() {
+  const phoneInput = document.getElementById('customerPhone');
+  const phone = phoneInput.value.trim();
+  
+  // Validate phone number
+  if (!phone) {
+    showToast('⚠️ Please enter your WhatsApp number', 'warning');
+    phoneInput.focus();
+    phoneInput.style.borderColor = '#EF4444';
+    return;
+  }
+  
+  // Validate Kenyan phone number format
+  const cleanPhone = phone.replace(/\s/g, '');
+  const isValid = /^2547\d{8}$/.test(cleanPhone) || 
+                  /^07\d{8}$/.test(cleanPhone) || 
+                  /^01\d{8}$/.test(cleanPhone) ||
+                  /^7\d{8}$/.test(cleanPhone);
+  
+  if (!isValid) {
+    showToast('⚠️ Please enter a valid Kenyan phone number', 'warning');
+    phoneInput.focus();
+    phoneInput.style.borderColor = '#EF4444';
+    return;
+  }
+  
+  // Format phone for storage
+  let formattedPhone = cleanPhone;
+  if (formattedPhone.startsWith('0')) {
+    formattedPhone = '254' + formattedPhone.substring(1);
+  } else if (formattedPhone.startsWith('7')) {
+    formattedPhone = '254' + formattedPhone;
+  }
+  // Remove any remaining spaces
+  formattedPhone = formattedPhone.replace(/\s/g, '');
+  
+  // Record order with the phone number
+  recordOrderWithPhone(currentProduct, formattedPhone);
+  
+  // Open Megapay in new tab
+  window.open(MEGAPAY_LINK, '_blank');
+  
+  // Close modal
+  closePaymentModal();
+  
+  showToast('📤 Order recorded! Complete payment on Megapay.', 'info');
 }
 
-function getLevelDisplay(level) {
-  const map = { kjsea:'🏆 KJSEA 2025', junior:'🏫 Junior School', senior:'🎓 Senior School', '844':'📚 8-4-4' };
-  return map[level] || level || 'All Levels';
-}
-
-// ── RECORD ORDER IN DATABASE ──
-async function recordOrder(product) {
+// ── RECORD ORDER WITH PHONE NUMBER ──
+async function recordOrderWithPhone(product, phone) {
   if (!sbClient) {
     console.warn('Supabase not connected, order not recorded');
+    showToast('⚠️ Error connecting to database. Please try again.', 'error');
     return;
   }
   
@@ -1022,7 +1079,7 @@ async function recordOrder(product) {
     const orderData = {
       ref: `KV-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       student_name: 'Customer',
-      phone: '0712345678',
+      phone: phone,
       resource_title: product.title,
       amount: product.price,
       mpesa_code: 'Pending',
@@ -1037,8 +1094,8 @@ async function recordOrder(product) {
     
     if (error) throw error;
     
-    console.log('✅ Order recorded:', orderData.ref);
-    showToast('✅ Order recorded successfully! Complete payment on Megapay.', 'success');
+    console.log('✅ Order recorded:', orderData.ref, 'Phone:', phone);
+    showToast('✅ Order recorded! Complete payment on Megapay.', 'success');
     
     return data;
     
@@ -1048,7 +1105,6 @@ async function recordOrder(product) {
     return null;
   }
 }
-
 // ── TOAST ──
 function showToast(msg, type = 'success') {
   const icons = { success:'✅', error:'❌', info:'ℹ️', warning:'⚠️' };
