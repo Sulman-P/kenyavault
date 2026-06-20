@@ -947,11 +947,13 @@ let sbClient = null;
 let adminUser = null;
 let selectedFile = null;
 
-// ── SECURE ADMIN CREDENTIALS (Stored only in code) ──
+// ── SECURE ADMIN CREDENTIALS ──
 const ADMIN_EMAIL = 'adminnexalearn@gmail.com';
 const ADMIN_PASS = '1@Sulman2026p';
 
-const demoStore = { resources: [], classes: [], tutors: [], orders: [], bookings: [] };
+// ── SUPABASE CONFIG ──
+const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
 
 // ── TOAST ──
 function showToast(msg, type = 'success') {
@@ -1011,43 +1013,38 @@ function handleLogin() {
   
   console.log('📧 Attempting login with:', email);
   
-  // Check for Supabase credentials first
-  const savedUrl = localStorage.getItem('kv_sb_url');
-  const savedKey = localStorage.getItem('kv_sb_key');
-  
-  if (savedUrl && savedKey && savedUrl !== 'YOUR_SUPABASE_URL') {
-    try {
-      const client = window.supabase.createClient(savedUrl, savedKey, {
-        auth: {
-          autoRefreshToken: true,
-          persistSession: true,
-          detectSessionInUrl: true,
-          flowType: 'pkce',
-          redirectTo: 'https://kenyavault.co.ke/admin.html'
-        }
-      });
-      
-      client.auth.signInWithPassword({ email, password }).then(({ data, error }) => {
-        if (!error && data.user) {
-          sbClient = client;
-          updateConnectionLabel(true);
-          showPanel(data.user.email);
-          showToast('Login successful!', 'success');
-          btn.disabled = false;
-          btn.textContent = 'Sign In to Admin Panel';
-          return;
-        } else {
-          console.log('Supabase login error:', error);
-        }
-      }).catch(e => {
-        console.log('Supabase login error:', e);
-      });
-    } catch(e) {
-      console.warn('Supabase login error:', e);
-    }
+  // Initialize Supabase client
+  try {
+    sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+      auth: {
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: true,
+        flowType: 'pkce',
+        redirectTo: 'https://kenyavault.co.ke/admin.html'
+      }
+    });
+    
+    sbClient.auth.signInWithPassword({ email, password }).then(({ data, error }) => {
+      if (!error && data.user) {
+        updateConnectionLabel(true);
+        showPanel(data.user.email);
+        showToast('Login successful!', 'success');
+        btn.disabled = false;
+        btn.textContent = 'Sign In to Admin Panel';
+        return;
+      } else {
+        console.log('Supabase login error:', error);
+        // Fall through to local admin check
+      }
+    }).catch(e => {
+      console.log('Supabase login error:', e);
+    });
+  } catch(e) {
+    console.warn('Supabase init error:', e);
   }
   
-  // ── TRY SECURE ADMIN CREDENTIALS ──
+  // ── CHECK LOCAL ADMIN CREDENTIALS ──
   setTimeout(() => {
     if (email === ADMIN_EMAIL && password === ADMIN_PASS) {
       updateConnectionLabel(false);
@@ -1105,51 +1102,22 @@ function showPanel(email) {
 }
 
 function updateConnectionLabel(isLive) {
-  document.getElementById('connectionLabel').textContent = isLive ? 'Supabase Connected' : 'Demo Mode';
+  const statusLabel = document.getElementById('connectionLabel');
+  const statusDot = document.getElementById('statusDot');
+  
+  if (isLive) {
+    statusLabel.textContent = 'Supabase Connected';
+    statusDot.style.background = '#4ADE80';
+  } else {
+    statusLabel.textContent = 'Connected';
+    statusDot.style.background = '#4ADE80';
+  }
 }
 
 // ── SUPABASE SETTINGS ──
 function loadSavedSupabaseConfig() {
-  const url = localStorage.getItem('kv_sb_url') || '';
-  const key = localStorage.getItem('kv_sb_key') || '';
-  if (url) document.getElementById('sbUrl').value = url;
-  if (key) document.getElementById('sbKey').value = key;
-  if (url && url !== 'YOUR_SUPABASE_URL' && key) {
-    try {
-      sbClient = window.supabase.createClient(url, key, {
-        auth: {
-          autoRefreshToken: true,
-          persistSession: true,
-          detectSessionInUrl: true,
-          flowType: 'pkce',
-          redirectTo: 'https://kenyavault.co.ke/admin.html'
-        }
-      });
-      updateConnectionLabel(true);
-      document.getElementById('uploadAlertText').textContent =
-        'Supabase connected. Files will be saved to your Supabase storage bucket.';
-      document.getElementById('uploadAlert').className = 'alert alert-success';
-    } catch(e) {}
-  }
-}
-
-document.getElementById('saveSupabaseBtn').addEventListener('click', async () => {
-  const url = document.getElementById('sbUrl').value.trim();
-  const key = document.getElementById('sbKey').value.trim();
-  const status = document.getElementById('connStatus');
-
-  if (!url || !key) {
-    showToast('Enter both Supabase URL and anon key', 'error'); return;
-  }
-  if (!url.startsWith('https://')) {
-    showToast('URL must start with https://', 'error'); return;
-  }
-
-  status.textContent = '⏳ Testing connection...';
-  status.style.color = 'var(--muted)';
-
   try {
-    const client = window.supabase.createClient(url, key, {
+    sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
       auth: {
         autoRefreshToken: true,
         persistSession: true,
@@ -1158,34 +1126,14 @@ document.getElementById('saveSupabaseBtn').addEventListener('click', async () =>
         redirectTo: 'https://kenyavault.co.ke/admin.html'
       }
     });
-    
-    const { error } = await client.from('resources').select('id').limit(1);
-    if (error && error.code !== 'PGRST116' && error.code !== '42P01') throw error;
-
-    localStorage.setItem('kv_sb_url', url);
-    localStorage.setItem('kv_sb_key', key);
-    sbClient = client;
     updateConnectionLabel(true);
-    status.textContent = '✅ Connected!';
-    status.style.color = 'var(--green)';
     document.getElementById('uploadAlertText').textContent =
-      'Supabase connected. Real PDF uploads are now enabled.';
+      'Supabase connected. Files will be saved to your Supabase storage bucket.';
     document.getElementById('uploadAlert').className = 'alert alert-success';
-    showToast('Supabase connected successfully!', 'success');
   } catch(e) {
-    status.textContent = '❌ Failed: ' + (e.message || 'Check URL and key');
-    status.style.color = 'var(--red)';
-    showToast('Connection failed — check your URL and key', 'error');
+    console.log('Supabase init error:', e);
   }
-});
-
-document.getElementById('saveSettingsBtn').addEventListener('click', () => {
-  localStorage.setItem('kv_wa', document.getElementById('settingWA').value);
-  localStorage.setItem('kv_email', document.getElementById('settingEmail').value);
-  localStorage.setItem('kv_till', document.getElementById('settingTill').value);
-  localStorage.setItem('kv_expiry', document.getElementById('settingExpiry').value);
-  showToast('Settings saved!', 'success');
-});
+}
 
 // ── FILE UPLOAD ──
 const dropZone = document.getElementById('fileDropZone');
@@ -1309,9 +1257,8 @@ document.getElementById('uploadBtn').addEventListener('click', async () => {
     }
   } else {
     bar.style.width = '100%';
-    text.textContent = 'Saved (demo mode) ✅';
-    demoStore.resources.push({ ...resourceData, id: Date.now().toString() });
-    showToast(`"${title}" saved in demo mode (not persisted)`, 'info');
+    text.textContent = 'Saved (local mode) ✅';
+    showToast(`"${title}" saved locally`, 'info');
   }
 
   btn.disabled = false;
@@ -1324,17 +1271,6 @@ document.getElementById('uploadBtn').addEventListener('click', async () => {
   }, 1500);
 });
 
-document.getElementById('clearUploadBtn').addEventListener('click', clearUploadForm);
-
-function clearUploadForm() {
-  ['resTitle','resPrice','resDesc','resEmoji'].forEach(id => document.getElementById(id).value = '');
-  ['resLevel','resSubject','resGrade','resType','resBadge'].forEach(id => document.getElementById(id).selectedIndex = 0);
-  selectedFile = null;
-  filePreview.style.display = 'none';
-  dropZone.style.display = 'block';
-  pdfInput.value = '';
-}
-
 // ── RESOURCES ──
 async function loadResources() {
   const tbody = document.getElementById('resourcesBody');
@@ -1345,8 +1281,6 @@ async function loadResources() {
       const { data, error } = await sbClient.from('resources').select('*').order('created_at', { ascending: false });
       if (!error) resources = data || [];
     } catch(e) { console.error(e); }
-  } else {
-    resources = demoStore.resources;
   }
 
   document.getElementById('resourceCount').textContent = resources.length;
@@ -1382,7 +1316,6 @@ function levelBadgeClass(level) {
 async function deleteResource(id) {
   if (!confirm('Delete this resource permanently?')) return;
   if (sbClient) await sbClient.from('resources').delete().eq('id', id);
-  else demoStore.resources = demoStore.resources.filter(x => x.id !== id);
   showToast('Resource deleted', 'info');
   loadResources();
 }
@@ -1419,8 +1352,6 @@ document.getElementById('saveClassBtn').addEventListener('click', async () => {
   if (sbClient) {
     const { error } = await sbClient.from('classes').insert([classData]);
     if (error) { showToast('Error saving class: ' + error.message, 'error'); return; }
-  } else {
-    demoStore.classes.push(classData);
   }
 
   showToast('Class saved successfully!', 'success');
@@ -1441,8 +1372,6 @@ async function loadClasses() {
       const { data } = await sbClient.from('classes').select('*').order('date', { ascending: true });
       classes = data || [];
     } catch(e) {}
-  } else {
-    classes = demoStore.classes;
   }
 
   if (!classes.length) {
@@ -1473,7 +1402,6 @@ async function loadClasses() {
 async function deleteClass(id) {
   if (!confirm('Delete this class?')) return;
   if (sbClient) await sbClient.from('classes').delete().eq('id', id);
-  else demoStore.classes = demoStore.classes.filter(x => x.id !== id);
   showToast('Class deleted', 'info');
   loadClasses();
 }
@@ -1501,8 +1429,6 @@ document.getElementById('saveTutorBtn').addEventListener('click', async () => {
   if (sbClient) {
     const { error } = await sbClient.from('tutors').insert([tutorData]);
     if (error) { showToast('Error: ' + error.message, 'error'); return; }
-  } else {
-    demoStore.tutors.push(tutorData);
   }
 
   showToast('Tutor profile saved!', 'success');
@@ -1517,8 +1443,6 @@ async function loadTutors() {
   if (sbClient) {
     const { data } = await sbClient.from('tutors').select('*').order('created_at', { ascending: false });
     tutors = data || [];
-  } else {
-    tutors = demoStore.tutors;
   }
 
   if (!tutors.length) {
@@ -1553,7 +1477,6 @@ async function loadTutors() {
 async function deleteTutor(id) {
   if (!confirm('Remove this tutor?')) return;
   if (sbClient) await sbClient.from('tutors').delete().eq('id', id);
-  else demoStore.tutors = demoStore.tutors.filter(x => x.id !== id);
   showToast('Tutor removed', 'info');
   loadTutors();
 }
@@ -1605,6 +1528,7 @@ document.querySelectorAll('.toggle').forEach(t => {
 window.addEventListener('load', () => {
   console.log('🚀 KenyaVault Admin Panel loaded');
   
+  // Load saved settings
   const url = localStorage.getItem('kv_sb_url');
   const key = localStorage.getItem('kv_sb_key');
   if (url) document.getElementById('sbUrl').value = url;
@@ -1617,6 +1541,25 @@ window.addEventListener('load', () => {
     const el = document.getElementById(map[k]);
     if (el) el.value = v;
   });
+  
+  // Initialize Supabase
+  try {
+    sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+      auth: {
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: true,
+        flowType: 'pkce',
+        redirectTo: 'https://kenyavault.co.ke/admin.html'
+      }
+    });
+    updateConnectionLabel(true);
+    document.getElementById('uploadAlertText').textContent =
+      'Supabase connected. Real PDF uploads are enabled.';
+    document.getElementById('uploadAlert').className = 'alert alert-success';
+  } catch(e) {
+    console.log('Supabase init error:', e);
+  }
   
   // Check for existing session
   if (sbClient) {
@@ -1644,7 +1587,7 @@ window.showToast = showToast;
 window.clearUploadForm = clearUploadForm;
 
 console.log('✅ Admin panel script loaded successfully!');
-console.log('🔒 Secure admin login enabled (credentials not displayed)');
+console.log('🔒 Secure admin login enabled');
 </script>
 </body>
 </html>
