@@ -973,7 +973,19 @@ function renderPage() {
     var isFree = r.price === 0;
     var fileUrl = r.file_url || '#';
     
-    return '<div class="product-card" data-level="' + r.level + '" data-subject="' + r.subject + '"><div class="pc-banner ' + getBannerColor(r.subject) + '"><span class="pc-emoji">' + (r.emoji || '📄') + '</span><span class="pc-badge ' + badgeClass + '">' + badgeText + '</span></div><div class="pc-body"><div class="pc-subject ' + getTextColor(r.subject) + '">' + (r.subject || 'Resource') + '</div><h4>' + r.title + '</h4><p>' + (r.description ? r.description.substring(0, 100) : '') + (r.description && r.description.length > 100 ? '...' : '') + '</p><div class="pc-meta"><span>📄 ' + (r.pages || 0) + ' pages</span><span>⬇️ ' + (r.downloads || 0) + ' downloads</span></div><div style="font-size:0.78rem;color:var(--muted);background:var(--gold-pale);padding:4px 10px;border-radius:99px;display:inline-block;margin-top:6px;">🔒 ' + (isFree ? 'Free Download' : 'Payment required before download') + '</div></div><div class="pc-footer"><span class="pc-price">' + priceDisplay + '</span>' + (isFree ? '<a href="' + fileUrl + '" target="_blank" class="btn-buy free">Download</a>' : '<button class="btn-buy" onclick="openPaymentModal(' + JSON.stringify(r).replace(/'/g, "\\'") + ')">📱 Pay KSh ' + r.price + '</button>') + '</div></div>';
+    // FIXED: Properly escape the product data for the onclick handler
+    var productData = {
+      id: r.id,
+      title: r.title,
+      subject: r.subject,
+      level: r.level,
+      price: r.price,
+      file_url: r.file_url,
+      description: r.description
+    };
+    var productJson = JSON.stringify(productData).replace(/'/g, "\\'");
+    
+    return '<div class="product-card" data-level="' + r.level + '" data-subject="' + r.subject + '"><div class="pc-banner ' + getBannerColor(r.subject) + '"><span class="pc-emoji">' + (r.emoji || '📄') + '</span><span class="pc-badge ' + badgeClass + '">' + badgeText + '</span></div><div class="pc-body"><div class="pc-subject ' + getTextColor(r.subject) + '">' + (r.subject || 'Resource') + '</div><h4>' + r.title + '</h4><p>' + (r.description ? r.description.substring(0, 100) : '') + (r.description && r.description.length > 100 ? '...' : '') + '</p><div class="pc-meta"><span>📄 ' + (r.pages || 0) + ' pages</span><span>⬇️ ' + (r.downloads || 0) + ' downloads</span></div><div style="font-size:0.78rem;color:var(--muted);background:var(--gold-pale);padding:4px 10px;border-radius:99px;display:inline-block;margin-top:6px;">🔒 ' + (isFree ? 'Free Download' : 'Payment required before download') + '</div></div><div class="pc-footer"><span class="pc-price">' + priceDisplay + '</span>' + (isFree ? '<a href="' + fileUrl + '" target="_blank" class="btn-buy free">Download</a>' : '<button class="btn-buy" onclick="openPaymentModal(\'' + productJson + '\')">📱 Pay KSh ' + r.price + '</button>') + '</div></div>';
   }).join('');
   
   var totalPages = Math.ceil(total / itemsPerPage);
@@ -1033,7 +1045,17 @@ function showToast(msg, type) {
 }
 
 // ── OPEN PAYMENT MODAL ──
-function openPaymentModal(product) {
+function openPaymentModal(productJson) {
+  // Parse the product data from the JSON string
+  var product;
+  try {
+    product = typeof productJson === 'string' ? JSON.parse(productJson) : productJson;
+  } catch (e) {
+    console.error('Error parsing product data:', e);
+    showToast('⚠️ Error loading product details. Please try again.', 'error');
+    return;
+  }
+  
   // Check if terms are accepted
   var termsAccepted = localStorage.getItem('kv_terms_accepted') === 'true';
   if (!termsAccepted) {
