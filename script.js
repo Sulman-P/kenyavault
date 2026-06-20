@@ -325,3 +325,34 @@ function getBadgeClass(badge) {
 }
 
 console.log('📚 KenyaVault shared functions loaded');
+// ── TERMS & CONDITIONS GLOBALS ──
+window.showTermsModal = window.showTermsModal || function() {
+  const modal = document.getElementById('termsModal');
+  if (modal) {
+    modal.classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+};
+
+window.acceptTerms = window.acceptTerms || function() {
+  const checkbox = document.getElementById('acceptTermsCheckbox');
+  if (checkbox && !checkbox.checked) {
+    alert('Please accept the Terms & Conditions to continue.');
+    return;
+  }
+  localStorage.setItem('kv_terms_accepted', 'true');
+  const modal = document.getElementById('termsModal');
+  if (modal) {
+    modal.classList.remove('open');
+    document.body.style.overflow = '';
+  }
+  alert('✅ Thank you for accepting our Terms & Conditions');
+};
+
+window.closeTermsModal = window.closeTermsModal || function() {
+  const modal = document.getElementById('termsModal');
+  if (modal) {
+    modal.classList.remove('open');
+    document.body.style.overflow = '';
+  }
+};
