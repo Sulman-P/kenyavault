@@ -851,25 +851,42 @@ function sendPaymentConfirmation(data) {
   showToast('📱 WhatsApp opened - send confirmation message', 'success');
 }
 
-// ── RECORD ORDER IN DATABASE ──
-async function recordOrder(data) {
+// ── RECORD ORDER IN ADMIN PANEL ──
+async function recordOrderFromFrontend(productId, productTitle, price) {
   try {
-    const orderData = {
-      ref: `KV-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      student_name: 'Customer',
-      phone: data.phone || 'Unknown',
-      resource_title: data.title,
-      amount: data.price,
-      mpesa_code: data.mpesaCode || 'Pending',
-      status: 'pending',
-      created_at: new Date().toISOString()
-    };
-    
-    const { error } = await sbClient.from('orders').insert([orderData]);
-    if (error) console.error('Order save error:', error);
+    const response = await fetch('https://kenyavault.co.ke/api/record-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Customer',
+        phone: '0712345678',
+        title: productTitle,
+        price: price
+      })
+    });
+    const result = await response.json();
+    console.log('✅ Order recorded:', result);
   } catch(e) {
-    console.error('Error recording order:', e);
+    console.error('Order record error:', e);
   }
+}
+
+// ── TRACK PAYMENT ──
+function trackPayment(productId, productTitle, price) {
+  // Record order in database
+  recordOrderFromFrontend(productId, productTitle, price);
+  
+  // Store in session for tracking
+  const paymentData = {
+    type: 'product',
+    id: productId,
+    title: productTitle,
+    price: price,
+    timestamp: Date.now(),
+    status: 'pending'
+  };
+  sessionStorage.setItem('pendingPayment', JSON.stringify(paymentData));
+  console.log('📤 Payment initiated for:', productTitle);
 }
 // ── SETUP EVENTS ──
 function setupEventListeners() {
