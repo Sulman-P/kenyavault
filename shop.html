@@ -967,8 +967,19 @@ function getTextColor(subject) {
   return map[subject] || 'tech-text';
 }
 
-// ── OPEN PAYMENT MODAL ──
+  // ── OPEN PAYMENT MODAL ──
 function openPaymentModal(product) {
+  // Check if terms are accepted
+  const termsAccepted = localStorage.getItem('kv_terms_accepted') === 'true';
+  if (!termsAccepted) {
+    showToast('⚠️ Please accept Terms & Conditions first.', 'warning');
+    // Open T&C modal
+    if (window.showTerms) window.showTerms();
+    // Store product for later
+    sessionStorage.setItem('pendingProduct', JSON.stringify(product));
+    return;
+  }
+  
   currentProduct = product;
   
   document.getElementById('modalProductTitle').textContent = product.title || 'Document Purchase';
@@ -977,18 +988,11 @@ function openPaymentModal(product) {
   document.getElementById('pdLevel').textContent = getLevelDisplay(product.level);
   document.getElementById('pdPrice').textContent = `KES ${product.price || 0}`;
   
-  // Set Megapay link with tracking
   const megapayBtn = document.getElementById('megapayBtn');
   megapayBtn.href = MEGAPAY_LINK;
   megapayBtn.onclick = function(e) {
-    // Record the order before redirecting to Megapay
     recordOrder(product);
-    
-    // Show toast notification
     showToast('📤 Order recorded! Complete payment on Megapay.', 'info');
-    
-    // Allow the link to open in new tab
-    // Return true to continue with the link
     return true;
   };
   
