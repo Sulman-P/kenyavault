@@ -376,7 +376,7 @@
   color: var(--text);
 }
 .phone-input-group .required {
-  color: var(--red);
+  color: #DC2626;
 }
 .phone-input-group input {
   width: 100%;
@@ -394,7 +394,7 @@
   background: var(--white);
 }
 .phone-input-group input.error {
-  border-color: var(--red);
+  border-color: #DC2626;
   background: #FEF2F2;
 }
 .phone-hint {
@@ -819,9 +819,13 @@
       </ul>
     </div>
     <div class="footer-col">
-      <h4>Admin</h4>
+      <h4>Quick Links</h4>
       <ul>
-        <li><a href="admin.html">🔒 Admin Panel</a></li>
+        <li><a href="about.html">About Us</a></li>
+        <li><a href="terms.html">📋 Terms &amp; Conditions</a></li>
+        <li><a href="privacy.html">🔒 Privacy Policy</a></li>
+        <li><a href="admin.html">🔑 Admin</a></li>
+        <li><a href="mailto:support@kenyavault.co.ke">📧 Contact Support</a></li>
       </ul>
     </div>
   </div>
@@ -973,19 +977,32 @@ function renderPage() {
     var isFree = r.price === 0;
     var fileUrl = r.file_url || '#';
     
-    // FIXED: Properly escape the product data for the onclick handler
-    var productData = {
-      id: r.id,
-      title: r.title,
-      subject: r.subject,
-      level: r.level,
-      price: r.price,
-      file_url: r.file_url,
-      description: r.description
-    };
-    var productJson = JSON.stringify(productData).replace(/'/g, "\\'");
+    // FIX: Use data attributes instead of inline onclick with JSON
+    var productId = r.id || 'unknown';
     
-    return '<div class="product-card" data-level="' + r.level + '" data-subject="' + r.subject + '"><div class="pc-banner ' + getBannerColor(r.subject) + '"><span class="pc-emoji">' + (r.emoji || '📄') + '</span><span class="pc-badge ' + badgeClass + '">' + badgeText + '</span></div><div class="pc-body"><div class="pc-subject ' + getTextColor(r.subject) + '">' + (r.subject || 'Resource') + '</div><h4>' + r.title + '</h4><p>' + (r.description ? r.description.substring(0, 100) : '') + (r.description && r.description.length > 100 ? '...' : '') + '</p><div class="pc-meta"><span>📄 ' + (r.pages || 0) + ' pages</span><span>⬇️ ' + (r.downloads || 0) + ' downloads</span></div><div style="font-size:0.78rem;color:var(--muted);background:var(--gold-pale);padding:4px 10px;border-radius:99px;display:inline-block;margin-top:6px;">🔒 ' + (isFree ? 'Free Download' : 'Payment required before download') + '</div></div><div class="pc-footer"><span class="pc-price">' + priceDisplay + '</span>' + (isFree ? '<a href="' + fileUrl + '" target="_blank" class="btn-buy free">Download</a>' : '<button class="btn-buy" onclick="openPaymentModal(\'' + productJson + '\')">📱 Pay KSh ' + r.price + '</button>') + '</div></div>';
+    return '<div class="product-card" data-level="' + r.level + '" data-subject="' + r.subject + '" data-product-id="' + productId + '">' +
+      '<div class="pc-banner ' + getBannerColor(r.subject) + '">' +
+        '<span class="pc-emoji">' + (r.emoji || '📄') + '</span>' +
+        '<span class="pc-badge ' + badgeClass + '">' + badgeText + '</span>' +
+      '</div>' +
+      '<div class="pc-body">' +
+        '<div class="pc-subject ' + getTextColor(r.subject) + '">' + (r.subject || 'Resource') + '</div>' +
+        '<h4>' + r.title + '</h4>' +
+        '<p>' + (r.description ? r.description.substring(0, 100) : '') + (r.description && r.description.length > 100 ? '...' : '') + '</p>' +
+        '<div class="pc-meta">' +
+          '<span>📄 ' + (r.pages || 0) + ' pages</span>' +
+          '<span>⬇️ ' + (r.downloads || 0) + ' downloads</span>' +
+        '</div>' +
+        '<div style="font-size:0.78rem;color:var(--muted);background:var(--gold-pale);padding:4px 10px;border-radius:99px;display:inline-block;margin-top:6px;">🔒 ' + (isFree ? 'Free Download' : 'Payment required before download') + '</div>' +
+      '</div>' +
+      '<div class="pc-footer">' +
+        '<span class="pc-price">' + priceDisplay + '</span>' +
+        (isFree ? 
+          '<a href="' + fileUrl + '" target="_blank" class="btn-buy free">Download</a>' : 
+          '<button class="btn-buy" data-product-id="' + productId + '" onclick="openPaymentModal(\'' + productId + '\')">📱 Pay KSh ' + r.price + '</button>'
+        ) +
+      '</div>' +
+    '</div>';
   }).join('');
   
   var totalPages = Math.ceil(total / itemsPerPage);
@@ -1045,32 +1062,28 @@ function showToast(msg, type) {
 }
 
 // ── OPEN PAYMENT MODAL ──
-function openPaymentModal(productJson) {
-  // Parse the product data from the JSON string
-  var product;
-  try {
-    product = typeof productJson === 'string' ? JSON.parse(productJson) : productJson;
-  } catch (e) {
-    console.error('Error parsing product data:', e);
-    showToast('⚠️ Error loading product details. Please try again.', 'error');
+function openPaymentModal(productId) {
+  console.log('🔍 Opening payment modal for product:', productId);
+  
+  // Find the product by ID
+  var product = allResources.find(function(r) { return r.id === productId; });
+  
+  if (!product) {
+    console.error('❌ Product not found:', productId);
+    showToast('⚠️ Product not found. Please try again.', 'error');
     return;
   }
   
-  // 🔥 NEW: Check if terms are accepted
+  // Check if terms are accepted
   var termsAccepted = localStorage.getItem('kv_terms_accepted') === 'true';
   if (!termsAccepted) {
     showToast('⚠️ Please accept Terms & Conditions first.', 'warning');
-    // Show the terms modal or redirect
-    if (typeof showTermsModal === 'function') {
-      showTermsModal();
-    } else {
-      // If no modal function, redirect to terms page
-      if (confirm('You must accept our Terms & Conditions before making a purchase. Would you like to read them now?')) {
-        window.location.href = 'terms.html';
-      }
+    // Store the product ID for later
+    sessionStorage.setItem('pendingProductId', productId);
+    // Redirect to terms page or show modal
+    if (confirm('You must accept our Terms & Conditions before making a purchase. Would you like to read them now?')) {
+      window.location.href = 'terms.html';
     }
-    // Store the product so we can resume after terms acceptance
-    sessionStorage.setItem('pendingProduct', JSON.stringify(product));
     return;
   }
   
@@ -1086,7 +1099,7 @@ function openPaymentModal(productJson) {
   var phoneInput = document.getElementById('customerPhone');
   phoneInput.value = '';
   phoneInput.className = '';
-  phoneInput.focus();
+  setTimeout(function() { phoneInput.focus(); }, 300);
   
   // Set up pay button
   var payBtn = document.getElementById('payNowBtn');
