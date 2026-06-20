@@ -826,16 +826,51 @@ function getTextColor(subject) {
 
 // ── TRACK PAYMENT ──
 function trackPayment(productId, productTitle, price) {
-  sessionStorage.setItem('pendingPayment', JSON.stringify({
+  const paymentData = {
     type: 'product',
     id: productId,
     title: productTitle,
     price: price,
-    timestamp: Date.now()
-  }));
+    timestamp: Date.now(),
+    status: 'pending'
+  };
+  sessionStorage.setItem('pendingPayment', JSON.stringify(paymentData));
   console.log('📤 Payment initiated for:', productTitle);
 }
 
+// ── CONFIRM PAYMENT VIA WHATSAPP ──
+function sendPaymentConfirmation(data) {
+  const msg = `Hello KenyaVault,\n\nI have completed payment for:\n📚 ${data.title}\n💰 KES ${data.price}\n\nPlease confirm and send my download link.`;
+  window.open(`https://wa.me/254768515494?text=${encodeURIComponent(msg)}`, '_blank');
+  
+  // Also record the order in Supabase (if connected)
+  if (sbClient) {
+    recordOrder(data);
+  }
+  
+  showToast('📱 WhatsApp opened - send confirmation message', 'success');
+}
+
+// ── RECORD ORDER IN DATABASE ──
+async function recordOrder(data) {
+  try {
+    const orderData = {
+      ref: `KV-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      student_name: 'Customer',
+      phone: data.phone || 'Unknown',
+      resource_title: data.title,
+      amount: data.price,
+      mpesa_code: data.mpesaCode || 'Pending',
+      status: 'pending',
+      created_at: new Date().toISOString()
+    };
+    
+    const { error } = await sbClient.from('orders').insert([orderData]);
+    if (error) console.error('Order save error:', error);
+  } catch(e) {
+    console.error('Error recording order:', e);
+  }
+}
 // ── SETUP EVENTS ──
 function setupEventListeners() {
   // Level tabs
