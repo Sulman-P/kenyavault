@@ -362,6 +362,23 @@ table tr:hover td { background: var(--surface); }
         <div class="number text-blue" id="totalDownloads">0</div>
         <div class="label">Downloads</div>
       </div>
+      <!-- Quick Confirm Recent Orders -->
+    <div class="panel-content active" id="panelDashboard">
+    <!-- ... existing dashboard content ... -->
+  
+    <!-- Recent Pending Orders -->
+    <div style="margin-top:24px;background:var(--surface);border-radius:12px;padding:20px;border:1.5px solid var(--border);">
+     <h4 style="font-family:'Sora',sans-serif;font-weight:700;font-size:0.9rem;color:var(--dark);margin-bottom:12px;">
+      ⏳ Recent Pending Orders
+     </h4>
+     <div id="recentPendingOrders">
+     <div style="text-align:center;padding:20px;color:var(--muted);font-size:0.85rem;">
+        <span style="font-size:2rem;display:block;margin-bottom:8px;">⏳</span>
+        <p>No pending orders</p>
+       </div>
+      </div>
+     </div>
+    </div>
     </div>
 
     <!-- Revenue Summary -->
@@ -717,20 +734,34 @@ table tr:hover td { background: var(--surface); }
   </div>
 
   <!-- ════════════════════════════════════════ -->
-  <!-- TAB: ORDERS                           -->
-  <!-- ════════════════════════════════════════ -->
-  <div class="panel-content" id="panelOrders">
-    <div class="panel-header">
-      <h2>📦 Orders</h2>
-      <p>View and manage customer orders</p>
-    </div>
-    <div id="ordersList">
-      <div style="text-align:center;padding:40px 20px;color:var(--muted);">
-        <span style="font-size:2rem;display:block;margin-bottom:12px;">📦</span>
-        <p>Loading orders...</p>
-      </div>
+<!-- TAB: ORDERS                           -->
+<!-- ════════════════════════════════════════ -->
+<div class="panel-content" id="panelOrders">
+  <div class="panel-header">
+    <h2>📦 Orders</h2>
+    <p>View and manage customer orders. Confirm payments to mark orders as completed.</p>
+  </div>
+
+  <!-- Order Filters -->
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;padding:12px 16px;background:var(--surface);border-radius:10px;border:1px solid var(--border);">
+    <button class="order-filter active" data-filter="all" style="padding:6px 16px;border-radius:6px;border:1px solid var(--border);background:var(--white);cursor:pointer;font-family:'Inter',sans-serif;font-size:0.82rem;font-weight:600;transition:var(--transition);">
+      All Orders (<span id="filterAllCount">0</span>)
+    </button>
+    <button class="order-filter" data-filter="pending" style="padding:6px 16px;border-radius:6px;border:1px solid var(--border);background:var(--white);cursor:pointer;font-family:'Inter',sans-serif;font-size:0.82rem;font-weight:600;transition:var(--transition);">
+      ⏳ Pending (<span id="filterPendingCount">0</span>)
+    </button>
+    <button class="order-filter" data-filter="completed" style="padding:6px 16px;border-radius:6px;border:1px solid var(--border);background:var(--white);cursor:pointer;font-family:'Inter',sans-serif;font-size:0.82rem;font-weight:600;transition:var(--transition);">
+      ✅ Completed (<span id="filterCompletedCount">0</span>)
+    </button>
+  </div>
+
+  <div id="ordersList">
+    <div style="text-align:center;padding:40px 20px;color:var(--muted);">
+      <span style="font-size:2rem;display:block;margin-bottom:12px;">📦</span>
+      <p>Loading orders...</p>
     </div>
   </div>
+</div>
 
   <!-- ════════════════════════════════════════ -->
   <!-- TAB: SETTINGS                         -->
@@ -1297,7 +1328,57 @@ function renderRevenueOrders() {
     </div>
   `;
 }
+// ── RENDER RECENT PENDING ORDERS ──
+function renderRecentPendingOrders() {
+  const container = document.getElementById('recentPendingOrders');
+  const pending = allOrders.filter(function(o) { 
+    return o.status === 'pending' || o.status === 'pending_payment'; 
+  }).slice(0, 5);
+  
+  if (pending.length === 0) {
+    container.innerHTML = `
+      <div style="text-align:center;padding:20px;color:var(--muted);font-size:0.85rem;">
+        <span style="font-size:2rem;display:block;margin-bottom:8px;">🎉</span>
+        <p>All orders confirmed! No pending orders.</p>
+      </div>
+    `;
+    return;
+  }
+  
+  container.innerHTML = pending.map(function(o) {
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px;">
+        <div>
+          <strong>${o.ref || 'N/A'}</strong>
+          <span style="font-size:0.8rem;color:var(--muted);margin-left:12px;">${o.phone || 'N/A'}</span>
+          <span style="font-size:0.8rem;color:var(--muted);margin-left:12px;">${o.resource_title || 'N/A'}</span>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span style="font-weight:600;color:var(--gold);">KES ${o.amount || 0}</span>
+          <button class="btn-sm btn-sm-success" onclick="confirmPayment('${o.id}')">
+            ✅ Confirm
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
 
+// ── UPDATE loadDashboardData ──
+async function loadDashboardData() {
+  // ... existing code ...
+  
+  // After loading orders
+  if (!oError) {
+    allOrders = orders || [];
+    document.getElementById('totalOrders').textContent = allOrders.length;
+    revenueData = calculateRevenue(allOrders);
+    updateRevenueDisplay();
+    renderOrders('all');
+    renderRevenueOrders();
+    renderRecentPendingOrders(); // ← ADD THIS
+  }
+}
 // ── RENDER RESOURCES ──
 function renderResources() {
   const container = document.getElementById('resourcesList');
@@ -1403,14 +1484,39 @@ function renderClasses() {
   `;
 }
 
-// ── RENDER ORDERS ──
-function renderOrders() {
+// ── RENDER ORDERS WITH CONFIRMATION BUTTON ──
+function renderOrders(filter = 'all') {
   const container = document.getElementById('ordersList');
-  if (!allOrders || allOrders.length === 0) {
+  
+  // Filter orders
+  let filteredOrders = allOrders;
+  if (filter === 'pending') {
+    filteredOrders = allOrders.filter(function(o) { 
+      return o.status === 'pending' || o.status === 'pending_payment'; 
+    });
+  } else if (filter === 'completed') {
+    filteredOrders = allOrders.filter(function(o) { 
+      return o.status === 'completed' || o.status === 'paid' || o.status === 'delivered'; 
+    });
+  }
+  
+  // Update counts
+  const pendingCount = allOrders.filter(function(o) { 
+    return o.status === 'pending' || o.status === 'pending_payment'; 
+  }).length;
+  const completedCount = allOrders.filter(function(o) { 
+    return o.status === 'completed' || o.status === 'paid' || o.status === 'delivered'; 
+  }).length;
+  
+  document.getElementById('filterAllCount').textContent = allOrders.length;
+  document.getElementById('filterPendingCount').textContent = pendingCount;
+  document.getElementById('filterCompletedCount').textContent = completedCount;
+  
+  if (!filteredOrders || filteredOrders.length === 0) {
     container.innerHTML = `
       <div style="text-align:center;padding:40px 20px;color:var(--muted);">
         <span style="font-size:2rem;display:block;margin-bottom:12px;">📦</span>
-        <p>No orders yet. Check back later.</p>
+        <p>No ${filter !== 'all' ? filter : ''} orders found.</p>
       </div>
     `;
     return;
@@ -1427,19 +1533,46 @@ function renderOrders() {
             <th>Amount</th>
             <th>Status</th>
             <th>Date</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
-          ${allOrders.map(function(o) {
-            const statusColor = o.status === 'completed' || o.status === 'paid' ? '#16A34A' : (o.status === 'pending' ? '#D97706' : '#DC2626');
+          ${filteredOrders.map(function(o) {
+            const statusColor = o.status === 'completed' || o.status === 'paid' ? '#16A34A' : 
+                               (o.status === 'pending' || o.status === 'pending_payment' ? '#D97706' : '#DC2626');
+            const statusLabel = o.status === 'pending_payment' ? '⏳ Pending Payment' :
+                               (o.status === 'paid' ? '✅ Paid' :
+                               (o.status === 'completed' ? '✅ Completed' : 
+                               (o.status === 'delivered' ? '📦 Delivered' : o.status || 'pending')));
+            
+            // Show confirm button only for pending orders
+            const showConfirm = (o.status === 'pending' || o.status === 'pending_payment');
+            
             return `
               <tr>
                 <td><strong>${o.ref || 'N/A'}</strong></td>
                 <td>${o.phone || 'N/A'}</td>
                 <td>${o.resource_title || 'N/A'}</td>
                 <td style="font-weight:600;color:var(--gold);">KES ${o.amount || 0}</td>
-                <td style="color:${statusColor};font-weight:600;">${o.status || 'pending'}</td>
+                <td style="color:${statusColor};font-weight:600;">${statusLabel}</td>
                 <td style="font-size:0.75rem;color:var(--muted);">${o.created_at ? new Date(o.created_at).toLocaleDateString() : 'N/A'}</td>
+                <td>
+                  ${showConfirm ? `
+                    <button class="btn-sm btn-sm-success" onclick="confirmPayment('${o.id}')" title="Confirm Payment">
+                      ✅ Confirm
+                    </button>
+                    <button class="btn-sm btn-sm-danger" onclick="cancelOrder('${o.id}')" title="Cancel Order">
+                      ❌ Cancel
+                    </button>
+                  ` : `
+                    <button class="btn-sm" style="background:#DCFCE7;color:#15803D;cursor:default;" disabled>
+                      ✅ Done
+                    </button>
+                  `}
+                  <button class="btn-sm" style="background:#EFF6FF;color:#1D4ED8;border:none;border-radius:6px;padding:4px 12px;font-family:'Sora',sans-serif;font-weight:600;font-size:0.7rem;cursor:pointer;transition:var(--transition);" onclick="viewOrderDetails('${o.id}')">
+                    👁️
+                  </button>
+                </td>
               </tr>
             `;
           }).join('')}
@@ -1447,6 +1580,172 @@ function renderOrders() {
       </table>
     </div>
   `;
+}
+
+// ── CONFIRM PAYMENT ──
+async function confirmPayment(orderId) {
+  if (!confirm('Confirm this payment? The order will be marked as completed.')) return;
+  
+  try {
+    // Get the order first to check if it exists
+    const { data: order, error: fetchError } = await sbClient
+      .from('orders')
+      .select('*')
+      .eq('id', orderId)
+      .single();
+    
+    if (fetchError) throw fetchError;
+    if (!order) {
+      showToast('⚠️ Order not found', 'error');
+      return;
+    }
+    
+    // Update the order status
+    const { error } = await sbClient
+      .from('orders')
+      .update({
+        status: 'completed',
+        payment_confirmed: true,
+        confirmed_at: new Date().toISOString(),
+        confirmed_by: 'admin',
+        mpesa_code: order.mpesa_code || 'Confirmed manually',
+        notes: (order.notes || '') + '\nPayment confirmed by admin on ' + new Date().toLocaleString()
+      })
+      .eq('id', orderId);
+    
+    if (error) throw error;
+    
+    showToast('✅ Payment confirmed for order ' + order.ref, 'success');
+    loadDashboardData(); // Refresh data
+    
+  } catch(e) {
+    console.error('Confirm payment error:', e);
+    showToast('❌ Error confirming payment: ' + e.message, 'error');
+  }
+}
+
+// ── CANCEL ORDER ──
+async function cancelOrder(orderId) {
+  if (!confirm('Are you sure you want to cancel this order?')) return;
+  if (!confirm('This action cannot be undone. Continue?')) return;
+  
+  try {
+    const { error } = await sbClient
+      .from('orders')
+      .update({
+        status: 'cancelled',
+        notes: 'Cancelled by admin on ' + new Date().toLocaleString()
+      })
+      .eq('id', orderId);
+    
+    if (error) throw error;
+    
+    showToast('❌ Order cancelled successfully', 'info');
+    loadDashboardData();
+    
+  } catch(e) {
+    console.error('Cancel order error:', e);
+    showToast('❌ Error cancelling order: ' + e.message, 'error');
+  }
+}
+
+// ── VIEW ORDER DETAILS ──
+function viewOrderDetails(orderId) {
+  const order = allOrders.find(function(o) { return o.id === orderId; });
+  if (!order) {
+    showToast('⚠️ Order not found', 'error');
+    return;
+  }
+  
+  const details = `
+    📋 Order Details
+    ──────────────
+    Reference: ${order.ref || 'N/A'}
+    Phone: ${order.phone || 'N/A'}
+    Resource: ${order.resource_title || 'N/A'}
+    Amount: KES ${order.amount || 0}
+    Status: ${order.status || 'pending'}
+    Date: ${order.created_at ? new Date(order.created_at).toLocaleString() : 'N/A'}
+    ${order.mpesa_code ? 'M-PESA Code: ' + order.mpesa_code : ''}
+    ${order.notes ? 'Notes: ' + order.notes : ''}
+    ${order.confirmed_at ? 'Confirmed: ' + new Date(order.confirmed_at).toLocaleString() : ''}
+  `;
+  
+  alert(details);
+}
+
+// ── ORDER FILTERS ──
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.order-filter').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('.order-filter').forEach(function(b) { b.classList.remove('active'); });
+      this.classList.add('active');
+      const filter = this.dataset.filter;
+      renderOrders(filter);
+    });
+  });
+});
+
+// ── UPDATE RENDER ORDERS CALL ──
+// In loadDashboardData(), replace renderOrders() with:
+// renderOrders('all');
+  // ── SEND WHATSAPP NOTIFICATION ──
+async function sendWhatsAppConfirmation(order) {
+  try {
+    const phone = order.phone.replace(/^0/, '254'); // Format for WhatsApp
+    const message = encodeURIComponent(
+      `✅ Payment Confirmed!\n\n` +
+      `KenyaVault Order #${order.ref}\n` +
+      `Resource: ${order.resource_title}\n` +
+      `Amount: KES ${order.amount}\n` +
+      `\n🔗 Download: ${order.download_link || 'Contact support for link'}\n` +
+      `\nThank you for choosing KenyaVault! 📚`
+    );
+    
+    // Open WhatsApp chat (will open WhatsApp app or web)
+    window.open(`https://wa.me/${phone}?text=${message}`, '_blank');
+    
+  } catch(e) {
+    console.error('WhatsApp send error:', e);
+  }
+}
+
+// ── MODIFIED CONFIRM PAYMENT ──
+async function confirmPayment(orderId) {
+  if (!confirm('Confirm this payment? The order will be marked as completed and customer will be notified.')) return;
+  
+  try {
+    const { data: order, error: fetchError } = await sbClient
+      .from('orders')
+      .select('*')
+      .eq('id', orderId)
+      .single();
+    
+    if (fetchError) throw fetchError;
+    
+    const { error } = await sbClient
+      .from('orders')
+      .update({
+        status: 'completed',
+        payment_confirmed: true,
+        confirmed_at: new Date().toISOString(),
+        confirmed_by: 'admin'
+      })
+      .eq('id', orderId);
+    
+    if (error) throw error;
+    
+    showToast('✅ Payment confirmed for order ' + order.ref, 'success');
+    
+    // Send WhatsApp notification (optional - uncomment to enable)
+    // await sendWhatsAppConfirmation(order);
+    
+    loadDashboardData();
+    
+  } catch(e) {
+    console.error('Confirm payment error:', e);
+    showToast('❌ Error confirming payment: ' + e.message, 'error');
+  }
 }
 
 // ── SETTINGS FUNCTIONS ──
