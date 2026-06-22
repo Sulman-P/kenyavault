@@ -1559,140 +1559,67 @@ function renderClasses() {
   `;
 }
 
-// ── RENDER ORDERS WITH VERIFICATION ──
-function renderOrders(filter = 'all') {
-  const container = document.getElementById('ordersList');
-  if (!container) return;
+// ── RENDER PENDING VERIFICATION ORDERS ──
+function renderPendingVerification() {
+  const container = document.getElementById('pendingVerificationList');
+  const pending = allOrders.filter(function(o) { 
+    return o.status === 'pending_verification' && o.verified !== true;
+  });
   
-  currentFilter = filter;
-  
-  if (!allOrders || !allOrders.length) {
-    container.innerHTML = `
-      <div style="text-align:center;padding:40px 20px;color:var(--muted);">
-        <span style="font-size:2rem;display:block;margin-bottom:12px;">📦</span>
-        <p>No orders found.</p>
-      </div>
-    `;
-    safeSetText('filterAllCount', 0);
-    safeSetText('filterPendingCount', 0);
-    safeSetText('filterCompletedCount', 0);
-    safeSetText('filterRejectedCount', 0);
-    return;
-  }
-  
-  let filteredOrders = allOrders;
-  if (filter === 'pending') {
-    filteredOrders = allOrders.filter(function(o) { 
-      return o.status === 'pending_verification' || o.status === 'pending'; 
-    });
-  } else if (filter === 'completed') {
-    filteredOrders = allOrders.filter(function(o) { 
-      return o.status === 'completed' || o.status === 'paid' || o.status === 'delivered' || o.status === 'verified'; 
-    });
-  } else if (filter === 'rejected') {
-    filteredOrders = allOrders.filter(function(o) { 
-      return o.status === 'rejected'; 
-    });
-  }
-  
-  const pendingCount = allOrders.filter(function(o) { 
-    return o.status === 'pending_verification' || o.status === 'pending'; 
-  }).length;
-  const completedCount = allOrders.filter(function(o) { 
-    return o.status === 'completed' || o.status === 'paid' || o.status === 'delivered' || o.status === 'verified'; 
+  // Update counts
+  const pendingCount = pending.length;
+  const verifiedCount = allOrders.filter(function(o) { 
+    return o.verified === true || o.status === 'completed'; 
   }).length;
   const rejectedCount = allOrders.filter(function(o) { 
     return o.status === 'rejected'; 
   }).length;
   
-  safeSetText('filterAllCount', allOrders.length);
-  safeSetText('filterPendingCount', pendingCount);
-  safeSetText('filterCompletedCount', completedCount);
-  safeSetText('filterRejectedCount', rejectedCount);
+  document.getElementById('pendingVerificationCount').textContent = pendingCount;
+  document.getElementById('verifiedCount').textContent = verifiedCount;
+  document.getElementById('rejectedCount').textContent = rejectedCount;
   
-  if (!filteredOrders || filteredOrders.length === 0) {
+  if (pending.length === 0) {
     container.innerHTML = `
-      <div style="text-align:center;padding:40px 20px;color:var(--muted);">
-        <span style="font-size:2rem;display:block;margin-bottom:12px;">📦</span>
-        <p>No ${filter !== 'all' ? filter : ''} orders found.</p>
+      <div style="text-align:center;padding:20px;color:var(--muted);font-size:0.85rem;">
+        <span style="font-size:2rem;display:block;margin-bottom:8px;">✅</span>
+        <p>All orders verified! No pending verification.</p>
       </div>
     `;
     return;
   }
   
-  container.innerHTML = `
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Reference</th>
-            <th>Phone</th>
-            <th>Resource</th>
-            <th>Amount</th>
-            <th>Status</th>
-            <th>Date</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${filteredOrders.map(function(o) {
-            const statusColor = o.status === 'completed' || o.status === 'paid' || o.status === 'verified' ? '#16A34A' : 
-                               (o.status === 'pending_verification' || o.status === 'pending' ? '#D97706' : 
-                               (o.status === 'rejected' ? '#DC2626' : '#DC2626'));
-            const statusLabel = o.status === 'pending_verification' ? '⏳ Pending Verification' :
-                               (o.status === 'verified' ? '✅ Verified' :
-                               (o.status === 'completed' ? '✅ Completed' : 
-                               (o.status === 'paid' ? '✅ Paid' : 
-                               (o.status === 'delivered' ? '📦 Delivered' : 
-                               (o.status === 'rejected' ? '❌ Rejected' : o.status || 'pending')))));
-            
-            const showVerify = (o.status === 'pending_verification' || o.status === 'pending');
-            
-            return `
-              <tr>
-                <td><strong>${o.ref || 'N/A'}</strong></td>
-                <td>${o.phone || 'N/A'}</td>
-                <td>${o.resource_title || 'N/A'}</td>
-                <td style="font-weight:600;color:var(--gold);">KES ${o.amount || 0}</td>
-                <td style="color:${statusColor};font-weight:600;">${statusLabel}</td>
-                <td style="font-size:0.75rem;color:var(--muted);">${o.created_at ? new Date(o.created_at).toLocaleDateString() : 'N/A'}</td>
-                <td>
-                  ${showVerify ? `
-                    <button class="btn-sm btn-sm-success" onclick="verifyPayment('${o.id}', true)" title="Verify Payment">
-                      ✅ Verify
-                    </button>
-                    <button class="btn-sm btn-sm-danger" onclick="verifyPayment('${o.id}', false)" title="Reject Payment">
-                      ❌ Reject
-                    </button>
-                  ` : `
-                    <button class="btn-sm" style="background:#DCFCE7;color:#15803D;cursor:default;" disabled>
-                      ✅ Done
-                    </button>
-                  `}
-                  <button class="btn-sm" style="background:#EFF6FF;color:#1D4ED8;border:none;border-radius:6px;padding:4px 12px;font-family:'Sora',sans-serif;font-weight:600;font-size:0.7rem;cursor:pointer;transition:var(--transition);" onclick="viewOrderDetails('${o.id}')">
-                    👁️
-                  </button>
-                </td>
-              </tr>
-            `;
-          }).join('')}
-        </tbody>
-      </table>
-    </div>
-  `;
+  container.innerHTML = pending.map(function(o) {
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px;">
+        <div>
+          <strong>${o.ref || 'N/A'}</strong>
+          <span style="font-size:0.8rem;color:var(--muted);margin-left:12px;">📱 ${o.phone || 'N/A'}</span>
+          <span style="font-size:0.8rem;color:var(--muted);margin-left:12px;">${o.resource_title || 'N/A'}</span>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+          <span style="font-weight:600;color:var(--gold);">KES ${o.amount || 0}</span>
+          <span style="background:#FEF3C7;color:#92400E;padding:2px 10px;border-radius:99px;font-size:0.65rem;font-weight:600;">
+            🔑 ${o.mpesa_code || 'N/A'}
+          </span>
+          <button class="btn-sm btn-sm-success" onclick="verifyPayment('${o.id}', true)" title="Verify and confirm payment">
+            ✅ Verify & Confirm
+          </button>
+          <button class="btn-sm btn-sm-danger" onclick="verifyPayment('${o.id}', false)" title="Reject this payment">
+            ❌ Reject
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 // ── VERIFY PAYMENT ──
 async function verifyPayment(orderId, approved) {
-  if (!sbClient) {
-    showToast('⚠️ Database not connected', 'error');
-    return;
-  }
-  
   if (approved) {
-    if (!confirm('✅ Verify this payment? The customer will receive their download link.')) return;
+    if (!confirm('Confirm this payment? The customer will receive their download link.')) return;
   } else {
-    if (!confirm('❌ Reject this payment? The customer will be notified.')) return;
+    if (!confirm('Reject this payment? The customer will be notified.')) return;
   }
   
   try {
@@ -1724,7 +1651,7 @@ async function verifyPayment(orderId, approved) {
       
       if (error) throw error;
       
-      showToast('✅ Payment verified! Sending download link...', 'success');
+      showToast('✅ Payment verified! Download link will be sent to customer.', 'success');
       
       // ── SEND DOWNLOAD LINK VIA WHATSAPP ──
       await sendDownloadLink(order);
@@ -1762,15 +1689,13 @@ async function sendDownloadLink(order) {
       .from('resources')
       .select('file_url, title')
       .eq('title', order.resource_title)
-      .maybeSingle();
+      .single();
     
-    let downloadLink = 'Contact support for your download link.';
-    if (resource && resource.file_url) {
-      downloadLink = resource.file_url;
-    } else if (order.download_link) {
-      downloadLink = order.download_link;
+    if (resError) {
+      console.warn('Could not find resource:', resError);
     }
     
+    const downloadLink = resource?.file_url || order.download_link || 'Contact support for your download link.';
     const phone = order.phone.replace(/^0/, '254');
     const message = encodeURIComponent(
       `✅ Your KenyaVault Order is Ready!\n\n` +
@@ -1786,14 +1711,10 @@ async function sendDownloadLink(order) {
     // Open WhatsApp chat
     window.open(`https://wa.me/${phone}?text=${message}`, '_blank');
     
-    showToast('📱 WhatsApp opened! Send the download link to the customer.', 'info');
-    
   } catch(e) {
     console.error('WhatsApp send error:', e);
-    showToast('⚠️ Could not open WhatsApp. Please send the link manually.', 'warning');
   }
 }
-
 // ── VIEW ORDER DETAILS ──
 function viewOrderDetails(orderId) {
   if (!allOrders || !allOrders.length) {
