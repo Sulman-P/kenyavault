@@ -429,6 +429,69 @@
 .pd-label { color: var(--muted); }
 .pd-value { font-weight: 600; color: var(--dark); }
 .pd-value.highlight { color: var(--green); font-size: 1.1rem; }
+  /* ── MPESA VERIFICATION SECTION ── */
+#mpesaVerificationSection {
+  display: none;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 2px dashed var(--border);
+  animation: slideDown 0.4s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+#mpesaVerificationSection .verification-badge {
+  display: inline-block;
+  background: #DCFCE7;
+  color: #15803D;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 99px;
+  border: 1px solid #86EFAC;
+}
+
+#mpesaCode {
+  font-size: 1.2rem;
+  letter-spacing: 4px;
+  text-align: center;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+#mpesaCode:focus {
+  border-color: #7C3AED;
+  box-shadow: 0 0 0 3px rgba(124,58,237,0.15);
+}
+
+#mpesaCode.error {
+  border-color: #DC2626;
+  background: #FEF2F2;
+}
+
+.payment-instructions .step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: var(--green);
+  color: white;
+  border-radius: 50%;
+  font-size: 0.7rem;
+  font-weight: 700;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
 
 .kicd-disclosure {
   background: #F0FDF4;
@@ -874,7 +937,9 @@
 
 </div>
 
-<!-- ════════════ PAYMENT MODAL ════════════ -->
+<!-- ════════════════════════════════════════ -->
+<!-- PAYMENT MODAL - UPDATED FLOW          -->
+<!-- ════════════════════════════════════════ -->
 <div class="modal-overlay" id="paymentModal">
   <div class="modal">
     <div class="modal-header">
@@ -899,38 +964,46 @@
         This resource has been reviewed and aligned with the Kenya Institute of Curriculum Development (KICD) curriculum designs. All content follows the Competency-Based Curriculum (CBC) framework.</p>
       </div>
 
-      <!-- ── PHONE INPUT ── -->
+      <!-- ── STEP 1: PHONE NUMBER ── -->
       <div class="phone-input-group">
         <label>📱 Your WhatsApp Number <span class="required">*</span></label>
         <input type="tel" id="customerPhone" placeholder="0712 345 678" maxlength="12" autocomplete="tel"/>
-        <div class="phone-hint">⚠️ We'll send your download link to this WhatsApp number</div>
+        <div class="phone-hint">⚠️ We'll send your download link to this WhatsApp number after payment confirmation</div>
       </div>
 
-      <!-- ── MPESA CODE INPUT ── -->
-      <div class="phone-input-group">
-        <label>📝 M-PESA Transaction Code <span class="required">*</span></label>
-        <input type="text" id="mpesaCode" placeholder="e.g., QWERTY123" maxlength="20" style="text-transform:uppercase;"/>
-        <div class="phone-hint">Enter the M-PESA confirmation code you received via SMS</div>
-      </div>
-
-      <div class="payment-instructions">
-        <h4>📱 How to Complete Payment</h4>
-        <ol>
-          <li>Enter your WhatsApp number and M-PESA code above</li>
-          <li>Click the "Pay with M-PESA" button below</li>
-          <li>Enter your phone number on the Megapay page</li>
-          <li>Complete payment on your phone</li>
-          <li>You'll receive the download link via WhatsApp</li>
-        </ol>
-      </div>
-
+      <!-- ── STEP 2: PAYMENT BUTTON ── -->
       <div class="payment-actions">
         <button class="btn-mpesa" id="payNowBtn">
           💳 Pay with M-PESA
         </button>
-        <div class="modal-note">
-          🔒 Your number is only used for sending the download link
+      </div>
+
+      <!-- ── STEP 3: MPESA CODE ENTRY (SHOW AFTER PAYMENT) ── -->
+      <div id="mpesaVerificationSection" style="display:none;margin-top:16px;padding-top:16px;border-top:2px dashed var(--border);">
+        <div style="background:#F0FDF4;border-radius:8px;padding:12px 16px;margin-bottom:16px;border:1px solid #BBF7D0;">
+          <p style="font-size:0.82rem;color:#15803D;margin:0;">
+            ✅ <strong>Payment initiated!</strong> Complete the payment on your phone, then enter the verification code below.
+          </p>
         </div>
+
+        <div class="phone-input-group">
+          <label>🔑 M-PESA Verification Code <span class="required">*</span></label>
+          <input type="text" id="mpesaCode" placeholder="Enter last 4 characters of M-PESA code" maxlength="4" style="text-transform:uppercase;text-align:center;font-size:1.2rem;letter-spacing:4px;"/>
+          <div class="phone-hint">
+            📝 Enter the <strong>last 4 characters</strong> of your M-PESA transaction code<br>
+            <span style="font-size:0.75rem;color:#6B7280;">Example: If code is QWERTX3TR, enter <strong>X3TR</strong></span>
+          </div>
+        </div>
+
+        <div class="payment-actions">
+          <button class="btn-mpesa" id="confirmPaymentBtn" style="background:#7C3AED;">
+            ✅ Confirm Payment & Get Download
+          </button>
+        </div>
+      </div>
+
+      <div class="modal-note">
+        🔒 Your number is only used for sending the download link
       </div>
 
     </div>
@@ -1460,7 +1533,211 @@ async function recordOrderWithPhone(product, phone, mpesaCode) {
     console.error('Order record error:', e);
     showToast('⚠️ Error recording order. Please contact support.', 'error');
   }
+}// ── OPEN PAYMENT MODAL ──
+function openPaymentModal(productId) {
+  console.log('🔍 Opening payment modal for product:', productId);
+  
+  var product = allResources.find(function(r) { return r.id === productId; });
+  if (!product) {
+    showToast('⚠️ Product not found. Please try again.', 'error');
+    return;
+  }
+  
+  currentProduct = product;
+  
+  document.getElementById('modalProductTitle').textContent = product.title || 'Document Purchase';
+  document.getElementById('pdTitle').textContent = product.title || '—';
+  document.getElementById('pdSubject').textContent = product.subject || '—';
+  document.getElementById('pdLevel').textContent = getLevelDisplay(product.level);
+  document.getElementById('pdPrice').textContent = 'KES ' + (product.price || 0);
+  
+  // Update KICD disclosure
+  var kicdHTML = '<p>✅ <strong>KICD Curriculum Aligned</strong><br>' +
+    'This resource has been reviewed and aligned with the Kenya Institute of Curriculum Development (KICD) curriculum designs for ' + getLevelDisplay(product.level) + 
+    '. All content follows the Competency-Based Curriculum (CBC) framework.</p>';
+  document.getElementById('kicdDisclosure').innerHTML = kicdHTML;
+  
+  // Clear previous inputs
+  document.getElementById('customerPhone').value = '';
+  document.getElementById('customerPhone').className = '';
+  document.getElementById('mpesaCode').value = '';
+  document.getElementById('mpesaCode').className = '';
+  
+  // Hide verification section initially
+  document.getElementById('mpesaVerificationSection').style.display = 'none';
+  
+  // Reset pay button
+  var payBtn = document.getElementById('payNowBtn');
+  payBtn.onclick = function() {
+    initiatePayment();
+  };
+  payBtn.disabled = false;
+  payBtn.textContent = '💳 Pay with M-PESA';
+  
+  document.getElementById('paymentModal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+  
+  setTimeout(function() { document.getElementById('customerPhone').focus(); }, 300);
 }
+
+function closePaymentModal() {
+  document.getElementById('paymentModal').classList.remove('open');
+  document.body.style.overflow = '';
+  currentProduct = null;
+}
+
+// ── STEP 1: INITIATE PAYMENT ──
+function initiatePayment() {
+  var phoneInput = document.getElementById('customerPhone');
+  var phone = phoneInput.value.trim();
+  
+  // Validate phone number
+  if (!phone) {
+    showToast('⚠️ Please enter your WhatsApp number', 'warning');
+    phoneInput.className = 'error';
+    phoneInput.focus();
+    return;
+  }
+  
+  var cleanPhone = phone.replace(/\s/g, '');
+  var isValid = /^2547\d{8}$/.test(cleanPhone) || /^07\d{8}$/.test(cleanPhone) || /^7\d{8}$/.test(cleanPhone);
+  
+  if (!isValid) {
+    showToast('⚠️ Please enter a valid Kenyan phone number (e.g., 0712345678)', 'warning');
+    phoneInput.className = 'error';
+    phoneInput.focus();
+    return;
+  }
+  
+  var formattedPhone = cleanPhone;
+  if (formattedPhone.startsWith('0')) {
+    formattedPhone = '254' + formattedPhone.substring(1);
+  } else if (formattedPhone.startsWith('7')) {
+    formattedPhone = '254' + formattedPhone;
+  }
+  formattedPhone = formattedPhone.replace(/\s/g, '');
+  
+  // Store phone number for later
+  sessionStorage.setItem('kv_customer_phone', formattedPhone);
+  
+  // Show verification section
+  document.getElementById('mpesaVerificationSection').style.display = 'block';
+  document.getElementById('mpesaVerificationSection').scrollIntoView({ behavior: 'smooth' });
+  
+  // Update button state
+  var payBtn = document.getElementById('payNowBtn');
+  payBtn.disabled = true;
+  payBtn.textContent = '⏳ Payment initiated...';
+  
+  // Open Megapay in new tab
+  window.open(MEGAPAY_LINK, '_blank');
+  
+  showToast('📤 Payment page opened! Complete payment on your phone, then enter the verification code.', 'info');
+  
+  // Focus on M-PESA code input after a delay
+  setTimeout(function() {
+    document.getElementById('mpesaCode').focus();
+  }, 2000);
+}
+
+// ── STEP 2: CONFIRM PAYMENT WITH MPESA CODE ──
+async function confirmPayment() {
+  var mpesaCodeInput = document.getElementById('mpesaCode');
+  var mpesaCode = mpesaCodeInput.value.trim().toUpperCase();
+  
+  // Validate M-PESA code (must be exactly 4 characters)
+  if (!mpesaCode || mpesaCode.length !== 4) {
+    showToast('⚠️ Please enter exactly 4 characters from your M-PESA code', 'warning');
+    mpesaCodeInput.className = 'error';
+    mpesaCodeInput.focus();
+    return;
+  }
+  
+  // Validate M-PESA code format (alphanumeric)
+  if (!/^[A-Z0-9]{4}$/.test(mpesaCode)) {
+    showToast('⚠️ Please enter the last 4 characters of your M-PESA code (letters and numbers only)', 'warning');
+    mpesaCodeInput.className = 'error';
+    mpesaCodeInput.focus();
+    return;
+  }
+  
+  // Get phone number from session
+  var phone = sessionStorage.getItem('kv_customer_phone') || 'Unknown';
+  
+  // Record order with M-PESA code
+  await recordOrderWithPhone(currentProduct, phone, mpesaCode);
+  
+  // Show success and close modal
+  showToast('✅ Payment confirmed! Your download link will be sent to your WhatsApp.', 'success');
+  
+  closePaymentModal();
+  
+  // Clear session storage
+  sessionStorage.removeItem('kv_customer_phone');
+}
+
+// ── RECORD ORDER WITH PHONE AND MPESA CODE ──
+async function recordOrderWithPhone(product, phone, mpesaCode) {
+  if (!sbClient) {
+    showToast('⚠️ Error connecting to database. Please try again.', 'error');
+    return;
+  }
+  
+  try {
+    var orderData = {
+      ref: 'KV-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+      student_name: 'Customer',
+      phone: phone,
+      resource_title: product.title,
+      amount: product.price,
+      mpesa_code: mpesaCode,
+      status: 'pending_payment',
+      payment_confirmed: false,
+      created_at: new Date().toISOString()
+    };
+    
+    var result = await sbClient.from('orders').insert([orderData]);
+    if (result.error) throw result.error;
+    
+    console.log('✅ Order recorded:', orderData.ref, 'Phone:', phone, 'MPESA Code (last 4):', mpesaCode);
+    
+  } catch(e) {
+    console.error('Order record error:', e);
+    showToast('⚠️ Error recording order. Please contact support.', 'error');
+  }
+}
+
+// ── SETUP EVENT LISTENERS ──
+function setupEventListeners() {
+  // ... existing code ...
+  
+  // ── MPESA CODE ENTER KEY ──
+  document.getElementById('mpesaCode').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      confirmPayment();
+    }
+  });
+  
+  // ── MPESA CODE AUTO UPPERCASE ──
+  document.getElementById('mpesaCode').addEventListener('input', function() {
+    this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+    if (this.value.length === 4) {
+      // Optional: auto-submit when 4 characters are entered
+      // confirmPayment();
+    }
+  });
+  
+  // ── CONFIRM PAYMENT BUTTON ──
+  document.getElementById('confirmPaymentBtn').addEventListener('click', confirmPayment);
+  
+  // ── PHONE NUMBER ENTER KEY ──
+  document.getElementById('customerPhone').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      initiatePayment();
+    }
+  });
 
 // ── OPEN PREVIEW MODAL ──
 function openPreviewModal(productId) {
