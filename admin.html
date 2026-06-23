@@ -287,11 +287,18 @@ table tr:hover td{background:var(--surface);}
 .terms-check label{font-size:0.82rem;color:var(--text-2);cursor:pointer;}
 .btn-accept-terms{
   background:var(--green);color:#fff;border:none;border-radius:10px;padding:11px 26px;
-  font-family:'Sora',sans-serif;font-weight:700;font-size:0.86rem;
-  transition:var(--transition);cursor:pointer;
+  font-family:'Sora',sans-serif;font-weight:700;font-size:0.86rem;cursor:pointer;
+  transition:var(--transition);
+  opacity:0.5;pointer-events:none;
+}
+.btn-accept-terms.enabled{
+  opacity:1;pointer-events:auto;
+}
+.btn-accept-terms.enabled:hover{
+  background:var(--green-light);transform:translateY(-1px);
 }
 .btn-accept-terms:disabled{
-  opacity:0.5;cursor:not-allowed;pointer-events:none;
+  opacity:0.5;pointer-events:none;cursor:not-allowed;
 }
 .btn-accept-terms:not(:disabled){
   opacity:1;pointer-events:auto;
@@ -364,6 +371,7 @@ table tr:hover td{background:var(--surface);}
     </div>
   </div>
 </div>
+
 <!-- ════════════════════════════════════════ -->
 <!-- UNAUTHORIZED OVERLAY -->
 <!-- ════════════════════════════════════════ -->
@@ -846,12 +854,18 @@ function initTerms() {
   const acceptBtn = $('acceptTermsBtn');
   const accepted = localStorage.getItem('kv_terms_accepted') === 'true';
 
+  // If already accepted, hide the overlay and show admin content
   if (accepted) { 
     overlay.style.display = 'none'; 
+    $('adminContent').style.display = 'block';
     return; 
   }
 
-  // Enable/disable button based on checkbox state
+  // Show overlay and ensure admin content is hidden
+  overlay.style.display = 'flex';
+  $('adminContent').style.display = 'none';
+
+  // Function to update button state
   function updateButtonState() {
     if (checkbox.checked) {
       acceptBtn.disabled = false;
@@ -862,21 +876,31 @@ function initTerms() {
     }
   }
 
+  // Checkbox change listener
   checkbox.addEventListener('change', updateButtonState);
   
   // Set initial state
   updateButtonState();
 
+  // Accept button click
   acceptBtn.addEventListener('click', function() {
     if (!checkbox.checked) { 
       showToast('Please accept the terms to continue', 'warning'); 
       return; 
     }
+    // Save acceptance
     localStorage.setItem('kv_terms_accepted', 'true');
     localStorage.setItem('kv_terms_accepted_date', new Date().toISOString());
+    
+    // Fade out overlay
     overlay.classList.add('fade-out');
-    setTimeout(() => { overlay.style.display = 'none'; }, 500);
-    showToast('✅ Terms accepted! Welcome to the Admin Panel.', 'success');
+    setTimeout(() => { 
+      overlay.style.display = 'none'; 
+      $('adminContent').style.display = 'block';
+      showToast('✅ Terms accepted! Welcome to the Admin Panel.', 'success');
+      // Initialize Supabase and load data
+      initSupabase().then(loadDashboardData);
+    }, 500);
   });
 
   // Enter key support on checkbox
@@ -888,10 +912,13 @@ function initTerms() {
     }
   });
 
-  // Click on label also toggles checkbox (default behavior)
+  // Click on label also toggles checkbox
+  document.querySelector('.terms-check label')?.addEventListener('click', function(e) {
+    // Let the default checkbox toggle work
+  });
 }
-  
-/* ════════ SIDEBAR NAVIGATION (FIXED) ════════ */
+
+/* ════════ SIDEBAR NAVIGATION ════════ */
 const TAB_PANEL_MAP = {
   dashboard: 'panelDashboard',
   upload: 'panelUpload',
@@ -914,10 +941,8 @@ function switchTab(tabName) {
   const navBtn = document.querySelector(`.sidebar-item[data-tab="${tabName}"]`);
   if (navBtn) navBtn.classList.add('active');
 
-  // Close mobile sidebar after navigating
   $('adminSidebar')?.classList.remove('open');
 
-  // Lazy refresh data relevant to the tab
   if (tabName === 'orders') renderOrders(currentOrderFilter);
   if (tabName === 'resources') renderResources();
   if (tabName === 'classes') renderClasses();
@@ -972,10 +997,17 @@ function handleLogin(e) {
       sessionStorage.setItem('admin_login_time', Date.now().toString());
       hideLogin();
       $('unauthorizedOverlay').style.display = 'none';
-      $('adminContent').style.display = 'block';
-      initTerms();
-      initSupabase().then(loadDashboardData);
-      showToast('Welcome back, Admin!', 'success');
+      
+      // Check if terms are accepted
+      const termsAccepted = localStorage.getItem('kv_terms_accepted') === 'true';
+      if (termsAccepted) {
+        $('adminContent').style.display = 'block';
+        initSupabase().then(loadDashboardData);
+        showToast('Welcome back, Admin!', 'success');
+      } else {
+        // Show terms overlay - admin content is hidden by default
+        initTerms();
+      }
     } else {
       $('loginErrorMessage').textContent = 'Invalid username or password.';
       errorEl.style.display = 'block';
@@ -993,8 +1025,17 @@ function checkSession() {
 
   if (isLoggedIn && (now - loginTime < 24 * 60 * 60 * 1000)) {
     $('unauthorizedOverlay').style.display = 'none';
-    $('adminContent').style.display = 'block';
-    return true;
+    
+    // Check terms
+    const termsAccepted = localStorage.getItem('kv_terms_accepted') === 'true';
+    if (termsAccepted) {
+      $('adminContent').style.display = 'block';
+      return true;
+    } else {
+      // Show terms
+      initTerms();
+      return true;
+    }
   }
   sessionStorage.removeItem('admin_logged_in');
   sessionStorage.removeItem('admin_login_time');
@@ -1642,8 +1683,14 @@ document.addEventListener('DOMContentLoaded', () => {
   initUploadButton();
 
   if (checkSession()) {
-    initTerms();
-    initSupabase().then(loadDashboardData);
+    // Session exists - check terms
+    const termsAccepted = localStorage.getItem('kv_terms_accepted') === 'true';
+    if (termsAccepted) {
+      $('adminContent').style.display = 'block';
+      initSupabase().then(loadDashboardData);
+    } else {
+      initTerms();
+    }
   } else {
     setTimeout(showLogin, 400);
   }
