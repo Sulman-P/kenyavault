@@ -526,7 +526,6 @@ table tr:hover td{background:var(--surface);}
             <div class="form-group"><label>Subject <span class="req">*</span></label>
               <select id="resSubject">
                 <option value="">Select subject...</option>
-                <!-- Academic Subjects -->
                 <optgroup label="📚 Academic Subjects">
                   <option value="mathematics">Mathematics</option>
                   <option value="english">English</option>
@@ -547,7 +546,6 @@ table tr:hover td{background:var(--surface);}
                   <option value="business">Business Studies</option>
                   <option value="computer-studies">Computer Studies</option>
                 </optgroup>
-                <!-- Self Development Subjects -->
                 <optgroup label="🌱 Self Development">
                   <option value="personal-growth">Personal Growth</option>
                   <option value="financial-literacy">Financial Literacy</option>
@@ -1065,7 +1063,7 @@ async function initSupabase() {
   }
 }
 
-/* ════════ REVENUE CALC (now tutor-aware) ════════ */
+/* ════════ REVENUE CALC ════════ */
 function calculateRevenue(orders) {
   if (!orders || !orders.length) {
     return { total:0, monthly:0, weekly:0, avgOrder:0, kenyavaultRevenue:0, tutorPlatformShare:0, orderCount:0 };
@@ -1081,7 +1079,6 @@ function calculateRevenue(orders) {
   const monthly = completed.filter(o => new Date(o.created_at) >= d30).reduce((s,o)=>s+(o.amount||0),0);
   const weekly = completed.filter(o => new Date(o.created_at) >= d7).reduce((s,o)=>s+(o.amount||0),0);
 
-  // KenyaVault's own resources = full amount kept. Tutor resources = only platform_share kept.
   const kenyavaultRevenue = completed.filter(o => !o.tutor_id).reduce((s,o)=>s+(o.amount||0),0);
   const tutorPlatformShare = completed.filter(o => o.tutor_id).reduce((s,o)=>s+(o.platform_share||0),0);
 
@@ -1210,7 +1207,7 @@ function renderRecentPendingOrders() {
     </div>`).join('');
 }
 
-/* ════════ ORDERS TAB (with filters + verification options) ════════ */
+/* ════════ ORDERS TAB ════════ */
 function renderOrders(filter) {
   currentOrderFilter = filter || 'all';
   const container = $('ordersList');
@@ -1283,7 +1280,7 @@ document.addEventListener('click', e => {
   }
 });
 
-/* ════════ VERIFY PAYMENT (confirm / reject options) ════════ */
+/* ════════ VERIFY PAYMENT ════════ */
 async function verifyPayment(orderId, approved) {
   const msg = approved
     ? 'Confirm this payment? The customer will receive their download link via WhatsApp.'
@@ -1337,7 +1334,7 @@ function viewOrderDetails(orderId) {
   alert(`📋 Order Details\n─────────────────\nReference: ${order.ref||'N/A'}\nPhone: ${order.phone||'N/A'}\nResource: ${order.resource_title||'N/A'}\nAmount: KES ${order.amount||0}\nStatus: ${order.status||'pending'}\n${order.tutor_id ? 'Tutor Share: KES '+Math.round(order.tutor_share||0)+'\nPlatform Share: KES '+Math.round(order.platform_share||0) : 'KenyaVault Resource (no tutor share)'}\nDate: ${order.created_at ? new Date(order.created_at).toLocaleString() : 'N/A'}\n${order.mpesa_code ? 'M-PESA Code: '+order.mpesa_code : ''}`);
 }
 
-/* ════════ RENDER RESOURCES (now filterable by KenyaVault vs Tutor) ════════ */
+/* ════════ RENDER RESOURCES ════════ */
 function renderResources(filter) {
   currentResourceFilter = filter || 'all';
   const container = $('resourcesList');
@@ -1451,14 +1448,14 @@ function renderTutors() {
     return `
     <div class="tutor-card">
       <div class="tutor-card-left">
-        <div class="tutor-avatar">${t.avatar_initials || getInitials(t.full_name)}</div>
+        <div class="tutor-avatar">${getInitials(t.name)}</div>
         <div>
-          <div class="tutor-info-name">${t.full_name}</div>
+          <div class="tutor-info-name">${t.name}</div>
           <div class="tutor-info-meta">
-            <span>📱 ${t.mpesa_number || t.phone || 'N/A'}</span>
+            <span>📱 ${t.phone || 'N/A'}</span>
             <span>📚 ${resourceCount} resource${resourceCount !== 1 ? 's' : ''}</span>
             <span>💳 ${salesCount} sale${salesCount !== 1 ? 's' : ''}</span>
-            ${t.subjects_taught ? `<span>🎓 ${t.subjects_taught}</span>` : ''}
+            ${t.subjects ? `<span>🎓 ${Array.isArray(t.subjects) ? t.subjects.join(', ') : t.subjects}</span>` : ''}
             <span class="status-badge ${t.status || 'pending'}">
               <span class="dot"></span> ${t.status || 'pending'}
             </span>
@@ -1482,7 +1479,7 @@ function renderTutors() {
   }).join('');
 }
 
-/* ════════ TUTOR APPROVAL FUNCTIONS ════════ */
+/* ════════ TUTOR ACTIONS ════════ */
 async function approveTutor(tutorId) {
   if (!confirm('Approve this tutor?')) return;
   try {
@@ -1517,13 +1514,13 @@ async function markTutorPaid(tutorId, pendingAmount) {
   const tutor = allTutors.find(t => t.id === tutorId);
   if (!tutor) { showToast('Tutor not found', 'error'); return; }
 
-  if (!confirm(`Confirm you have sent KES ${Math.round(pendingAmount).toLocaleString()} to ${tutor.full_name} via M-PESA (${tutor.mpesa_number || tutor.phone})?\n\nThis will mark their pending balance as paid.`)) return;
+  if (!confirm(`Confirm you have sent KES ${Math.round(pendingAmount).toLocaleString()} to ${tutor.name} via M-PESA (${tutor.phone})?\n\nThis will mark their pending balance as paid.`)) return;
 
   try {
     const newTotalPaid = (tutor.total_paid_out || 0) + pendingAmount;
     const { error } = await sbClient.from('tutors').update({ total_paid_out: newTotalPaid }).eq('id', tutorId);
     if (error) throw error;
-    showToast(`Marked KES ${Math.round(pendingAmount).toLocaleString()} as paid to ${tutor.full_name}`, 'success');
+    showToast(`Marked KES ${Math.round(pendingAmount).toLocaleString()} as paid to ${tutor.name}`, 'success');
     loadDashboardData();
   } catch(e) {
     showToast('Error: ' + e.message, 'error');
@@ -1536,10 +1533,10 @@ function viewTutorDetails(tutorId) {
   const { totalEarned, salesCount } = getTutorEarnings(t.id);
   const paid = t.total_paid_out || 0;
   const pending = Math.max(0, totalEarned - paid);
-  alert(`👩‍🏫 Tutor Details\n─────────────────\nName: ${t.full_name}\nPhone: ${t.phone}\nM-PESA (payouts): ${t.mpesa_number || t.phone}\nStatus: ${t.status || 'pending'}\nSubjects: ${t.subjects_taught || 'N/A'}\nBio: ${t.bio || 'N/A'}\nJoined: ${t.created_at ? new Date(t.created_at).toLocaleDateString() : 'N/A'}\n\n💰 Total Sales: ${salesCount}\n💰 Total Earned (70%): KES ${Math.round(totalEarned).toLocaleString()}\n💰 Already Paid: KES ${Math.round(paid).toLocaleString()}\n💰 Pending: KES ${Math.round(pending).toLocaleString()}`);
+  alert(`👩‍🏫 Tutor Details\n─────────────────\nName: ${t.name}\nPhone: ${t.phone}\nStatus: ${t.status || 'pending'}\nSubjects: ${Array.isArray(t.subjects) ? t.subjects.join(', ') : t.subjects || 'N/A'}\nLevels: ${Array.isArray(t.levels) ? t.levels.join(', ') : t.levels || 'N/A'}\nBio: ${t.bio || 'N/A'}\nJoined: ${t.created_at ? new Date(t.created_at).toLocaleDateString() : 'N/A'}\n\n💰 Total Sales: ${salesCount}\n💰 Total Earned (70%): KES ${Math.round(totalEarned).toLocaleString()}\n💰 Already Paid: KES ${Math.round(paid).toLocaleString()}\n💰 Pending: KES ${Math.round(pending).toLocaleString()}`);
 }
 
-/* ════════ EXPOSE FUNCTIONS TO GLOBAL ════════ */
+/* ════════ EXPOSE FUNCTIONS ════════ */
 window.approveTutor = approveTutor;
 window.rejectTutor = rejectTutor;
 window.deleteTutor = deleteTutor;
@@ -1680,7 +1677,7 @@ function generateTemplateCover(template) {
   });
 }
 
-/* ════════ UPLOAD BUTTON (admin uploads = no tutor_id, KenyaVault owns 100%) ════════ */
+/* ════════ UPLOAD BUTTON ════════ */
 function initUploadButton() {
   $('uploadBtn')?.addEventListener('click', async function() {
     const title = $('resTitle').value.trim();
