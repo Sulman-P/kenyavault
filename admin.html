@@ -1459,6 +1459,9 @@ function renderTutors() {
             <span>📚 ${resourceCount} resource${resourceCount !== 1 ? 's' : ''}</span>
             <span>💳 ${salesCount} sale${salesCount !== 1 ? 's' : ''}</span>
             ${t.subjects_taught ? `<span>🎓 ${t.subjects_taught}</span>` : ''}
+            <span class="status-badge ${t.status || 'pending'}">
+              <span class="dot"></span> ${t.status || 'pending'}
+            </span>
           </div>
         </div>
       </div>
@@ -1467,18 +1470,54 @@ function renderTutors() {
         <div class="pending">Pending: KES ${Math.round(pending).toLocaleString()}</div>
       </div>
       <div class="tutor-actions">
-        ${pending > 0 ? `<button class="btn-sm btn-sm-success" onclick="markTutorPaid('${t.id}', ${pending})">✅ Mark Paid</button>` : `<span style="font-size:0.75rem;color:var(--muted);">All settled</span>`}
+        ${t.status === 'pending' ? `
+          <button class="btn-sm btn-sm-success" onclick="approveTutor('${t.id}')">✅ Approve</button>
+          <button class="btn-sm btn-sm-danger" onclick="rejectTutor('${t.id}')">❌ Reject</button>
+        ` : ''}
+        ${pending > 0 ? `<button class="btn-sm btn-sm-success" onclick="markTutorPaid('${t.id}', ${pending})">💰 Mark Paid</button>` : `<span style="font-size:0.75rem;color:var(--muted);">All settled</span>`}
         <button class="btn-sm btn-sm-info" onclick="viewTutorDetails('${t.id}')">🔍 Details</button>
+        <button class="btn-sm btn-sm-danger" onclick="deleteTutor('${t.id}')">🗑️ Delete</button>
       </div>
     </div>`;
   }).join('');
+}
+
+/* ════════ TUTOR APPROVAL FUNCTIONS ════════ */
+async function approveTutor(tutorId) {
+  if (!confirm('Approve this tutor?')) return;
+  try {
+    const { error } = await sbClient.from('tutors').update({ status: 'approved' }).eq('id', tutorId);
+    if (error) throw error;
+    showToast('Tutor approved successfully!', 'success');
+    loadDashboardData();
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+async function rejectTutor(tutorId) {
+  if (!confirm('Reject this tutor?')) return;
+  try {
+    const { error } = await sbClient.from('tutors').update({ status: 'rejected' }).eq('id', tutorId);
+    if (error) throw error;
+    showToast('Tutor rejected.', 'info');
+    loadDashboardData();
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+async function deleteTutor(tutorId) {
+  if (!confirm('Delete this tutor permanently?')) return;
+  try {
+    const { error } = await sbClient.from('tutors').delete().eq('id', tutorId);
+    if (error) throw error;
+    showToast('Tutor deleted', 'info');
+    loadDashboardData();
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
 }
 
 async function markTutorPaid(tutorId, pendingAmount) {
   const tutor = allTutors.find(t => t.id === tutorId);
   if (!tutor) { showToast('Tutor not found', 'error'); return; }
 
-  if (!confirm(`Confirm you have sent KES ${Math.round(pendingAmount).toLocaleString()} to ${tutor.full_name} via M-PESA (${tutor.mpesa_number})?\n\nThis will mark their pending balance as paid.`)) return;
+  if (!confirm(`Confirm you have sent KES ${Math.round(pendingAmount).toLocaleString()} to ${tutor.full_name} via M-PESA (${tutor.mpesa_number || tutor.phone})?\n\nThis will mark their pending balance as paid.`)) return;
 
   try {
     const newTotalPaid = (tutor.total_paid_out || 0) + pendingAmount;
@@ -1497,8 +1536,13 @@ function viewTutorDetails(tutorId) {
   const { totalEarned, salesCount } = getTutorEarnings(t.id);
   const paid = t.total_paid_out || 0;
   const pending = Math.max(0, totalEarned - paid);
-  alert(`👩‍🏫 Tutor Details\n─────────────────\nName: ${t.full_name}\nEmail: ${t.email}\nPhone: ${t.phone}\nM-PESA (payouts): ${t.mpesa_number}\nTSC Number: ${t.tsc_number || 'Not provided'}\nSubjects: ${t.subjects_taught || 'N/A'}\nBio: ${t.bio || 'N/A'}\nJoined: ${t.created_at ? new Date(t.created_at).toLocaleDateString() : 'N/A'}\n\n💰 Total Sales: ${salesCount}\n💰 Total Earned (70%): KES ${Math.round(totalEarned).toLocaleString()}\n💰 Already Paid: KES ${Math.round(paid).toLocaleString()}\n💰 Pending: KES ${Math.round(pending).toLocaleString()}`);
+  alert(`👩‍🏫 Tutor Details\n─────────────────\nName: ${t.full_name}\nPhone: ${t.phone}\nM-PESA (payouts): ${t.mpesa_number || t.phone}\nStatus: ${t.status || 'pending'}\nSubjects: ${t.subjects_taught || 'N/A'}\nBio: ${t.bio || 'N/A'}\nJoined: ${t.created_at ? new Date(t.created_at).toLocaleDateString() : 'N/A'}\n\n💰 Total Sales: ${salesCount}\n💰 Total Earned (70%): KES ${Math.round(totalEarned).toLocaleString()}\n💰 Already Paid: KES ${Math.round(paid).toLocaleString()}\n💰 Pending: KES ${Math.round(pending).toLocaleString()}`);
 }
+
+/* ════════ EXPOSE FUNCTIONS TO GLOBAL ════════ */
+window.approveTutor = approveTutor;
+window.rejectTutor = rejectTutor;
+window.deleteTutor = deleteTutor;
 window.markTutorPaid = markTutorPaid;
 window.viewTutorDetails = viewTutorDetails;
 window.togglePublish = togglePublish;
