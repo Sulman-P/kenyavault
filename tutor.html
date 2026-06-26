@@ -49,11 +49,13 @@
             box-shadow: var(--shadow-md);
             padding: 40px 32px;
             border: 1px solid var(--border);
+            max-height: 95vh;
+            overflow-y: auto;
         }
 
         .tutor-header {
             text-align: center;
-            margin-bottom: 32px;
+            margin-bottom: 28px;
         }
         .tutor-header .logo {
             font-family: 'Sora', sans-serif;
@@ -61,30 +63,30 @@
             font-size: 1.6rem;
             color: var(--dark);
             display: inline-block;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
         }
         .tutor-header .logo span { color: var(--gold-light); }
         .tutor-header h1 {
             font-family: 'Sora', sans-serif;
             font-weight: 700;
-            font-size: 1.5rem;
+            font-size: 1.4rem;
             color: var(--dark);
-            margin-bottom: 6px;
+            margin-bottom: 4px;
         }
         .tutor-header p {
             color: var(--muted);
-            font-size: 0.9rem;
+            font-size: 0.88rem;
         }
 
         .form-group {
-            margin-bottom: 18px;
+            margin-bottom: 16px;
         }
         .form-group label {
             display: block;
             font-weight: 600;
             font-size: 0.85rem;
             color: var(--text);
-            margin-bottom: 5px;
+            margin-bottom: 4px;
         }
         .form-group label .required {
             color: #DC2626;
@@ -93,7 +95,7 @@
         .form-group select,
         .form-group textarea {
             width: 100%;
-            padding: 12px 14px;
+            padding: 11px 14px;
             border: 1.5px solid var(--border);
             border-radius: 10px;
             font-family: 'Inter', sans-serif;
@@ -118,12 +120,12 @@
         }
         .form-group textarea {
             resize: vertical;
-            min-height: 80px;
+            min-height: 70px;
         }
         .form-hint {
-            font-size: 0.78rem;
+            font-size: 0.75rem;
             color: var(--muted);
-            margin-top: 4px;
+            margin-top: 3px;
         }
         .form-hint.error-text {
             color: #DC2626;
@@ -146,23 +148,24 @@
             font-weight: 700;
             font-size: 1rem;
             transition: var(--transition);
-            margin-top: 8px;
+            margin-top: 6px;
+            position: relative;
         }
-        .btn-submit:hover {
+        .btn-submit:hover:not(:disabled) {
             background: var(--green-light);
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(0,165,80,0.25);
         }
         .btn-submit:disabled {
-            opacity: 0.6;
+            opacity: 0.7;
             cursor: not-allowed;
             transform: none;
         }
 
         .alert {
-            padding: 14px 16px;
+            padding: 12px 16px;
             border-radius: 10px;
-            margin-bottom: 20px;
+            margin-bottom: 16px;
             font-size: 0.88rem;
             display: none;
         }
@@ -186,7 +189,7 @@
         .back-link {
             display: block;
             text-align: center;
-            margin-top: 20px;
+            margin-top: 18px;
             color: var(--muted);
             font-size: 0.85rem;
             transition: var(--transition);
@@ -198,7 +201,7 @@
         .subjects-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 8px;
+            gap: 6px;
         }
         .subject-checkbox {
             display: flex;
@@ -223,15 +226,19 @@
             flex-shrink: 0;
         }
         .subject-checkbox label {
-            font-size: 0.82rem;
+            font-size: 0.8rem;
             font-weight: 500;
             cursor: pointer;
             margin: 0;
             flex: 1;
         }
+        .subject-checkbox.checked {
+            border-color: var(--green);
+            background: var(--green-pale);
+        }
 
         @media (max-width: 480px) {
-            .tutor-container { padding: 24px 18px; }
+            .tutor-container { padding: 20px 16px; }
             .form-row { grid-template-columns: 1fr; }
             .subjects-grid { grid-template-columns: 1fr; }
         }
@@ -410,6 +417,9 @@
                 if (!window.supabase) await loadSupabaseLibrary();
                 sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
                 setupForm();
+                
+                // Show info alert initially
+                document.getElementById('infoAlert').classList.add('show');
             } catch (e) {
                 console.error('Init error:', e);
                 showError('Could not connect to the server. Please try again later.');
@@ -429,9 +439,16 @@
 
         function setupForm() {
             const form = document.getElementById('tutorForm');
-            form.addEventListener('submit', handleSubmit);
+            
+            // Remove any default validation
+            form.setAttribute('novalidate', 'novalidate');
+            
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+                handleSubmit(e);
+            });
 
-            // Real-time validation
+            // Real-time validation and checkbox styling
             document.querySelectorAll('input, select, textarea').forEach(el => {
                 el.addEventListener('blur', function() {
                     validateField(this);
@@ -440,6 +457,13 @@
                     if (this.classList.contains('error')) {
                         validateField(this);
                     }
+                });
+            });
+
+            // Checkbox styling
+            document.querySelectorAll('.subject-checkbox input[type="checkbox"]').forEach(cb => {
+                cb.addEventListener('change', function() {
+                    this.closest('.subject-checkbox').classList.toggle('checked', this.checked);
                 });
             });
         }
@@ -467,9 +491,8 @@
             }
 
             if (field.id === 'phone' && field.value.trim()) {
-                const phoneRegex = /^(07|7|2547)\d{8}$/;
                 const clean = field.value.replace(/\s/g, '');
-                if (!phoneRegex.test(clean) && !/^07\d{8}$/.test(clean) && !/^7\d{8}$/.test(clean)) {
+                if (!/^(07|7|2547)\d{8}$/.test(clean) && !/^07\d{8}$/.test(clean) && !/^7\d{8}$/.test(clean)) {
                     field.classList.add('error');
                     errorEl.textContent = 'Please enter a valid Kenyan phone number (e.g., 0712345678)';
                     return false;
@@ -489,8 +512,10 @@
 
         function validateForm() {
             let isValid = true;
-            const fields = ['firstName', 'lastName', 'email', 'phone', 'password', 'experience'];
-            fields.forEach(id => {
+            
+            // Validate required fields
+            const requiredFields = ['firstName', 'lastName', 'email', 'phone', 'password', 'experience'];
+            requiredFields.forEach(id => {
                 const field = document.getElementById(id);
                 if (!validateField(field)) {
                     isValid = false;
@@ -526,9 +551,8 @@
 
         function showSuccess(msg) {
             hideAllAlerts();
-            const alert = document.getElementById('successAlert');
-            alert.querySelector('span').textContent = msg;
-            alert.classList.add('show');
+            document.getElementById('successAlert').querySelector('span').textContent = msg;
+            document.getElementById('successAlert').classList.add('show');
         }
 
         function showError(msg) {
@@ -539,13 +563,13 @@
 
         function showInfo(msg) {
             hideAllAlerts();
-            const alert = document.getElementById('infoAlert');
-            alert.querySelector('span').textContent = msg;
-            alert.classList.add('show');
+            document.getElementById('infoAlert').querySelector('span').textContent = msg;
+            document.getElementById('infoAlert').classList.add('show');
         }
 
         async function handleSubmit(e) {
             e.preventDefault();
+            
             if (isSubmitting) return;
 
             hideAllAlerts();
@@ -553,7 +577,10 @@
             if (!validateForm()) {
                 // Focus first error
                 const firstError = document.querySelector('.error');
-                if (firstError) firstError.focus();
+                if (firstError) {
+                    firstError.focus();
+                    firstError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
                 return;
             }
 
@@ -579,35 +606,30 @@
                     created_at: new Date().toISOString()
                 };
 
-                // Check if we should add an 'approved' column or handle it gracefully
-                // First, try to insert without 'approved' column
-                const insertData = { ...formData };
-                // Remove approved field if it doesn't exist - we'll handle this
-                // by checking the table structure first
-
-                // Try to get table info
+                // Check if approved column exists
+                let hasApprovedColumn = false;
                 try {
-                    // Check if approved column exists by trying to select it
                     const testResult = await sbClient.from('tutors').select('approved').limit(1);
                     if (!testResult.error) {
-                        // Column exists
-                        insertData.approved = false;
+                        hasApprovedColumn = true;
                     }
                 } catch (e) {
-                    // Column doesn't exist, skip it
-                    console.log('No approved column, skipping');
+                    console.log('No approved column detected');
                 }
 
-                // Ensure we don't send password as plain text to Supabase (we should hash it, but for now we'll store it)
-                // In production, you should hash passwords before storing
+                // Prepare data for insertion
+                let insertData = { ...formData };
+                if (hasApprovedColumn) {
+                    insertData.approved = false;
+                }
+
                 const result = await sbClient.from('tutors').insert([insertData]).select();
 
                 if (result.error) {
                     console.error('Supabase error:', result.error);
                     
-                    // Check if error is about the 'approved' column
-                    if (result.error.message && result.error.message.includes('approved')) {
-                        // Try again without the approved column
+                    // If error is about approved column, retry without it
+                    if (result.error.message && result.error.message.toLowerCase().includes('approved')) {
                         const { approved, ...dataWithoutApproved } = insertData;
                         const retryResult = await sbClient.from('tutors').insert([dataWithoutApproved]).select();
                         if (retryResult.error) {
@@ -615,6 +637,9 @@
                         }
                         showSuccess('Account created successfully! Our team will review your application within 48 hours.');
                         document.getElementById('tutorForm').reset();
+                        btn.disabled = false;
+                        btn.textContent = '🚀 Create Tutor Account';
+                        isSubmitting = false;
                         return;
                     }
                     throw result.error;
@@ -626,37 +651,8 @@
             } catch (err) {
                 console.error('Account creation error:', err);
                 
-                // Handle specific error cases
-                if (err.message && err.message.includes('duplicate key')) {
-                    showError('An account with this email or phone already exists. Please login or use different credentials.');
-                } else if (err.message && err.message.includes('approved')) {
-                    // If we still get the approved error, try without it
-                    try {
-                        const formData = {
-                            first_name: document.getElementById('firstName').value.trim(),
-                            last_name: document.getElementById('lastName').value.trim(),
-                            email: document.getElementById('email').value.trim(),
-                            phone: document.getElementById('phone').value.trim().replace(/\s/g, ''),
-                            password: document.getElementById('password').value,
-                            experience: document.getElementById('experience').value,
-                            bio: document.getElementById('bio').value.trim() || null,
-                            subjects: Array.from(document.querySelectorAll('#subjectsGrid input[type="checkbox"]:checked'))
-                                .map(cb => cb.value),
-                            levels: Array.from(document.querySelectorAll('#levelsGrid input[type="checkbox"]:checked'))
-                                .map(cb => cb.value),
-                            status: 'pending',
-                            created_at: new Date().toISOString()
-                        };
-                        const retryResult = await sbClient.from('tutors').insert([formData]).select();
-                        if (!retryResult.error) {
-                            showSuccess('Account created successfully! Our team will review your application within 48 hours.');
-                            document.getElementById('tutorForm').reset();
-                            return;
-                        }
-                        showError('Could not create account: ' + (retryResult.error.message || 'Unknown error'));
-                    } catch (retryErr) {
-                        showError('Could not create account: ' + (retryErr.message || 'Unknown error'));
-                    }
+                if (err.message && err.message.toLowerCase().includes('duplicate')) {
+                    showError('An account with this email or phone already exists. Please use different credentials.');
                 } else {
                     showError('Could not create account: ' + (err.message || 'Please try again later.'));
                 }
@@ -667,6 +663,7 @@
             }
         }
 
+        // Initialize on page load
         document.addEventListener('DOMContentLoaded', init);
     </script>
 </body>
