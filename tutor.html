@@ -358,7 +358,7 @@
             font-size: 0.72rem;
             margin-top: 12px;
             display: none;
-            max-height: 200px;
+            max-height: 300px;
             overflow-y: auto;
             white-space: pre-wrap;
             word-break: break-all;
@@ -600,6 +600,7 @@
         let isSubmitting = false;
         let tableColumns = [];
         let currentTab = 'signup';
+        let allTutors = [];
 
         async function init() {
             try {
@@ -607,6 +608,7 @@
                 sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
                 
                 await getTableSchema();
+                await loadAllTutors();
                 setupAuthTabs();
                 setupSignupForm();
                 setupLoginForm();
@@ -636,12 +638,24 @@
                     tableColumns = Object.keys(result.data[0]);
                     console.log('Table columns:', tableColumns);
                 } else {
-                    tableColumns = ['name', 'first_name', 'last_name', 'phone', 'password', 'experience', 'subjects', 'levels', 'bio', 'status', 'created_at', 'approved', 'total_paid_out'];
+                    tableColumns = ['name', 'first_name', 'last_name', 'phone', 'passkey', 'password', 'experience', 'subjects', 'levels', 'bio', 'status', 'created_at', 'approved', 'total_paid_out'];
                     console.log('Using fallback columns:', tableColumns);
                 }
             } catch (e) {
                 console.error('Error getting schema:', e);
-                tableColumns = ['name', 'first_name', 'last_name', 'phone', 'password', 'experience', 'subjects', 'levels', 'bio', 'status', 'created_at', 'approved', 'total_paid_out'];
+                tableColumns = ['name', 'first_name', 'last_name', 'phone', 'passkey', 'password', 'experience', 'subjects', 'levels', 'bio', 'status', 'created_at', 'approved', 'total_paid_out'];
+            }
+        }
+
+        async function loadAllTutors() {
+            try {
+                const result = await sbClient.from('tutors').select('*');
+                if (!result.error) {
+                    allTutors = result.data || [];
+                    console.log('Loaded tutors:', allTutors.length);
+                }
+            } catch (e) {
+                console.error('Error loading tutors:', e);
             }
         }
 
@@ -719,7 +733,6 @@
                 });
             });
 
-            // Forgot password button
             document.getElementById('forgotPasswordBtn').addEventListener('click', function() {
                 document.getElementById('resetPasswordSection').classList.toggle('active');
                 if (document.getElementById('resetPasswordSection').classList.contains('active')) {
@@ -729,7 +742,6 @@
                 }
             });
 
-            // Cancel reset button
             document.getElementById('cancelResetBtn').addEventListener('click', function() {
                 document.getElementById('resetPasswordSection').classList.remove('active');
                 document.getElementById('forgotPasswordBtn').textContent = 'Forgot Password?';
@@ -949,6 +961,37 @@
             debugEl.style.display = 'block';
         }
 
+        function findPasswordColumn(tutor) {
+            // Try different possible column names for password
+            const possibleNames = ['password', 'passkey', 'pass', 'password_hash', 'pwd', 'pass_word'];
+            for (const name of possibleNames) {
+                if (tutor[name] !== undefined && tutor[name] !== null) {
+                    return name;
+                }
+            }
+            return null;
+        }
+
+        function findStatusColumn(tutor) {
+            const possibleNames = ['status', 'state', 'is_approved', 'approved', 'verification_status'];
+            for (const name of possibleNames) {
+                if (tutor[name] !== undefined && tutor[name] !== null) {
+                    return name;
+                }
+            }
+            return null;
+        }
+
+        function findNameColumn(tutor) {
+            const possibleNames = ['name', 'full_name', 'fullname', 'display_name'];
+            for (const name of possibleNames) {
+                if (tutor[name] !== undefined && tutor[name] !== null) {
+                    return name;
+                }
+            }
+            return null;
+        }
+
         function buildInsertData(formData) {
             const data = {};
             
@@ -958,6 +1001,7 @@
                 'last_name': formData.last_name,
                 'phone': formData.phone,
                 'password': formData.password,
+                'passkey': formData.password,
                 'experience': formData.experience,
                 'subjects': formData.subjects,
                 'levels': formData.levels,
@@ -1003,7 +1047,6 @@
                 const phone = document.getElementById('signupPhone').value.trim().replace(/\s/g, '');
                 const password = document.getElementById('signupPassword').value;
                 
-                // Format phone to start with 254
                 let formattedPhone = phone;
                 if (formattedPhone.startsWith('0')) {
                     formattedPhone = '254' + formattedPhone.substring(1);
@@ -1060,6 +1103,7 @@
 
                 showSuccess('Account Created!', 'Your application has been submitted for review. You\'ll be notified when approved.');
                 document.getElementById('tutorForm').reset();
+                await loadAllTutors();
 
             } catch (err) {
                 console.error('Account creation error:', err);
@@ -1109,7 +1153,6 @@
                 const phone = document.getElementById('loginPhone').value.trim().replace(/\s/g, '');
                 const password = document.getElementById('loginPassword').value;
                 
-                // Format phone to match stored format
                 let formattedPhone = phone;
                 if (formattedPhone.startsWith('0')) {
                     formattedPhone = '254' + formattedPhone.substring(1);
@@ -1117,60 +1160,77 @@
                     formattedPhone = '254' + formattedPhone;
                 }
 
-                const originalPhone = phone;
-
                 console.log('Looking for phone:', formattedPhone);
-                showDebug(`🔍 Searching for phone: ${formattedPhone}\n(Original: ${originalPhone})`);
+                showDebug(`🔍 Searching for phone: ${formattedPhone}\n(Original: ${phone})`);
 
-                // Query for the tutor using phone number
+                // Try to find the tutor
+                let tutor = null;
+                
+                // First try direct query
                 const result = await sbClient
                     .from('tutors')
                     .select('*')
                     .eq('phone', formattedPhone)
                     .single();
 
-                if (result.error) {
-                    console.error('Query error:', result.error);
-                    showDebug(`❌ Query error: ${result.error.message}\nCode: ${result.error.code}`);
-                    if (result.error.code === 'PGRST116') {
-                        showError('No account found with this phone number. Please sign up first.');
-                    } else {
-                        throw result.error;
+                if (result.error && result.error.code !== 'PGRST116') {
+                    throw result.error;
+                }
+
+                if (result.data) {
+                    tutor = result.data;
+                } else {
+                    // Try searching in all tutors (in case of data mismatch)
+                    const allResult = await sbClient.from('tutors').select('*');
+                    if (!allResult.error) {
+                        tutor = allResult.data.find(t => {
+                            const tPhone = String(t.phone || '').replace(/\s/g, '');
+                            return tPhone === formattedPhone || tPhone === phone;
+                        });
                     }
+                }
+
+                if (!tutor) {
+                    showError('No account found with this phone number. Please sign up first.');
                     return;
                 }
 
-                const tutor = result.data;
                 console.log('Found tutor:', tutor);
                 
-                // Show debug info
-                showDebug(`✅ Found tutor: ${tutor.name}\n📱 Phone: ${tutor.phone}\n🔑 Password (stored): ${tutor.password}\n🔑 Password (entered): ${password}\n📊 Status: ${tutor.status}\n🔍 Password match: ${tutor.password === password ? '✅ YES' : '❌ NO'}`);
-
-                // Check password - try both exact match and trim
-                const storedPassword = (tutor.password || '').trim();
-                const enteredPassword = password.trim();
+                // Find the password column dynamically
+                const passwordColumn = findPasswordColumn(tutor);
+                const statusColumn = findStatusColumn(tutor);
+                const nameColumn = findNameColumn(tutor);
                 
+                const storedPassword = passwordColumn ? String(tutor[passwordColumn] || '').trim() : '';
+                const enteredPassword = password.trim();
+                const tutorName = nameColumn ? tutor[nameColumn] : tutor.first_name + ' ' + tutor.last_name;
+                const tutorStatus = statusColumn ? String(tutor[statusColumn] || 'pending').toLowerCase() : 'pending';
+
+                // Show debug info
+                showDebug(`✅ Found tutor: ${tutorName}\n📱 Phone: ${tutor.phone}\n🔑 Password Column: ${passwordColumn || 'NOT FOUND'}\n🔑 Stored Password: ${storedPassword || '(empty)'}\n🔑 Entered Password: ${enteredPassword}\n📊 Status Column: ${statusColumn || 'NOT FOUND'}\n📊 Status: ${tutorStatus}\n🔍 Password match: ${storedPassword === enteredPassword ? '✅ YES' : '❌ NO'}\n\n📋 All columns: ${Object.keys(tutor).join(', ')}`);
+
+                // Check password
                 if (storedPassword !== enteredPassword) {
-                    showError('Incorrect password. Please try again.');
+                    showError('Incorrect password. Please try again or use "Forgot Password?".');
                     return;
                 }
 
-                // Check if account is approved
-                if (tutor.status === 'pending') {
+                // Check status
+                if (tutorStatus === 'pending') {
                     showWarning('Your account is pending admin approval. You will be notified when approved.');
                     sessionStorage.setItem('tutor_session', JSON.stringify(tutor));
                     return;
                 }
 
-                if (tutor.status === 'rejected') {
+                if (tutorStatus === 'rejected' || tutorStatus === 'denied') {
                     showError('Your application was rejected. Please contact support for more information.');
                     return;
                 }
 
-                if (tutor.status === 'approved') {
-                    // Successful login
+                if (tutorStatus === 'approved' || tutorStatus === 'active' || tutorStatus === 'verified') {
                     sessionStorage.setItem('tutor_session', JSON.stringify(tutor));
-                    showSuccess('Welcome Back!', `You are now signed in as ${tutor.name}.`);
+                    showSuccess('Welcome Back!', `You are now signed in as ${tutorName}.`);
                     
                     setTimeout(() => {
                         window.location.href = 'index.html';
@@ -1181,7 +1241,7 @@
 
             } catch (err) {
                 console.error('Login error:', err);
-                showDebug(`❌ Login error: ${err.message}`);
+                showDebug(`❌ Login error: ${err.message}\n${err.stack || ''}`);
                 showError('Could not sign in: ' + (err.message || 'Please try again later.'));
             } finally {
                 isSubmitting = false;
@@ -1213,7 +1273,6 @@
                 const phone = document.getElementById('resetPhone').value.trim().replace(/\s/g, '');
                 const newPassword = document.getElementById('resetPassword').value;
                 
-                // Format phone to match stored format
                 let formattedPhone = phone;
                 if (formattedPhone.startsWith('0')) {
                     formattedPhone = '254' + formattedPhone.substring(1);
@@ -1221,7 +1280,7 @@
                     formattedPhone = '254' + formattedPhone;
                 }
 
-                // Check if tutor exists
+                // Find the tutor
                 const result = await sbClient
                     .from('tutors')
                     .select('*')
@@ -1237,10 +1296,21 @@
                     return;
                 }
 
-                // Update password
+                const tutor = result.data;
+                const passwordColumn = findPasswordColumn(tutor);
+                
+                if (!passwordColumn) {
+                    showError('Could not determine password column. Please contact support.');
+                    return;
+                }
+
+                // Update password using the correct column name
+                const updateData = {};
+                updateData[passwordColumn] = newPassword;
+                
                 const updateResult = await sbClient
                     .from('tutors')
-                    .update({ password: newPassword })
+                    .update(updateData)
                     .eq('phone', formattedPhone);
 
                 if (updateResult.error) {
@@ -1249,12 +1319,10 @@
 
                 showSuccess('Password Reset!', 'Your password has been successfully reset. You can now sign in with your new password.');
                 
-                // Clear reset form
                 document.getElementById('resetPhone').value = '';
                 document.getElementById('resetPassword').value = '';
                 document.getElementById('resetConfirmPassword').value = '';
                 
-                // Close reset section
                 document.getElementById('resetPasswordSection').classList.remove('active');
                 document.getElementById('forgotPasswordBtn').textContent = 'Forgot Password?';
 
@@ -1273,10 +1341,15 @@
                 const session = sessionStorage.getItem('tutor_session');
                 if (session) {
                     const tutor = JSON.parse(session);
-                    if (tutor.status === 'pending') {
+                    const statusColumn = findStatusColumn(tutor);
+                    const tutorStatus = statusColumn ? String(tutor[statusColumn] || 'pending').toLowerCase() : 'pending';
+                    
+                    if (tutorStatus === 'pending') {
                         showWarning('Your account is pending admin approval. You will be notified when approved.');
-                    } else if (tutor.status === 'approved') {
-                        showSuccess('Welcome Back!', `You are signed in as ${tutor.name}.`);
+                    } else if (tutorStatus === 'approved' || tutorStatus === 'active') {
+                        const nameColumn = findNameColumn(tutor);
+                        const tutorName = nameColumn ? tutor[nameColumn] : tutor.first_name + ' ' + tutor.last_name;
+                        showSuccess('Welcome Back!', `You are signed in as ${tutorName}.`);
                     }
                 }
             } catch (e) {
