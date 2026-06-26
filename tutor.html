@@ -452,13 +452,13 @@
                 } else {
                     // If no data, try to get column info from a dummy insert attempt
                     // We'll just use common column names as fallback
-                    tableColumns = ['first_name', 'last_name', 'phone', 'password', 'experience', 'subjects', 'levels', 'bio', 'status', 'created_at'];
+                    tableColumns = ['name', 'first_name', 'last_name', 'email', 'phone', 'password', 'experience', 'subjects', 'levels', 'bio', 'status', 'created_at'];
                     console.log('Using fallback columns:', tableColumns);
                 }
             } catch (e) {
                 console.error('Error getting schema:', e);
                 // Use fallback columns
-                tableColumns = ['first_name', 'last_name', 'phone', 'password', 'experience', 'subjects', 'levels', 'bio', 'status', 'created_at'];
+                tableColumns = ['name', 'first_name', 'last_name', 'email', 'phone', 'password', 'experience', 'subjects', 'levels', 'bio', 'status', 'created_at'];
             }
         }
 
@@ -595,6 +595,7 @@
             
             // Map form fields to database columns
             const columnMap = {
+                'name': formData.name,
                 'first_name': formData.first_name,
                 'last_name': formData.last_name,
                 'email': formData.email,
@@ -641,9 +642,13 @@
             btn.textContent = '⏳ Creating account...';
 
             try {
+                const firstName = document.getElementById('firstName').value.trim();
+                const lastName = document.getElementById('lastName').value.trim();
+                
                 const formData = {
-                    first_name: document.getElementById('firstName').value.trim(),
-                    last_name: document.getElementById('lastName').value.trim(),
+                    name: firstName + ' ' + lastName, // Combined full name for the 'name' column
+                    first_name: firstName,
+                    last_name: lastName,
                     email: document.getElementById('email').value.trim(),
                     phone: document.getElementById('phone').value.trim().replace(/\s/g, ''),
                     password: document.getElementById('password').value,
@@ -661,6 +666,7 @@
                 const insertData = buildInsertData(formData);
                 
                 console.log('Inserting data:', insertData);
+                console.log('Available columns:', tableColumns);
 
                 const result = await sbClient.from('tutors').insert([insertData]).select();
 
@@ -699,6 +705,14 @@
                 
                 if (err.message && err.message.toLowerCase().includes('duplicate')) {
                     showError('An account with this email or phone already exists. Please use different credentials.');
+                } else if (err.message && err.message.includes('null value in column')) {
+                    const columnMatch = err.message.match(/"([^"]+)"/);
+                    if (columnMatch) {
+                        const nullColumn = columnMatch[1];
+                        showError(`The '${nullColumn}' field is required. Please fill it in and try again.`);
+                    } else {
+                        showError('Please fill in all required fields and try again.');
+                    }
                 } else {
                     showError('Could not create account: ' + (err.message || 'Please try again later.'));
                 }
