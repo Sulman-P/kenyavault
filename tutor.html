@@ -476,7 +476,7 @@ table tr:hover td{background:var(--surface);}
       <div class="panel-content" id="panelUpload">
         <div class="panel-header"><h2>📤 Upload New Resource</h2><p>Add notes, past papers, or revision materials for learners to purchase</p></div>
 
-        <div id="uploadAlertBox" class="alert alert-info" style="display:block;"><span id="uploadAlertText">Connecting to Supabase...</span></div>
+        <div id="uploadAlertBox" class="alert alert-info" style="display:block;"><span id="uploadAlertText">✅ Connected to Supabase — Ready to upload</span></div>
 
         <div id="uploadProgress">
           <div style="display:flex;justify-content:space-between;font-size:0.8rem;color:var(--muted);">
@@ -707,10 +707,29 @@ function formatPhoneNumber(phone) {
 async function initSupabase() {
   try {
     sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    // Update the upload alert to show connected
+    const alertBox = $('uploadAlertBox');
+    const alertText = $('uploadAlertText');
+    if (alertBox) {
+      alertBox.className = 'alert alert-success';
+      alertBox.style.display = 'block';
+    }
+    if (alertText) {
+      alertText.textContent = '✅ Connected to Supabase — Ready to upload';
+    }
     return true;
   } catch(e) {
     console.error('Supabase init error:', e);
-    showError('Could not connect to the server. Please refresh and try again.');
+    const alertBox = $('uploadAlertBox');
+    const alertText = $('uploadAlertText');
+    if (alertBox) {
+      alertBox.className = 'alert alert-error';
+      alertBox.style.display = 'block';
+    }
+    if (alertText) {
+      alertText.textContent = '❌ Failed to connect to Supabase. Please refresh and try again.';
+    }
+    showToast('Could not connect to the server. Please refresh and try again.', 'error');
     return false;
   }
 }
@@ -904,7 +923,7 @@ async function handleSignup(e) {
   }
 }
 
-/* ════════ LOGIN — goes straight into dashboard, no approval gate ════════ */
+/* ════════ LOGIN — goes straight into dashboard ════════ */
 async function handleLogin(e) {
   e.preventDefault();
   if (isSubmitting) return;
@@ -950,7 +969,6 @@ async function handleLogin(e) {
       return;
     }
 
-    // No approval gate — any existing account (pending, approved, or no status) logs straight in.
     if (tutor.status === 'rejected') {
       showError('Your application was rejected. Please contact support for more information.');
       return;
@@ -1015,7 +1033,7 @@ async function handleResetPassword() {
   }
 }
 
-/* ════════ SESSION → DASHBOARD (the actual fix) ════════ */
+/* ════════ SESSION → DASHBOARD ════════ */
 function loginTutorSession(tutor) {
   currentTutor = tutor;
   sessionStorage.setItem('tutor_session', JSON.stringify(tutor));
@@ -1416,7 +1434,9 @@ function clearUploadForm() {
 
 /* ════════ INIT ════════ */
 document.addEventListener('DOMContentLoaded', async () => {
+  // Initialize Supabase first and update the upload status
   await initSupabase();
+  
   initAuthTabs();
   initFieldValidation();
   initNavigation();
