@@ -1288,22 +1288,42 @@ async function confirmPayment() {
     return;
   }
 
+  // Get the pending order ref
+  var pendingOrder = sessionStorage.getItem('pending_order');
+  var orderRef = 'KV-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
+  if (pendingOrder) {
+    try {
+      var parsed = JSON.parse(pendingOrder);
+      if (parsed.ref) orderRef = parsed.ref;
+    } catch(e) {}
+  }
+
   var confirmBtn = document.getElementById('confirmPaymentBtn');
   confirmBtn.disabled = true;
   confirmBtn.textContent = '⏳ Recording order...';
 
   try {
+    // Calculate shares (70% tutor, 30% platform)
+    const tutorShare = Math.round(currentProduct.price * 0.7);
+    const platformShare = Math.round(currentProduct.price * 0.3);
+    
+    // Find the tutor who uploaded this resource
+    const tutorId = currentProduct.tutor_id || null;
+    
     var orderData = {
-      ref: 'KV-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase(),
+      ref: orderRef,
       student_name: 'Customer',
       phone: phone,
       resource_id: currentProduct.id,
       resource_title: currentProduct.title,
       amount: currentProduct.price,
       mpesa_code: mpesaCode,
-      status: 'pending_verification',
+      status: 'pending',
       payment_confirmed: false,
       verified: false,
+      tutor_id: tutorId,
+      tutor_share: tutorShare,
+      platform_share: platformShare,
       created_at: new Date().toISOString()
     };
 
@@ -1311,23 +1331,36 @@ async function confirmPayment() {
     if (result.error) throw result.error;
 
     confirmBtn.disabled = false;
-    confirmBtn.textContent = '✅ Confirm Payment & Record Order';
+    confirmBtn.textContent = '✅ Confirm Payment & Get Download Link';
 
+    // Close payment modal
     closePaymentModal();
+    
+    // Show success modal with download link
     document.getElementById('successOrderRef').textContent = result.data.ref;
+    
+    // Get the download link
+    var downloadLink = currentProduct.file_url || '#';
+    var downloadBtn = document.getElementById('successDownloadLink').querySelector('a');
+    downloadBtn.href = downloadLink;
+    downloadBtn.textContent = '📥 Download ' + currentProduct.title;
+    
     document.getElementById('successModal').classList.add('open');
     document.body.style.overflow = 'hidden';
 
+    // Clear session data
     sessionStorage.removeItem('kv_customer_phone');
+    sessionStorage.removeItem('pending_order');
+
+    showToast('✅ Order confirmed! Check your WhatsApp for the download link.', 'success');
 
   } catch (e) {
     console.error('Order record error:', e);
     confirmBtn.disabled = false;
-    confirmBtn.textContent = '✅ Confirm Payment & Record Order';
+    confirmBtn.textContent = '✅ Confirm Payment & Get Download Link';
     showToast('⚠️ Error recording order: ' + (e.message || 'Please contact support.'), 'error');
   }
 }
-
 /* ── PREVIEW MODAL ── */
 function openPreviewModal(productId) {
   var product = allResources.find(function (r) { return r.id === productId; });
