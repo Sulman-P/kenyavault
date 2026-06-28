@@ -8,7 +8,6 @@
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="styles.css"/>
 <style>
-/* ... (all existing styles remain the same) ... */
 :root {
   --green:#0D6E3F; --green-light:#12924F; --green-pale:#E8F5EE;
   --gold:#D4A017; --gold-light:#F5C842; --gold-pale:#FDF6DC;
@@ -891,43 +890,6 @@ function showToast(msg, type) {
   toast._t = setTimeout(() => toast.classList.remove('show'), 3800);
 }
 
-/* ── WHATSAPP LINK HELPER ── */
-function openWhatsApp(phone, message) {
-  // Clean phone number
-  let cleanPhone = phone.replace(/\D/g, '');
-  if (cleanPhone.startsWith('0')) {
-    cleanPhone = '254' + cleanPhone.substring(1);
-  } else if (cleanPhone.startsWith('7')) {
-    cleanPhone = '254' + cleanPhone;
-  }
-  
-  const encodedMessage = encodeURIComponent(message);
-  
-  // Try to open WhatsApp app directly on mobile
-  // Use whatsapp:// protocol which works on both Android and iOS
-  const appLink = `whatsapp://send?phone=${cleanPhone}&text=${encodedMessage}`;
-  
-  // Fallback to wa.me for desktop
-  const webLink = `https://wa.me/${cleanPhone}?text=${encodedMessage}`;
-  
-  // Create a hidden iframe to try opening the app
-  try {
-    // First try the app link
-    window.location.href = appLink;
-    
-    // If app doesn't open, fallback to web after a timeout
-    setTimeout(function() {
-      // Check if the app opened by seeing if the page is still visible
-      if (document.visibilityState === 'visible') {
-        window.open(webLink, '_blank');
-      }
-    }, 3000);
-  } catch(e) {
-    // If app link fails, use web link
-    window.open(webLink, '_blank');
-  }
-}
-
 /* ════════ SAFE DOM HELPERS ════════ */
 function $(id){ return document.getElementById(id); }
 function safeText(id, val){ const el = $(id); if (el) el.textContent = val; }
@@ -1423,18 +1385,41 @@ Amount: KES ${order.amount}
 Thank you for choosing KenyaVault! 📚
 Need help? WhatsApp: +254 768 515 494`;
     
-    // Use the openWhatsApp function to open the app directly
+    // Use the openWhatsApp function
     openWhatsApp(phone, message);
     
   } catch(e) { 
     console.error('WhatsApp send error:', e); 
-    // Fallback: copy link to clipboard
     try {
       await navigator.clipboard.writeText(order.resource_title + ' - ' + order.ref);
       showToast('📋 Order details copied to clipboard. Please contact customer via WhatsApp manually.', 'info');
     } catch(err) {
       showToast('⚠️ Could not open WhatsApp. Please contact the customer manually.', 'warning');
     }
+  }
+}
+
+function openWhatsApp(phone, message) {
+  let cleanPhone = phone.replace(/\D/g, '');
+  if (cleanPhone.startsWith('0')) {
+    cleanPhone = '254' + cleanPhone.substring(1);
+  } else if (cleanPhone.startsWith('7')) {
+    cleanPhone = '254' + cleanPhone;
+  }
+  
+  const encodedMessage = encodeURIComponent(message);
+  const appLink = `whatsapp://send?phone=${cleanPhone}&text=${encodedMessage}`;
+  const webLink = `https://wa.me/${cleanPhone}?text=${encodedMessage}`;
+  
+  try {
+    window.location.href = appLink;
+    setTimeout(function() {
+      if (document.visibilityState === 'visible') {
+        window.open(webLink, '_blank');
+      }
+    }, 3000);
+  } catch(e) {
+    window.open(webLink, '_blank');
   }
 }
 
@@ -1451,6 +1436,8 @@ function renderResources(filter) {
   currentResourceFilter = filter || 'all';
   const container = $('resourcesList');
   if (!container) return;
+
+  const hasTutorId = hasColumn('tutor_id');
 
   let filtered = allResources;
   if (currentResourceFilter === 'kenyavault') {
@@ -1471,9 +1458,8 @@ function renderResources(filter) {
     const subjectEmoji = getSubjectEmoji(r.subject);
     
     let uploaderTag = `<span class="kv-tag">🏢 KenyaVault</span>`;
-    if (r.tutor_id) {
-      const tutorName = r.tutor_name || 'Tutor';
-      uploaderTag = `<span class="tutor-tag">👩‍🏫 ${tutorName}</span>`;
+    if (hasTutorId && r.tutor_id) {
+      uploaderTag = `<span class="tutor-tag">👩‍🏫 ${r.tutor_name || 'Tutor'}</span>`;
     }
     
     return `<tr>
@@ -1491,6 +1477,35 @@ function renderResources(filter) {
     </tr>`;
   }).join('')}</tbody></table></div>`;
 }
+
+/* ── TOGGLE PUBLISH ── */
+async function togglePublish(id, current) {
+  try {
+    const { error } = await sbClient.from('resources').update({ published: !current }).eq('id', id);
+    if (error) throw error;
+    showToast('Status updated!', 'success');
+    loadDashboardData();
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+/* ── DELETE RESOURCE ── */
+async function deleteResource(id) {
+  if (!confirm('Delete this resource permanently?')) return;
+  try {
+    const { data: resource } = await sbClient.from('resources').select('file_path, cover_image_storage_path').eq('id', id).single();
+    const { error } = await sbClient.from('resources').delete().eq('id', id);
+    if (error) throw error;
+    if (resource) {
+      try {
+        if (resource.file_path) await sbAdminClient.storage.from('kenyavault-resources').remove([resource.file_path]);
+        if (resource.cover_image_storage_path) await sbAdminClient.storage.from('kenyavault-resources').remove([resource.cover_image_storage_path]);
+      } catch(e) { console.warn('Storage cleanup failed:', e); }
+    }
+    showToast('Resource deleted', 'info');
+    loadDashboardData();
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
 /* ════════ RENDER CLASSES ════════ */
 function renderClasses() {
   const container = $('classesList');
@@ -1522,41 +1537,7 @@ async function deleteClass(id) {
   } catch(e) { showToast('Error: ' + e.message, 'error'); }
 }
 
-/* ════════ UPDATE TUTOR PENDING SUMMARY ════════ */
-function updateTutorPendingSummary() {
-  let totalEarnedAll = 0, totalPaidAll = 0, tutorsWithPending = 0;
-
-  allTutors.forEach(t => {
-    // Get resources uploaded by this tutor using tutor_id
-    const tutorResources = allResources.filter(r => r.tutor_id === t.id);
-    console.log(`Tutor ${t.name} has ${tutorResources.length} resources`);
-    
-    // Get orders for this tutor's resources using tutor_id
-    const tutorOrders = allOrders.filter(o => o.tutor_id === t.id);
-    
-    const completedOrders = tutorOrders.filter(o => ['completed','paid','delivered'].includes(o.status));
-    const totalEarned = completedOrders.reduce((s,o) => s + (o.tutor_share || 0), 0);
-    const paid = t.total_paid_out || 0;
-    
-    console.log(`Tutor ${t.name}: Earned KES ${totalEarned}, Paid KES ${paid}`);
-    
-    totalEarnedAll += totalEarned;
-    totalPaidAll += paid;
-    if (totalEarned - paid > 0) tutorsWithPending++;
-  });
-
-  const totalPending = Math.max(0, totalEarnedAll - totalPaidAll);
-
-  safeText('totalTutorPending', 'KES ' + Math.round(totalPending).toLocaleString());
-  safeText('tutorPendingCount', 'Across ' + tutorsWithPending + ' tutor' + (tutorsWithPending !== 1 ? 's' : ''));
-
-  safeText('tutorTotalCount', allTutors.length);
-  safeText('tutorTotalEarned', 'KES ' + Math.round(totalEarnedAll).toLocaleString());
-  safeText('tutorTotalPaid', 'KES ' + Math.round(totalPaidAll).toLocaleString());
-  safeText('tutorTotalPending', 'KES ' + Math.round(totalPending).toLocaleString());
-}
-
-/* ════════ RENDER TUTORS ════════ */
+/* ════════ TUTORS & PAYOUTS TAB ════════ */
 function renderTutors() {
   const container = $('tutorsList');
   if (!container) return;
@@ -1567,16 +1548,11 @@ function renderTutors() {
   }
 
   container.innerHTML = allTutors.map(t => {
-    // Count resources for this tutor using tutor_id
-    const resourceCount = allResources.filter(r => r.tutor_id === t.id).length;
-    
-    // Get orders for this tutor using tutor_id
-    const tutorOrders = allOrders.filter(o => o.tutor_id === t.id);
-    const completedOrders = tutorOrders.filter(o => ['completed','paid','delivered'].includes(o.status));
-    const totalEarned = completedOrders.reduce((s,o) => s + (o.tutor_share || 0), 0);
-    const salesCount = completedOrders.length;
+    const { totalEarned, salesCount } = getTutorEarnings(t.id);
     const paid = t.total_paid_out || 0;
     const pending = Math.max(0, totalEarned - paid);
+    
+    const resourceCount = allResources.filter(r => r.tutor_id === t.id).length;
 
     return `
     <div class="tutor-card">
