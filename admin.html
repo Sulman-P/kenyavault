@@ -1452,27 +1452,11 @@ function renderResources(filter) {
   const container = $('resourcesList');
   if (!container) return;
 
-  const hasTutorId = hasColumn('tutor_id');
-  const hasTutorName = hasColumn('tutor_name');
-  const hasUploadedBy = hasColumn('uploaded_by');
-
   let filtered = allResources;
   if (currentResourceFilter === 'kenyavault') {
-    if (hasTutorId) {
-      filtered = allResources.filter(r => !r.tutor_id);
-    } else if (hasTutorName) {
-      filtered = allResources.filter(r => !r.tutor_name);
-    } else if (hasUploadedBy) {
-      filtered = allResources.filter(r => !r.uploaded_by);
-    }
+    filtered = allResources.filter(r => !r.tutor_id);
   } else if (currentResourceFilter === 'tutor') {
-    if (hasTutorId) {
-      filtered = allResources.filter(r => !!r.tutor_id);
-    } else if (hasTutorName) {
-      filtered = allResources.filter(r => !!r.tutor_name);
-    } else if (hasUploadedBy) {
-      filtered = allResources.filter(r => !!r.uploaded_by);
-    }
+    filtered = allResources.filter(r => !!r.tutor_id);
   }
 
   if (!filtered.length) {
@@ -1487,13 +1471,9 @@ function renderResources(filter) {
     const subjectEmoji = getSubjectEmoji(r.subject);
     
     let uploaderTag = `<span class="kv-tag">🏢 KenyaVault</span>`;
-    if (hasTutorId && r.tutor_id) {
-      const tutorName = hasTutorName && r.tutor_name ? r.tutor_name : 'Tutor';
+    if (r.tutor_id) {
+      const tutorName = r.tutor_name || 'Tutor';
       uploaderTag = `<span class="tutor-tag">👩‍🏫 ${tutorName}</span>`;
-    } else if (hasTutorName && r.tutor_name) {
-      uploaderTag = `<span class="tutor-tag">👩‍🏫 ${r.tutor_name}</span>`;
-    } else if (hasUploadedBy && r.uploaded_by) {
-      uploaderTag = `<span class="tutor-tag">👩‍🏫 ${r.uploaded_by}</span>`;
     }
     
     return `<tr>
@@ -1511,33 +1491,6 @@ function renderResources(filter) {
     </tr>`;
   }).join('')}</tbody></table></div>`;
 }
-
-async function togglePublish(id, current) {
-  try {
-    const { error } = await sbClient.from('resources').update({ published: !current }).eq('id', id);
-    if (error) throw error;
-    showToast('Status updated!', 'success');
-    loadDashboardData();
-  } catch(e) { showToast('Error: ' + e.message, 'error'); }
-}
-
-async function deleteResource(id) {
-  if (!confirm('Delete this resource permanently?')) return;
-  try {
-    const { data: resource } = await sbClient.from('resources').select('file_path, cover_image_storage_path').eq('id', id).single();
-    const { error } = await sbClient.from('resources').delete().eq('id', id);
-    if (error) throw error;
-    if (resource) {
-      try {
-        if (resource.file_path) await sbAdminClient.storage.from('kenyavault-resources').remove([resource.file_path]);
-        if (resource.cover_image_storage_path) await sbAdminClient.storage.from('kenyavault-resources').remove([resource.cover_image_storage_path]);
-      } catch(e) { console.warn('Storage cleanup failed:', e); }
-    }
-    showToast('Resource deleted', 'info');
-    loadDashboardData();
-  } catch(e) { showToast('Error: ' + e.message, 'error'); }
-}
-
 /* ════════ RENDER CLASSES ════════ */
 function renderClasses() {
   const container = $('classesList');
@@ -1569,7 +1522,41 @@ async function deleteClass(id) {
   } catch(e) { showToast('Error: ' + e.message, 'error'); }
 }
 
-/* ════════ TUTORS & PAYOUTS TAB ════════ */
+/* ════════ UPDATE TUTOR PENDING SUMMARY ════════ */
+function updateTutorPendingSummary() {
+  let totalEarnedAll = 0, totalPaidAll = 0, tutorsWithPending = 0;
+
+  allTutors.forEach(t => {
+    // Get resources uploaded by this tutor using tutor_id
+    const tutorResources = allResources.filter(r => r.tutor_id === t.id);
+    console.log(`Tutor ${t.name} has ${tutorResources.length} resources`);
+    
+    // Get orders for this tutor's resources using tutor_id
+    const tutorOrders = allOrders.filter(o => o.tutor_id === t.id);
+    
+    const completedOrders = tutorOrders.filter(o => ['completed','paid','delivered'].includes(o.status));
+    const totalEarned = completedOrders.reduce((s,o) => s + (o.tutor_share || 0), 0);
+    const paid = t.total_paid_out || 0;
+    
+    console.log(`Tutor ${t.name}: Earned KES ${totalEarned}, Paid KES ${paid}`);
+    
+    totalEarnedAll += totalEarned;
+    totalPaidAll += paid;
+    if (totalEarned - paid > 0) tutorsWithPending++;
+  });
+
+  const totalPending = Math.max(0, totalEarnedAll - totalPaidAll);
+
+  safeText('totalTutorPending', 'KES ' + Math.round(totalPending).toLocaleString());
+  safeText('tutorPendingCount', 'Across ' + tutorsWithPending + ' tutor' + (tutorsWithPending !== 1 ? 's' : ''));
+
+  safeText('tutorTotalCount', allTutors.length);
+  safeText('tutorTotalEarned', 'KES ' + Math.round(totalEarnedAll).toLocaleString());
+  safeText('tutorTotalPaid', 'KES ' + Math.round(totalPaidAll).toLocaleString());
+  safeText('tutorTotalPending', 'KES ' + Math.round(totalPending).toLocaleString());
+}
+
+/* ════════ RENDER TUTORS ════════ */
 function renderTutors() {
   const container = $('tutorsList');
   if (!container) return;
@@ -1579,23 +1566,17 @@ function renderTutors() {
     return;
   }
 
-  const hasTutorId = hasColumn('tutor_id');
-  const hasTutorName = hasColumn('tutor_name');
-  const hasUploadedBy = hasColumn('uploaded_by');
-
   container.innerHTML = allTutors.map(t => {
-    const { totalEarned, salesCount } = getTutorEarnings(t.id);
+    // Count resources for this tutor using tutor_id
+    const resourceCount = allResources.filter(r => r.tutor_id === t.id).length;
+    
+    // Get orders for this tutor using tutor_id
+    const tutorOrders = allOrders.filter(o => o.tutor_id === t.id);
+    const completedOrders = tutorOrders.filter(o => ['completed','paid','delivered'].includes(o.status));
+    const totalEarned = completedOrders.reduce((s,o) => s + (o.tutor_share || 0), 0);
+    const salesCount = completedOrders.length;
     const paid = t.total_paid_out || 0;
     const pending = Math.max(0, totalEarned - paid);
-    
-    let resourceCount = 0;
-    if (hasTutorId) {
-      resourceCount = allResources.filter(r => r.tutor_id === t.id).length;
-    } else if (hasTutorName) {
-      resourceCount = allResources.filter(r => r.tutor_name === t.name).length;
-    } else if (hasUploadedBy) {
-      resourceCount = allResources.filter(r => r.uploaded_by === t.name).length;
-    }
 
     return `
     <div class="tutor-card">
