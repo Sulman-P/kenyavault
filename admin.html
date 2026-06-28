@@ -526,30 +526,43 @@ table tr:hover td{background:var(--surface);}
             <div class="form-group"><label>Subject <span class="req">*</span></label>
               <select id="resSubject">
                 <option value="">Select subject...</option>
-                <optgroup label="📚 Academic Subjects">
-                  <option value="mathematics">Mathematics</option>
-                  <option value="english">English</option>
-                  <option value="kiswahili">Kiswahili</option>
-                  <option value="integrated-science">Integrated Science</option>
-                  <option value="social-studies">Social Studies</option>
-                  <option value="pre-technical">Pre-Technical Studies</option>
-                  <option value="agriculture">Agriculture</option>
-                  <option value="religious-education">Religious Education</option>
-                  <option value="creative-arts">Creative Arts</option>
-                  <option value="health-pe">Health & P.E.</option>
-                  <option value="biology">Biology</option>
-                  <option value="chemistry">Chemistry</option>
-                  <option value="physics">Physics</option>
-                  <option value="core-mathematics">Core Mathematics</option>
-                  <option value="geography">Geography</option>
-                  <option value="history">History & Citizenship</option>
-                  <option value="business">Business Studies</option>
-                  <option value="computer-studies">Computer Studies</option>
+                <optgroup label="🏫 Junior School (CBC)">
+                  <option value="mathematics">📐 Mathematics</option>
+                  <option value="english">📖 English</option>
+                  <option value="kiswahili">🗣️ Kiswahili</option>
+                  <option value="integrated-science">🔬 Integrated Science</option>
+                  <option value="social-studies">🌍 Social Studies</option>
+                  <option value="pre-technical">🔧 Pre-Technical Studies</option>
+                  <option value="agriculture">🌾 Agriculture</option>
+                  <option value="religious-education">✝️ Religious Education</option>
+                  <option value="creative-arts">🎨 Creative Arts</option>
+                  <option value="health-pe">🏃 Health &amp; Physical Education</option>
+                </optgroup>
+                <optgroup label="🎓 Senior School (CBC)">
+                  <option value="biology">🧬 Biology</option>
+                  <option value="chemistry">⚗️ Chemistry</option>
+                  <option value="physics">⚡ Physics</option>
+                  <option value="core-mathematics">📐 Core Mathematics</option>
+                  <option value="geography">🌏 Geography</option>
+                  <option value="history">📜 History &amp; Citizenship</option>
+                  <option value="business">💼 Business Studies</option>
+                  <option value="computer-studies">💻 Computer Studies</option>
+                </optgroup>
+                <optgroup label="📚 8-4-4">
+                  <option value="biology">🧬 Biology (8-4-4)</option>
+                  <option value="chemistry">⚗️ Chemistry (8-4-4)</option>
+                  <option value="physics">⚡ Physics (8-4-4)</option>
+                  <option value="mathematics">📐 Mathematics (8-4-4)</option>
+                  <option value="english">📖 English (8-4-4)</option>
+                  <option value="kiswahili">🗣️ Kiswahili (8-4-4)</option>
+                  <option value="history">📜 History (8-4-4)</option>
+                  <option value="geography">🌏 Geography (8-4-4)</option>
+                  <option value="business">💼 Business Studies (8-4-4)</option>
                 </optgroup>
                 <optgroup label="🌱 Self Development">
-                  <option value="personal-growth">Personal Growth</option>
-                  <option value="financial-literacy">Financial Literacy</option>
-                  <option value="leadership">Leadership</option>
+                  <option value="personal-growth">📖 Personal Growth</option>
+                  <option value="financial-literacy">💰 Financial Literacy</option>
+                  <option value="leadership">🏆 Leadership</option>
                 </optgroup>
               </select></div>
           </div>
@@ -864,6 +877,9 @@ let currentOrderFilter = 'all';
 let currentResourceFilter = 'all';
 let selectedFile = null, selectedCoverFile = null;
 
+// Track which columns exist in the resources table
+let resourceColumns = [];
+
 /* ════════ TOAST ════════ */
 function showToast(msg, type) {
   type = type || 'success';
@@ -903,9 +919,15 @@ function getSubjectEmoji(subject) {
     'kiswahili': '🗣️',
     'integrated-science': '🔬',
     'social-studies': '🌍',
+    'pre-technical': '🔧',
+    'agriculture': '🌾',
+    'religious-education': '✝️',
+    'creative-arts': '🎨',
+    'health-pe': '🏃',
     'biology': '🧬',
     'chemistry': '⚗️',
-    'physics': '⚡'
+    'physics': '⚡',
+    'core-mathematics': '📐'
   };
   return map[subject] || '📚';
 }
@@ -1027,7 +1049,7 @@ function checkSession() {
   return false;
 }
 
-/* ════════ LOGOUT — redirects to public homepage ════════ */
+/* ════════ LOGOUT ════════ */
 function logout() {
   sessionStorage.removeItem('admin_logged_in');
   sessionStorage.removeItem('admin_login_time');
@@ -1050,6 +1072,9 @@ async function initSupabase() {
     $('sbUrlDisplay').value = SUPABASE_URL;
     $('sbKeyDisplay').value = SUPABASE_ANON_KEY.substring(0, 40) + '...';
 
+    // Detect resource table columns
+    await detectResourceColumns();
+
     return true;
   } catch(e) {
     console.error('Supabase init error:', e);
@@ -1061,6 +1086,29 @@ async function initSupabase() {
     $('supabaseStatus').className = 'integration-status disconnected';
     return false;
   }
+}
+
+/* ════════ DETECT RESOURCE TABLE COLUMNS ════════ */
+async function detectResourceColumns() {
+  try {
+    const { data, error } = await sbClient.from('resources').select('*').limit(1);
+    if (error) throw error;
+    if (data && data.length > 0) {
+      resourceColumns = Object.keys(data[0]);
+      console.log('Resource columns detected:', resourceColumns);
+    } else {
+      // Fallback: try to get column info from a dummy query
+      resourceColumns = ['id', 'title', 'description', 'price', 'level', 'subject', 'grade', 'type', 'badge', 'emoji', 'file_size', 'pages', 'downloads', 'published', 'featured', 'has_cover_image', 'cover_image_url', 'cover_image_storage_path', 'kicd_aligned', 'cbc_compliant', 'teacher_reviewed', 'pricing_tier', 'created_at', 'updated_at'];
+    }
+  } catch(e) {
+    console.error('Error detecting resource columns:', e);
+    resourceColumns = ['id', 'title', 'description', 'price', 'level', 'subject', 'grade', 'type', 'badge', 'emoji', 'file_size', 'pages', 'downloads', 'published', 'featured', 'has_cover_image', 'cover_image_url', 'cover_image_storage_path', 'kicd_aligned', 'cbc_compliant', 'teacher_reviewed', 'pricing_tier', 'created_at', 'updated_at'];
+  }
+}
+
+/* ════════ CHECK IF COLUMN EXISTS ════════ */
+function hasColumn(columnName) {
+  return resourceColumns.includes(columnName);
 }
 
 /* ════════ REVENUE CALC ════════ */
@@ -1079,8 +1127,10 @@ function calculateRevenue(orders) {
   const monthly = completed.filter(o => new Date(o.created_at) >= d30).reduce((s,o)=>s+(o.amount||0),0);
   const weekly = completed.filter(o => new Date(o.created_at) >= d7).reduce((s,o)=>s+(o.amount||0),0);
 
-  const kenyavaultRevenue = completed.filter(o => !o.tutor_id).reduce((s,o)=>s+(o.amount||0),0);
-  const tutorPlatformShare = completed.filter(o => o.tutor_id).reduce((s,o)=>s+(o.platform_share||0),0);
+  // Check if tutor_id column exists before using it
+  const hasTutorId = hasColumn('tutor_id');
+  const kenyavaultRevenue = completed.filter(o => !o.tutor_id || (hasTutorId && !o.tutor_id)).reduce((s,o)=>s+(o.amount||0),0);
+  const tutorPlatformShare = completed.filter(o => o.tutor_id && hasTutorId).reduce((s,o)=>s+(o.platform_share||0),0);
 
   return { total, monthly, weekly, avgOrder:avg, kenyavaultRevenue, tutorPlatformShare, orderCount:completed.length };
 }
@@ -1184,7 +1234,7 @@ function findMostPopular() {
   safeText('qsPopular', title + ' (' + max + ')');
 }
 
-/* ════════ RECENT PENDING ORDERS (Dashboard) ════════ */
+/* ════════ RECENT PENDING ORDERS ════════ */
 function renderRecentPendingOrders() {
   const container = $('recentPendingOrders');
   const pending = allOrders.filter(o => ['pending','pending_verification'].includes(o.status)).slice(0,5);
@@ -1193,10 +1243,13 @@ function renderRecentPendingOrders() {
     container.innerHTML = `<div style="text-align:center;padding:20px;color:var(--muted);font-size:0.85rem;"><div style="font-size:2rem;margin-bottom:8px;">🎉</div>No pending orders</div>`;
     return;
   }
-  container.innerHTML = pending.map(o => `
+  container.innerHTML = pending.map(o => {
+    const hasTutorId = hasColumn('tutor_id');
+    const isTutorResource = hasTutorId && o.tutor_id;
+    return `
     <div class="order-verify-card">
       <div class="ov-info">
-        <div class="ov-ref">${o.ref||'N/A'} ${o.tutor_id ? '<span class="tutor-tag">👩‍🏫 Tutor</span>' : '<span class="kv-tag">🏢 KenyaVault</span>'}</div>
+        <div class="ov-ref">${o.ref||'N/A'} ${isTutorResource ? '<span class="tutor-tag">👩‍🏫 Tutor</span>' : '<span class="kv-tag">🏢 KenyaVault</span>'}</div>
         <div class="ov-meta"><span>📱 ${o.phone||'N/A'}</span><span>${o.resource_title||'N/A'}</span></div>
       </div>
       <div class="ov-amount">KES ${o.amount||0}</div>
@@ -1204,7 +1257,8 @@ function renderRecentPendingOrders() {
         <button class="btn-sm btn-sm-success" onclick="verifyPayment('${o.id}', true)">✅ Verify</button>
         <button class="btn-sm btn-sm-danger" onclick="verifyPayment('${o.id}', false)">❌ Reject</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 /* ════════ ORDERS TAB ════════ */
@@ -1236,7 +1290,9 @@ function renderOrders(filter) {
         ? `<span style="color:var(--red);font-weight:700;">❌ Rejected</span>`
         : `<span style="color:#15803D;font-weight:700;">✅ ${o.status}</span>`);
 
-    const tutorBadge = o.tutor_id
+    const hasTutorId = hasColumn('tutor_id');
+    const isTutorResource = hasTutorId && o.tutor_id;
+    const tutorBadge = isTutorResource
       ? `<span class="tutor-tag">👩‍🏫 ${o.tutor_share ? 'Tutor share: KES '+Math.round(o.tutor_share) : 'Tutor resource'}</span>`
       : `<span class="kv-tag">🏢 KenyaVault</span>`;
 
@@ -1331,7 +1387,9 @@ async function sendDownloadLink(order) {
 function viewOrderDetails(orderId) {
   const order = allOrders.find(o => o.id === orderId);
   if (!order) { showToast('Order not found', 'error'); return; }
-  alert(`📋 Order Details\n─────────────────\nReference: ${order.ref||'N/A'}\nPhone: ${order.phone||'N/A'}\nResource: ${order.resource_title||'N/A'}\nAmount: KES ${order.amount||0}\nStatus: ${order.status||'pending'}\n${order.tutor_id ? 'Tutor Share: KES '+Math.round(order.tutor_share||0)+'\nPlatform Share: KES '+Math.round(order.platform_share||0) : 'KenyaVault Resource (no tutor share)'}\nDate: ${order.created_at ? new Date(order.created_at).toLocaleString() : 'N/A'}\n${order.mpesa_code ? 'M-PESA Code: '+order.mpesa_code : ''}`);
+  const hasTutorId = hasColumn('tutor_id');
+  const isTutorResource = hasTutorId && order.tutor_id;
+  alert(`📋 Order Details\n─────────────────\nReference: ${order.ref||'N/A'}\nPhone: ${order.phone||'N/A'}\nResource: ${order.resource_title||'N/A'}\nAmount: KES ${order.amount||0}\nStatus: ${order.status||'pending'}\n${isTutorResource ? 'Tutor Share: KES '+Math.round(order.tutor_share||0)+'\nPlatform Share: KES '+Math.round(order.platform_share||0) : 'KenyaVault Resource (no tutor share)'}\nDate: ${order.created_at ? new Date(order.created_at).toLocaleString() : 'N/A'}\n${order.mpesa_code ? 'M-PESA Code: '+order.mpesa_code : ''}`);
 }
 
 /* ════════ RENDER RESOURCES ════════ */
@@ -1340,22 +1398,51 @@ function renderResources(filter) {
   const container = $('resourcesList');
   if (!container) return;
 
+  const hasTutorId = hasColumn('tutor_id');
+  const hasTutorName = hasColumn('tutor_name');
+  const hasUploadedBy = hasColumn('uploaded_by');
+
   let filtered = allResources;
-  if (currentResourceFilter === 'kenyavault') filtered = allResources.filter(r => !r.tutor_id);
-  else if (currentResourceFilter === 'tutor') filtered = allResources.filter(r => !!r.tutor_id);
+  if (currentResourceFilter === 'kenyavault') {
+    if (hasTutorId) {
+      filtered = allResources.filter(r => !r.tutor_id);
+    } else if (hasTutorName) {
+      filtered = allResources.filter(r => !r.tutor_name);
+    } else if (hasUploadedBy) {
+      filtered = allResources.filter(r => !r.uploaded_by);
+    }
+  } else if (currentResourceFilter === 'tutor') {
+    if (hasTutorId) {
+      filtered = allResources.filter(r => !!r.tutor_id);
+    } else if (hasTutorName) {
+      filtered = allResources.filter(r => !!r.tutor_name);
+    } else if (hasUploadedBy) {
+      filtered = allResources.filter(r => !!r.uploaded_by);
+    }
+  }
 
   if (!filtered.length) {
     container.innerHTML = `<div style="text-align:center;padding:40px 20px;color:var(--muted);"><div style="font-size:2rem;margin-bottom:10px;">📄</div>No resources in this view.</div>`;
     return;
   }
+
   container.innerHTML = `<div class="table-wrap"><table><thead><tr>
     <th>Title</th><th>Uploaded By</th><th>Subject</th><th>Level</th><th>Price</th><th>Downloads</th><th>Status</th><th>Actions</th>
   </tr></thead><tbody>${filtered.map(r => {
     const levelDisplay = getLevelDisplay(r.level);
     const subjectEmoji = getSubjectEmoji(r.subject);
-    const uploaderTag = r.tutor_id
-      ? `<span class="tutor-tag">👩‍🏫 ${r.tutor_name || 'Tutor'}</span>`
-      : `<span class="kv-tag">🏢 KenyaVault</span>`;
+    
+    // Determine uploader tag based on available columns
+    let uploaderTag = `<span class="kv-tag">🏢 KenyaVault</span>`;
+    if (hasTutorId && r.tutor_id) {
+      const tutorName = hasTutorName && r.tutor_name ? r.tutor_name : 'Tutor';
+      uploaderTag = `<span class="tutor-tag">👩‍🏫 ${tutorName}</span>`;
+    } else if (hasTutorName && r.tutor_name) {
+      uploaderTag = `<span class="tutor-tag">👩‍🏫 ${r.tutor_name}</span>`;
+    } else if (hasUploadedBy && r.uploaded_by) {
+      uploaderTag = `<span class="tutor-tag">👩‍🏫 ${r.uploaded_by}</span>`;
+    }
+    
     return `<tr>
       <td><strong>${r.title||'Untitled'}</strong></td>
       <td>${uploaderTag}</td>
@@ -1439,11 +1526,25 @@ function renderTutors() {
     return;
   }
 
+  // Get tutor resource counts based on available columns
+  const hasTutorId = hasColumn('tutor_id');
+  const hasTutorName = hasColumn('tutor_name');
+  const hasUploadedBy = hasColumn('uploaded_by');
+
   container.innerHTML = allTutors.map(t => {
     const { totalEarned, salesCount } = getTutorEarnings(t.id);
     const paid = t.total_paid_out || 0;
     const pending = Math.max(0, totalEarned - paid);
-    const resourceCount = allResources.filter(r => r.tutor_id === t.id).length;
+    
+    // Count resources for this tutor
+    let resourceCount = 0;
+    if (hasTutorId) {
+      resourceCount = allResources.filter(r => r.tutor_id === t.id).length;
+    } else if (hasTutorName) {
+      resourceCount = allResources.filter(r => r.tutor_name === t.name).length;
+    } else if (hasUploadedBy) {
+      resourceCount = allResources.filter(r => r.uploaded_by === t.name).length;
+    }
 
     return `
     <div class="tutor-card">
@@ -1555,13 +1656,15 @@ function renderRevenueOrders() {
     return;
   }
   const recent = allOrders.slice(0, 10);
+  const hasTutorId = hasColumn('tutor_id');
   container.innerHTML = `<div class="table-wrap"><table><thead><tr>
     <th>Reference</th><th>Resource</th><th>Source</th><th>Amount</th><th>Status</th><th>Date</th>
   </tr></thead><tbody>${recent.map(o => {
     const isPaid = ['completed','paid','delivered'].includes(o.status);
     const isPending = ['pending','pending_verification'].includes(o.status);
     const color = isPaid ? '#16A34A' : (isPending ? '#D97706' : '#DC2626');
-    const source = o.tutor_id ? '👩‍🏫 Tutor' : '🏢 KenyaVault';
+    const isTutorResource = hasTutorId && o.tutor_id;
+    const source = isTutorResource ? '👩‍🏫 Tutor' : '🏢 KenyaVault';
     return `<tr>
       <td><strong>${o.ref||'N/A'}</strong></td><td>${o.resource_title||'N/A'}</td><td>${source}</td>
       <td style="font-weight:700;color:var(--gold);">KES ${o.amount||0}</td>
@@ -1702,9 +1805,15 @@ function initUploadButton() {
     setProgress(10, 'Preparing upload...');
 
     const resourceData = {
-      title, description: $('resDesc').value || '',
-      price: parseInt(price), level, subject, grade: '',
-      type: 'notes', badge: 'new', emoji: '📄',
+      title: title,
+      description: $('resDesc').value || '',
+      price: parseInt(price),
+      level: level,
+      subject: subject,
+      grade: '',
+      type: 'notes',
+      badge: 'new',
+      emoji: '📄',
       file_size: selectedFile.size,
       pages: parseInt($('resPages').value) || 0,
       downloads: 0,
@@ -1715,11 +1824,20 @@ function initUploadButton() {
       cbc_compliant: $('cbcCompliant').checked,
       teacher_reviewed: $('teacherReviewed').checked,
       pricing_tier: $('resPricingTier').value,
-      tutor_id: null,
-      tutor_name: null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
+
+    // Only add tutor columns if they exist in the table
+    if (hasColumn('tutor_id')) {
+      resourceData.tutor_id = null;
+    }
+    if (hasColumn('tutor_name')) {
+      resourceData.tutor_name = null;
+    }
+    if (hasColumn('uploaded_by')) {
+      resourceData.uploaded_by = null;
+    }
 
     const uploadClient = sbAdminClient || sbClient;
 
