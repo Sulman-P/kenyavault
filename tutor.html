@@ -1186,72 +1186,23 @@ function initToggles() {
 async function loadTutorData() {
   if (!sbClient || !currentTutor) return;
   try {
-    // Try to get resources where uploaded_by matches tutor name or tutor_id if it exists
-    let query = sbClient.from('resources').select('*');
-    
-    // Check if tutor_id column exists by trying to query it
-    try {
-      const testQuery = await sbClient.from('resources').select('tutor_id').limit(1);
-      // If no error, tutor_id exists
-      query = query.eq('tutor_id', currentTutor.id);
-    } catch(e) {
-      // tutor_id doesn't exist, try using uploaded_by or tutor_name
-      try {
-        const testQuery2 = await sbClient.from('resources').select('uploaded_by').limit(1);
-        query = query.eq('uploaded_by', currentTutor.name);
-      } catch(e2) {
-        // uploaded_by doesn't exist either, try tutor_name
-        try {
-          const testQuery3 = await sbClient.from('resources').select('tutor_name').limit(1);
-          query = query.eq('tutor_name', currentTutor.name);
-        } catch(e3) {
-          // No tutor identifier column exists, show all resources
-          query = sbClient.from('resources').select('*');
-        }
-      }
-    }
-    
-    const { data: resources, error: resourcesError } = await query;
-    if (resourcesError) throw resourcesError;
+    // Get resources uploaded by this tutor using tutor_id
+    const { data: resources } = await sbClient.from('resources').select('*').eq('tutor_id', currentTutor.id);
     myResources = resources || [];
 
-    // Similar approach for orders
-    let ordersQuery = sbClient.from('orders').select('*');
-    try {
-      const testOrder = await sbClient.from('orders').select('tutor_id').limit(1);
-      ordersQuery = ordersQuery.eq('tutor_id', currentTutor.id);
-    } catch(e) {
-      try {
-        const testOrder2 = await sbClient.from('orders').select('tutor_name').limit(1);
-        ordersQuery = ordersQuery.eq('tutor_name', currentTutor.name);
-      } catch(e2) {
-        ordersQuery = sbClient.from('orders').select('*');
-      }
-    }
-    
-    const { data: orders, error: ordersError } = await ordersQuery.order('created_at', { ascending: false });
-    if (ordersError) throw ordersError;
+    // Get orders for this tutor's resources using tutor_id
+    const { data: orders } = await sbClient.from('orders').select('*').eq('tutor_id', currentTutor.id).order('created_at', { ascending: false });
     myOrders = orders || [];
+
+    console.log(`Tutor ${currentTutor.name}: ${myResources.length} resources, ${myOrders.length} orders`);
 
     updateDashboardStats();
     renderRecentResources();
   } catch(e) {
     console.error('Load tutor data error:', e);
-    // Fallback: try to load resources without tutor filter
-    try {
-      const { data: resources } = await sbClient.from('resources').select('*');
-      myResources = resources || [];
-      const { data: orders } = await sbClient.from('orders').select('*').order('created_at', { ascending: false });
-      myOrders = orders || [];
-      updateDashboardStats();
-      renderRecentResources();
-    } catch(fallbackError) {
-      console.error('Fallback load error:', fallbackError);
-      showToast('Error loading your data: ' + e.message, 'error');
-    }
+    showToast('Error loading your data: ' + e.message, 'error');
   }
 }
-
 function updateDashboardStats() {
   const totalDownloads = myResources.reduce((s,r) => s + (r.downloads||0), 0);
   const completedOrders = myOrders.filter(o => ['completed','paid','delivered'].includes(o.status));
@@ -1327,8 +1278,11 @@ window.deleteResource = deleteResource;
 
 /* ════════ EARNINGS ════════ */
 function renderEarnings() {
-  const completedOrders = myOrders.filter(o => ['completed','paid','delivered'].includes(o.status));
-  const totalEarned = completedOrders.reduce((s,o) => s + (o.tutor_share || (o.amount * REVENUE_SHARE_PERCENT / 100) || 0), 0);
+  // Get all orders for this tutor using tutor_id
+  const tutorOrders = myOrders;
+  
+  const completedOrders = tutorOrders.filter(o => ['completed','paid','delivered'].includes(o.status));
+  const totalEarned = completedOrders.reduce((s,o) => s + (o.tutor_share || 0), 0);
   const totalPaid = currentTutor.total_paid_out || 0;
   const pending = Math.max(0, totalEarned - totalPaid);
 
@@ -1343,10 +1297,16 @@ function renderEarnings() {
     return;
   }
   container.innerHTML = `<div class="table-wrap"><table><thead><tr>
-    <th>Resource</th><th>Sale Price</th><th>Your Share (70%)</th><th>Date</th>
+    <th>Resource</th><th>Sale Price</th><th>Your Share (70%)</th><th>Status</th><th>Date</th>
   </tr></thead><tbody>${completedOrders.map(o => {
-    const share = o.tutor_share || (o.amount * REVENUE_SHARE_PERCENT / 100) || 0;
-    return `<tr><td>${o.resource_title||'N/A'}</td><td>KES ${o.amount||0}</td><td style="font-weight:700;color:var(--green);">KES ${Math.round(share).toLocaleString()}</td><td style="font-size:0.78rem;color:var(--muted);">${o.created_at ? new Date(o.created_at).toLocaleDateString() : 'N/A'}</td></tr>`;
+    const share = o.tutor_share || 0;
+    return `<tr>
+      <td>${o.resource_title||'N/A'}</td>
+      <td>KES ${o.amount||0}</td>
+      <td style="font-weight:700;color:var(--green);">KES ${Math.round(share).toLocaleString()}</td>
+      <td><span class="status-badge ${o.status}"><span class="dot"></span> ${o.status}</span></td>
+      <td style="font-size:0.78rem;color:var(--muted);">${o.created_at ? new Date(o.created_at).toLocaleDateString() : 'N/A'}</td>
+    </tr>`;
   }).join('')}</tbody></table></div>`;
 }
 
@@ -1461,7 +1421,7 @@ function initCoverUpload() {
   });
 }
 
-/* ════════ UPLOAD BUTTON — FIXED: removed tutor_id column ════════ */
+/* ════════ UPLOAD BUTTON ════════ */
 function initUploadButton() {
   $('uploadBtn')?.addEventListener('click', async function() {
     const title = $('resTitle').value.trim();
@@ -1480,26 +1440,6 @@ function initUploadButton() {
 
     function setProgress(pct, msg) { bar.style.width = pct + '%'; text.textContent = msg; percent.textContent = pct + '%'; }
     setProgress(10, 'Preparing upload...');
-
-    // Check which columns exist in the resources table
-    let hasTutorId = false;
-    let hasTutorName = false;
-    let hasUploadedBy = false;
-    
-    try {
-      const test = await sbClient.from('resources').select('tutor_id').limit(1);
-      hasTutorId = true;
-    } catch(e) { hasTutorId = false; }
-    
-    try {
-      const test = await sbClient.from('resources').select('tutor_name').limit(1);
-      hasTutorName = true;
-    } catch(e) { hasTutorName = false; }
-    
-    try {
-      const test = await sbClient.from('resources').select('uploaded_by').limit(1);
-      hasUploadedBy = true;
-    } catch(e) { hasUploadedBy = false; }
 
     const resourceData = {
       title: title,
@@ -1521,20 +1461,12 @@ function initUploadButton() {
       cbc_compliant: true,
       teacher_reviewed: true,
       pricing_tier: 'single',
+      // Use the new columns
+      tutor_id: currentTutor.id,
+      tutor_name: currentTutor.name,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
-
-    // Only add tutor columns if they exist
-    if (hasTutorId) {
-      resourceData.tutor_id = currentTutor.id;
-    }
-    if (hasTutorName) {
-      resourceData.tutor_name = currentTutor.name;
-    }
-    if (hasUploadedBy) {
-      resourceData.uploaded_by = currentTutor.name;
-    }
 
     try {
       let coverPath = null;
@@ -1594,22 +1526,6 @@ function initUploadButton() {
 
   $('clearUploadBtn')?.addEventListener('click', clearUploadForm);
 }
-
-function clearUploadForm() {
-  ['resTitle','resPrice','resDesc','resPages'].forEach(id => { const el = $(id); if (el) el.value=''; });
-  ['resLevel','resSubject'].forEach(id => { const el = $(id); if (el) el.selectedIndex=0; });
-  selectedFile = null;
-  $('filePreview').style.display='none';
-  $('fileDropZone').style.display='block';
-  $('pdfInput').value='';
-  selectedCoverFile = null;
-  $('coverPreview').src='';
-  $('coverPreviewContainer').style.display='none';
-  $('coverDropZoneContent').style.display='block';
-  $('coverImageInput').value='';
-  $('togPublish')?.classList.add('on');
-}
-
 /* ════════ INIT ════════ */
 document.addEventListener('DOMContentLoaded', async () => {
   await initSupabase();
