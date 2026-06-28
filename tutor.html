@@ -330,7 +330,6 @@ table tr:hover td{background:var(--surface);}
           <label>Subjects You Can Teach <span class="req">*</span></label>
           <select id="subjectsSelect" multiple style="height:140px;padding:8px;" required>
             <option value="">Select subjects (hold Ctrl/Cmd to select multiple)</option>
-            <!-- JUNIOR SCHOOL SUBJECTS -->
             <optgroup label="🏫 Junior School (CBC)">
               <option value="mathematics">📐 Mathematics</option>
               <option value="english">📖 English</option>
@@ -343,7 +342,6 @@ table tr:hover td{background:var(--surface);}
               <option value="creative-arts">🎨 Creative Arts</option>
               <option value="health-pe">🏃 Health &amp; Physical Education</option>
             </optgroup>
-            <!-- SENIOR SCHOOL SUBJECTS -->
             <optgroup label="🎓 Senior School (CBC)">
               <option value="biology">🧬 Biology</option>
               <option value="chemistry">⚗️ Chemistry</option>
@@ -356,13 +354,11 @@ table tr:hover td{background:var(--surface);}
               <option value="english">📖 English (Senior)</option>
               <option value="kiswahili">🗣️ Kiswahili (Senior)</option>
             </optgroup>
-            <!-- SELF DEVELOPMENT -->
             <optgroup label="🌱 Self Development">
               <option value="personal-growth">📖 Personal Growth</option>
               <option value="financial-literacy">💰 Financial Literacy</option>
               <option value="leadership">🏆 Leadership</option>
             </optgroup>
-            <!-- 8-4-4 -->
             <optgroup label="📚 8-4-4">
               <option value="biology">🧬 Biology (8-4-4)</option>
               <option value="chemistry">⚗️ Chemistry (8-4-4)</option>
@@ -875,7 +871,6 @@ function validateSignupForm() {
     if (!validateField($(id), id + 'Error')) isValid = false;
   });
 
-  // Validate subjects (must select at least one)
   const subjectsSelect = $('subjectsSelect');
   const selectedSubjects = Array.from(subjectsSelect.selectedOptions).filter(opt => opt.value !== '');
   if (selectedSubjects.length === 0) {
@@ -887,7 +882,6 @@ function validateSignupForm() {
     subjectsSelect.classList.remove('error');
   }
 
-  // Validate levels
   const levels = document.querySelectorAll('#levelsGrid input[type="checkbox"]:checked');
   if (levels.length === 0) {
     $('levelsError').textContent = 'Please select at least one level';
@@ -953,7 +947,6 @@ async function handleSignup(e) {
     const experience = $('experience').value;
     const bio = $('bio').value.trim() || null;
     
-    // Get selected subjects from dropdown
     const subjectsSelect = $('subjectsSelect');
     const subjects = Array.from(subjectsSelect.selectedOptions)
       .filter(opt => opt.value !== '')
@@ -1203,6 +1196,7 @@ async function loadTutorData() {
     showToast('Error loading your data: ' + e.message, 'error');
   }
 }
+
 function updateDashboardStats() {
   const totalDownloads = myResources.reduce((s,r) => s + (r.downloads||0), 0);
   const completedOrders = myOrders.filter(o => ['completed','paid','delivered'].includes(o.status));
@@ -1278,11 +1272,8 @@ window.deleteResource = deleteResource;
 
 /* ════════ EARNINGS ════════ */
 function renderEarnings() {
-  // Get all orders for this tutor using tutor_id
-  const tutorOrders = myOrders;
-  
-  const completedOrders = tutorOrders.filter(o => ['completed','paid','delivered'].includes(o.status));
-  const totalEarned = completedOrders.reduce((s,o) => s + (o.tutor_share || 0), 0);
+  const completedOrders = myOrders.filter(o => ['completed','paid','delivered'].includes(o.status));
+  const totalEarned = completedOrders.reduce((s,o) => s + (o.tutor_share || (o.amount * REVENUE_SHARE_PERCENT / 100) || 0), 0);
   const totalPaid = currentTutor.total_paid_out || 0;
   const pending = Math.max(0, totalEarned - totalPaid);
 
@@ -1299,7 +1290,7 @@ function renderEarnings() {
   container.innerHTML = `<div class="table-wrap"><table><thead><tr>
     <th>Resource</th><th>Sale Price</th><th>Your Share (70%)</th><th>Status</th><th>Date</th>
   </tr></thead><tbody>${completedOrders.map(o => {
-    const share = o.tutor_share || 0;
+    const share = o.tutor_share || (o.amount * REVENUE_SHARE_PERCENT / 100) || 0;
     return `<tr>
       <td>${o.resource_title||'N/A'}</td>
       <td>KES ${o.amount||0}</td>
@@ -1421,6 +1412,22 @@ function initCoverUpload() {
   });
 }
 
+/* ── CLEAR UPLOAD FORM ── */
+function clearUploadForm() {
+  ['resTitle','resPrice','resDesc','resPages'].forEach(id => { const el = $(id); if (el) el.value=''; });
+  ['resLevel','resSubject'].forEach(id => { const el = $(id); if (el) el.selectedIndex=0; });
+  selectedFile = null;
+  $('filePreview').style.display='none';
+  $('fileDropZone').style.display='block';
+  $('pdfInput').value='';
+  selectedCoverFile = null;
+  $('coverPreview').src='';
+  $('coverPreviewContainer').style.display='none';
+  $('coverDropZoneContent').style.display='block';
+  $('coverImageInput').value='';
+  $('togPublish')?.classList.add('on');
+}
+
 /* ════════ UPLOAD BUTTON ════════ */
 function initUploadButton() {
   $('uploadBtn')?.addEventListener('click', async function() {
@@ -1461,7 +1468,6 @@ function initUploadButton() {
       cbc_compliant: true,
       teacher_reviewed: true,
       pricing_tier: 'single',
-      // Use the new columns
       tutor_id: currentTutor.id,
       tutor_name: currentTutor.name,
       created_at: new Date().toISOString(),
@@ -1526,6 +1532,7 @@ function initUploadButton() {
 
   $('clearUploadBtn')?.addEventListener('click', clearUploadForm);
 }
+
 /* ════════ INIT ════════ */
 document.addEventListener('DOMContentLoaded', async () => {
   await initSupabase();
