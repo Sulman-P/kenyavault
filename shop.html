@@ -393,6 +393,33 @@
   .pc-cover { height: 100px; }
   .category-header { flex-direction: column; align-items: flex-start; }
 }
+
+/* ── DOWNLOAD STATUS STYLES ── */
+.download-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 99px;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+.download-status.available {
+  background: #DCFCE7;
+  color: #15803D;
+}
+.download-status.used {
+  background: #FEE2E2;
+  color: #DC2626;
+}
+.download-status .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.download-status.available .dot { background: #16A34A; }
+.download-status.used .dot { background: #DC2626; }
 </style>
 </head>
 <body>
@@ -729,6 +756,18 @@
   <span id="toastMsg">Saved successfully</span>
 </div>
 
+<!-- ════════════ DOWNLOAD STATUS MODAL ════════════ -->
+<div class="modal-overlay" id="downloadStatusModal">
+  <div class="modal" style="max-width:420px;text-align:center;">
+    <div class="modal-body" style="padding:40px 28px;">
+      <div style="font-size:3.2rem;margin-bottom:12px;" id="downloadStatusIcon">🔒</div>
+      <h3 style="font-family:'Sora',sans-serif;font-weight:800;font-size:1.2rem;color:var(--dark);margin-bottom:8px;" id="downloadStatusTitle">Download Link Used</h3>
+      <p style="font-size:0.88rem;color:var(--muted);line-height:1.6;margin-bottom:20px;" id="downloadStatusMessage">This download link has already been used. If you haven't downloaded your resource, please contact support.</p>
+      <button class="btn-mpesa" onclick="closeDownloadStatusModal()" style="background:var(--green);">Got it, thanks!</button>
+    </div>
+  </div>
+</div>
+
 <!-- ════════════ FOOTER ════════════ -->
 <footer class="footer">
   <div class="footer-top">
@@ -794,7 +833,7 @@
 'use strict';
 
 /* ════════════════════════════════════════
-   KENYAVAULT SHOP — FIXED ORDER CREATION
+   KENYAVAULT SHOP — WITH DOWNLOAD TRACKING
 ════════════════════════════════════════ */
 
 const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
@@ -977,7 +1016,95 @@ function getTextColor(subject) {
   return map[subject] || 'tech-text';
 }
 
-/* ── CARD BUILDER ── */
+/* ── RENDER SHOP ── */
+function renderShop() {
+  var container = document.getElementById('shopContent');
+  var filtered = getFilteredAndSortedResources();
+  
+  if (filtered.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <span class="empty-icon">📚</span>
+        <h3>No resources found</h3>
+        <p>Try adjusting your filters or check back later for new resources.</p>
+        <button onclick="resetFilters()">Reset Filters</button>
+      </div>
+    `;
+    document.getElementById('productCount').textContent = '0';
+    document.getElementById('pagination').style.display = 'none';
+    return;
+  }
+
+  var totalPages = Math.ceil(filtered.length / itemsPerPage);
+  if (currentPage > totalPages) currentPage = totalPages;
+  if (currentPage < 1) currentPage = 1;
+
+  var start = (currentPage - 1) * itemsPerPage;
+  var end = start + itemsPerPage;
+  var pageItems = filtered.slice(start, end);
+
+  var html = '<div class="products-grid">';
+  pageItems.forEach(function(r) {
+    html += buildCardHTML(r);
+  });
+  html += '</div>';
+
+  container.innerHTML = html;
+  document.getElementById('productCount').textContent = filtered.length;
+
+  // Update pagination
+  if (totalPages > 1) {
+    document.getElementById('pagination').style.display = 'flex';
+    document.getElementById('pageInfo').textContent = 'Page ' + currentPage + ' of ' + totalPages;
+    document.getElementById('prevPage').disabled = currentPage === 1;
+    document.getElementById('nextPage').disabled = currentPage === totalPages;
+  } else {
+    document.getElementById('pagination').style.display = 'none';
+  }
+}
+
+function getFilteredAndSortedResources() {
+  var filtered = allResources.slice();
+
+  // Level filter
+  if (activeLevel !== 'all') {
+    filtered = filtered.filter(function(r) { return r.level === activeLevel; });
+  }
+
+  // Subject filter
+  var activePill = document.querySelector('.pill.active');
+  if (activePill && activePill.dataset.filter !== 'all') {
+    var subject = activePill.dataset.filter;
+    filtered = filtered.filter(function(r) { return r.subject === subject; });
+  }
+
+  // Search filter
+  var searchTerm = document.getElementById('searchInput').value.toLowerCase().trim();
+  if (searchTerm) {
+    filtered = filtered.filter(function(r) {
+      return (r.title || '').toLowerCase().includes(searchTerm) ||
+             (r.subject || '').toLowerCase().includes(searchTerm) ||
+             (r.description || '').toLowerCase().includes(searchTerm);
+    });
+  }
+
+  // Sort
+  var sort = document.getElementById('sortSelect').value;
+  if (sort === 'price-asc') {
+    filtered.sort(function(a, b) { return (a.price || 0) - (b.price || 0); });
+  } else if (sort === 'price-desc') {
+    filtered.sort(function(a, b) { return (b.price || 0) - (a.price || 0); });
+  } else if (sort === 'newest') {
+    filtered.sort(function(a, b) { return new Date(b.created_at) - new Date(a.created_at); });
+  } else {
+    // Popular - by downloads or views
+    filtered.sort(function(a, b) { return (b.download_count || 0) - (a.download_count || 0); });
+  }
+
+  return filtered;
+}
+
+/* ── BUILD CARD ── */
 function buildCardHTML(r) {
   var badgeClass = 'badge-new', badgeText = 'New';
   if (r.badge === 'popular') { badgeClass = 'badge-popular'; badgeText = 'Popular'; }
@@ -987,7 +1114,6 @@ function buildCardHTML(r) {
 
   var isFree = (r.price || 0) === 0;
   var priceDisplay = isFree ? 'FREE' : getPricingDisplay(r);
-  var fileUrl = r.file_url || '#';
   var productId = r.id || 'unknown';
   var safeTitle = (r.title || '').replace(/"/g, '&quot;');
 
@@ -998,602 +1124,512 @@ function buildCardHTML(r) {
       '<div class="cover-fallback" style="display:none;">' + (r.emoji || '📄') + '</div>' +
       '<span class="cover-badge">' + badgeText + '</span>' +
       '<span class="cover-level">' + getLevelDisplay(r.level) + '</span>' +
-    '</div>';
+      '</div>';
   } else {
-    coverHTML = '<div class="pc-cover">' +
-      '<div class="cover-fallback ' + getBannerColor(r.subject) + '">' + (r.emoji || '📄') + '</div>' +
+    coverHTML = '<div class="pc-cover"><div class="cover-fallback">' + (r.emoji || '📄') + '</div>' +
       '<span class="cover-badge">' + badgeText + '</span>' +
-      '<span class="cover-level">' + getLevelDisplay(r.level) + '</span>' +
-    '</div>';
+      '<span class="cover-level">' + getLevelDisplay(r.level) + '</span></div>';
   }
 
-  return '<div class="product-card" data-level="' + r.level + '" data-subject="' + r.subject + '" data-product-id="' + productId + '">' +
-    coverHTML +
-    '<div class="pc-body">' +
-      '<div class="pc-subject ' + getTextColor(r.subject) + '">' + (r.subject || 'Resource') + '</div>' +
-      '<h4>' + (r.title || 'Untitled Resource') + '</h4>' +
-      '<p>' + (r.description ? r.description.substring(0, 80) : '') + (r.description && r.description.length > 80 ? '...' : '') + '</p>' +
-      '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;">' + getCurriculumBadges(r) + '</div>' +
-      '<div class="pc-meta"><span>📄 ' + (r.pages || 0) + ' pages</span><span>⬇️ ' + (r.downloads || 0) + ' downloads</span></div>' +
-    '</div>' +
-    '<div class="pc-footer">' +
-      '<span class="pc-price">' + (isFree ? 'FREE' : priceDisplay) + '</span>' +
-      '<div style="display:flex;gap:4px;">' +
-        '<button class="btn-preview" onclick="openPreviewModal(\'' + productId + '\')" title="Preview this document">👁️</button>' +
-        (isFree
-          ? '<a href="' + fileUrl + '" target="_blank" class="btn-buy free" style="font-size:0.7rem;padding:4px 12px;">Download</a>'
-          : '<button class="btn-buy" onclick="openPaymentModal(\'' + productId + '\')" style="font-size:0.7rem;padding:4px 12px;">📱 Buy</button>') +
-      '</div>' +
-    '</div>' +
-  '</div>';
+  return `
+    <div class="product-card" data-id="${productId}">
+      ${coverHTML}
+      <div class="pc-body">
+        <div class="pc-subject ${getTextColor(r.subject)}">${r.subject || 'General'}</div>
+        <h4>${safeTitle}</h4>
+        <p>${r.description || ''}</p>
+        <div class="pc-meta">
+          <span>📄 ${r.pages || 0} pages</span>
+          <span>⭐ ${r.download_count || 0} downloads</span>
+        </div>
+        <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;">
+          ${getCurriculumBadges(r)}
+        </div>
+      </div>
+      <div class="pc-footer">
+        <span class="pc-price">${priceDisplay}</span>
+        <div style="display:flex;gap:6px;">
+          ${r.preview_url ? '<button class="btn-preview" onclick="openPreview(\'' + productId + '\')">👁️ Preview</button>' : ''}
+          <button class="btn-buy" onclick="openPaymentModal(\'' + productId + '\')">${isFree ? '📥 Get Free' : '📱 Buy'}</button>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
-/* ── RENDER: LOADING / ERROR ── */
 function renderLoading() {
-  document.getElementById('shopContent').innerHTML =
-    '<div class="products-grid"><div class="loading-spinner"><span class="spin-icon">⏳</span>Loading resources...</div></div>';
-}
-function renderEmptyError(e) {
-  document.getElementById('shopContent').innerHTML =
-    '<div class="products-grid"><div class="empty-state">' +
-      '<span class="empty-icon">⚠️</span><h3>Could Not Load Resources</h3>' +
-      '<p>' + ((e && e.message) || 'Please check your connection and try again.') + '</p>' +
-      '<button onclick="loadResources()">Retry</button>' +
-    '</div></div>';
-  document.getElementById('productCount').textContent = '0';
-  document.getElementById('pagination').style.display = 'none';
+  document.getElementById('shopContent').innerHTML = `
+    <div class="products-grid">
+      <div class="loading-spinner">
+        <span class="spin-icon">⏳</span>
+        Loading resources...
+      </div>
+    </div>
+  `;
 }
 
-/* ── RENDER: MAIN SHOP ── */
-function renderShop() {
-  if (activeLevel === 'all') {
-    renderGroupedByCategory();
-  } else {
-    renderFlatGrid();
-  }
+function renderEmptyError(err) {
+  document.getElementById('shopContent').innerHTML = `
+    <div class="empty-state">
+      <span class="empty-icon">⚠️</span>
+      <h3>Unable to load resources</h3>
+      <p>${err ? err.message || 'Please try again later.' : 'Please try again later.'}</p>
+      <button onclick="init()">🔄 Retry</button>
+    </div>
+  `;
 }
 
-function renderGroupedByCategory() {
-  document.getElementById('pagination').style.display = 'none';
-
-  var searchQuery = (document.getElementById('searchInput').value || '').toLowerCase();
-  var activeSubject = document.querySelector('.pill.active') ? document.querySelector('.pill.active').dataset.filter : 'all';
-
-  var pool = allResources.filter(function (r) {
-    var matchSearch = !searchQuery || (r.title || '').toLowerCase().includes(searchQuery) ||
-      (r.description || '').toLowerCase().includes(searchQuery) || (r.subject || '').toLowerCase().includes(searchQuery);
-    var matchSubject = activeSubject === 'all' || r.subject === activeSubject;
-    return matchSearch && matchSubject;
-  });
-
-  document.getElementById('productCount').textContent = pool.length;
-
-  if (pool.length === 0) {
-    document.getElementById('shopContent').innerHTML =
-      '<div class="products-grid"><div class="empty-state"><span class="empty-icon">📭</span><h3>No resources found</h3><p>Try a different search term or check back later for new uploads.</p></div></div>';
-    return;
-  }
-
-  var html = '';
-  LEVEL_ORDER.forEach(function (level, idx) {
-    var items = pool.filter(function (r) { return r.level === level; });
-    if (items.length === 0) return;
-
-    var meta = LEVEL_META[level];
-    var displayItems = items.slice(0, 8);
-
-    html += '<div class="category-section">' +
-      '<div class="category-header">' +
-        '<div class="category-header-left">' +
-          '<span class="category-icon">' + meta.icon + '</span>' +
-          '<span class="category-title">' + meta.title + '</span>' +
-          '<span class="category-count ' + meta.countClass + '">' + items.length + '</span>' +
-        '</div>' +
-        '<a href="javascript:void(0)" class="category-view-all" onclick="jumpToLevel(\'' + level + '\')">View all ' + items.length + ' →</a>' +
-      '</div>' +
-      '<div class="products-grid">' +
-        displayItems.map(buildCardHTML).join('') +
-      '</div>' +
-    '</div>';
-
-    if (idx < LEVEL_ORDER.length - 1) html += '<div class="category-divider"></div>';
-  });
-
-  document.getElementById('shopContent').innerHTML = html || '<div class="products-grid"><div class="empty-state"><span class="empty-icon">📭</span><h3>No resources found</h3></div></div>';
-}
-
-function renderFlatGrid() {
-  var total = filteredResources.length;
-
-  if (total === 0) {
-    document.getElementById('shopContent').innerHTML =
-      '<div class="products-grid"><div class="empty-state"><span class="empty-icon">📭</span><h3>No resources in this category yet</h3><p>Check back soon — new resources are added regularly.</p></div></div>';
-    document.getElementById('productCount').textContent = '0';
-    document.getElementById('pagination').style.display = 'none';
-    return;
-  }
-
-  var start = (currentPage - 1) * itemsPerPage;
-  var end = Math.min(start + itemsPerPage, total);
-  var pageItems = filteredResources.slice(start, end);
-
-  document.getElementById('productCount').textContent = total;
-  document.getElementById('shopContent').innerHTML =
-    '<div class="products-grid">' + pageItems.map(buildCardHTML).join('') + '</div>';
-
-  var totalPages = Math.ceil(total / itemsPerPage);
-  document.getElementById('pagination').style.display = totalPages > 1 ? 'flex' : 'none';
-  document.getElementById('pageInfo').textContent = 'Page ' + currentPage + ' of ' + totalPages;
-  document.getElementById('prevPage').disabled = currentPage <= 1;
-  document.getElementById('nextPage').disabled = currentPage >= totalPages;
-}
-
-function jumpToLevel(level) {
-  activeLevel = level;
-  document.querySelectorAll('.level-tab').forEach(function (t) { t.classList.toggle('active', t.dataset.level === level); });
-  document.querySelectorAll('.sidebar-subject').forEach(function (s) { s.classList.toggle('active', s.dataset.levelFilter === level); });
-  filterByLevel(level);
-  window.scrollTo({ top: document.getElementById('filterBar').offsetTop - 80, behavior: 'smooth' });
-}
-
-function filterByLevel(level) {
-  activeLevel = level;
-  if (level === 'all') {
-    filteredResources = allResources.slice();
-  } else {
-    filteredResources = allResources.filter(function (r) { return r.level === level; });
-  }
+/* ── FILTER FUNCTIONS ── */
+function resetFilters() {
+  document.querySelectorAll('.pill').forEach(function(p) { p.classList.remove('active'); });
+  document.querySelector('.pill[data-filter="all"]').classList.add('active');
+  document.getElementById('searchInput').value = '';
+  document.getElementById('sortSelect').value = 'popular';
+  activeLevel = 'all';
   currentPage = 1;
-  applySearchToFiltered();
-  applySort();
+  document.querySelectorAll('.level-tab').forEach(function(t) { t.classList.toggle('active', t.dataset.level === 'all'); });
+  document.querySelectorAll('.sidebar-subject').forEach(function(s) { s.classList.toggle('active', s.dataset.levelFilter === 'all'); });
   renderShop();
-}
-
-function applySearchToFiltered() {
-  var query = (document.getElementById('searchInput').value || '').toLowerCase();
-  if (query.length > 0) {
-    filteredResources = filteredResources.filter(function (r) {
-      return (r.title || '').toLowerCase().includes(query) ||
-        (r.description || '').toLowerCase().includes(query) ||
-        (r.subject || '').toLowerCase().includes(query);
-    });
-  }
-}
-function applySort() {
-  var sort = document.getElementById('sortSelect').value;
-  if (sort === 'price-asc') filteredResources.sort(function (a, b) { return (a.price || 0) - (b.price || 0); });
-  else if (sort === 'price-desc') filteredResources.sort(function (a, b) { return (b.price || 0) - (a.price || 0); });
-  else if (sort === 'popular') filteredResources.sort(function (a, b) { return (b.downloads || 0) - (a.downloads || 0); });
-}
-function applyFilters() {
-  var subject = document.querySelector('.pill.active') ? document.querySelector('.pill.active').dataset.filter : 'all';
-  var query = (document.getElementById('searchInput').value || '').toLowerCase();
-
-  if (activeLevel === 'all') {
-    renderGroupedByCategory();
-    return;
-  }
-
-  var filtered = allResources.filter(function (r) { return r.level === activeLevel; });
-  if (subject !== 'all') filtered = filtered.filter(function (r) { return r.subject === subject; });
-  if (query.length > 0) {
-    filtered = filtered.filter(function (r) {
-      return (r.title || '').toLowerCase().includes(query) ||
-        (r.description || '').toLowerCase().includes(query) ||
-        (r.subject || '').toLowerCase().includes(query);
-    });
-  }
-  filteredResources = filtered;
-  currentPage = 1;
-  applySort();
-  renderShop();
-}
-
-/* ── TOAST ── */
-function showToast(msg, type) {
-  type = type || 'success';
-  var icons = { success: '✅', error: '❌', info: 'ℹ️', warning: '⚠️' };
-  var toast = document.getElementById('toastNotification');
-  document.getElementById('toastIcon').textContent = icons[type] || '✅';
-  document.getElementById('toastMsg').textContent = msg;
-  toast.classList.add('show');
-  setTimeout(function () { toast.classList.remove('show'); }, 3800);
 }
 
 /* ── PAYMENT MODAL ── */
-function openPaymentModal(productId, showVerification) {
-  var product = allResources.find(function (r) { return r.id === productId; });
-  if (!product) { showToast('⚠️ Product not found. Please try again.', 'error'); return; }
+function openPaymentModal(productId, fromPending) {
+  var product = allResources.find(function(r) { return r.id === productId; });
+  if (!product) {
+    showToast('⚠️', 'Product not found. Please try again.');
+    return;
+  }
 
   currentProduct = product;
-
-  document.getElementById('modalProductTitle').textContent = product.title || 'Document Purchase';
-  document.getElementById('pdTitle').textContent = product.title || '—';
-  document.getElementById('pdSubject').textContent = product.subject || '—';
+  document.getElementById('pdTitle').textContent = product.title || 'Untitled';
+  document.getElementById('pdSubject').textContent = product.subject || 'General';
   document.getElementById('pdLevel').textContent = getLevelDisplay(product.level);
-  document.getElementById('pdPrice').textContent = 'KES ' + (product.price || 0);
-
-  document.getElementById('kicdDisclosure').innerHTML =
-    '<p>✅ <strong>KICD Curriculum Aligned</strong><br>This resource has been reviewed and aligned with the Kenya Institute of Curriculum Development (KICD) curriculum designs for ' +
-    getLevelDisplay(product.level) + '. All content follows the Competency-Based Curriculum (CBC) framework.</p>';
-
-  document.getElementById('customerPhone').value = '';
-  document.getElementById('customerPhone').className = '';
-  document.getElementById('mpesaCode').value = '';
-  document.getElementById('mpesaCode').className = '';
+  var price = product.price || 0;
+  document.getElementById('pdPrice').textContent = price === 0 ? 'FREE' : 'KES ' + price;
+  document.getElementById('modalProductTitle').textContent = 'Buy: ' + (product.title || 'Document');
   
-  var verifySection = document.getElementById('mpesaVerificationSection');
-  verifySection.classList.remove('show');
-  verifySection.style.display = 'none';
+  // Show/hide KICD disclosure
+  var disclosure = document.getElementById('kicdDisclosure');
+  if (product.level === 'self-development') {
+    disclosure.style.display = 'none';
+  } else {
+    disclosure.style.display = 'block';
+  }
 
-  var payBtn = document.getElementById('payNowBtn');
-  payBtn.disabled = false;
-  payBtn.textContent = '💳 Pay with M-PESA';
+  // Reset verification section
+  document.getElementById('mpesaVerificationSection').classList.remove('show');
+  document.getElementById('mpesaCode').value = '';
+  document.getElementById('mpesaCode').classList.remove('error');
+  document.getElementById('customerPhone').classList.remove('error');
 
-  if (showVerification) {
-    var savedPhone = sessionStorage.getItem('kv_customer_phone');
-    if (savedPhone) {
-      document.getElementById('customerPhone').value = savedPhone;
-    }
-    verifySection.style.display = 'block';
-    setTimeout(function() {
-      verifySection.classList.add('show');
-    }, 100);
-    document.getElementById('mpesaCode').focus();
+  // Store pending order
+  if (!fromPending) {
+    sessionStorage.setItem('pending_order', JSON.stringify({ productId: productId, timestamp: Date.now() }));
   }
 
   document.getElementById('paymentModal').classList.add('open');
-  document.body.style.overflow = 'hidden';
-  setTimeout(function () { 
-    if (!showVerification) {
-      document.getElementById('customerPhone').focus(); 
-    }
-  }, 300);
 }
 
 function closePaymentModal() {
   document.getElementById('paymentModal').classList.remove('open');
-  document.body.style.overflow = '';
-  currentProduct = null;
+  document.getElementById('mpesaVerificationSection').classList.remove('show');
   sessionStorage.removeItem('pending_order');
 }
 
 function closeSuccessModal() {
   document.getElementById('successModal').classList.remove('open');
-  document.body.style.overflow = '';
+  closePaymentModal();
 }
 
-/* ── STEP 1: INITIATE PAYMENT ── */
-function initiatePayment() {
-  var phoneInput = document.getElementById('customerPhone');
-  var phone = phoneInput.value.trim();
-
-  if (!phone) {
-    showToast('⚠️ Please enter your WhatsApp number', 'warning');
-    phoneInput.className = 'error';
-    phoneInput.focus();
-    return;
-  }
-
-  var cleanPhone = phone.replace(/\s/g, '');
-  var isValid = /^2547\d{8}$/.test(cleanPhone) || /^07\d{8}$/.test(cleanPhone) || /^7\d{8}$/.test(cleanPhone);
-
-  if (!isValid) {
-    showToast('⚠️ Please enter a valid Kenyan phone number (e.g., 0712345678)', 'warning');
-    phoneInput.className = 'error';
-    phoneInput.focus();
-    return;
-  }
-
-  phoneInput.className = '';
-
-  var formattedPhone = cleanPhone;
-  if (formattedPhone.startsWith('0')) formattedPhone = '254' + formattedPhone.substring(1);
-  else if (formattedPhone.startsWith('7')) formattedPhone = '254' + formattedPhone;
-
-  sessionStorage.setItem('kv_customer_phone', formattedPhone);
-
-  orderRef = 'KV-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
-  
-  var pendingOrder = {
-    productId: currentProduct.id,
-    productTitle: currentProduct.title,
-    phone: formattedPhone,
-    amount: currentProduct.price,
-    ref: orderRef
-  };
-  sessionStorage.setItem('pending_order', JSON.stringify(pendingOrder));
-
-  var verifySection = document.getElementById('mpesaVerificationSection');
-  verifySection.style.display = 'block';
-  setTimeout(function() {
-    verifySection.classList.add('show');
-  }, 100);
-
-  var payBtn = document.getElementById('payNowBtn');
-  payBtn.disabled = true;
-  payBtn.textContent = '⏳ Payment initiated...';
-
-  var megapayUrl = MEGAPAY_LINK + '?phone=' + formattedPhone + '&amount=' + currentProduct.price + '&ref=' + orderRef;
-  window.open(megapayUrl, '_blank');
-
-  showToast('📤 Payment page opened! Complete payment on your phone, then enter the verification code below.', 'info');
-
-  setTimeout(function () { 
-    document.getElementById('mpesaCode').focus(); 
-  }, 1800);
-  
-  setTimeout(function() {
-    payBtn.disabled = false;
-    payBtn.textContent = '💳 Pay with M-PESA';
-  }, 5000);
+function closeDownloadStatusModal() {
+  document.getElementById('downloadStatusModal').classList.remove('open');
 }
 
-/* ── STEP 2: CONFIRM PAYMENT (FIXED - Only uses columns that exist) ── */
-async function confirmPayment() {
-  var mpesaCodeInput = document.getElementById('mpesaCode');
-  var mpesaCode = mpesaCodeInput.value.trim().toUpperCase();
+function closePreviewModal() {
+  document.getElementById('previewModal').classList.remove('open');
+}
 
-  if (!mpesaCode || mpesaCode.length !== 4 || !/^[A-Z0-9]{4}$/.test(mpesaCode)) {
-    showToast('⚠️ Please enter exactly 4 characters from your M-PESA code', 'warning');
-    mpesaCodeInput.className = 'error';
-    mpesaCodeInput.focus();
-    return;
-  }
-  mpesaCodeInput.className = '';
-
-  var phone = sessionStorage.getItem('kv_customer_phone') || '';
+/* ── PAYMENT FLOW ── */
+document.getElementById('payNowBtn').addEventListener('click', function() {
+  var phone = document.getElementById('customerPhone').value.trim();
   if (!phone) {
-    showToast('⚠️ Something went wrong with your phone number. Please restart checkout.', 'error');
+    document.getElementById('customerPhone').classList.add('error');
+    showToast('⚠️', 'Please enter your WhatsApp number');
     return;
   }
-  if (!currentProduct) {
-    showToast('⚠️ No product selected. Please restart checkout.', 'error');
+  document.getElementById('customerPhone').classList.remove('error');
+
+  // Show verification section
+  document.getElementById('mpesaVerificationSection').classList.add('show');
+  
+  // Open Megapay in new window
+  var product = currentProduct;
+  var price = product.price || 0;
+  var title = encodeURIComponent(product.title || 'Resource');
+  
+  // Build Megapay URL with product details
+  var megapayUrl = MEGAPAY_LINK + '?amount=' + price + '&description=' + title + '&phone=' + phone;
+  window.open(megapayUrl, '_blank', 'width=400,height=600');
+  
+  showToast('💳', 'Complete payment on your phone, then enter the verification code');
+});
+
+document.getElementById('confirmPaymentBtn').addEventListener('click', async function() {
+  var phone = document.getElementById('customerPhone').value.trim();
+  var code = document.getElementById('mpesaCode').value.trim().toUpperCase();
+  
+  if (!phone) {
+    document.getElementById('customerPhone').classList.add('error');
+    showToast('⚠️', 'Please enter your WhatsApp number');
+    return;
+  }
+  
+  if (!code || code.length < 4) {
+    document.getElementById('mpesaCode').classList.add('error');
+    showToast('⚠️', 'Please enter the 4-character verification code');
     return;
   }
 
-  var pendingOrder = sessionStorage.getItem('pending_order');
-  var orderRef = 'KV-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
-  if (pendingOrder) {
-    try {
-      var parsed = JSON.parse(pendingOrder);
-      if (parsed.ref) orderRef = parsed.ref;
-    } catch(e) {}
-  }
+  document.getElementById('customerPhone').classList.remove('error');
+  document.getElementById('mpesaCode').classList.remove('error');
 
-  var confirmBtn = document.getElementById('confirmPaymentBtn');
-  confirmBtn.disabled = true;
-  confirmBtn.textContent = '⏳ Recording order...';
-
+  // Record order in Supabase
   try {
-    // Calculate shares (80% tutor, 20% platform)
-    const tutorShare = Math.round(currentProduct.price * 0.8);
-    const platformShare = Math.round(currentProduct.price * 0.2);
-    
-    // Get tutor_id from product
-    const tutorId = currentProduct.tutor_id || null;
-    
-    // Build order data - ONLY include columns that exist in the orders table
     var orderData = {
-      ref: orderRef,
-      student_name: 'Customer',
-      phone: phone,
-      resource_id: currentProduct.id,
-      resource_title: currentProduct.title,
-      amount: currentProduct.price,
-      mpesa_code: mpesaCode,
+      product_id: currentProduct.id,
+      product_title: currentProduct.title,
+      product_price: currentProduct.price || 0,
+      customer_phone: phone,
+      mpesa_code: code,
       status: 'pending',
-      payment_confirmed: false,
-      verified: false,
-      created_at: new Date().toISOString()
+      download_accessed: false,
+      download_attempts: 0
     };
 
-    // Only add tutor columns if they exist in the table
-    // Check if tutor_id column exists by trying to select it
-    try {
-      const testQuery = await sbClient.from('orders').select('tutor_id').limit(1);
-      // If no error, column exists
-      orderData.tutor_id = tutorId;
-      orderData.tutor_share = tutorShare;
-      orderData.platform_share = platformShare;
-    } catch(e) {
-      console.log('Tutor columns not found in orders table, skipping...');
+    var result = await sbClient.from('orders').insert([orderData]).select();
+
+    if (result.error) {
+      showToast('⚠️', 'Error recording order: ' + result.error.message);
+      return;
     }
 
-    // Only add class_id if it's a class booking and column exists
-    if (currentProduct.is_class && currentProduct.id) {
-      try {
-        const testQuery = await sbClient.from('orders').select('class_id').limit(1);
-        orderData.class_id = currentProduct.id;
-        orderData.class_title = currentProduct.title;
-      } catch(e) {
-        console.log('Class columns not found in orders table, skipping...');
-      }
-    }
+    var order = result.data[0];
+    orderRef = order.id;
 
-    console.log('Order data being inserted:', orderData);
-
-    var result = await sbClient.from('orders').insert([orderData]).select().single();
-    if (result.error) throw result.error;
-
-    // If it's a class booking, update the class bookings count
-    if (currentProduct.is_class && currentProduct.id) {
-      try {
-        const classResult = await sbClient.from('classes').select('bookings').eq('id', currentProduct.id).single();
-        if (classResult.data) {
-          const newBookings = (classResult.data.bookings || 0) + 1;
-          await sbClient.from('classes').update({ 
-            bookings: newBookings
-          }).eq('id', currentProduct.id);
-        }
-      } catch(e) {
-        console.warn('Could not update class bookings:', e);
-      }
-    }
-
-    confirmBtn.disabled = false;
-    confirmBtn.textContent = '✅ Confirm Payment & Get Download Link';
-
-    closePaymentModal();
-    
-    document.getElementById('successOrderRef').textContent = result.data.ref;
-    
-    // Show success message
+    // Show success modal
+    document.getElementById('successOrderRef').textContent = '#' + orderRef.slice(0, 8).toUpperCase();
     document.getElementById('successModal').classList.add('open');
-    document.body.style.overflow = 'hidden';
-
-    sessionStorage.removeItem('kv_customer_phone');
+    
+    // Clear pending order
     sessionStorage.removeItem('pending_order');
-
-    showToast('✅ Order confirmed! Check your WhatsApp for the download link.', 'success');
+    
+    showToast('✅', 'Order recorded successfully! Check your WhatsApp for the download link.');
 
   } catch (e) {
-    console.error('Order record error:', e);
-    confirmBtn.disabled = false;
-    confirmBtn.textContent = '✅ Confirm Payment & Get Download Link';
-    
-    // Check if it's a column error
-    if (e.message && e.message.includes('column')) {
-      showToast('⚠️ Database column error. Please contact support.', 'error');
-    } else {
-      showToast('⚠️ Error recording order: ' + (e.message || 'Please contact support.'), 'error');
-    }
+    console.error('Error recording order:', e);
+    showToast('⚠️', 'Error recording order. Please try again.');
   }
-}
+});
 
 /* ── PREVIEW MODAL ── */
-function openPreviewModal(productId) {
-  var product = allResources.find(function (r) { return r.id === productId; });
-  if (!product) { showToast('⚠️ Product not found', 'error'); return; }
-
-  var coverHTML = '';
-  if (product.cover_image_url) {
-    coverHTML = '<img src="' + product.cover_image_url + '" alt="' + (product.title || '') + '" style="max-width:100%;max-height:200px;border-radius:8px;border:1px solid var(--border);" />';
+async function openPreview(productId) {
+  var product = allResources.find(function(r) { return r.id === productId; });
+  if (!product) {
+    showToast('⚠️', 'Product not found');
+    return;
   }
-  document.getElementById('previewCoverImage').innerHTML = coverHTML;
-  document.getElementById('previewTitle').textContent = 'Preview: ' + product.title;
-  document.getElementById('previewPages').textContent = product.preview_pages || 2;
-  document.getElementById('previewContent').innerHTML = generatePreviewContent(product);
 
-  document.getElementById('previewBuyBtn').onclick = function () {
+  document.getElementById('previewTitle').textContent = 'Preview: ' + (product.title || 'Document');
+  document.getElementById('previewPages').textContent = product.preview_pages || 3;
+  document.getElementById('previewBuyBtn').onclick = function() {
     closePreviewModal();
     openPaymentModal(productId);
   };
 
-  document.getElementById('previewModal').classList.add('open');
-  document.body.style.overflow = 'hidden';
-}
-function closePreviewModal() {
-  document.getElementById('previewModal').classList.remove('open');
-  document.body.style.overflow = '';
-}
-function generatePreviewContent(product) {
-  var previewPages = product.preview_pages || 2;
-  var html = '';
-  for (var i = 1; i <= previewPages; i++) {
-    html += '<div class="page-preview"><div class="watermark-text">PREVIEW</div>' +
-      '<div class="preview-content"><h4>Preview Page ' + i + '</h4><p>' + getSampleContent(product, i) + '</p></div>' +
-      '<div style="text-align:center;margin-top:8px;"><span class="preview-badge">🔒 Preview - Full version available after purchase</span></div></div>';
+  // Show cover image if available
+  var coverContainer = document.getElementById('previewCoverImage');
+  if (product.cover_image_url) {
+    coverContainer.innerHTML = '<img src="' + product.cover_image_url + '" alt="' + (product.title || 'Cover') + '" style="max-width:200px;max-height:150px;border-radius:8px;object-fit:cover;">';
+  } else {
+    coverContainer.innerHTML = '';
   }
-  html += '<div style="text-align:center;margin-top:16px;color:var(--muted);font-size:0.78rem;">📌 <strong>' + (product.pages || 0) + ' pages</strong> available in full document · ' + previewPages + ' pages previewed</div>';
+
+  // Load preview content
+  var previewContainer = document.getElementById('previewContent');
+  if (product.preview_url) {
+    try {
+      var response = await fetch(product.preview_url);
+      if (response.ok) {
+        var text = await response.text();
+        previewContainer.innerHTML = '<div style="max-height:400px;overflow-y:auto;">' + text + '</div>';
+      } else {
+        previewContainer.innerHTML = generateDummyPreview(product);
+      }
+    } catch(e) {
+      previewContainer.innerHTML = generateDummyPreview(product);
+    }
+  } else {
+    previewContainer.innerHTML = generateDummyPreview(product);
+  }
+
+  document.getElementById('previewModal').classList.add('open');
+}
+
+function generateDummyPreview(product) {
+  var pages = product.preview_pages || 3;
+  var html = '';
+  for (var i = 1; i <= pages; i++) {
+    html += `
+      <div class="page-preview">
+        <div class="watermark-text">PREVIEW</div>
+        <div class="preview-content">
+          <h4>${product.title || 'Document'} — Page ${i}</h4>
+          <p>${product.description || 'This is a preview of the document. Full content is available after purchase.'}</p>
+          <p style="margin-top:12px;">📝 Sample content line 1<br>📝 Sample content line 2<br>📝 Sample content line 3</p>
+          <span class="preview-badge">🔒 Preview only — ${i}/${pages}</span>
+        </div>
+      </div>
+    `;
+  }
   return html;
 }
-function getSampleContent(product, pageNum) {
-  var samples = {
-    mathematics: ['This section covers number operations including addition, subtraction, multiplication, and division of integers.', 'Algebraic expressions are introduced with clear explanations and step-by-step examples.', 'Geometry concepts including angles, shapes, and measurement with practice problems.'],
-    english: ['Comprehensive grammar review covering parts of speech, sentence structure, and common errors.', 'Reading comprehension strategies with sample passages and questions.', 'Writing skills development including essay structure and creative writing.'],
-    'integrated-science': ['Introduction to scientific inquiry and the scientific method with practical examples.', 'Life sciences covering cells, plant and animal systems, and ecosystems.', 'Physical sciences including matter, energy, forces, and simple machines.'],
-    'personal-growth': ['Discover the power of self-awareness and emotional intelligence in personal development.', 'Learn to set and achieve meaningful goals that align with your values.', 'Build resilience and overcome obstacles on your growth journey.'],
-    'financial-literacy': ['Understanding the basics of money management and wealth creation.', 'Practical strategies for budgeting, saving, and investing wisely.', 'Building financial independence through smart decision-making.'],
-    leadership: ['Core principles of effective leadership and influence.', 'Developing emotional intelligence and communication skills for leaders.', 'Strategies for building and leading high-performing teams.']
-  };
-  var subjectSamples = samples[product.subject] || ['Comprehensive coverage of key concepts with clear explanations and examples.', 'Practice questions with detailed answers to reinforce learning.', 'Revision notes summarizing important points for quick reference.'];
-  return subjectSamples[(pageNum - 1) % subjectSamples.length] || 'Content preview showing the quality and structure of this resource.';
+
+/* ── TOAST ── */
+function showToast(icon, msg) {
+  var toast = document.getElementById('toastNotification');
+  document.getElementById('toastIcon').textContent = icon || '✅';
+  document.getElementById('toastMsg').textContent = msg || 'Success';
+  toast.classList.add('show');
+  clearTimeout(toast._timeout);
+  toast._timeout = setTimeout(function() {
+    toast.classList.remove('show');
+  }, 4000);
 }
 
 /* ── EVENT LISTENERS ── */
 function setupEventListeners() {
-  document.querySelectorAll('.level-tab').forEach(function (tab) {
-    tab.addEventListener('click', function () {
-      document.querySelectorAll('.level-tab').forEach(function (t) { t.classList.remove('active'); });
+  // Level tabs
+  document.querySelectorAll('.level-tab').forEach(function(tab) {
+    tab.addEventListener('click', function() {
+      var level = this.dataset.level;
+      activeLevel = level;
+      document.querySelectorAll('.level-tab').forEach(function(t) { t.classList.remove('active'); });
       this.classList.add('active');
-      document.querySelectorAll('.sidebar-subject').forEach(function (s) { s.classList.toggle('active', s.dataset.levelFilter === this.dataset.level); }, this);
-      filterByLevel(this.dataset.level);
+      document.querySelectorAll('.sidebar-subject').forEach(function(s) {
+        s.classList.toggle('active', s.dataset.levelFilter === level);
+      });
+      currentPage = 1;
+      renderShop();
     });
   });
 
-  document.querySelectorAll('.sidebar-subject').forEach(function (link) {
-    link.addEventListener('click', function (e) {
+  // Sidebar subjects
+  document.querySelectorAll('.sidebar-subject').forEach(function(sub) {
+    sub.addEventListener('click', function(e) {
       e.preventDefault();
-      document.querySelectorAll('.sidebar-subject').forEach(function (l) { l.classList.remove('active'); });
-      this.classList.add('active');
       var level = this.dataset.levelFilter;
-      document.querySelectorAll('.level-tab').forEach(function (t) { t.classList.toggle('active', t.dataset.level === level); });
-      filterByLevel(level);
-    });
-  });
-
-  document.querySelectorAll('.pill').forEach(function (pill) {
-    pill.addEventListener('click', function () {
-      document.querySelectorAll('.pill').forEach(function (p) { p.classList.remove('active'); });
+      activeLevel = level;
+      document.querySelectorAll('.sidebar-subject').forEach(function(s) { s.classList.remove('active'); });
       this.classList.add('active');
-      applyFilters();
+      document.querySelectorAll('.level-tab').forEach(function(t) {
+        t.classList.toggle('active', t.dataset.level === level);
+      });
+      currentPage = 1;
+      renderShop();
     });
   });
 
-  document.getElementById('searchInput').addEventListener('input', applyFilters);
-
-  document.getElementById('sortSelect').addEventListener('change', function () {
-    if (activeLevel !== 'all') { applySort(); renderShop(); }
+  // Subject pills
+  document.querySelectorAll('.pill').forEach(function(pill) {
+    pill.addEventListener('click', function() {
+      document.querySelectorAll('.pill').forEach(function(p) { p.classList.remove('active'); });
+      this.classList.add('active');
+      currentPage = 1;
+      renderShop();
+    });
   });
 
-  document.getElementById('prevPage').addEventListener('click', function () { if (currentPage > 1) { currentPage--; renderShop(); } });
-  document.getElementById('nextPage').addEventListener('click', function () {
-    var totalPages = Math.ceil(filteredResources.length / itemsPerPage);
+  // Search
+  document.getElementById('searchInput').addEventListener('input', function() {
+    currentPage = 1;
+    renderShop();
+  });
+
+  // Sort
+  document.getElementById('sortSelect').addEventListener('change', function() {
+    currentPage = 1;
+    renderShop();
+  });
+
+  // Pagination
+  document.getElementById('prevPage').addEventListener('click', function() {
+    if (currentPage > 1) { currentPage--; renderShop(); }
+  });
+  document.getElementById('nextPage').addEventListener('click', function() {
+    var totalItems = getFilteredAndSortedResources().length;
+    var totalPages = Math.ceil(totalItems / itemsPerPage);
     if (currentPage < totalPages) { currentPage++; renderShop(); }
   });
 
-  document.getElementById('kjseaBannerBtn').addEventListener('click', function () {
-    document.querySelectorAll('.level-tab').forEach(function (t) { t.classList.toggle('active', t.dataset.level === 'kjsea'); });
-    document.querySelectorAll('.sidebar-subject').forEach(function (s) { s.classList.toggle('active', s.dataset.levelFilter === 'kjsea'); });
-    filterByLevel('kjsea');
-  });
-
+  // Modal close buttons
   document.getElementById('modalClose').addEventListener('click', closePaymentModal);
-  document.getElementById('paymentModal').addEventListener('click', function (e) { if (e.target === this) closePaymentModal(); });
   document.getElementById('previewClose').addEventListener('click', closePreviewModal);
-  document.getElementById('previewModal').addEventListener('click', function (e) { if (e.target === this) closePreviewModal(); });
-  document.getElementById('successModal').addEventListener('click', function (e) { if (e.target === this) closeSuccessModal(); });
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') { closePaymentModal(); closePreviewModal(); closeSuccessModal(); }
+
+  // Close modals on overlay click
+  document.querySelectorAll('.modal-overlay').forEach(function(overlay) {
+    overlay.addEventListener('click', function(e) {
+      if (e.target === this) {
+        if (this.id === 'paymentModal') closePaymentModal();
+        else if (this.id === 'previewModal') closePreviewModal();
+        else if (this.id === 'successModal') closeSuccessModal();
+        else if (this.id === 'downloadStatusModal') closeDownloadStatusModal();
+      }
+    });
   });
 
-  document.getElementById('payNowBtn').addEventListener('click', initiatePayment);
-  document.getElementById('confirmPaymentBtn').addEventListener('click', confirmPayment);
-
-  document.getElementById('customerPhone').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); initiatePayment(); } });
-  document.getElementById('mpesaCode').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); confirmPayment(); } });
-  document.getElementById('mpesaCode').addEventListener('input', function () { 
-    this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4); 
+  // KJSEA banner button
+  document.getElementById('kjseaBannerBtn').addEventListener('click', function() {
+    document.querySelector('.level-tab[data-level="kjsea"]').click();
   });
 
-  var hamburger = document.getElementById('hamburger');
-  var navLinks = document.getElementById('navLinks');
-  if (hamburger && navLinks) {
-    hamburger.addEventListener('click', function () { navLinks.classList.toggle('active'); hamburger.classList.toggle('active'); });
+  // Hamburger menu
+  document.getElementById('hamburger').addEventListener('click', function() {
+    document.getElementById('navLinks').classList.toggle('open');
+  });
+}
+
+/* ── DOWNLOAD STATUS CHECK ── */
+async function checkDownloadStatus(orderId) {
+  try {
+    var result = await sbClient.from('orders')
+      .select('download_accessed, download_attempts, product_id, customer_phone')
+      .eq('id', orderId)
+      .single();
+
+    if (result.error) {
+      showToast('⚠️', 'Error checking download status');
+      return null;
+    }
+
+    return result.data;
+  } catch (e) {
+    console.error('Error checking download status:', e);
+    return null;
   }
 }
 
+/* ── RECORD DOWNLOAD ATTEMPT ── */
+async function recordDownloadAttempt(orderId) {
+  try {
+    var result = await sbClient.from('orders')
+      .update({ 
+        download_attempts: sbClient.rpc('increment', { row_id: orderId, column_name: 'download_attempts' })
+      })
+      .eq('id', orderId)
+      .select();
+
+    // If increment RPC not available, use a simpler approach
+    if (result.error) {
+      // Get current attempts
+      var current = await sbClient.from('orders')
+        .select('download_attempts')
+        .eq('id', orderId)
+        .single();
+      
+      if (!current.error) {
+        var attempts = (current.data.download_attempts || 0) + 1;
+        await sbClient.from('orders')
+          .update({ download_attempts: attempts })
+          .eq('id', orderId);
+      }
+    }
+
+    return true;
+  } catch (e) {
+    console.error('Error recording download attempt:', e);
+    return false;
+  }
+}
+
+/* ── MARK DOWNLOAD AS ACCESSED ── */
+async function markDownloadAccessed(orderId) {
+  try {
+    var result = await sbClient.from('orders')
+      .update({ 
+        download_accessed: true,
+        download_accessed_at: new Date().toISOString()
+      })
+      .eq('id', orderId);
+
+    if (result.error) {
+      console.error('Error marking download as accessed:', result.error);
+      return false;
+    }
+
+    return true;
+  } catch (e) {
+    console.error('Error marking download as accessed:', e);
+    return false;
+  }
+}
+
+/* ── HANDLE DOWNLOAD REQUEST ── */
+async function handleDownload(orderId, productId) {
+  // Check if download is available
+  var status = await checkDownloadStatus(orderId);
+  if (!status) {
+    showToast('⚠️', 'Could not verify download status');
+    return;
+  }
+
+  if (status.download_accessed) {
+    // Show download status modal
+    document.getElementById('downloadStatusIcon').textContent = '🔒';
+    document.getElementById('downloadStatusTitle').textContent = 'Download Link Already Used';
+    document.getElementById('downloadStatusMessage').textContent = 
+      'This download link was accessed on ' + new Date(status.download_accessed_at).toLocaleString() + 
+      '. Each purchase allows one download. If you haven\'t downloaded your resource, please contact support at adminnexalearn@gmail.com';
+    document.getElementById('downloadStatusModal').classList.add('open');
+    return;
+  }
+
+  // Record download attempt
+  await recordDownloadAttempt(orderId);
+
+  // Get the download URL
+  var product = allResources.find(function(r) { return r.id === productId; });
+  if (!product || !product.file_url) {
+    showToast('⚠️', 'Download URL not available');
+    return;
+  }
+
+  // Mark as accessed
+  var marked = await markDownloadAccessed(orderId);
+  if (!marked) {
+    showToast('⚠️', 'Error updating download status');
+    return;
+  }
+
+  // Trigger download
+  window.open(product.file_url, '_blank');
+  showToast('✅', 'Download started! Check your downloads folder.');
+}
+
+/* ── INITIALIZE ── */
+document.addEventListener('DOMContentLoaded', init);
+
+// Expose functions to global scope for inline onclick handlers
 window.openPaymentModal = openPaymentModal;
 window.closePaymentModal = closePaymentModal;
 window.closeSuccessModal = closeSuccessModal;
-window.openPreviewModal = openPreviewModal;
+window.closeDownloadStatusModal = closeDownloadStatusModal;
 window.closePreviewModal = closePreviewModal;
-window.loadResources = loadResources;
-window.jumpToLevel = jumpToLevel;
+window.openPreview = openPreview;
+window.resetFilters = resetFilters;
+window.handleDownload = handleDownload;
 window.showToast = showToast;
+window.init = init;
 
-document.addEventListener('DOMContentLoaded', init);
 </script>
 </body>
 </html>
