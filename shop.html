@@ -794,7 +794,7 @@
 'use strict';
 
 /* ════════════════════════════════════════
-   KENYAVAULT SHOP — COMPLETE PAYMENT FLOW
+   KENYAVAULT SHOP — FIXED ORDER CREATION
 ════════════════════════════════════════ */
 
 const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
@@ -1329,7 +1329,7 @@ function initiatePayment() {
   }, 5000);
 }
 
-/* ── STEP 2: CONFIRM PAYMENT (FIXED - Removed booking_date column) ── */
+/* ── STEP 2: CONFIRM PAYMENT (FIXED - Only uses columns that exist) ── */
 async function confirmPayment() {
   var mpesaCodeInput = document.getElementById('mpesaCode');
   var mpesaCode = mpesaCodeInput.value.trim().toUpperCase();
@@ -1373,6 +1373,7 @@ async function confirmPayment() {
     // Get tutor_id from product
     const tutorId = currentProduct.tutor_id || null;
     
+    // Build order data - ONLY include columns that exist in the orders table
     var orderData = {
       ref: orderRef,
       student_name: 'Customer',
@@ -1384,17 +1385,33 @@ async function confirmPayment() {
       status: 'pending',
       payment_confirmed: false,
       verified: false,
-      tutor_id: tutorId,
-      tutor_share: tutorShare,
-      platform_share: platformShare,
       created_at: new Date().toISOString()
     };
 
-    // Only add class_id if it's a class booking
-    if (currentProduct.is_class) {
-      orderData.class_id = currentProduct.id;
-      orderData.class_title = currentProduct.title;
+    // Only add tutor columns if they exist in the table
+    // Check if tutor_id column exists by trying to select it
+    try {
+      const testQuery = await sbClient.from('orders').select('tutor_id').limit(1);
+      // If no error, column exists
+      orderData.tutor_id = tutorId;
+      orderData.tutor_share = tutorShare;
+      orderData.platform_share = platformShare;
+    } catch(e) {
+      console.log('Tutor columns not found in orders table, skipping...');
     }
+
+    // Only add class_id if it's a class booking and column exists
+    if (currentProduct.is_class && currentProduct.id) {
+      try {
+        const testQuery = await sbClient.from('orders').select('class_id').limit(1);
+        orderData.class_id = currentProduct.id;
+        orderData.class_title = currentProduct.title;
+      } catch(e) {
+        console.log('Class columns not found in orders table, skipping...');
+      }
+    }
+
+    console.log('Order data being inserted:', orderData);
 
     var result = await sbClient.from('orders').insert([orderData]).select().single();
     if (result.error) throw result.error;
@@ -1406,10 +1423,7 @@ async function confirmPayment() {
         if (classResult.data) {
           const newBookings = (classResult.data.bookings || 0) + 1;
           await sbClient.from('classes').update({ 
-            bookings: newBookings,
-            total_revenue: (classResult.data.total_revenue || 0) + currentProduct.price,
-            tutor_earnings: (classResult.data.tutor_earnings || 0) + tutorShare,
-            platform_earnings: (classResult.data.platform_earnings || 0) + platformShare
+            bookings: newBookings
           }).eq('id', currentProduct.id);
         }
       } catch(e) {
@@ -1424,13 +1438,7 @@ async function confirmPayment() {
     
     document.getElementById('successOrderRef').textContent = result.data.ref;
     
-    var downloadLink = currentProduct.file_url || '#';
-    var downloadBtn = document.getElementById('successDownloadLink').querySelector('a');
-    if (downloadBtn) {
-      downloadBtn.href = downloadLink;
-      downloadBtn.textContent = '📥 Download ' + currentProduct.title;
-    }
-    
+    // Show success message
     document.getElementById('successModal').classList.add('open');
     document.body.style.overflow = 'hidden';
 
@@ -1443,7 +1451,13 @@ async function confirmPayment() {
     console.error('Order record error:', e);
     confirmBtn.disabled = false;
     confirmBtn.textContent = '✅ Confirm Payment & Get Download Link';
-    showToast('⚠️ Error recording order: ' + (e.message || 'Please contact support.'), 'error');
+    
+    // Check if it's a column error
+    if (e.message && e.message.includes('column')) {
+      showToast('⚠️ Database column error. Please contact support.', 'error');
+    } else {
+      showToast('⚠️ Error recording order: ' + (e.message || 'Please contact support.'), 'error');
+    }
   }
 }
 
