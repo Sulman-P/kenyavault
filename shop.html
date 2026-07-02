@@ -1505,11 +1505,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Disable button to prevent double submission
         var confirmBtn = document.getElementById('confirmPaymentBtn');
+        var originalText = confirmBtn.textContent;
         confirmBtn.disabled = true;
         confirmBtn.textContent = '⏳ Recording order...';
 
         try {
-            // Prepare order data
+            // Generate a reference number
+            var ref = 'KV-' + Date.now().toString().slice(-8) + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
+            
+            // Prepare order data - match the table columns exactly
             var orderData = {
                 product_id: currentProduct.id,
                 product_title: currentProduct.title,
@@ -1517,29 +1521,50 @@ document.addEventListener('DOMContentLoaded', function() {
                 customer_phone: phone,
                 mpesa_code: code,
                 status: 'pending',
+                verified: false,
+                payment_confirmed: false,
                 download_accessed: false,
                 download_attempts: 0,
+                ref: ref,
                 created_at: new Date().toISOString()
             };
 
             console.log('Saving order:', orderData);
 
             // Insert order into Supabase
-            var result = await sbClient.from('orders').insert([orderData]).select();
+            var { data, error } = await sbClient.from('orders').insert([orderData]).select();
 
-            if (result.error) {
-                console.error('Insert error:', result.error);
-                showToast('⚠️', 'Error recording order: ' + result.error.message);
+            if (error) {
+                console.error('Insert error:', error);
+                
+                // Provide user-friendly error message
+                var errorMsg = 'Error recording order. ';
+                if (error.message && error.message.includes('relation "orders" does not exist')) {
+                    errorMsg += 'The orders table does not exist in the database. Please contact support.';
+                } else if (error.message && error.message.includes('column')) {
+                    errorMsg += 'There is a mismatch in the database structure. Please contact support.';
+                } else {
+                    errorMsg += error.message || 'Please try again.';
+                }
+                
+                showToast('⚠️', errorMsg);
                 confirmBtn.disabled = false;
-                confirmBtn.textContent = '✅ Confirm Payment & Record Order';
+                confirmBtn.textContent = originalText;
                 return;
             }
 
-            var order = result.data[0];
-            orderRef = order.id;
+            if (!data || data.length === 0) {
+                showToast('⚠️', 'Order was not saved. Please try again.');
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = originalText;
+                return;
+            }
+
+            var order = data[0];
+            var orderRef = order.id;
 
             // Show success modal
-            document.getElementById('successOrderRef').textContent = '#' + orderRef.slice(0, 8).toUpperCase();
+            document.getElementById('successOrderRef').textContent = '#' + ref;
             document.getElementById('successModal').classList.add('open');
             
             // Clear pending order from session
@@ -1560,10 +1585,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Re-enable button
         confirmBtn.disabled = false;
-        confirmBtn.textContent = '✅ Confirm Payment & Record Order';
+        confirmBtn.textContent = originalText;
     });
 });
-
 /* ── PREVIEW MODAL ── */
 async function openPreview(productId) {
   var product = allResources.find(function(r) { return r.id === productId; });
