@@ -1483,146 +1483,105 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // Confirm Payment button - Records the order
-    document.getElementById('confirmPaymentBtn').addEventListener('click', async function() {
-        var phone = document.getElementById('customerPhone').value.trim();
-        var code = document.getElementById('mpesaCode').value.trim().toUpperCase();
+document.getElementById('confirmPaymentBtn').addEventListener('click', async function() {
+    var phone = document.getElementById('customerPhone').value.trim();
+    var code = document.getElementById('mpesaCode').value.trim().toUpperCase();
+    
+    // Validate phone
+    if (!phone) {
+        document.getElementById('customerPhone').classList.add('error');
+        showToast('⚠️', 'Please enter your WhatsApp number');
+        return;
+    }
+    document.getElementById('customerPhone').classList.remove('error');
+    
+    // Validate M-PESA code (must be 4 characters)
+    if (!code || code.length < 4) {
+        document.getElementById('mpesaCode').classList.add('error');
+        showToast('⚠️', 'Please enter the 4-character verification code from your M-PESA message');
+        return;
+    }
+    document.getElementById('mpesaCode').classList.remove('error');
+
+    // Disable button to prevent double submission
+    var confirmBtn = document.getElementById('confirmPaymentBtn');
+    var originalText = confirmBtn.textContent;
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = '⏳ Recording order...';
+
+    try {
+        // Generate a reference number
+        var ref = 'KV-' + Date.now().toString().slice(-8) + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
         
-        // Validate phone
-        if (!phone) {
-            document.getElementById('customerPhone').classList.add('error');
-            showToast('⚠️', 'Please enter your WhatsApp number');
+        // IMPORTANT: Use "phone" column name (not "customer_phone") because your table has "phone"
+        var orderData = {
+            phone: phone,  // ← Changed from customer_phone to phone
+            product_id: currentProduct.id,
+            product_title: currentProduct.title,
+            product_price: currentProduct.price || 0,
+            mpesa_code: code,
+            status: 'pending',
+            ref: ref,
+            created_at: new Date().toISOString()
+        };
+
+        console.log('Saving order with data:', orderData);
+
+        // Insert order into Supabase
+        var { data, error } = await sbClient.from('orders').insert([orderData]).select();
+
+        if (error) {
+            console.error('Insert error:', error);
+            
+            // Provide user-friendly error message
+            var errorMsg = 'Error recording order. ';
+            if (error.message && error.message.includes('null value in column')) {
+                errorMsg += 'Missing required field: ' + error.message;
+            } else if (error.message) {
+                errorMsg += error.message;
+            } else {
+                errorMsg += 'Please try again.';
+            }
+            
+            showToast('⚠️', errorMsg);
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = originalText;
             return;
         }
-        document.getElementById('customerPhone').classList.remove('error');
-        
-        // Validate M-PESA code (must be 4 characters)
-        if (!code || code.length < 4) {
-            document.getElementById('mpesaCode').classList.add('error');
-            showToast('⚠️', 'Please enter the 4-character verification code from your M-PESA message');
+
+        if (!data || data.length === 0) {
+            showToast('⚠️', 'Order was not saved. Please try again.');
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = originalText;
             return;
         }
-        document.getElementById('mpesaCode').classList.remove('error');
 
-        // Disable button to prevent double submission
-        var confirmBtn = document.getElementById('confirmPaymentBtn');
-        var originalText = confirmBtn.textContent;
-        confirmBtn.disabled = true;
-        confirmBtn.textContent = '⏳ Recording order...';
+        var order = data[0];
+        var orderRef = order.id;
 
-        try {
-            // Generate a reference number
-            var ref = 'KV-' + Date.now().toString().slice(-8) + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
-            
-            // First, check what columns the orders table actually has
-            console.log('Checking orders table structure...');
-            
-            // Try to get the table info - we'll use a simpler approach
-            // Prepare order data - try with minimal required fields first
-            var orderData = {
-                product_id: currentProduct.id || 'unknown',
-                product_title: currentProduct.title || 'Untitled',
-                product_price: currentProduct.price || 0,
-                customer_phone: phone,
-                mpesa_code: code,
-                status: 'pending',
-                ref: ref,
-                created_at: new Date().toISOString()
-            };
+        // Show success modal
+        document.getElementById('successOrderRef').textContent = '#' + ref;
+        document.getElementById('successModal').classList.add('open');
+        
+        // Clear pending order from session
+        sessionStorage.removeItem('pending_order');
+        
+        // Reset the form
+        document.getElementById('mpesaVerificationSection').classList.remove('show');
+        document.getElementById('mpesaVerificationSection').style.display = 'none';
+        document.getElementById('mpesaCode').value = '';
+        document.getElementById('customerPhone').value = '';
+        
+        showToast('✅', 'Order recorded successfully! Check your WhatsApp for the download link.');
 
-            console.log('Attempting to save order with data:', orderData);
+    } catch (e) {
+        console.error('Error recording order:', e);
+        showToast('⚠️', 'Error recording order. Please try again.');
+    }
 
-            // Try to insert with just the basic fields first
-            var { data, error } = await sbClient.from('orders').insert([orderData]).select();
-
-            // If we get an error about missing columns, try a simpler version
-            if (error && error.message && error.message.includes('column')) {
-                console.log('Column error, trying with minimal fields...');
-                
-                // Minimal order data - only the fields we know exist
-                var minimalData = {
-                    product_title: currentProduct.title || 'Untitled',
-                    product_price: currentProduct.price || 0,
-                    customer_phone: phone,
-                    mpesa_code: code,
-                    status: 'pending',
-                    created_at: new Date().toISOString()
-                };
-                
-                console.log('Trying minimal data:', minimalData);
-                var result = await sbClient.from('orders').insert([minimalData]).select();
-                data = result.data;
-                error = result.error;
-            }
-
-            // If still getting an error, try with even simpler data
-            if (error && error.message && error.message.includes('column')) {
-                console.log('Still having column issues, trying with only required fields...');
-                
-                // Super minimal - only what's absolutely required
-                var superMinimal = {
-                    customer_phone: phone,
-                    mpesa_code: code,
-                    status: 'pending'
-                };
-                
-                console.log('Trying super minimal data:', superMinimal);
-                var result = await sbClient.from('orders').insert([superMinimal]).select();
-                data = result.data;
-                error = result.error;
-            }
-
-            if (error) {
-                console.error('Final insert error:', error);
-                
-                // Provide detailed error message
-                var errorMsg = 'Error recording order. ';
-                if (error.message) {
-                    errorMsg += 'Details: ' + error.message;
-                }
-                if (error.details) {
-                    errorMsg += ' - ' + error.details;
-                }
-                
-                showToast('⚠️', errorMsg);
-                confirmBtn.disabled = false;
-                confirmBtn.textContent = originalText;
-                return;
-            }
-
-            if (!data || data.length === 0) {
-                showToast('⚠️', 'Order was not saved. Please try again.');
-                confirmBtn.disabled = false;
-                confirmBtn.textContent = originalText;
-                return;
-            }
-
-            var order = data[0];
-            var orderRef = order.id;
-
-            // Show success modal
-            document.getElementById('successOrderRef').textContent = '#' + ref;
-            document.getElementById('successModal').classList.add('open');
-            
-            // Clear pending order from session
-            sessionStorage.removeItem('pending_order');
-            
-            // Reset the form
-            document.getElementById('mpesaVerificationSection').classList.remove('show');
-            document.getElementById('mpesaVerificationSection').style.display = 'none';
-            document.getElementById('mpesaCode').value = '';
-            document.getElementById('customerPhone').value = '';
-            
-            showToast('✅', 'Order recorded successfully! Check your WhatsApp for the download link.');
-
-        } catch (e) {
-            console.error('Error recording order:', e);
-            showToast('⚠️', 'Error recording order: ' + (e.message || 'Please try again.'));
-        }
-
-        // Re-enable button
-        confirmBtn.disabled = false;
-        confirmBtn.textContent = originalText;
-    });
+    // Re-enable button
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = originalText;
 });
 /* ── PREVIEW MODAL ── */
 async function openPreview(productId) {
