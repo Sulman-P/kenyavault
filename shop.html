@@ -865,29 +865,29 @@
         <button class="btn-mpesa" id="payNowBtn">💳 Pay with M-PESA</button>
       </div>
 
-      <!-- M-PESA Verification Section -->
-    <div id="mpesaVerificationSection" style="display:none; margin-top: 16px; padding-top: 16px; border-top: 2px dashed var(--border); animation: slideDown 0.4s ease;">
-         <div style="background:#F0FDF4;border-radius:8px;padding:12px 16px;margin-bottom:16px;border:1px solid #BBF7D0;">
-             <p style="font-size:0.82rem;color:#15803D;margin:0;">
-                ✅ <strong>Payment initiated!</strong> Complete the payment on your phone, then enter the verification code below.
-             </p>
-         </div>
+      <div id="mpesaVerificationSection">
+        <div style="background:#F0FDF4;border-radius:8px;padding:12px 16px;margin-bottom:16px;border:1px solid #BBF7D0;">
+          <p style="font-size:0.82rem;color:#15803D;margin:0;">
+            ✅ <strong>Payment initiated!</strong> Complete the payment on your phone, then enter the verification code below.
+          </p>
+        </div>
 
-         <div class="phone-input-group">
-             <label>🔑 M-PESA Verification Code <span class="required">*</span></label>
-                 <input type="text" id="mpesaCode" placeholder="Enter last 4 characters" maxlength="4" style="font-size:1.2rem;letter-spacing:4px;text-align:center;font-weight:700;text-transform:uppercase;"/>
-            <div class="phone-hint">
-                 📝 Enter the <strong>last 4 characters</strong> of your M-PESA transaction code<br>
-              <span style="font-size:0.75rem;color:#6B7280;">Example: If code is <strong>QWERTX3TR</strong>, enter <strong>X3TR</strong></span>
-            </div>
+        <div class="phone-input-group">
+          <label>🔑 M-PESA Verification Code <span class="required">*</span></label>
+          <input type="text" id="mpesaCode" placeholder="Enter last 4 characters" maxlength="4"/>
+          <div class="phone-hint">
+            📝 Enter the <strong>last 4 characters</strong> of your M-PESA transaction code<br>
+            <span style="font-size:0.75rem;color:#6B7280;">Example: If code is QWERTX3TR, enter <strong>X3TR</strong></span>
           </div>
+        </div>
 
-         <div class="payment-actions">
-           <button class="btn-mpesa" id="confirmPaymentBtn" style="background:#7C3AED;">
-                ✅ Confirm Payment & Record Order
-           </button>
-         </div>
+        <div class="payment-actions">
+          <button class="btn-mpesa" id="confirmPaymentBtn" style="background:#7C3AED;">
+            ✅ Confirm Payment & Record Order
+          </button>
+        </div>
       </div>
+
       <div class="modal-note">🔒 Your number is only used for sending the download link</div>
 
     </div>
@@ -1030,10 +1030,8 @@
    KENYAVAULT SHOP — WITH DOWNLOAD TRACKING
 ════════════════════════════════════════ */
 
-// ── SUPABASE CONFIGURATION ──
 const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
-
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
 const MEGAPAY_LINK = 'https://megapay.co.ke/tags/S1Zzyjs';
 
 const LEVEL_ORDER = ['kjsea', 'junior', 'senior', '844', 'self-development'];
@@ -1049,13 +1047,13 @@ let orderRef = null;
 /* ── INIT ── */
 async function init() {
   try {
-    console.log('Initializing KenyaVault Shop...');
+    if (typeof window.supabase === 'undefined') {
+      console.log('Loading Supabase library...');
+      await loadSupabaseLibrary();
+    }
     
-    // Initialize Supabase client - FIXED: No extra slashes
-    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    sbClient = supabaseClient;
-    
-    console.log('Supabase client initialized successfully');
+    sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    console.log('Supabase client initialized');
     
     await loadResources();
     setupEventListeners();
@@ -1079,6 +1077,17 @@ function checkPaymentReturn() {
   }
 }
 
+function loadSupabaseLibrary() {
+  return new Promise(function (resolve, reject) {
+    if (typeof window.supabase !== 'undefined') { resolve(); return; }
+    var script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
+
 function showDiagnostic(msg) {
   var panel = document.getElementById('diagPanel');
   panel.innerHTML = '⚠️ <strong>Diagnostic:</strong> ' + msg;
@@ -1094,41 +1103,18 @@ async function loadResources() {
   hideDiagnostic();
 
   try {
-    console.log('Fetching resources from Supabase...');
-    
-    // FIXED: Properly formatted query - no double /rest/v1/
-    const { data, error, status } = await sbClient
-      .from('resources')
-      .select('*')
-      .order('created_at', { ascending: false });
+    var result = await sbClient.from('resources').select('*').order('created_at', { ascending: false });
 
-    if (error) {
-      console.error('Supabase error:', error);
-      console.error('Status code:', status);
-      
-      let errorMsg = error.message || 'Unknown error';
-      
-      if (status === 401) {
-        errorMsg = '🔑 <strong>Authentication Error (401)</strong> — Your Supabase API key is invalid.<br><br>' +
-                   'Please check your SUPABASE_ANON_KEY in the JavaScript.';
-      } else if (status === 404) {
-        errorMsg = '📁 <strong>Table Not Found (404)</strong> — The "resources" table doesn\'t exist.<br><br>' +
-                   'Please create a "resources" table in your Supabase database.';
-      } else if (status === 403) {
-        errorMsg = '🚫 <strong>Permission Denied (403)</strong> — RLS policies are blocking access.<br><br>' +
-                   'Please enable RLS policies for the "resources" table.';
-      }
-      
-      showDiagnostic('Supabase returned an error: <code>' + errorMsg + '</code>');
-      renderEmptyError({ message: errorMsg });
+    if (result.error) {
+      showDiagnostic('Supabase returned an error: <code>' + result.error.message + '</code>.');
+      renderEmptyError(result.error);
       return;
     }
 
-    allResources = data || [];
-    console.log('Loaded ' + allResources.length + ' resources');
+    allResources = result.data || [];
 
     if (allResources.length === 0) {
-      showDiagnostic('⚠️ No resources found in the database. Please add some resources to the "resources" table.');
+      showDiagnostic('Supabase connected successfully but returned <strong>0 rows</strong>. Either no resources have been uploaded yet.');
     }
 
     updateCounts();
@@ -1439,150 +1425,103 @@ function closePreviewModal() {
 
 /* ── PAYMENT FLOW ── */
 document.addEventListener('DOMContentLoaded', function() {
-    // Pay Now button - Opens Megapay and shows verification section
-    document.getElementById('payNowBtn').addEventListener('click', function() {
-        var phone = document.getElementById('customerPhone').value.trim();
-        
-        // Validate phone number
-        if (!phone) {
-            document.getElementById('customerPhone').classList.add('error');
-            showToast('⚠️', 'Please enter your WhatsApp number');
-            return;
-        }
-        
-        // Basic phone validation (Kenyan format)
-        var phoneClean = phone.replace(/\s/g, '');
-        if (!phoneClean.match(/^0[0-9]{9}$/) && !phoneClean.match(/^254[0-9]{9}$/)) {
-            document.getElementById('customerPhone').classList.add('error');
-            showToast('⚠️', 'Please enter a valid Kenyan phone number (e.g., 0712345678)');
-            return;
-        }
-        
-        document.getElementById('customerPhone').classList.remove('error');
+  // Pay Now button
+  document.getElementById('payNowBtn').addEventListener('click', function() {
+    var phone = document.getElementById('customerPhone').value.trim();
+    if (!phone) {
+      document.getElementById('customerPhone').classList.add('error');
+      showToast('⚠️', 'Please enter your WhatsApp number');
+      return;
+    }
+    document.getElementById('customerPhone').classList.remove('error');
 
-        // Show the M-PESA verification section
-        var verificationSection = document.getElementById('mpesaVerificationSection');
-        verificationSection.classList.add('show');
-        verificationSection.style.display = 'block';
-        
-        // Scroll to the verification section
-        verificationSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        
-        // Focus on the M-PESA code input
-        document.getElementById('mpesaCode').focus();
-        
-        // Open Megapay in new window
-        var product = currentProduct;
-        var price = product.price || 0;
-        var title = encodeURIComponent(product.title || 'Resource');
-        
-        var megapayUrl = MEGAPAY_LINK + '?amount=' + price + '&description=' + title + '&phone=' + phone;
-        window.open(megapayUrl, '_blank', 'width=400,height=600');
-        
-        showToast('💳', 'Complete payment on your phone, then enter the verification code below');
-    });
+    document.getElementById('mpesaVerificationSection').classList.add('show');
+    
+    var product = currentProduct;
+    var price = product.price || 0;
+    var title = encodeURIComponent(product.title || 'Resource');
+    
+    var megapayUrl = MEGAPAY_LINK + '?amount=' + price + '&description=' + title + '&phone=' + phone;
+    window.open(megapayUrl, '_blank', 'width=400,height=600');
+    
+    showToast('💳', 'Complete payment on your phone, then enter the verification code');
+  });
 
-    // Confirm Payment button - Records the order
-document.getElementById('confirmPaymentBtn').addEventListener('click', async function() {
+  // Confirm Payment button
+  document.getElementById('confirmPaymentBtn').addEventListener('click', async function() {
     var phone = document.getElementById('customerPhone').value.trim();
     var code = document.getElementById('mpesaCode').value.trim().toUpperCase();
     
-    // Validate phone
     if (!phone) {
-        document.getElementById('customerPhone').classList.add('error');
-        showToast('⚠️', 'Please enter your WhatsApp number');
-        return;
+      document.getElementById('customerPhone').classList.add('error');
+      showToast('⚠️', 'Please enter your WhatsApp number');
+      return;
     }
-    document.getElementById('customerPhone').classList.remove('error');
     
-    // Validate M-PESA code (must be 4 characters)
     if (!code || code.length < 4) {
-        document.getElementById('mpesaCode').classList.add('error');
-        showToast('⚠️', 'Please enter the 4-character verification code from your M-PESA message');
-        return;
+      document.getElementById('mpesaCode').classList.add('error');
+      showToast('⚠️', 'Please enter the 4-character verification code');
+      return;
     }
+
+    document.getElementById('customerPhone').classList.remove('error');
     document.getElementById('mpesaCode').classList.remove('error');
 
-    // Disable button to prevent double submission
     var confirmBtn = document.getElementById('confirmPaymentBtn');
     var originalText = confirmBtn.textContent;
     confirmBtn.disabled = true;
     confirmBtn.textContent = '⏳ Recording order...';
 
     try {
-        // Generate a reference number
-        var ref = 'KV-' + Date.now().toString().slice(-8) + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
-        
-        // IMPORTANT: Use "phone" column name (not "customer_phone") because your table has "phone"
-        var orderData = {
-            phone: phone,  // ← Changed from customer_phone to phone
-            product_id: currentProduct.id,
-            product_title: currentProduct.title,
-            product_price: currentProduct.price || 0,
-            mpesa_code: code,
-            status: 'pending',
-            ref: ref,
-            created_at: new Date().toISOString()
-        };
+      var ref = 'KV-' + Date.now().toString().slice(-8) + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
+      
+      var orderData = {
+        phone: phone,
+        product_id: currentProduct.id,
+        product_title: currentProduct.title,
+        product_price: currentProduct.price || 0,
+        mpesa_code: code,
+        status: 'pending',
+        ref: ref,
+        created_at: new Date().toISOString()
+      };
 
-        console.log('Saving order with data:', orderData);
+      console.log('Saving order:', orderData);
 
-        // Insert order into Supabase
-        var { data, error } = await sbClient.from('orders').insert([orderData]).select();
+      var result = await sbClient.from('orders').insert([orderData]).select();
 
-        if (error) {
-            console.error('Insert error:', error);
-            
-            // Provide user-friendly error message
-            var errorMsg = 'Error recording order. ';
-            if (error.message && error.message.includes('null value in column')) {
-                errorMsg += 'Missing required field: ' + error.message;
-            } else if (error.message) {
-                errorMsg += error.message;
-            } else {
-                errorMsg += 'Please try again.';
-            }
-            
-            showToast('⚠️', errorMsg);
-            confirmBtn.disabled = false;
-            confirmBtn.textContent = originalText;
-            return;
-        }
+      if (result.error) {
+        console.error('Insert error:', result.error);
+        showToast('⚠️', 'Error recording order: ' + result.error.message);
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = originalText;
+        return;
+      }
 
-        if (!data || data.length === 0) {
-            showToast('⚠️', 'Order was not saved. Please try again.');
-            confirmBtn.disabled = false;
-            confirmBtn.textContent = originalText;
-            return;
-        }
+      var order = result.data[0];
+      orderRef = order.id;
 
-        var order = data[0];
-        var orderRef = order.id;
-
-        // Show success modal
-        document.getElementById('successOrderRef').textContent = '#' + ref;
-        document.getElementById('successModal').classList.add('open');
-        
-        // Clear pending order from session
-        sessionStorage.removeItem('pending_order');
-        
-        // Reset the form
-        document.getElementById('mpesaVerificationSection').classList.remove('show');
-        document.getElementById('mpesaVerificationSection').style.display = 'none';
-        document.getElementById('mpesaCode').value = '';
-        document.getElementById('customerPhone').value = '';
-        
-        showToast('✅', 'Order recorded successfully! Check your WhatsApp for the download link.');
+      document.getElementById('successOrderRef').textContent = '#' + ref;
+      document.getElementById('successModal').classList.add('open');
+      
+      sessionStorage.removeItem('pending_order');
+      
+      document.getElementById('mpesaVerificationSection').classList.remove('show');
+      document.getElementById('mpesaCode').value = '';
+      document.getElementById('customerPhone').value = '';
+      
+      showToast('✅', 'Order recorded successfully! Check your WhatsApp for the download link.');
 
     } catch (e) {
-        console.error('Error recording order:', e);
-        showToast('⚠️', 'Error recording order. Please try again.');
+      console.error('Error recording order:', e);
+      showToast('⚠️', 'Error recording order. Please try again.');
     }
 
-    // Re-enable button
     confirmBtn.disabled = false;
     confirmBtn.textContent = originalText;
+  });
 });
+
 /* ── PREVIEW MODAL ── */
 async function openPreview(productId) {
   var product = allResources.find(function(r) { return r.id === productId; });
@@ -1752,7 +1691,7 @@ function setupEventListeners() {
 async function checkDownloadStatus(orderId) {
   try {
     var result = await sbClient.from('orders')
-      .select('download_accessed, download_attempts, product_id, customer_phone')
+      .select('download_accessed, download_attempts, product_id, phone')
       .eq('id', orderId)
       .single();
 
