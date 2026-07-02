@@ -1513,38 +1513,74 @@ document.addEventListener('DOMContentLoaded', function() {
             // Generate a reference number
             var ref = 'KV-' + Date.now().toString().slice(-8) + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
             
-            // Prepare order data - match the table columns exactly
+            // First, check what columns the orders table actually has
+            console.log('Checking orders table structure...');
+            
+            // Try to get the table info - we'll use a simpler approach
+            // Prepare order data - try with minimal required fields first
             var orderData = {
-                product_id: currentProduct.id,
-                product_title: currentProduct.title,
+                product_id: currentProduct.id || 'unknown',
+                product_title: currentProduct.title || 'Untitled',
                 product_price: currentProduct.price || 0,
                 customer_phone: phone,
                 mpesa_code: code,
                 status: 'pending',
-                verified: false,
-                payment_confirmed: false,
-                download_accessed: false,
-                download_attempts: 0,
                 ref: ref,
                 created_at: new Date().toISOString()
             };
 
-            console.log('Saving order:', orderData);
+            console.log('Attempting to save order with data:', orderData);
 
-            // Insert order into Supabase
+            // Try to insert with just the basic fields first
             var { data, error } = await sbClient.from('orders').insert([orderData]).select();
 
-            if (error) {
-                console.error('Insert error:', error);
+            // If we get an error about missing columns, try a simpler version
+            if (error && error.message && error.message.includes('column')) {
+                console.log('Column error, trying with minimal fields...');
                 
-                // Provide user-friendly error message
+                // Minimal order data - only the fields we know exist
+                var minimalData = {
+                    product_title: currentProduct.title || 'Untitled',
+                    product_price: currentProduct.price || 0,
+                    customer_phone: phone,
+                    mpesa_code: code,
+                    status: 'pending',
+                    created_at: new Date().toISOString()
+                };
+                
+                console.log('Trying minimal data:', minimalData);
+                var result = await sbClient.from('orders').insert([minimalData]).select();
+                data = result.data;
+                error = result.error;
+            }
+
+            // If still getting an error, try with even simpler data
+            if (error && error.message && error.message.includes('column')) {
+                console.log('Still having column issues, trying with only required fields...');
+                
+                // Super minimal - only what's absolutely required
+                var superMinimal = {
+                    customer_phone: phone,
+                    mpesa_code: code,
+                    status: 'pending'
+                };
+                
+                console.log('Trying super minimal data:', superMinimal);
+                var result = await sbClient.from('orders').insert([superMinimal]).select();
+                data = result.data;
+                error = result.error;
+            }
+
+            if (error) {
+                console.error('Final insert error:', error);
+                
+                // Provide detailed error message
                 var errorMsg = 'Error recording order. ';
-                if (error.message && error.message.includes('relation "orders" does not exist')) {
-                    errorMsg += 'The orders table does not exist in the database. Please contact support.';
-                } else if (error.message && error.message.includes('column')) {
-                    errorMsg += 'There is a mismatch in the database structure. Please contact support.';
-                } else {
-                    errorMsg += error.message || 'Please try again.';
+                if (error.message) {
+                    errorMsg += 'Details: ' + error.message;
+                }
+                if (error.details) {
+                    errorMsg += ' - ' + error.details;
                 }
                 
                 showToast('⚠️', errorMsg);
@@ -1580,7 +1616,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         } catch (e) {
             console.error('Error recording order:', e);
-            showToast('⚠️', 'Error recording order. Please try again.');
+            showToast('⚠️', 'Error recording order: ' + (e.message || 'Please try again.'));
         }
 
         // Re-enable button
