@@ -89,6 +89,25 @@ button { cursor: pointer; border: none; background: none; font-family: inherit; 
 .navbar a:hover { color: var(--gold-light); }
 .nav-logo span { color: var(--gold-light); }
 
+/* ── TUTOR HERO ── */
+.tutor-hero {
+  background: linear-gradient(135deg, var(--navy) 0%, var(--navy-light) 50%, #2a3a6a 100%);
+  padding: 60px 0 40px;
+  position: relative;
+  overflow: hidden;
+}
+.tutor-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: 
+    url("data:image/svg+xml,%3Csvg width='80' height='80' viewBox='0 0 80 80' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23FFFFFF' fill-opacity='0.04'%3E%3Cpath d='M40 20c-2.2 0-4 1.8-4 4v24c0 2.2 1.8 4 4 4h24c2.2 0 4-1.8 4-4V24c0-2.2-1.8-4-4-4H40zm0 2h24c1.1 0 2 .9 2 2v24c0 1.1-.9 2-2 2H40c-1.1 0-2-.9-2-2V24c0-1.1.9-2 2-2zM16 32c-2.2 0-4 1.8-4 4v24c0 2.2 1.8 4 4 4h24c2.2 0 4-1.8 4-4V36c0-2.2-1.8-4-4-4H16zm0 2h24c1.1 0 2 .9 2 2v24c0 1.1-.9 2-2 2H16c-1.1 0-2-.9-2-2V36c0-1.1.9-2 2-2z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23FCD34D' fill-opacity='0.03'%3E%3Cpath d='M50 30L20 46l30 16 30-16-30-16zm0 0l-20 10 20 10 20-10-20-10zM20 46v18l30 16 30-16V46l-30 16-30-16z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  background-size: 80px 80px, 100px 100px;
+  background-position: 0 0, 40px 20px;
+  pointer-events: none;
+}
+
 /* ── AUTH TABS ── */
 .auth-tab {
   padding: 12px 24px;
@@ -455,6 +474,7 @@ button { cursor: pointer; border: none; background: none; font-family: inherit; 
 @media (max-width: 768px) {
   .item-card { flex-direction: column; align-items: flex-start; }
   .auth-tab { font-size: 0.82rem; padding: 10px 16px; }
+  .tutor-hero { padding: 40px 0 24px; }
   .dash-card .number { font-size: 1.4rem; }
 }
 @media (max-width: 480px) {
@@ -537,10 +557,7 @@ function TutorProvider({ children }) {
       });
       if (tRes.ok) {
         const data = await tRes.json();
-        if (data.length > 0) {
-          setTutor(data[0]);
-          sessionStorage.setItem('tutor_name', data[0].name);
-        }
+        if (data.length > 0) setTutor(data[0]);
       }
 
       // Get tutor's resources
@@ -573,7 +590,6 @@ function TutorProvider({ children }) {
   const logout = () => {
     sessionStorage.removeItem('tutor_id');
     sessionStorage.removeItem('tutor_email');
-    sessionStorage.removeItem('tutor_name');
     setIsLoggedIn(false);
     setTutor(null);
     setResources([]);
@@ -675,7 +691,6 @@ function LoginPage() {
   const [loginPassword, setLoginPassword] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState('');
-  const [debugInfo, setDebugInfo] = useState('');
 
   const [signupData, setSignupData] = useState({
     name: '', email: '', phone: '', mpesa: '', password: '', confirmPassword: '',
@@ -693,44 +708,22 @@ function LoginPage() {
     }
     setLoginLoading(true);
     setLoginError('');
-    setDebugInfo('Searching for tutor...');
 
     try {
-      // First, try to find the tutor by phone
       const res = await fetch(`${SUPABASE_URL}/rest/v1/tutors?phone=eq.${loginPhone}`, {
         headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
       });
-      
-      if (!res.ok) {
-        setDebugInfo('API Error: ' + res.status);
-        setLoginError('Error connecting to server. Please try again.');
-        setLoginLoading(false);
-        return;
-      }
-      
       const data = await res.json();
-      console.log('Tutor lookup result:', data);
 
       if (data.length === 0) {
-        setDebugInfo('No tutor found with phone: ' + loginPhone);
-        setLoginError('No account found with this phone number. Please check and try again, or sign up.');
+        setLoginError('No account found with this phone number.');
         setLoginLoading(false);
         return;
       }
 
       const tutor = data[0];
-      setDebugInfo('Tutor found: ' + tutor.name + ' (Status: ' + tutor.status + ')');
-
-      // Check if password column exists and compare
-      if (!tutor.password) {
-        setDebugInfo('Password column is null for this tutor');
-        setLoginError('Account exists but password not set. Please contact support or reset your password.');
-        setLoginLoading(false);
-        return;
-      }
 
       if (tutor.password !== loginPassword) {
-        setDebugInfo('Password mismatch');
         setLoginError('Invalid password. Please try again.');
         setLoginLoading(false);
         return;
@@ -742,19 +735,14 @@ function LoginPage() {
         return;
       }
 
-      // Success - login
-      setDebugInfo('Login successful!');
       sessionStorage.setItem('tutor_id', tutor.id);
       sessionStorage.setItem('tutor_email', tutor.email);
-      sessionStorage.setItem('tutor_name', tutor.name);
       setIsLoggedIn(true);
       setTutor(tutor);
       await loadTutorData(tutor.id);
       showNotification('Welcome back, ' + tutor.name + '! 🎉', 'success');
 
     } catch (e) {
-      console.error('Login error:', e);
-      setDebugInfo('Error: ' + e.message);
       setLoginError('Error logging in. Please try again.');
     }
     setLoginLoading(false);
@@ -827,7 +815,6 @@ function LoginPage() {
 
       sessionStorage.setItem('tutor_id', tutor.id);
       sessionStorage.setItem('tutor_email', tutor.email);
-      sessionStorage.setItem('tutor_name', tutor.name);
       setIsLoggedIn(true);
       setTutor(tutor);
       await loadTutorData(tutor.id);
@@ -864,11 +851,6 @@ function LoginPage() {
           {activeAuth === 'login' ? (
             <form onSubmit={handleLogin}>
               {loginError && <div className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-xl text-red-300 text-sm">{loginError}</div>}
-              {debugInfo && (
-                <div className="mb-4 p-2 bg-blue-500/20 border border-blue-500/30 rounded-xl text-blue-300 text-xs">
-                  🔍 {debugInfo}
-                </div>
-              )}
               <div className="mb-4">
                 <label className="form-label text-white">Phone Number <span className="req">*</span></label>
                 <input type="tel" value={loginPhone} onChange={(e) => setLoginPhone(e.target.value)} className="form-input bg-white/10 border-white/10 text-white placeholder-gray-400" placeholder="0712 345 678" required />
@@ -876,7 +858,6 @@ function LoginPage() {
               <div className="mb-4">
                 <label className="form-label text-white">Password <span className="req">*</span></label>
                 <input type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} className="form-input bg-white/10 border-white/10 text-white placeholder-gray-400" placeholder="Enter your password" required />
-                <p className="text-xs text-gray-400 mt-1">Default password for existing tutors: <strong>tutor123</strong></p>
               </div>
               <button type="submit" disabled={loginLoading} className="btn-gold w-full justify-center">
                 {loginLoading ? '⏳ Logging in...' : '🔑 Login'}
