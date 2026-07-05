@@ -33,6 +33,7 @@
   --orange: #F59E0B;
   --teal: #0D9488;
   --indigo: #4338CA;
+  --red: #DC2626;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -417,6 +418,11 @@ button { cursor: pointer; border: none; background: none; font-family: inherit; 
   font-size: 0.85rem;
   margin-bottom: 20px;
 }
+.auth-box .password-hint {
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 4px;
+}
 
 /* ── HOW IT WORKS ── */
 .how-it-works {
@@ -595,6 +601,24 @@ button { cursor: pointer; border: none; background: none; font-family: inherit; 
   font-size: 0.72rem;
   color: var(--muted);
   margin-top: 2px;
+}
+.show-password {
+  position: relative;
+}
+.show-password input {
+  padding-right: 45px;
+}
+.show-password .toggle-btn {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 4px;
 }
 
 .btn-primary {
@@ -870,6 +894,28 @@ button { cursor: pointer; border: none; background: none; font-family: inherit; 
 @media (max-width: 1024px) { .footer-top { grid-template-columns: 1fr 1fr 1fr; } }
 @media (max-width: 768px) { .footer-top { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 480px) { .footer-top { grid-template-columns: 1fr; } .footer-bottom { flex-direction: column; text-align: center; } }
+
+/* ── PASSWORD STRENGTH ── */
+.password-strength {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+.password-strength .bar {
+  flex: 1;
+  height: 3px;
+  border-radius: 99px;
+  background: var(--border);
+  transition: all 0.3s ease;
+}
+.password-strength .bar.active.weak { background: #DC2626; }
+.password-strength .bar.active.medium { background: #F59E0B; }
+.password-strength .bar.active.strong { background: #10B981; }
+.password-strength .label {
+  font-size: 0.65rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
 </style>
 </head>
 <body>
@@ -1046,13 +1092,25 @@ button { cursor: pointer; border: none; background: none; font-family: inherit; 
 
       <form id="loginForm">
         <div class="form-group" style="margin-bottom:16px;">
-          <label>Email Address <span class="req">*</span></label>
-          <input type="email" id="loginEmail" placeholder="you@example.com" required/>
-        </div>
-        <div class="form-group" style="margin-bottom:16px;">
           <label>Phone Number <span class="req">*</span></label>
           <input type="tel" id="loginPhone" placeholder="0712 345 678" required/>
           <span class="hint">Enter the phone number you used to register</span>
+        </div>
+        <div class="form-group" style="margin-bottom:16px;">
+          <label>Password <span class="req">*</span></label>
+          <div class="show-password">
+            <input type="password" id="loginPassword" placeholder="Enter your password" required/>
+            <button type="button" class="toggle-btn" onclick="togglePassword('loginPassword', this)">👁️</button>
+          </div>
+          <span class="hint">Your personal account password</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
+          <label style="display:flex;align-items:center;gap:6px;font-size:0.82rem;color:var(--muted);">
+            <input type="checkbox" id="rememberMe"/> Remember me
+          </label>
+          <button type="button" class="btn-link" onclick="showToast('ℹ️', 'Please contact support to reset your password.')">
+            Forgot password?
+          </button>
         </div>
         <button type="submit" class="btn-primary" id="loginBtn" style="width:100%;justify-content:center;">
           🔑 Login
@@ -1089,12 +1147,37 @@ button { cursor: pointer; border: none; background: none; font-family: inherit; 
           <div class="form-group">
             <label>WhatsApp / Phone Number <span class="req">*</span></label>
             <input type="tel" id="tutorPhone" placeholder="0712 345 678" required/>
-            <span class="hint">We'll use this for payout confirmations</span>
+            <span class="hint">This will be your login username</span>
           </div>
           <div class="form-group">
             <label>M-PESA Number (for payouts) <span class="req">*</span></label>
             <input type="tel" id="tutorMpesa" placeholder="0712 345 678" required/>
             <span class="hint">This is where we'll send your earnings</span>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Create Password <span class="req">*</span></label>
+            <div class="show-password">
+              <input type="password" id="tutorPassword" placeholder="Min 6 characters" minlength="6" required oninput="checkPasswordStrength(this.value)"/>
+              <button type="button" class="toggle-btn" onclick="togglePassword('tutorPassword', this)">👁️</button>
+            </div>
+            <div class="password-strength" id="passwordStrength">
+              <div class="bar" id="ps1"></div>
+              <div class="bar" id="ps2"></div>
+              <div class="bar" id="ps3"></div>
+              <div class="bar" id="ps4"></div>
+            </div>
+            <span class="hint" id="passwordHint">Password must be at least 6 characters</span>
+          </div>
+          <div class="form-group">
+            <label>Confirm Password <span class="req">*</span></label>
+            <div class="show-password">
+              <input type="password" id="tutorConfirmPassword" placeholder="Confirm your password" minlength="6" required/>
+              <button type="button" class="toggle-btn" onclick="togglePassword('tutorConfirmPassword', this)">👁️</button>
+            </div>
+            <span class="hint" id="confirmHint">Re-enter your password</span>
           </div>
         </div>
 
@@ -1307,6 +1390,54 @@ let sbClient = null;
 let currentTutor = null;
 let tutorResources = [];
 
+/* ── TOGGLE PASSWORD VISIBILITY ── */
+function togglePassword(inputId, btn) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  if (input.type === 'password') {
+    input.type = 'text';
+    btn.textContent = '🙈';
+  } else {
+    input.type = 'password';
+    btn.textContent = '👁️';
+  }
+}
+
+/* ── PASSWORD STRENGTH ── */
+function checkPasswordStrength(password) {
+  const bars = [
+    document.getElementById('ps1'),
+    document.getElementById('ps2'),
+    document.getElementById('ps3'),
+    document.getElementById('ps4')
+  ];
+  const hint = document.getElementById('passwordHint');
+  
+  // Reset
+  bars.forEach(b => { b.className = 'bar'; });
+  
+  if (!password || password.length === 0) {
+    hint.textContent = 'Password must be at least 6 characters';
+    return;
+  }
+  
+  let score = 0;
+  if (password.length >= 6) score++;
+  if (password.length >= 8) score++;
+  if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score++;
+  if (/[0-9]/.test(password) && /[^a-zA-Z0-9]/.test(password)) score++;
+  
+  const levels = ['', 'Weak', 'Weak', 'Medium', 'Strong'];
+  const colors = ['', 'weak', 'weak', 'medium', 'strong'];
+  
+  for (let i = 0; i < Math.min(score, 4); i++) {
+    bars[i].classList.add('active', colors[Math.min(score, 4)]);
+  }
+  
+  hint.textContent = 'Strength: ' + levels[Math.min(score, 4)] + (score >= 4 ? ' 💪' : '');
+  hint.style.color = score >= 4 ? '#10B981' : score >= 3 ? '#F59E0B' : '#DC2626';
+}
+
 /* ── INIT ── */
 async function init() {
   try {
@@ -1383,11 +1514,11 @@ function switchAuthTab(tab) {
 async function handleTutorLogin(e) {
   e.preventDefault();
   
-  const email = document.getElementById('loginEmail').value.trim();
   const phone = document.getElementById('loginPhone').value.trim();
+  const password = document.getElementById('loginPassword').value;
   
-  if (!email || !phone) {
-    showLoginAlert('Please enter both email and phone number.', 'error');
+  if (!phone || !password) {
+    showLoginAlert('Please enter both phone number and password.', 'error');
     return;
   }
 
@@ -1396,16 +1527,57 @@ async function handleTutorLogin(e) {
   btn.textContent = '⏳ Logging in...';
 
   try {
-    // Find tutor by email and phone
+    // Find tutor by phone
     const { data, error } = await sbClient
       .from('tutors')
       .select('*')
-      .eq('email', email)
       .eq('phone', phone)
       .single();
 
     if (error || !data) {
-      showLoginAlert('No account found with these credentials. Please check your email and phone number.', 'error');
+      showLoginAlert('No account found with this phone number. Please check and try again.', 'error');
+      btn.disabled = false;
+      btn.textContent = '🔑 Login';
+      return;
+    }
+
+    // Check if account is locked
+    if (data.account_locked) {
+      const lockedUntil = data.locked_until ? new Date(data.locked_until) : null;
+      if (lockedUntil && lockedUntil > new Date()) {
+        const minutes = Math.ceil((lockedUntil - new Date()) / 60000);
+        showLoginAlert('Account is locked. Please try again in ' + minutes + ' minutes.', 'error');
+        btn.disabled = false;
+        btn.textContent = '🔑 Login';
+        return;
+      } else {
+        // Unlock if lock expired
+        await sbClient.from('tutors').update({ 
+          account_locked: false, 
+          lock_reason: null, 
+          locked_until: null,
+          login_attempts: 0 
+        }).eq('id', data.id);
+      }
+    }
+
+    // Check password
+    if (data.password !== password) {
+      // Increment login attempts
+      const attempts = (data.login_attempts || 0) + 1;
+      let updateData = { login_attempts: attempts };
+      
+      if (attempts >= 5) {
+        updateData.account_locked = true;
+        updateData.lock_reason = 'Too many failed login attempts';
+        updateData.locked_until = new Date(Date.now() + 30 * 60000).toISOString(); // Lock for 30 minutes
+        showLoginAlert('Too many failed attempts. Account locked for 30 minutes.', 'error');
+      } else {
+        showLoginAlert('Invalid password. ' + (5 - attempts) + ' attempts remaining.', 'error');
+      }
+      
+      await sbClient.from('tutors').update(updateData).eq('id', data.id);
+      
       btn.disabled = false;
       btn.textContent = '🔑 Login';
       return;
@@ -1420,6 +1592,12 @@ async function handleTutorLogin(e) {
     }
 
     // Success - login
+    // Reset login attempts
+    await sbClient.from('tutors').update({ 
+      login_attempts: 0,
+      last_login: new Date().toISOString()
+    }).eq('id', data.id);
+
     currentTutor = data;
     sessionStorage.setItem('tutor_id', data.id);
     sessionStorage.setItem('tutor_email', data.email);
@@ -1460,12 +1638,14 @@ async function handleTutorSignup(e) {
   const email = document.getElementById('tutorEmail').value.trim();
   const phone = document.getElementById('tutorPhone').value.trim();
   const mpesa = document.getElementById('tutorMpesa').value.trim();
+  const password = document.getElementById('tutorPassword').value;
+  const confirmPassword = document.getElementById('tutorConfirmPassword').value;
   const subjects = Array.from(document.getElementById('tutorSubjects').selectedOptions).map(o => o.value);
   const levels = Array.from(document.getElementById('tutorLevels').selectedOptions).map(o => o.value);
   const bio = document.getElementById('tutorBio').value.trim();
 
   // Validation
-  if (!name || !email || !phone || !mpesa || !subjects.length || !levels.length) {
+  if (!name || !email || !phone || !mpesa || !password || !confirmPassword || !subjects.length || !levels.length) {
     showSignupAlert('Please fill all required fields.', 'error');
     return;
   }
@@ -1474,6 +1654,16 @@ async function handleTutorSignup(e) {
   const phoneClean = phone.replace(/\s/g, '');
   if (!phoneClean.match(/^0[0-9]{9}$/) && !phoneClean.match(/^254[0-9]{9}$/)) {
     showSignupAlert('Please enter a valid Kenyan phone number (e.g., 0712345678).', 'error');
+    return;
+  }
+
+  // Password validation
+  if (password.length < 6) {
+    showSignupAlert('Password must be at least 6 characters long.', 'error');
+    return;
+  }
+  if (password !== confirmPassword) {
+    showSignupAlert('Passwords do not match.', 'error');
     return;
   }
 
@@ -1486,22 +1676,23 @@ async function handleTutorSignup(e) {
     const { data: existing, error: checkError } = await sbClient
       .from('tutors')
       .select('id')
-      .eq('email', email)
+      .eq('phone', phone)
       .single();
 
     if (existing) {
-      showSignupAlert('You are already registered as a tutor. Please login instead.', 'info');
+      showSignupAlert('A tutor with this phone number already exists. Please login instead.', 'info');
       btn.disabled = false;
       btn.textContent = '📤 Submit Application';
       return;
     }
 
-    // Create tutor record
+    // Create tutor record with password
     const tutorData = {
       name,
       email,
       phone,
       mpesa_number: mpesa,
+      password: password,
       subjects,
       levels,
       bio,
@@ -1509,6 +1700,8 @@ async function handleTutorSignup(e) {
       total_earnings: 0,
       pending_earnings: 0,
       total_paid_out: 0,
+      login_attempts: 0,
+      account_locked: false,
       created_at: new Date().toISOString()
     };
 
@@ -1739,8 +1932,9 @@ function renderTutorProfile() {
         </div>
         <div>
           <h3 style="font-family:'Sora',sans-serif;font-weight:700;font-size:1.1rem;color:var(--dark);">${t.name || 'Unnamed Tutor'}</h3>
-          <p style="font-size:0.85rem;color:var(--muted);">${t.email || 'N/A'}</p>
+          <p style="font-size:0.85rem;color:var(--muted);">📧 ${t.email || 'N/A'}</p>
           <p style="font-size:0.85rem;color:var(--muted);">📱 ${t.phone || 'N/A'}</p>
+          <p style="font-size:0.85rem;color:var(--muted);">💰 M-PESA: ${t.mpesa_number || 'N/A'}</p>
         </div>
         <div style="margin-left:auto;">
           <span class="status-badge ${statusClass}">${statusBadge}</span>
@@ -1776,9 +1970,34 @@ function renderTutorProfile() {
       <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);display:flex;gap:12px;flex-wrap:wrap;">
         <a href="/admin.html" class="btn-sm btn-sm-info">📤 Upload Resources</a>
         <button onclick="logoutTutor()" class="btn-sm btn-sm-danger">🚪 Logout</button>
+        <button onclick="changePassword()" class="btn-sm btn-sm-warning">🔑 Change Password</button>
       </div>
     </div>
   `;
+}
+
+/* ── CHANGE PASSWORD ── */
+function changePassword() {
+  const newPassword = prompt('Enter your new password (min 6 characters):');
+  if (!newPassword) return;
+  if (newPassword.length < 6) {
+    showToast('⚠️', 'Password must be at least 6 characters.');
+    return;
+  }
+  const confirm = prompt('Confirm your new password:');
+  if (newPassword !== confirm) {
+    showToast('⚠️', 'Passwords do not match.');
+    return;
+  }
+  
+  // Update password in database
+  sbClient.from('tutors').update({ password: newPassword }).eq('id', currentTutor.id)
+    .then(() => {
+      showToast('✅', 'Password updated successfully!');
+    })
+    .catch((e) => {
+      showToast('❌', 'Error updating password: ' + e.message);
+    });
 }
 
 /* ── TOAST ── */
@@ -1817,6 +2036,23 @@ function setupEventListeners() {
   // Signup form
   document.getElementById('signupForm').addEventListener('submit', handleTutorSignup);
   
+  // Password confirm validation
+  document.getElementById('tutorConfirmPassword').addEventListener('input', function() {
+    const password = document.getElementById('tutorPassword').value;
+    const confirm = this.value;
+    const hint = document.getElementById('confirmHint');
+    if (confirm && password !== confirm) {
+      hint.textContent = '❌ Passwords do not match';
+      hint.style.color = '#DC2626';
+    } else if (confirm && password === confirm) {
+      hint.textContent = '✅ Passwords match';
+      hint.style.color = '#10B981';
+    } else {
+      hint.textContent = 'Re-enter your password';
+      hint.style.color = 'var(--muted)';
+    }
+  });
+  
   // Hamburger menu
   document.getElementById('hamburger').addEventListener('click', function() {
     document.getElementById('navLinks').classList.toggle('open');
@@ -1830,6 +2066,9 @@ document.addEventListener('DOMContentLoaded', init);
 window.logoutTutor = logoutTutor;
 window.switchAuthTab = switchAuthTab;
 window.showToast = showToast;
+window.togglePassword = togglePassword;
+window.checkPasswordStrength = checkPasswordStrength;
+window.changePassword = changePassword;
 
 </script>
 </body>
