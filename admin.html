@@ -3,9 +3,11 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>KenyaVault Admin Panel — Realtime Orders</title>
+    <title>KenyaVault Admin Panel — Advanced LMS Dashboard</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -43,12 +45,19 @@
         .status-badge.rejected { background: #fee2e2; color: #991b1b; }
         .status-badge.pending_verification { background: #fef3c7; color: #92400e; }
         .status-badge.confirmed { background: #dbeafe; color: #1e40af; }
+        .status-badge.suspended { background: #fee2e2; color: #991b1b; }
+        .status-badge.live { background: #d1fae5; color: #065f46; }
+        .status-badge.paid { background: #d1fae5; color: #065f46; }
         .dark .status-badge.pending { background: #78350f; color: #fbbf24; }
         .dark .status-badge.active { background: #1e3a5f; color: #60a5fa; }
         .dark .status-badge.completed { background: #064e3b; color: #34d399; }
         .dark .status-badge.rejected { background: #7f1d1d; color: #f87171; }
         .dark .status-badge.pending_verification { background: #78350f; color: #fbbf24; }
         .dark .status-badge.confirmed { background: #1e3a5f; color: #60a5fa; }
+        .dark .status-badge.suspended { background: #7f1d1d; color: #f87171; }
+        .dark .status-badge.live { background: #064e3b; color: #34d399; }
+        .dark .status-badge.paid { background: #064e3b; color: #34d399; }
+        
         .login-bg {
             background: linear-gradient(135deg, #0a1a3a 0%, #1a2a5a 50%, #2a3a6a 100%);
             position: relative;
@@ -84,6 +93,7 @@
         .gold-text { color: #D4A017; }
         .gold-bg { background: #D4A017; }
         .navy-bg { background: #0a1a3a; }
+        
         .new-order-flash {
             animation: flashRow 1s ease 3;
         }
@@ -98,6 +108,7 @@
             0%, 100% { background: transparent; }
             50% { background: rgba(212, 160, 23, 0.2); }
         }
+        
         .toast-container {
             position: fixed;
             top: 20px;
@@ -133,7 +144,7 @@
             from { opacity: 0; transform: translateX(40px); }
             to { opacity: 1; transform: translateX(0); }
         }
-        /* Loading spinner */
+        
         .spinner {
             display: inline-block;
             width: 16px;
@@ -146,24 +157,134 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
-        .btn-loading .spinner {
-            display: inline-block;
-        }
-        .btn-loading .btn-text {
-            display: none;
-        }
-        .btn-loading .btn-loading-text {
-            display: inline;
-        }
+        .btn-loading .spinner { display: inline-block; }
+        .btn-loading .btn-text { display: none; }
+        .btn-loading .btn-loading-text { display: inline; }
         .btn-loading .btn-loading-text { display: none; }
         .btn-loading .btn-loading-text { display: inline; }
+        
+        .drop-zone {
+            border: 2px dashed #d1d5db;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            background: #f9fafb;
+        }
+        .drop-zone:hover {
+            border-color: #D4A017;
+            background: rgba(212, 160, 23, 0.05);
+        }
+        .dark .drop-zone {
+            background: #1f2937;
+            border-color: #374151;
+        }
+        .dark .drop-zone:hover {
+            border-color: #D4A017;
+            background: rgba(212, 160, 23, 0.1);
+        }
+        
+        .progress-track {
+            width: 100%;
+            height: 6px;
+            background: #e5e7eb;
+            border-radius: 99px;
+            overflow: hidden;
+            margin-top: 5px;
+        }
+        .dark .progress-track { background: #374151; }
+        .progress-bar {
+            height: 100%;
+            background: #D4A017;
+            border-radius: 99px;
+            transition: width 0.3s ease;
+        }
+        
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(4px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .modal-overlay.open { display: flex; }
+        .modal-box {
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            max-width: 500px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .dark .modal-box { background: #1f2937; }
+        
+        .timeframe-toggle {
+            display: flex;
+            gap: 4px;
+            background: #f3f4f6;
+            border-radius: 8px;
+            padding: 4px;
+            border: 1px solid #e5e7eb;
+        }
+        .dark .timeframe-toggle {
+            background: #1f2937;
+            border-color: #374151;
+        }
+        .timeframe-toggle button {
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: #6b7280;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .timeframe-toggle button:hover { color: #1f2937; }
+        .dark .timeframe-toggle button:hover { color: #f3f4f6; }
+        .timeframe-toggle button.active {
+            background: #D4A017;
+            color: #0a1a3a;
+        }
+        .dark .timeframe-toggle button.active {
+            background: #D4A017;
+            color: #0a1a3a;
+        }
+        
+        .chart-container {
+            height: 280px;
+            position: relative;
+        }
+        
+        .class-card {
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 16px;
+            transition: all 0.2s ease;
+        }
+        .class-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
+        .dark .class-card {
+            border-color: #374151;
+        }
+        .dark .class-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useCallback, useMemo, createContext, useContext, useRef } = React;
+        const { useState, useEffect, useCallback, useMemo, createContext, useContext, useRef, useReducer } = React;
 
         // ── SUPABASE CONFIG ──
         const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
@@ -175,11 +296,12 @@
             password: 'KenyaVault2026'
         };
 
-        const modules = [
+        const adminModules = [
             { id: 'dashboard', icon: '📊', label: 'Dashboard', desc: 'Overview & Analytics' },
+            { id: 'resources', icon: '📚', label: 'Resources', desc: 'Advanced Resource Manager' },
+            { id: 'tutors', icon: '🧑‍🏫', label: 'Tutors', desc: 'Tutor Operations Center' },
+            { id: 'classes', icon: '📹', label: 'Classes', desc: 'Virtual Online Class Engine' },
             { id: 'orders', icon: '📦', label: 'Orders', desc: 'Real-time order management' },
-            { id: 'resources', icon: '📚', label: 'Resources', desc: 'Manage resources' },
-            { id: 'tutors', icon: '👨‍🏫', label: 'Tutors', desc: 'Manage tutors' },
             { id: 'finance', icon: '💰', label: 'Finance', desc: 'Revenue & Reconciliation' },
             { id: 'settings', icon: '⚙️', label: 'Settings', desc: 'Configuration' },
         ];
@@ -190,7 +312,7 @@
         function AppProvider({ children }) {
             const [darkMode, setDarkMode] = useState(() => localStorage.getItem('kv-dark-mode') === 'true');
             const [sidebarOpen, setSidebarOpen] = useState(true);
-            const [currentModule, setCurrentModule] = useState('orders');
+            const [currentModule, setCurrentModule] = useState('dashboard');
             const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
             const [isAuthenticated, setIsAuthenticated] = useState(() => sessionStorage.getItem('kv-auth') === 'true');
             const [authLoading, setAuthLoading] = useState(false);
@@ -199,6 +321,7 @@
             const [tutors, setTutors] = useState([]);
             const [orders, setOrders] = useState([]);
             const [resources, setResources] = useState([]);
+            const [classes, setClasses] = useState([]);
             const [toast, setToast] = useState(null);
             const [newOrderIds, setNewOrderIds] = useState([]);
 
@@ -309,6 +432,14 @@
                         const data = await tRes.json();
                         setTutors(data || []);
                     }
+
+                    const cRes = await fetch(`${SUPABASE_URL}/rest/v1/classes?select=*&order=created_at.desc`, {
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+                    });
+                    if (cRes.ok) {
+                        const data = await cRes.json();
+                        setClasses(data || []);
+                    }
                 } catch (e) { console.error('Load error:', e); }
                 setLoading(false);
             };
@@ -344,7 +475,7 @@
                 sessionStorage.removeItem('kv-auth');
                 sessionStorage.removeItem('kv-user');
                 setIsAuthenticated(false);
-                setCurrentModule('orders');
+                setCurrentModule('dashboard');
                 window.location.href = '/';
             };
 
@@ -366,6 +497,7 @@
                     tutors, setTutors,
                     orders, setOrders,
                     resources, setResources,
+                    classes, setClasses,
                     toast, showToast,
                     toggleSidebar,
                     loadData,
@@ -464,7 +596,7 @@
                             <span className={`text-[10px] font-bold text-[#D4A017] bg-[#D4A017]/20 px-2 py-0.5 rounded-full transition-opacity duration-300 ${!sidebarOpen ? 'lg:opacity-0 lg:group-hover:opacity-100' : 'opacity-100'}`}>Admin</span>
                         </div>
                         <nav className="flex-1 overflow-y-auto py-4 px-3">
-                            {modules.map((mod) => (
+                            {adminModules.map((mod) => (
                                 <button key={mod.id} onClick={() => { setCurrentModule(mod.id); if (mobileSidebarOpen) toggleSidebar(); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all group/item relative ${currentModule === mod.id ? 'bg-[#D4A017]/20 text-[#FCD34D]' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}>
                                     <span className="text-xl flex-shrink-0">{mod.icon}</span>
                                     <span className={`text-sm font-medium whitespace-nowrap transition-opacity duration-300 ${!sidebarOpen ? 'lg:opacity-0 lg:group-hover:opacity-100' : 'opacity-100'}`}>{mod.label}</span>
@@ -490,7 +622,7 @@
         // ── TOPBAR ──
         function Topbar() {
             const { darkMode, toggleDarkMode, toggleSidebar, currentModule } = useApp();
-            const currentMod = modules.find(m => m.id === currentModule) || modules[0];
+            const currentMod = adminModules.find(m => m.id === currentModule) || adminModules[0];
 
             return (
                 <header className="sticky top-0 z-40 bg-white/80 dark:bg-[#0a1a3a]/80 backdrop-blur-md border-b border-gray-200 dark:border-[#D4A017]/20">
@@ -519,6 +651,975 @@
             );
         }
 
+        // ── PDF COMPRESSION UTILITY ──
+        function compressPDF(file, onProgress) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = async function(e) {
+                    try {
+                        const arrayBuffer = e.target.result;
+                        const originalSize = file.size;
+                        
+                        const pdfDoc = await PDFLib.PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
+                        const pageCount = pdfDoc.getPageCount();
+                        const newPdf = await PDFLib.PDFDocument.create();
+                        
+                        for (let i = 0; i < pageCount; i++) {
+                            const [page] = await newPdf.copyPages(pdfDoc, [i]);
+                            newPdf.addPage(page);
+                            if (onProgress) {
+                                const progress = ((i + 1) / pageCount) * 100;
+                                onProgress(progress, originalSize);
+                            }
+                        }
+                        
+                        const compressedBytes = await newPdf.save({
+                            useObjectStreams: true,
+                            addDefaultPage: false,
+                            objectsPerTick: 50,
+                        });
+                        
+                        const compressedSize = compressedBytes.length;
+                        const compressionRatio = (1 - compressedSize / originalSize) * 100;
+                        
+                        if (onProgress) {
+                            onProgress(100, originalSize, compressedSize);
+                        }
+                        
+                        const compressedFile = new File(
+                            [compressedBytes],
+                            file.name,
+                            { type: 'application/pdf' }
+                        );
+                        
+                        compressedFile.compressionRatio = compressionRatio;
+                        compressedFile.originalSize = originalSize;
+                        compressedFile.compressedSize = compressedSize;
+                        compressedFile.pageCount = pageCount;
+                        
+                        resolve(compressedFile);
+                    } catch (error) {
+                        console.error('PDF compression error:', error);
+                        reject(error);
+                    }
+                };
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+        // ── DASHBOARD MODULE ──
+        function DashboardModule() {
+            const { orders, resources, tutors, classes, showNotification } = useApp();
+            const chartRef = useRef(null);
+            const [timeframe, setTimeframe] = useState('daily');
+            const [chartData, setChartData] = useState({ labels: [], values: [] });
+            const { darkMode } = useApp();
+
+            const fetchAndRenderRevenue = useCallback(async (tf) => {
+                try {
+                    const response = await fetch(`${SUPABASE_URL}/rest/v1/orders?select=total_amount,created_at,payment_status`, {
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    
+                    if (!response.ok) throw new Error('Failed to fetch revenue data');
+                    
+                    const data = await response.json();
+                    const paidOrders = data.filter(o => o.payment_status === 'paid' || o.payment_status === 'completed' || o.payment_status === 'confirmed');
+                    
+                    let labels = [];
+                    let values = [];
+                    const now = new Date();
+                    
+                    if (tf === 'daily') {
+                        for (let i = 6; i >= 0; i--) {
+                            const date = new Date(now);
+                            date.setDate(date.getDate() - i);
+                            const dateStr = date.toISOString().split('T')[0];
+                            const dayTotal = paidOrders
+                                .filter(o => o.created_at && o.created_at.startsWith(dateStr))
+                                .reduce((sum, o) => sum + (o.total_amount || 0), 0);
+                            labels.push(date.toLocaleDateString('en', { weekday: 'short' }));
+                            values.push(dayTotal);
+                        }
+                    } else if (tf === 'weekly') {
+                        for (let i = 3; i >= 0; i--) {
+                            const weekStart = new Date(now);
+                            weekStart.setDate(weekStart.getDate() - (weekStart.getDay() + 7 * i));
+                            const weekEnd = new Date(weekStart);
+                            weekEnd.setDate(weekEnd.getDate() + 6);
+                            
+                            const weekTotal = paidOrders
+                                .filter(o => {
+                                    if (!o.created_at) return false;
+                                    const orderDate = new Date(o.created_at);
+                                    return orderDate >= weekStart && orderDate <= weekEnd;
+                                })
+                                .reduce((sum, o) => sum + (o.total_amount || 0), 0);
+                            
+                            labels.push(`W${4 - i}`);
+                            values.push(weekTotal);
+                        }
+                    } else if (tf === 'monthly') {
+                        for (let i = 11; i >= 0; i--) {
+                            const month = new Date(now);
+                            month.setMonth(month.getMonth() - i);
+                            const monthStr = month.toISOString().slice(0, 7);
+                            const monthTotal = paidOrders
+                                .filter(o => o.created_at && o.created_at.startsWith(monthStr))
+                                .reduce((sum, o) => sum + (o.total_amount || 0), 0);
+                            labels.push(month.toLocaleDateString('en', { month: 'short' }));
+                            values.push(monthTotal);
+                        }
+                    }
+                    
+                    setChartData({ labels, values });
+                    
+                    if (chartRef.current) {
+                        chartRef.current.data.labels = labels;
+                        chartRef.current.data.datasets[0].data = values;
+                        chartRef.current.update();
+                    }
+                    
+                } catch (error) {
+                    console.error('Revenue fetch error:', error);
+                    showNotification('Error loading revenue data', 'error');
+                }
+            }, [showNotification]);
+
+            useEffect(() => {
+                if (typeof Chart === 'undefined') return;
+                
+                const ctx = document.getElementById('revenueChart')?.getContext('2d');
+                if (!ctx) return;
+                
+                if (chartRef.current) {
+                    chartRef.current.destroy();
+                }
+                
+                const isDark = document.documentElement.classList.contains('dark');
+                const gradient = ctx.createLinearGradient(0, 0, 0, 280);
+                gradient.addColorStop(0, 'rgba(212, 160, 23, 0.3)');
+                gradient.addColorStop(1, 'rgba(212, 160, 23, 0)');
+                
+                chartRef.current = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: chartData.labels.length ? chartData.labels : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                        datasets: [{
+                            label: 'Revenue (KES)',
+                            data: chartData.values.length ? chartData.values : [0, 0, 0, 0, 0, 0, 0],
+                            borderColor: '#D4A017',
+                            backgroundColor: gradient,
+                            fill: true,
+                            tension: 0.4,
+                            pointBackgroundColor: '#D4A017',
+                            pointBorderColor: isDark ? '#1f2937' : '#ffffff',
+                            pointBorderWidth: 2,
+                            pointRadius: 4,
+                            pointHoverRadius: 6,
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return 'KES ' + context.parsed.y.toLocaleString();
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    callback: (v) => 'KES ' + v.toLocaleString(),
+                                    color: isDark ? '#9ca3af' : '#6b7280'
+                                },
+                                grid: {
+                                    color: isDark ? 'rgba(55,65,81,0.3)' : 'rgba(209,213,219,0.3)'
+                                }
+                            },
+                            x: {
+                                ticks: {
+                                    color: isDark ? '#9ca3af' : '#6b7280'
+                                },
+                                grid: { display: false }
+                            }
+                        },
+                        interaction: {
+                            intersect: false,
+                            mode: 'index'
+                        }
+                    }
+                });
+            }, [darkMode]);
+
+            useEffect(() => {
+                fetchAndRenderRevenue(timeframe);
+            }, [timeframe, fetchAndRenderRevenue]);
+
+            useEffect(() => {
+                const interval = setInterval(() => {
+                    fetchAndRenderRevenue(timeframe);
+                }, 10000);
+                return () => clearInterval(interval);
+            }, [timeframe, fetchAndRenderRevenue]);
+
+            const totalRevenue = orders.reduce((s, o) => s + (o.total_amount || 0), 0);
+            const pendingOrders = orders.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification').length;
+            const confirmedOrders = orders.filter(o => o.payment_status === 'confirmed').length;
+            const completedOrders = orders.filter(o => o.payment_status === 'completed' || o.payment_status === 'paid').length;
+            const activeTutors = tutors.filter(t => t.status === 'active').length;
+            const totalClasses = classes.length;
+            const liveClasses = classes.filter(c => c.is_live === true).length;
+
+            return (
+                <div className="space-y-6 fade-in">
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                        {[
+                            { label: 'Total Revenue', value: 'KES ' + totalRevenue.toLocaleString(), change: '+15%', icon: '💰' },
+                            { label: 'Pending Orders', value: pendingOrders, change: '', icon: '⏳' },
+                            { label: 'Active Tutors', value: activeTutors, change: '', icon: '🧑‍🏫' },
+                            { label: 'Live Classes', value: liveClasses, change: '', icon: '📹' },
+                        ].map((stat, i) => (
+                            <div key={i} className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                                <div className="flex items-center justify-between">
+                                    <div className="w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-xl">{stat.icon}</div>
+                                    {stat.change && <span className="text-xs font-medium text-[#D4A017] bg-[#D4A017]/10 px-2 py-0.5 rounded-full">{stat.change}</span>}
+                                </div>
+                                <p className="text-2xl font-bold text-gray-800 dark:text-white mt-2">{stat.value}</p>
+                                <p className="text-sm text-gray-500 dark:text-gray-400">{stat.label}</p>
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-semibold text-gray-800 dark:text-white">📈 Revenue Overview</h3>
+                            <div className="timeframe-toggle">
+                                <button onClick={() => setTimeframe('daily')} className={timeframe === 'daily' ? 'active' : ''}>Daily</button>
+                                <button onClick={() => setTimeframe('weekly')} className={timeframe === 'weekly' ? 'active' : ''}>Weekly</button>
+                                <button onClick={() => setTimeframe('monthly')} className={timeframe === 'monthly' ? 'active' : ''}>Monthly</button>
+                            </div>
+                        </div>
+                        <div className="chart-container">
+                            <canvas id="revenueChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                            <div className="flex items-center justify-between">
+                                <span className="text-sm text-gray-500 dark:text-gray-400">Total Orders</span>
+                                <span className="text-2xl font-bold text-blue-600">{orders.length}</span>
+                            </div>
+                        </div>
+                        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                            <div className="flex items-center justify-between">
+                                <span className="text-sm text-gray-500 dark:text-gray-400">Total Resources</span>
+                                <span className="text-2xl font-bold text-green-600">{resources.length}</span>
+                            </div>
+                        </div>
+                        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                            <div className="flex items-center justify-between">
+                                <span className="text-sm text-gray-500 dark:text-gray-400">Confirmed Orders</span>
+                                <span className="text-2xl font-bold text-purple-600">{confirmedOrders}</span>
+                            </div>
+                        </div>
+                        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                            <div className="flex items-center justify-between">
+                                <span className="text-sm text-gray-500 dark:text-gray-400">Total Classes</span>
+                                <span className="text-2xl font-bold text-amber-600">{totalClasses}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ── ADVANCED RESOURCE MANAGER ──
+        function ResourcesModule() {
+            const { resources, showNotification, loadData } = useApp();
+            const [filter, setFilter] = useState('all');
+            const [uploading, setUploading] = useState(false);
+            const [compressProgress, setCompressProgress] = useState(0);
+            const [compressionStatus, setCompressionStatus] = useState('');
+            
+            const [uploadForm, setUploadForm] = useState({
+                title: '',
+                price: 30,
+                discount_percentage: 0,
+                level: '',
+                subject: '',
+                description: '',
+                resource_type: 'Lesson Plan',
+                curriculum_tag: 'CBC',
+                is_published: true,
+                file: null
+            });
+            const fileInputRef = useRef(null);
+
+            const resourceTypes = ['Lesson Plan', 'Scheme of Work', 'Exam Paper', 'CBC Portfolio', 'Revision Paper', 'E-Book', 'Video Tutorial'];
+            const curriculumTags = ['CBC', '8-4-4', 'IGCSE', 'Global'];
+
+            const handleFileSelect = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                if (file.type !== 'application/pdf') {
+                    showNotification('Please select a PDF file', 'error');
+                    return;
+                }
+
+                setUploading(true);
+                setCompressProgress(0);
+                setCompressionStatus(`📄 Compressing ${file.name}...`);
+
+                try {
+                    setCompressProgress(10);
+                    setCompressionStatus(`📄 Compressing ${file.name} from ${(file.size / 1024 / 1024).toFixed(1)}MB...`);
+                    
+                    const compressedFile = await compressPDF(file, (progress, originalSize, compressedSize) => {
+                        const pct = Math.round(progress);
+                        setCompressProgress(pct);
+                        if (compressedSize) {
+                            setCompressionStatus(
+                                `📄 Compressing... ${pct}% (${(originalSize / 1024 / 1024).toFixed(1)}MB → ${(compressedSize / 1024 / 1024).toFixed(1)}MB)`
+                            );
+                        } else {
+                            setCompressionStatus(`📄 Compressing... ${pct}%`);
+                        }
+                    });
+                    
+                    setUploadForm(prev => ({ ...prev, file: compressedFile }));
+                    setCompressionStatus(`✅ Compressed! ${(compressedFile.originalSize / 1024 / 1024).toFixed(1)}MB → ${(compressedFile.compressedSize / 1024 / 1024).toFixed(1)}MB (${Math.round(compressedFile.compressionRatio)}% saved)`);
+                    
+                    showNotification('✅ PDF compressed successfully!', 'success');
+                    
+                } catch (error) {
+                    console.error('Compression error:', error);
+                    setCompressionStatus('⚠️ Using original file (compression failed)');
+                    setUploadForm(prev => ({ ...prev, file }));
+                    showNotification('Compression failed, using original file', 'error');
+                }
+                
+                setUploading(false);
+                setTimeout(() => setCompressProgress(0), 3000);
+            };
+
+            const handleUpload = async () => {
+                const { title, price, level, subject, file } = uploadForm;
+                if (!title || !price || !level || !subject || !file) {
+                    showNotification('Please fill all required fields and select a file', 'error');
+                    return;
+                }
+
+                setUploading(true);
+                setCompressProgress(0);
+                setCompressionStatus('📤 Uploading to storage...');
+
+                try {
+                    const fileExt = file.name.split('.').pop();
+                    const filePath = `resources/${level}/${subject}/${Date.now()}.${fileExt}`;
+                    
+                    const uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/academic-resources/${filePath}`, {
+                        method: 'POST',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                        },
+                        body: file
+                    });
+
+                    if (!uploadRes.ok) throw new Error('Upload failed');
+                    setCompressProgress(80);
+                    setCompressionStatus('💾 Saving to database...');
+
+                    const fileUrl = `${SUPABASE_URL}/storage/v1/object/public/academic-resources/${filePath}`;
+
+                    const resourceData = {
+                        title,
+                        price: parseInt(price),
+                        discount_percentage: parseInt(uploadForm.discount_percentage) || 0,
+                        level,
+                        subject,
+                        description: uploadForm.description || '',
+                        resource_type: uploadForm.resource_type,
+                        curriculum_tag: uploadForm.curriculum_tag,
+                        is_published: uploadForm.is_published,
+                        file_url: fileUrl,
+                        file_size: file.size,
+                        created_at: new Date().toISOString()
+                    };
+
+                    const saveRes = await fetch(`${SUPABASE_URL}/rest/v1/resources`, {
+                        method: 'POST',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json',
+                            'Prefer': 'return=minimal'
+                        },
+                        body: JSON.stringify(resourceData)
+                    });
+
+                    if (!saveRes.ok) throw new Error('Save failed');
+
+                    setCompressProgress(100);
+                    setCompressionStatus('✅ Upload complete!');
+                    showNotification('Resource uploaded successfully!', 'success');
+                    
+                    setUploadForm({
+                        title: '',
+                        price: 30,
+                        discount_percentage: 0,
+                        level: '',
+                        subject: '',
+                        description: '',
+                        resource_type: 'Lesson Plan',
+                        curriculum_tag: 'CBC',
+                        is_published: true,
+                        file: null
+                    });
+                    if (fileInputRef.current) fileInputRef.current.value = '';
+                    
+                    loadData();
+                    
+                } catch (error) {
+                    console.error('Upload error:', error);
+                    showNotification('Upload failed: ' + error.message, 'error');
+                }
+                
+                setUploading(false);
+                setTimeout(() => {
+                    setCompressProgress(0);
+                    setCompressionStatus('');
+                }, 3000);
+            };
+
+            const deleteResource = async (id) => {
+                if (!confirm('Delete this resource permanently?')) return;
+                try {
+                    const res = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${id}`, {
+                        method: 'DELETE',
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+                    });
+                    if (res.ok) { showNotification('Resource deleted', 'success'); loadData(); }
+                } catch (e) { showNotification('Error deleting', 'error'); }
+            };
+
+            const togglePublish = async (id, current) => {
+                try {
+                    const res = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${id}`, {
+                        method: 'PATCH',
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ is_published: !current })
+                    });
+                    if (res.ok) { showNotification('Status updated', 'success'); loadData(); }
+                } catch (e) { showNotification('Error', 'error'); }
+            };
+
+            const updatePrice = async (id, newPrice) => {
+                const price = prompt('Enter new price (KES):', newPrice);
+                if (price === null) return;
+                const numPrice = parseFloat(price);
+                if (isNaN(numPrice) || numPrice < 0) {
+                    showNotification('Please enter a valid price', 'error');
+                    return;
+                }
+                try {
+                    const res = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${id}`, {
+                        method: 'PATCH',
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ price: numPrice })
+                    });
+                    if (res.ok) { showNotification('Price updated', 'success'); loadData(); }
+                } catch (e) { showNotification('Error', 'error'); }
+            };
+
+            const updateDiscount = async (id) => {
+                const discount = prompt('Enter discount percentage (0-100):', '0');
+                if (discount === null) return;
+                const numDiscount = parseFloat(discount);
+                if (isNaN(numDiscount) || numDiscount < 0 || numDiscount > 100) {
+                    showNotification('Please enter a valid discount (0-100)', 'error');
+                    return;
+                }
+                try {
+                    const res = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${id}`, {
+                        method: 'PATCH',
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ discount_percentage: numDiscount })
+                    });
+                    if (res.ok) { showNotification('Discount updated', 'success'); loadData(); }
+                } catch (e) { showNotification('Error', 'error'); }
+            };
+
+            const filtered = resources.filter(r => {
+                if (filter === 'published') return r.is_published !== false;
+                if (filter === 'draft') return r.is_published === false;
+                if (filter === 'discounted') return r.discount_percentage > 0;
+                return true;
+            });
+
+            return (
+                <div className="fade-in">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700 mb-6">
+                        <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-4">📤 Upload New Resource</h3>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Resource Title *</label>
+                                <input type="text" value={uploadForm.title} onChange={(e) => setUploadForm({...uploadForm, title: e.target.value})} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" placeholder="e.g. Grade 7 Mathematics Notes" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Price (KES) *</label>
+                                <input type="number" value={uploadForm.price} onChange={(e) => setUploadForm({...uploadForm, price: e.target.value})} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" min="0" />
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Discount %</label>
+                                <input type="number" value={uploadForm.discount_percentage} onChange={(e) => setUploadForm({...uploadForm, discount_percentage: e.target.value})} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" min="0" max="100" placeholder="0" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Level *</label>
+                                <select value={uploadForm.level} onChange={(e) => setUploadForm({...uploadForm, level: e.target.value})} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
+                                    <option value="">Select level...</option>
+                                    {['pp1','pp2','grade-1','grade-2','grade-3','grade-4','grade-5','grade-6','grade-7','grade-8','grade-9','grade-10','grade-11','grade-12','form-1','form-2','form-3','form-4','college','tvet','university'].map(l => (
+                                        <option key={l} value={l}>{l.replace(/-/g, ' ').toUpperCase()}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Subject *</label>
+                                <select value={uploadForm.subject} onChange={(e) => setUploadForm({...uploadForm, subject: e.target.value})} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
+                                    <option value="">Select subject...</option>
+                                    {['mathematics','english','kiswahili','integrated-science','social-studies','pre-technical','agriculture','religious-education','creative-arts','health-pe','biology','chemistry','physics','business','computer-studies','engineering','law','medicine','personal-growth','financial-literacy','leadership'].map(s => (
+                                        <option key={s} value={s}>{s.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Resource Type</label>
+                                <select value={uploadForm.resource_type} onChange={(e) => setUploadForm({...uploadForm, resource_type: e.target.value})} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
+                                    {resourceTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Curriculum</label>
+                                <select value={uploadForm.curriculum_tag} onChange={(e) => setUploadForm({...uploadForm, curriculum_tag: e.target.value})} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
+                                    {curriculumTags.map(t => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
+                            <textarea value={uploadForm.description} onChange={(e) => setUploadForm({...uploadForm, description: e.target.value})} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" rows="2" placeholder="Brief description..." />
+                        </div>
+
+                        <div className="flex flex-wrap gap-4 mb-4">
+                            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                                <input type="checkbox" checked={uploadForm.is_published} onChange={(e) => setUploadForm({...uploadForm, is_published: e.target.checked})} /> Published
+                            </label>
+                        </div>
+
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">PDF File *</label>
+                            <div className="drop-zone" onClick={() => fileInputRef.current?.click()}>
+                                <div className="text-2xl mb-2">📄</div>
+                                <p className="text-sm text-gray-600 dark:text-gray-400">Click or drag to upload PDF</p>
+                                <p className="text-xs text-gray-400 dark:text-gray-500">Max size: 20 MB (will be compressed)</p>
+                                <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept=".pdf" className="hidden" />
+                            </div>
+                            {uploadForm.file && (
+                                <div className="mt-2 p-2 bg-green-50 dark:bg-green-900/20 rounded-lg text-sm text-green-600 dark:text-green-400">
+                                    ✅ {uploadForm.file.name} 
+                                    {uploadForm.file.compressedSize && ` (${(uploadForm.file.compressedSize / 1024 / 1024).toFixed(1)}MB)`}
+                                </div>
+                            )}
+                            {compressionStatus && (
+                                <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">{compressionStatus}</div>
+                            )}
+                            {compressProgress > 0 && compressProgress < 100 && (
+                                <div className="mt-2">
+                                    <div className="progress-track">
+                                        <div className="progress-bar" style={{ width: compressProgress + '%' }}></div>
+                                    </div>
+                                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{compressProgress}%</div>
+                                </div>
+                            )}
+                        </div>
+
+                        <button onClick={handleUpload} disabled={uploading} className="btn-gold px-6 py-2 rounded-lg font-semibold disabled:opacity-50">
+                            {uploading ? '⏳ Uploading...' : '⬆️ Upload Resource'}
+                        </button>
+                    </div>
+
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+                            <h3 className="text-lg font-bold text-gray-800 dark:text-white">📚 Resource Inventory ({resources.length})</h3>
+                            <div className="flex gap-2 flex-wrap">
+                                <button onClick={() => setFilter('all')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'all' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>All</button>
+                                <button onClick={() => setFilter('published')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'published' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Published</button>
+                                <button onClick={() => setFilter('draft')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'draft' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Draft</button>
+                                <button onClick={() => setFilter('discounted')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'discounted' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>🔥 Discounted</button>
+                            </div>
+                        </div>
+                        
+                        {filtered.length === 0 ? (
+                            <div className="text-center py-8 text-gray-500 dark:text-gray-400">No resources found</div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead className="bg-gray-50 dark:bg-gray-700/50">
+                                        <tr>
+                                            <th className="px-4 py-2 text-left">Title</th>
+                                            <th className="px-4 py-2 text-left">Type</th>
+                                            <th className="px-4 py-2 text-left">Price</th>
+                                            <th className="px-4 py-2 text-left">Discount</th>
+                                            <th className="px-4 py-2 text-left">Status</th>
+                                            <th className="px-4 py-2 text-left">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {filtered.map(r => {
+                                            const hasDiscount = r.discount_percentage > 0;
+                                            const discountedPrice = hasDiscount ? r.price - (r.price * (r.discount_percentage / 100)) : r.price;
+                                            return (
+                                                <tr key={r.id} className="border-t border-gray-100 dark:border-gray-700">
+                                                    <td className="px-4 py-2 font-medium text-gray-800 dark:text-white">{r.title}</td>
+                                                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{r.resource_type || '-'}</td>
+                                                    <td className="px-4 py-2">
+                                                        {hasDiscount ? (
+                                                            <div>
+                                                                <span className="line-through text-gray-400 text-xs">KES {r.price}</span>
+                                                                <span className="text-[#D4A017] font-semibold ml-1">KES {Math.round(discountedPrice)}</span>
+                                                            </div>
+                                                        ) : (
+                                                            <span>KES {r.price}</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-2">
+                                                        {hasDiscount ? (
+                                                            <span className="text-xs bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-2 py-0.5 rounded-full">-{r.discount_percentage}%</span>
+                                                        ) : (
+                                                            <span className="text-gray-400">—</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-2">
+                                                        <span className={`status-badge ${r.is_published !== false ? 'completed' : 'pending'}`}>
+                                                            {r.is_published !== false ? '✅ Live' : '📌 Draft'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-4 py-2 flex gap-2 flex-wrap">
+                                                        <button onClick={() => updatePrice(r.id, r.price)} className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded text-xs">💰 Price</button>
+                                                        <button onClick={() => updateDiscount(r.id)} className="px-2 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded text-xs">🏷️ Discount</button>
+                                                        <button onClick={() => togglePublish(r.id, r.is_published !== false)} className="px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 rounded text-xs">
+                                                            {r.is_published !== false ? '📌 Draft' : '✅ Publish'}
+                                                        </button>
+                                                        <button onClick={() => deleteResource(r.id)} className="px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded text-xs">🗑️</button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        // ── TUTOR OPERATIONS CENTER ──
+        function TutorsModule() {
+            const { tutors, showNotification, loadData } = useApp();
+            const [filter, setFilter] = useState('all');
+
+            const updateTutorStatus = async (id, status) => {
+                try {
+                    const res = await fetch(`${SUPABASE_URL}/rest/v1/tutors?id=eq.${id}`, {
+                        method: 'PATCH',
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status })
+                    });
+                    if (res.ok) { showNotification(`Tutor ${status}`, 'success'); loadData(); }
+                } catch (e) { showNotification('Error', 'error'); }
+            };
+
+            const filtered = tutors.filter(t => {
+                if (filter === 'active') return t.status === 'active';
+                if (filter === 'suspended') return t.status === 'suspended';
+                return true;
+            });
+
+            return (
+                <div className="fade-in">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+                            <h2 className="text-xl font-bold text-gray-800 dark:text-white">🧑‍🏫 Tutors ({tutors.length})</h2>
+                            <div className="flex gap-2 flex-wrap">
+                                <button onClick={() => setFilter('all')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'all' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>All</button>
+                                <button onClick={() => setFilter('active')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'active' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Active</button>
+                                <button onClick={() => setFilter('suspended')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'suspended' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Suspended</button>
+                            </div>
+                        </div>
+                        
+                        {filtered.length === 0 ? (
+                            <div className="text-center py-8 text-gray-500 dark:text-gray-400">No tutors found</div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead className="bg-gray-50 dark:bg-gray-700/50">
+                                        <tr>
+                                            <th className="px-4 py-2 text-left">Name</th>
+                                            <th className="px-4 py-2 text-left">Email</th>
+                                            <th className="px-4 py-2 text-left">Phone</th>
+                                            <th className="px-4 py-2 text-left">Specialization</th>
+                                            <th className="px-4 py-2 text-left">Status</th>
+                                            <th className="px-4 py-2 text-left">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {filtered.map(t => (
+                                            <tr key={t.id} className="border-t border-gray-100 dark:border-gray-700">
+                                                <td className="px-4 py-2 font-medium text-gray-800 dark:text-white">{t.name}</td>
+                                                <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{t.email}</td>
+                                                <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{t.phone || t.mpesa_number || 'N/A'}</td>
+                                                <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{t.specialization || 'General'}</td>
+                                                <td className="px-4 py-2">
+                                                    <span className={`status-badge ${t.status === 'active' ? 'active' : t.status === 'suspended' ? 'suspended' : 'pending'}`}>
+                                                        {t.status || 'pending'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-2 flex gap-2">
+                                                    {t.status === 'active' ? (
+                                                        <button onClick={() => updateTutorStatus(t.id, 'suspended')} className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg text-xs">⛔ Suspend</button>
+                                                    ) : (
+                                                        <button onClick={() => updateTutorStatus(t.id, 'active')} className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg text-xs">✅ Activate</button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        // ── VIRTUAL CLASS ENGINE ──
+        function ClassesModule() {
+            const { classes, tutors, showNotification, loadData } = useApp();
+            const [showForm, setShowForm] = useState(false);
+            const [formData, setFormData] = useState({
+                title: '',
+                description: '',
+                tutor_id: '',
+                grade_level: '',
+                price_per_learner: 0,
+                is_live: true,
+                meeting_link: '',
+                scheduled_time: ''
+            });
+            const [submitting, setSubmitting] = useState(false);
+
+            const deleteClass = async (id) => {
+                if (!confirm('Delete this class?')) return;
+                try {
+                    const res = await fetch(`${SUPABASE_URL}/rest/v1/classes?id=eq.${id}`, {
+                        method: 'DELETE',
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+                    });
+                    if (res.ok) { showNotification('Class deleted', 'success'); loadData(); }
+                } catch (e) { showNotification('Error deleting', 'error'); }
+            };
+
+            const updateClassStatus = async (id, status) => {
+                try {
+                    const res = await fetch(`${SUPABASE_URL}/rest/v1/classes?id=eq.${id}`, {
+                        method: 'PATCH',
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status })
+                    });
+                    if (res.ok) { showNotification('Class updated', 'success'); loadData(); }
+                } catch (e) { showNotification('Error', 'error'); }
+            };
+
+            const handleCreateClass = async (e) => {
+                e.preventDefault();
+                if (!formData.title || !formData.scheduled_time) {
+                    showNotification('Please fill in title and scheduled time', 'error');
+                    return;
+                }
+
+                setSubmitting(true);
+                try {
+                    const response = await fetch(`${SUPABASE_URL}/rest/v1/classes`, {
+                        method: 'POST',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json',
+                            'Prefer': 'return=representation'
+                        },
+                        body: JSON.stringify({
+                            ...formData,
+                            price_per_learner: parseFloat(formData.price_per_learner) || 0,
+                            created_at: new Date().toISOString()
+                        })
+                    });
+
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        console.error('Create class error:', errorText);
+                        throw new Error('Failed to create class');
+                    }
+                    
+                    showNotification('Class created successfully!', 'success');
+                    setFormData({
+                        title: '',
+                        description: '',
+                        tutor_id: '',
+                        grade_level: '',
+                        price_per_learner: 0,
+                        is_live: true,
+                        meeting_link: '',
+                        scheduled_time: ''
+                    });
+                    setShowForm(false);
+                    loadData();
+                } catch (error) {
+                    console.error('Create class error:', error);
+                    showNotification('Error creating class: ' + error.message, 'error');
+                }
+                setSubmitting(false);
+            };
+
+            return (
+                <div className="fade-in">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-xl font-bold text-gray-800 dark:text-white">📹 Virtual Classes ({classes.length})</h2>
+                            <button onClick={() => setShowForm(!showForm)} className="btn-gold px-4 py-2 rounded-lg font-semibold text-sm">
+                                {showForm ? '✕ Cancel' : '➕ Create Class'}
+                            </button>
+                        </div>
+
+                        {showForm && (
+                            <form onSubmit={handleCreateClass} className="bg-gray-50 dark:bg-gray-700/30 p-4 rounded-lg mb-6 border border-gray-200 dark:border-gray-600">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Class Title *</label>
+                                        <input type="text" value={formData.title} onChange={(e) => setFormData({...formData, title: e.target.value})} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" required />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Target Grade</label>
+                                        <select value={formData.grade_level} onChange={(e) => setFormData({...formData, grade_level: e.target.value})} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
+                                            <option value="">Select grade...</option>
+                                            {['Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6','Grade 7','Grade 8','Grade 9','Grade 10','Grade 11','Grade 12','Form 1','Form 2','Form 3','Form 4'].map(g => (
+                                                <option key={g} value={g}>{g}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tutor</label>
+                                        <select value={formData.tutor_id} onChange={(e) => setFormData({...formData, tutor_id: e.target.value})} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
+                                            <option value="">Select tutor...</option>
+                                            {tutors.filter(t => t.status === 'active').map(t => (
+                                                <option key={t.id} value={t.id}>{t.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Scheduled Time *</label>
+                                        <input type="datetime-local" value={formData.scheduled_time} onChange={(e) => setFormData({...formData, scheduled_time: e.target.value})} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" required />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Price Per Learner (KES)</label>
+                                        <input type="number" value={formData.price_per_learner} onChange={(e) => setFormData({...formData, price_per_learner: e.target.value})} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" min="0" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Meeting Link</label>
+                                        <input type="url" value={formData.meeting_link} onChange={(e) => setFormData({...formData, meeting_link: e.target.value})} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" placeholder="https://meet.google.com/..." />
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center gap-4 mt-4">
+                                    <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                                        <input type="checkbox" checked={formData.is_live} onChange={(e) => setFormData({...formData, is_live: e.target.checked})} /> Live Class
+                                    </label>
+                                </div>
+
+                                <div className="mt-4">
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
+                                    <textarea value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" rows="2" placeholder="Class description..." />
+                                </div>
+
+                                <button type="submit" disabled={submitting} className="btn-gold px-4 py-2 rounded-lg font-semibold mt-4 disabled:opacity-50">
+                                    {submitting ? '⏳ Creating...' : '✅ Create Class'}
+                                </button>
+                            </form>
+                        )}
+
+                        {classes.length === 0 ? (
+                            <div className="text-center py-8 text-gray-500 dark:text-gray-400">No classes scheduled yet</div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {classes.map(c => (
+                                    <div key={c.id} className="class-card">
+                                        <div className="flex justify-between items-start">
+                                            <div>
+                                                <h4 className="font-semibold text-gray-800 dark:text-white">{c.title}</h4>
+                                                <p className="text-sm text-gray-500 dark:text-gray-400">{c.grade_level || 'All grades'}</p>
+                                            </div>
+                                            <span className={`status-badge ${c.status === 'live' ? 'live' : c.status === 'completed' ? 'completed' : 'pending'}`}>
+                                                {c.status || 'upcoming'}
+                                            </span>
+                                        </div>
+                                        <div className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                                            <p>👨‍🏫 {tutors.find(t => t.id === c.tutor_id)?.name || 'Unassigned'}</p>
+                                            <p>📅 {c.scheduled_time ? new Date(c.scheduled_time).toLocaleString() : 'TBD'}</p>
+                                            <p>💰 KES {c.price_per_learner || 0} per learner</p>
+                                            {c.meeting_link && <p className="text-blue-500 truncate">🔗 {c.meeting_link}</p>}
+                                        </div>
+                                        <div className="flex gap-2 mt-3">
+                                            <button onClick={() => updateClassStatus(c.id, c.status === 'live' ? 'completed' : 'live')} className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded text-xs">
+                                                {c.status === 'live' ? '✅ Complete' : '▶️ Start'}
+                                            </button>
+                                            <button onClick={() => deleteClass(c.id)} className="px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded text-xs">🗑️ Delete</button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
         // ── ORDERS MODULE ──
         function OrdersModule() {
             const { orders, loadOrders, showNotification, newOrderIds, setNewOrderIds } = useApp();
@@ -526,56 +1627,15 @@
             const [loadingOrderId, setLoadingOrderId] = useState(null);
 
             useEffect(() => {
-                const interval = setInterval(() => {
-                    loadOrders();
-                }, 10000);
+                const interval = setInterval(() => loadOrders(), 10000);
                 return () => clearInterval(interval);
             }, []);
 
-            const generateSignedUrl = async (filePath) => {
-                try {
-                    // Check if file path exists
-                    if (!filePath) return null;
-                    
-                    // First, check if the file exists in storage
-                    const checkRes = await fetch(`${SUPABASE_URL}/storage/v1/object/public/academic-resources/${encodeURIComponent(filePath)}`, {
-                        headers: {
-                            'apikey': SUPABASE_ANON_KEY,
-                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                        }
-                    });
-
-                    // If file exists, generate signed URL
-                    if (checkRes.ok) {
-                        const signedRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/academic-resources/${encodeURIComponent(filePath)}?expiresIn=604800`, {
-                            headers: {
-                                'apikey': SUPABASE_ANON_KEY,
-                                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                            }
-                        });
-                        
-                        if (signedRes.ok) {
-                            const signedData = await signedRes.json();
-                            return signedData.signedURL || signedData.url || null;
-                        }
-                    }
-                    
-                    // If file doesn't exist in storage, try to use the resource_path as is
-                    // but we know it might not work
-                    console.warn('File not found in storage, using path as fallback:', filePath);
-                    return null;
-                } catch (e) {
-                    console.error('Error generating signed URL:', e);
-                    return null;
-                }
-            };
-
             const handleConfirmOrder = async (order) => {
-                if (!confirm(`Confirm order #${order.payment_ref || order.id.slice(0, 8).toUpperCase()}? This will send a WhatsApp message to ${order.customer_phone} with download links.`)) return;
+                if (!confirm(`Confirm order #${order.payment_ref || order.id.slice(0, 8).toUpperCase()}?`)) return;
                 
                 setLoadingOrderId(order.id);
                 try {
-                    // 1. Update order status
                     const updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${order.id}`, {
                         method: 'PATCH',
                         headers: {
@@ -584,14 +1644,13 @@
                             'Content-Type': 'application/json'
                         },
                         body: JSON.stringify({
-                            payment_status: 'confirmed',
+                            payment_status: 'paid',
                             confirmed_at: new Date().toISOString()
                         })
                     });
 
                     if (!updateRes.ok) throw new Error('Failed to update order');
 
-                    // 2. Get order items
                     const itemsRes = await fetch(`${SUPABASE_URL}/rest/v1/order_items?order_id=eq.${order.id}`, {
                         headers: {
                             'apikey': SUPABASE_ANON_KEY,
@@ -601,49 +1660,12 @@
                     });
                     const orderItems = await itemsRes.json() || [];
 
-                    // 3. Generate signed URLs for each item
-                    const itemsWithUrls = [];
-                    for (const item of orderItems) {
-                        let downloadUrl = null;
-                        let urlStatus = 'pending';
-                        
-                        if (item.resource_path) {
-                            const signedUrl = await generateSignedUrl(item.resource_path);
-                            if (signedUrl) {
-                                downloadUrl = signedUrl;
-                                urlStatus = 'ready';
-                            } else {
-                                // Try alternate path formats
-                                const altPath = item.resource_path.replace(/^resources\//, '');
-                                const altSignedUrl = await generateSignedUrl(altPath);
-                                if (altSignedUrl) {
-                                    downloadUrl = altSignedUrl;
-                                    urlStatus = 'ready';
-                                }
-                            }
-                        }
-                        
-                        // If still no URL, use a placeholder
-                        if (!downloadUrl) {
-                            // Use the resource path as a reference, admin will need to upload the file
-                            downloadUrl = `${SUPABASE_URL}/storage/v1/object/public/academic-resources/${encodeURIComponent(item.resource_path || '')}`;
-                            urlStatus = 'pending_upload';
-                        }
-                        
-                        itemsWithUrls.push({
-                            ...item,
-                            downloadUrl,
-                            urlStatus
-                        });
-                    }
-
-                    // 4. Build WhatsApp message with download links
                     let message = `📚 *KenyaVault Order Confirmed!*\n\n`;
                     message += `Hello *${order.customer_name || 'Customer'}*,\n\n`;
                     message += `Your order #${order.payment_ref || order.id.slice(0, 8).toUpperCase()} has been confirmed! ✅\n\n`;
                     message += `*Order Details:*\n`;
                     
-                    itemsWithUrls.forEach((item, idx) => {
+                    orderItems.forEach((item, idx) => {
                         message += `${idx + 1}. ${item.resource_title} (x${item.quantity || 1})\n`;
                     });
                     
@@ -651,24 +1673,37 @@
                     message += `\n\n*📥 Download Your Resources:*\n`;
                     
                     let hasLinks = false;
-                    itemsWithUrls.forEach((item) => {
-                        if (item.downloadUrl && item.urlStatus === 'ready') {
-                            message += `\n📄 ${item.resource_title}: ${item.downloadUrl}`;
-                            hasLinks = true;
-                        } else if (item.downloadUrl) {
-                            message += `\n📄 ${item.resource_title}: ${item.downloadUrl} (Please ensure file is uploaded)`;
+                    for (const item of orderItems) {
+                        if (item.resource_path) {
+                            try {
+                                const signedUrlRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/academic-resources/${encodeURIComponent(item.resource_path)}?expiresIn=604800`, {
+                                    headers: {
+                                        'apikey': SUPABASE_ANON_KEY,
+                                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                                    }
+                                });
+                                if (signedUrlRes.ok) {
+                                    const signedData = await signedUrlRes.json();
+                                    const downloadUrl = signedData.signedURL || signedData.url || item.resource_path;
+                                    message += `\n📄 ${item.resource_title}: ${downloadUrl}`;
+                                    hasLinks = true;
+                                } else {
+                                    message += `\n📄 ${item.resource_title}: Link sent separately`;
+                                }
+                            } catch (e) {
+                                message += `\n📄 ${item.resource_title}: Link sent separately`;
+                            }
                         } else {
-                            message += `\n📄 ${item.resource_title}: Link will be sent separately`;
+                            message += `\n📄 ${item.resource_title}: Link sent separately`;
                         }
-                    });
+                    }
                     
                     if (!hasLinks) {
-                        message += `\nYour download links are being prepared. You will receive them shortly.`;
+                        message += `\nYour download links will be sent to you shortly.`;
                     }
                     
                     message += `\n\nThank you for choosing KenyaVault! 🇰🇪`;
 
-                    // 5. Open WhatsApp with the message
                     const phone = order.customer_phone || order.phone || '254700000000';
                     const formattedPhone = phone.replace(/^0/, '254').replace(/^\+/, '');
                     const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`;
@@ -711,8 +1746,7 @@
 
             const filteredOrders = orders.filter(o => {
                 if (filter === 'pending') return o.payment_status === 'pending' || o.payment_status === 'pending_verification';
-                if (filter === 'confirmed') return o.payment_status === 'confirmed';
-                if (filter === 'completed') return o.payment_status === 'completed' || o.payment_status === 'paid';
+                if (filter === 'paid') return o.payment_status === 'paid' || o.payment_status === 'completed' || o.payment_status === 'confirmed';
                 if (filter === 'cancelled') return o.payment_status === 'cancelled';
                 return true;
             });
@@ -739,8 +1773,8 @@
                         <div className="flex gap-2 flex-wrap mb-4">
                             <button onClick={() => setFilter('all')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'all' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>All</button>
                             <button onClick={() => setFilter('pending')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'pending' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Pending</button>
-                            <button onClick={() => setFilter('confirmed')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'confirmed' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Confirmed</button>
-                            <button onClick={() => setFilter('completed')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'completed' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Completed</button>
+                            <button onClick={() => setFilter('paid')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'paid' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Paid</button>
+                            <button onClick={() => setFilter('cancelled')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'cancelled' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Cancelled</button>
                         </div>
 
                         {filteredOrders.length === 0 ? (
@@ -753,7 +1787,6 @@
                                             <th className="px-4 py-2 text-left">Reference</th>
                                             <th className="px-4 py-2 text-left">Customer</th>
                                             <th className="px-4 py-2 text-left">Phone</th>
-                                            <th className="px-4 py-2 text-left">Items</th>
                                             <th className="px-4 py-2 text-left">Total</th>
                                             <th className="px-4 py-2 text-left">Status</th>
                                             <th className="px-4 py-2 text-left">Actions</th>
@@ -768,23 +1801,18 @@
                                                     <td className="px-4 py-2 font-medium text-gray-800 dark:text-white">#{o.payment_ref || o.id.slice(0, 8).toUpperCase()}</td>
                                                     <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{o.customer_name || 'N/A'}</td>
                                                     <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{o.customer_phone || 'N/A'}</td>
-                                                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">
-                                                        <span className="text-xs bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded-full">
-                                                            {o.item_count || 0} items
-                                                        </span>
-                                                    </td>
                                                     <td className="px-4 py-2 font-semibold text-[#D4A017]">KES {o.total_amount || 0}</td>
                                                     <td className="px-4 py-2">
                                                         <span className={`status-badge ${
                                                             o.payment_status === 'pending_verification' ? 'pending_verification' :
-                                                            o.payment_status === 'confirmed' ? 'confirmed' :
-                                                            o.payment_status === 'completed' || o.payment_status === 'paid' ? 'completed' :
+                                                            o.payment_status === 'paid' || o.payment_status === 'confirmed' ? 'paid' :
+                                                            o.payment_status === 'completed' ? 'completed' :
                                                             o.payment_status === 'cancelled' ? 'rejected' :
                                                             'pending'
                                                         }`}>
                                                             {o.payment_status === 'pending_verification' ? '⏳ Pending' :
-                                                             o.payment_status === 'confirmed' ? '✅ Confirmed' :
-                                                             o.payment_status === 'completed' || o.payment_status === 'paid' ? '✅ Completed' :
+                                                             o.payment_status === 'paid' || o.payment_status === 'confirmed' ? '✅ Paid' :
+                                                             o.payment_status === 'completed' ? '✅ Completed' :
                                                              o.payment_status === 'cancelled' ? '❌ Cancelled' :
                                                              'Pending'}
                                                         </span>
@@ -812,7 +1840,7 @@
                                                                 </button>
                                                             </>
                                                         )}
-                                                        {o.payment_status === 'confirmed' && (
+                                                        {o.payment_status === 'paid' && (
                                                             <button onClick={() => handleConfirmOrder(o)} className="px-3 py-1 bg-[#25D366] text-white rounded-lg text-xs hover:bg-[#1da85a] transition">
                                                                 📱 Resend WhatsApp
                                                             </button>
@@ -832,137 +1860,12 @@
             );
         }
 
-        // ── DASHBOARD MODULE ──
-        function DashboardModule() {
-            const { orders, resources, tutors } = useApp();
-            const totalRevenue = orders.reduce((s, o) => s + (o.total_amount || 0), 0);
-            const pendingOrders = orders.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification').length;
-            const confirmedOrders = orders.filter(o => o.payment_status === 'confirmed').length;
-            const completedOrders = orders.filter(o => o.payment_status === 'completed' || o.payment_status === 'paid').length;
-
-            return (
-                <div className="space-y-6 fade-in">
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                        {[
-                            { label: 'Total Orders', value: orders.length, change: '+8%', icon: '📦' },
-                            { label: 'Revenue', value: 'KES ' + totalRevenue.toLocaleString(), change: '+15%', icon: '💰' },
-                            { label: 'Pending', value: pendingOrders, change: '', icon: '⏳' },
-                            { label: 'Confirmed', value: confirmedOrders, change: '', icon: '✅' },
-                        ].map((stat, i) => (
-                            <div key={i} className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
-                                <div className="flex items-center justify-between">
-                                    <div className="w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-xl">{stat.icon}</div>
-                                    {stat.change && <span className="text-xs font-medium text-[#D4A017] bg-[#D4A017]/10 px-2 py-0.5 rounded-full">{stat.change}</span>}
-                                </div>
-                                <p className="text-2xl font-bold text-gray-800 dark:text-white mt-2">{stat.value}</p>
-                                <p className="text-sm text-gray-500 dark:text-gray-400">{stat.label}</p>
-                            </div>
-                        ))}
-                    </div>
-
-                    <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
-                        <h3 className="font-semibold text-gray-800 dark:text-white mb-4">📊 Quick Stats</h3>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <div className="text-center p-3 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
-                                <p className="text-2xl font-bold text-blue-600">{resources.length}</p>
-                                <p className="text-xs text-gray-500 dark:text-gray-400">Resources</p>
-                            </div>
-                            <div className="text-center p-3 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
-                                <p className="text-2xl font-bold text-green-600">{tutors.length}</p>
-                                <p className="text-xs text-gray-500 dark:text-gray-400">Tutors</p>
-                            </div>
-                            <div className="text-center p-3 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
-                                <p className="text-2xl font-bold text-purple-600">{completedOrders}</p>
-                                <p className="text-xs text-gray-500 dark:text-gray-400">Completed</p>
-                            </div>
-                            <div className="text-center p-3 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
-                                <p className="text-2xl font-bold text-amber-600">{pendingOrders}</p>
-                                <p className="text-xs text-gray-500 dark:text-gray-400">Pending</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            );
-        }
-
-        // ── RESOURCES MODULE ──
-        function ResourcesModule() {
-            const { resources, showNotification, loadData } = useApp();
-
-            const deleteResource = async (id) => {
-                if (!confirm('Delete this resource permanently?')) return;
-                try {
-                    const res = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${id}`, {
-                        method: 'DELETE',
-                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
-                    });
-                    if (res.ok) { showNotification('Resource deleted', 'success'); loadData(); }
-                } catch (e) { showNotification('Error deleting', 'error'); }
-            };
-
-            return (
-                <div className="fade-in">
-                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
-                        <h2 className="text-xl font-bold text-gray-800 dark:text-white mb-4">📚 Resources ({resources.length})</h2>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm">
-                                <thead className="bg-gray-50 dark:bg-gray-700/50">
-                                    <tr><th className="px-4 py-2 text-left">Title</th><th className="px-4 py-2 text-left">Level</th><th className="px-4 py-2 text-left">Price</th><th className="px-4 py-2 text-left">Status</th><th className="px-4 py-2 text-left">Actions</th></tr>
-                                </thead>
-                                <tbody>
-                                    {resources.map(r => (
-                                        <tr key={r.id} className="border-t border-gray-100 dark:border-gray-700">
-                                            <td className="px-4 py-2 font-medium text-gray-800 dark:text-white">{r.title}</td>
-                                            <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{r.level}</td>
-                                            <td className="px-4 py-2 text-gray-600 dark:text-gray-400">KES {r.price}</td>
-                                            <td className="px-4 py-2"><span className={`status-badge ${r.published !== false ? 'completed' : 'pending'}`}>{r.published !== false ? '✅ Published' : '📌 Draft'}</span></td>
-                                            <td className="px-4 py-2 flex gap-2">
-                                                <button onClick={() => deleteResource(r.id)} className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg text-xs">Delete</button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            );
-        }
-
-        // ── TUTORS MODULE ──
-        function TutorsModule() {
-            const { tutors } = useApp();
-            return (
-                <div className="fade-in">
-                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
-                        <h2 className="text-xl font-bold text-gray-800 dark:text-white mb-4">👨‍🏫 Tutors ({tutors.length})</h2>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm">
-                                <thead className="bg-gray-50 dark:bg-gray-700/50">
-                                    <tr><th className="px-4 py-2 text-left">Name</th><th className="px-4 py-2 text-left">Email</th><th className="px-4 py-2 text-left">Phone</th><th className="px-4 py-2 text-left">Status</th></tr>
-                                </thead>
-                                <tbody>
-                                    {tutors.map(t => (
-                                        <tr key={t.id} className="border-t border-gray-100 dark:border-gray-700">
-                                            <td className="px-4 py-2 font-medium text-gray-800 dark:text-white">{t.name}</td>
-                                            <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{t.email}</td>
-                                            <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{t.phone || t.mpesa_number || 'N/A'}</td>
-                                            <td className="px-4 py-2"><span className={`status-badge ${t.status === 'active' || t.status === 'approved' ? 'active' : t.status === 'pending' ? 'pending' : 'rejected'}`}>{t.status || 'pending'}</span></td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            );
-        }
-
         // ── FINANCE MODULE ──
         function FinanceModule() {
             const { orders } = useApp();
             const totalRevenue = orders.reduce((s, o) => s + (o.total_amount || 0), 0);
-            const confirmedRevenue = orders.filter(o => o.payment_status === 'confirmed' || o.payment_status === 'completed' || o.payment_status === 'paid').reduce((s, o) => s + (o.total_amount || 0), 0);
+            const paidRevenue = orders.filter(o => o.payment_status === 'paid' || o.payment_status === 'completed' || o.payment_status === 'confirmed').reduce((s, o) => s + (o.total_amount || 0), 0);
+            const pendingRevenue = orders.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification').reduce((s, o) => s + (o.total_amount || 0), 0);
 
             return (
                 <div className="fade-in">
@@ -974,12 +1877,20 @@
                                 <p className="text-sm text-gray-600 dark:text-gray-400">Total Revenue</p>
                             </div>
                             <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 text-center">
-                                <p className="text-2xl font-bold text-green-600">KES {confirmedRevenue.toLocaleString()}</p>
-                                <p className="text-sm text-gray-600 dark:text-gray-400">Confirmed Revenue</p>
+                                <p className="text-2xl font-bold text-green-600">KES {paidRevenue.toLocaleString()}</p>
+                                <p className="text-sm text-gray-600 dark:text-gray-400">Paid Revenue</p>
                             </div>
                             <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 text-center">
-                                <p className="text-2xl font-bold text-amber-600">{orders.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification').length}</p>
-                                <p className="text-sm text-gray-600 dark:text-gray-400">Pending Orders</p>
+                                <p className="text-2xl font-bold text-amber-600">KES {pendingRevenue.toLocaleString()}</p>
+                                <p className="text-sm text-gray-600 dark:text-gray-400">Pending Revenue</p>
+                            </div>
+                        </div>
+                        <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                            <h4 className="font-semibold text-gray-800 dark:text-white mb-2">📊 Revenue Breakdown</h4>
+                            <div className="space-y-2">
+                                <div className="flex justify-between"><span className="text-gray-600 dark:text-gray-400">Total Orders</span><span className="font-semibold">{orders.length}</span></div>
+                                <div className="flex justify-between"><span className="text-gray-600 dark:text-gray-400">Paid Orders</span><span className="font-semibold">{orders.filter(o => o.payment_status === 'paid' || o.payment_status === 'completed' || o.payment_status === 'confirmed').length}</span></div>
+                                <div className="flex justify-between"><span className="text-gray-600 dark:text-gray-400">Pending Orders</span><span className="font-semibold">{orders.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification').length}</span></div>
                             </div>
                         </div>
                     </div>
@@ -1017,13 +1928,14 @@
             const { currentModule } = useApp();
             const map = {
                 dashboard: <DashboardModule />,
-                orders: <OrdersModule />,
                 resources: <ResourcesModule />,
                 tutors: <TutorsModule />,
+                classes: <ClassesModule />,
+                orders: <OrdersModule />,
                 finance: <FinanceModule />,
                 settings: <SettingsModule />,
             };
-            return map[currentModule] || <OrdersModule />;
+            return map[currentModule] || <DashboardModule />;
         }
 
         // ── MAIN APP ──
