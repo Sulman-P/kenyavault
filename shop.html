@@ -1394,7 +1394,7 @@
         </div>
 
         <div id="shopContent">
-            <div class="products-grid">
+            <div class="products-grid" id="productsGrid">
                 <div class="loading-spinner">
                     <span class="spin-icon">⏳</span>
                     Loading resources...
@@ -1597,7 +1597,8 @@
 
     // ── SUPABASE CONFIG (SAME AS ADMIN DASHBOARD) ──
     const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
+    const SUPABASE_ANON_KEY =
+        'eyJhbGciOiJIUzI1NiIsR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
     const MEGAPAY_LINK = 'https://megapay.co.ke/tags/S1Zzyjs';
 
     // ── STATE ──
@@ -1668,7 +1669,7 @@
     };
 
     // ── DOM REFS ──
-    const shopContent = document.getElementById('shopContent');
+    const productsGrid = document.getElementById('productsGrid');
     const productCount = document.getElementById('productCount');
     const pagination = document.getElementById('pagination');
     const pageInfo = document.getElementById('pageInfo');
@@ -1677,12 +1678,10 @@
     const searchInput = document.getElementById('searchInput');
     const sortSelect = document.getElementById('sortSelect');
 
-    // ── FETCH RESOURCES DIRECTLY (USING SAME APPROACH AS ADMIN) ──
+    // ── FETCH RESOURCES DIRECTLY ──
     async function fetchResources() {
         try {
             console.log('🔍 Fetching resources from Supabase...');
-            console.log('📡 URL:', SUPABASE_URL);
-            console.log('🔑 Key present:', SUPABASE_ANON_KEY ? '✅ Yes' : '❌ No');
 
             const response = await fetch(`${SUPABASE_URL}/rest/v1/resources?select=*&order=created_at.desc`, {
                 headers: {
@@ -1695,14 +1694,7 @@
             console.log('📊 Response status:', response.status);
 
             if (!response.ok) {
-                let errorMsg = `HTTP ${response.status}`;
-                try {
-                    const errorData = await response.text();
-                    errorMsg += `: ${errorData.substring(0, 100)}`;
-                } catch (e) {
-                    errorMsg += `: ${response.statusText}`;
-                }
-                throw new Error(errorMsg);
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
 
             const data = await response.json();
@@ -1719,6 +1711,7 @@
         renderLoading();
         try {
             allResources = await fetchResources();
+            console.log('📦 Total resources:', allResources.length);
             updateCounts();
             applyLevelFromURL();
             renderShop();
@@ -1786,14 +1779,18 @@
         document.getElementById('catExamPaper').textContent = catCounts['exam-paper'] || 0;
     }
 
-    // ── RENDER ──
+    // ── RENDER SHOP ──
     function renderShop() {
+        console.log('🔄 Rendering shop...');
+        console.log('📦 allResources length:', allResources.length);
+
         const filtered = getFilteredAndSortedResources();
+        console.log('📊 Filtered count:', filtered.length);
 
         if (filtered.length === 0) {
-            shopContent.innerHTML =
+            productsGrid.innerHTML =
                 `
-                <div class="empty-state">
+                <div class="empty-state" style="grid-column:1/-1;">
                     <span class="empty-icon">📚</span>
                     <h3>No resources found</h3>
                     <p>Try adjusting your filters or check back later for new resources.</p>
@@ -1810,14 +1807,17 @@
         if (currentPage < 1) currentPage = 1;
 
         const start = (currentPage - 1) * itemsPerPage;
-        const end = start + itemsPerPage;
+        const end = Math.min(start + itemsPerPage, filtered.length);
         const pageItems = filtered.slice(start, end);
 
-        let html = '<div class="products-grid">';
-        pageItems.forEach(function(r) { html += buildCardHTML(r); });
-        html += '</div>';
+        console.log(`📄 Showing ${pageItems.length} items (page ${currentPage} of ${totalPages})`);
 
-        shopContent.innerHTML = html;
+        let html = '';
+        pageItems.forEach(function(r) {
+            html += buildCardHTML(r);
+        });
+
+        productsGrid.innerHTML = html;
         productCount.textContent = filtered.length;
 
         if (totalPages > 1) {
@@ -1828,6 +1828,8 @@
         } else {
             pagination.style.display = 'none';
         }
+
+        console.log('✅ Shop rendered successfully');
     }
 
     function getFilteredAndSortedResources() {
@@ -1847,10 +1849,12 @@
         }
 
         // Category filter
-        filtered = filtered.filter(function(r) {
-            const type = r.resource_type ? r.resource_type.toLowerCase().replace(/\s+/g, '-') : '';
-            return activeCategories.includes(type) || activeCategories.length === 0;
-        });
+        if (activeCategories.length > 0) {
+            filtered = filtered.filter(function(r) {
+                const type = r.resource_type ? r.resource_type.toLowerCase().replace(/\s+/g, '-') : '';
+                return activeCategories.includes(type);
+            });
+        }
 
         // Search
         const searchTerm = searchInput.value.toLowerCase().trim();
@@ -2007,21 +2011,19 @@
     }
 
     function renderLoading() {
-        shopContent.innerHTML =
+        productsGrid.innerHTML =
             `
-            <div class="products-grid">
-                <div class="loading-spinner">
-                    <span class="spin-icon">⏳</span>
-                    Loading resources...
-                </div>
+            <div class="loading-spinner" style="grid-column:1/-1;">
+                <span class="spin-icon">⏳</span>
+                Loading resources...
             </div>
         `;
     }
 
     function renderError(err) {
-        shopContent.innerHTML =
+        productsGrid.innerHTML =
             `
-            <div class="empty-state">
+            <div class="empty-state" style="grid-column:1/-1;">
                 <span class="empty-icon">⚠️</span>
                 <h3>Unable to load resources</h3>
                 <p style="font-size:0.85rem;color:#6B7280;margin:4px 0;">${err ? err.message || 'Please try again later.' : 'Please try again later.'}</p>
@@ -2033,38 +2035,8 @@
                     4. Check RLS policies
                 </div>
                 <button onclick="init()" style="margin-top:12px;padding:8px 20px;background:var(--gold);color:var(--navy);border:none;border-radius:8px;cursor:pointer;font-weight:700;">🔄 Retry</button>
-                <button onclick="testConnection()" style="margin-top:12px;margin-left:8px;padding:8px 20px;background:#6B7280;color:white;border:none;border-radius:8px;cursor:pointer;font-weight:600;">🔍 Test Connection</button>
             </div>
         `;
-    }
-
-    // ── TEST CONNECTION ──
-    async function testConnection() {
-        try {
-            const response = await fetch(`${SUPABASE_URL}/rest/v1/resources?limit=1`, {
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                    'Content-Type': 'application/json'
-                }
-            });
-
-            const result = {
-                status: response.status,
-                ok: response.ok,
-                statusText: response.statusText
-            };
-
-            if (response.ok) {
-                const data = await response.json();
-                alert(`✅ Connection successful!\n\nStatus: ${response.status}\nResources found: ${data.length}\n\nYour Supabase is working correctly.`);
-            } else {
-                let errorText = await response.text();
-                alert(`❌ Connection failed!\n\nStatus: ${response.status}\nMessage: ${response.statusText}\n\nError: ${errorText.substring(0, 200)}\n\nPlease check your Supabase configuration.`);
-            }
-        } catch (e) {
-            alert(`❌ Connection error!\n\n${e.message}\n\nPlease check your network connection.`);
-        }
     }
 
     // ── FILTERS ──
@@ -2227,43 +2199,6 @@
         toast._timeout = setTimeout(function() { toast.classList.remove('show'); }, 4000);
     }
 
-    // ── SAVE ORDER ──
-    async function saveOrder(phone, code, product) {
-        const ref = 'KV-' + Date.now().toString().slice(-8) + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
-
-        const orderData = {
-            phone: phone,
-            customer_phone: phone,
-            product_id: product.id,
-            product_title: product.title,
-            product_price: product.price || 0,
-            mpesa_code: code,
-            megapay_ref: ref,
-            status: 'pending',
-            ref: ref,
-            created_at: new Date().toISOString()
-        };
-
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
-            method: 'POST',
-            headers: {
-                'apikey': SUPABASE_ANON_KEY,
-                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                'Content-Type': 'application/json',
-                'Prefer': 'return=representation'
-            },
-            body: JSON.stringify(orderData)
-        });
-
-        if (!response.ok) {
-            const error = await response.text();
-            throw new Error(`HTTP ${response.status}: ${error}`);
-        }
-
-        const result = await response.json();
-        return result[0] || { id: ref, ref: ref };
-    }
-
     // ── EVENT LISTENERS ──
     function setupEventListeners() {
         // Level tabs
@@ -2388,7 +2323,7 @@
             showToast('💳', 'Complete payment on your phone, then enter the verification code', 'success');
         });
 
-        // Confirm Payment - Using direct fetch
+        // Confirm Payment
         document.getElementById('confirmPaymentBtn').addEventListener('click', async function() {
             const phone = document.getElementById('customerPhone').value.trim();
             const code = document.getElementById('mpesaCode').value.trim().toUpperCase();
@@ -2429,8 +2364,6 @@
                     created_at: new Date().toISOString()
                 };
 
-                console.log('Saving order:', orderData);
-
                 const response = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
                     method: 'POST',
                     headers: {
@@ -2444,7 +2377,6 @@
 
                 if (!response.ok) {
                     const errorText = await response.text();
-                    console.error('Order save error:', response.status, errorText);
                     throw new Error(`HTTP ${response.status}: ${errorText}`);
                 }
 
@@ -2481,7 +2413,6 @@
     window.closePreviewModal = closePreviewModal;
     window.openPreview = openPreview;
     window.showToast = showToast;
-    window.testConnection = testConnection;
 
     // ── START ──
     document.addEventListener('DOMContentLoaded', function() {
