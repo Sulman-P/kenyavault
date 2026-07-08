@@ -289,6 +289,10 @@
         // ── SUPABASE CONFIG ──
         const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
+        
+        // ── STORAGE CONFIG ──
+        const STORAGE_BUCKET = 'kenyavault-pdfs';
+        const STORAGE_URL = `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}`;
 
         // ── CONSTANTS ──
         const ADMIN_CREDENTIALS = {
@@ -707,6 +711,563 @@
             });
         }
 
+        // ── GENERATE SIGNED URL ──
+        const generateSignedUrl = async (filePath) => {
+            try {
+                if (!filePath) return null;
+                
+                // Clean the file path - remove any leading slashes or URL parts
+                let cleanPath = filePath;
+                
+                // Remove bucket names if present
+                cleanPath = cleanPath.replace(/^kenyavault-pdfs\//, '');
+                cleanPath = cleanPath.replace(/^academic-resources\//, '');
+                cleanPath = cleanPath.replace(/^resources\//, '');
+                cleanPath = cleanPath.replace(/^kenyavault-resources\//, '');
+                cleanPath = cleanPath.replace(/^kenyavault-covers\//, '');
+                
+                // Remove URL prefixes
+                cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
+                cleanPath = cleanPath.replace(/^\/+/, '');
+                
+                // Decode URL encoding
+                cleanPath = decodeURIComponent(cleanPath);
+                
+                console.log('📁 Generating signed URL for:', cleanPath);
+                
+                // Try to generate a signed URL (valid for 3 hours = 10800 seconds)
+                const signedRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${STORAGE_BUCKET}/${encodeURIComponent(cleanPath)}?expiresIn=10800`, {
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                    }
+                });
+                
+                if (signedRes.ok) {
+                    const signedData = await signedRes.json();
+                    console.log('✅ Signed URL generated successfully');
+                    return signedData.signedURL || signedData.url || null;
+                } else {
+                    // If signed URL fails, try public URL
+                    console.log('⚠️ Signed URL failed, trying public URL');
+                    const publicUrl = `${STORAGE_URL}/${encodeURIComponent(cleanPath)}`;
+                    
+                    // Check if file exists
+                    const checkRes = await fetch(publicUrl, {
+                        method: 'HEAD',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                        }
+                    });
+                    
+                    if (checkRes.ok) {
+                        console.log('✅ Public URL works');
+                        return publicUrl;
+                    }
+                    
+                    console.log('❌ File not found:', cleanPath);
+                    return null;
+                }
+            } catch (e) {
+                console.error('❌ Error generating signed URL:', e);
+                return null;
+            }
+        };
+
+        // ── FIND RESOURCE IN STORAGE ──
+        const findResourceInStorage = async (resourceTitle, resourceLevel, resourceSubject) => {
+            try {
+                // List files in the bucket
+                const listRes = await fetch(`${SUPABASE_URL}/storage/v1/object/list/${STORAGE_BUCKET}`, {
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                    }
+                });
+                
+                if (!listRes.ok) {
+                    console.log('⚠️ Could not list bucket contents');
+                    return null;
+                }
+                
+                const files = await listRes.json();
+                console.log(`📁 Found ${files.length} files in bucket`);
+                
+                // Search for the file by title (case insensitive)
+                const searchTitle = resourceTitle ? resourceTitle.toLowerCase() : '';
+                const searchLevel = resourceLevel ? resourceLevel.toLowerCase() : '';
+                const searchSubject = resourceSubject ? resourceSubject.toLowerCase() : '';
+                
+                const matchingFiles = files.filter(f => {
+                    const fileName = f.name.toLowerCase();
+                    return fileName.includes(searchTitle) || 
+                           (searchLevel && fileName.includes(searchLevel)) || 
+                           (searchSubject && fileName.includes(searchSubject));
+                });
+                
+                if (matchingFiles.length > 0) {
+                    console.log(`✅ Found ${matchingFiles.length} matching files`);
+                    // Return the most recent file (last in list)
+                    return matchingFiles[matchingFiles.length - 1].name;
+                }
+                
+                return null;
+            } catch (e) {
+                console.error('Error finding resource:', e);
+                return null;
+            }
+        };
+
+        // ── ORDERS MODULE ──
+        function OrdersModule() {
+            const { orders, loadOrders, showNotification, newOrderIds, setNewOrderIds } = useApp();
+            const [filter, setFilter] = useState('all');
+            const [loadingOrderId, setLoadingOrderId] = useState(null);
+
+            useEffect(() => {
+                const interval = setInterval(() => loadOrders(), 10000);
+                return () => clearInterval(interval);
+            }, []);
+
+            const handleConfirmOrder = async (order) => {
+                const ref = order.payment_ref || order.id.slice(0, 8).toUpperCase();
+                if (!confirm(`Confirm order #${ref}? This will send a WhatsApp message with download links to ${order.customer_phone}.`)) return;
+                
+                setLoadingOrderId(order.id);
+                try {
+                    // 1. Update order status
+                    const updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${order.id}`, {
+                        method: 'PATCH',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            payment_status: 'paid',
+                            confirmed_at: new Date().toISOString()
+                        })
+                    });
+
+                    if (!updateRes.ok) throw new Error('Failed to update order');
+
+                    // 2. Get order items
+                    const itemsRes = await fetch(`${SUPABASE_URL}/rest/v1/order_items?order_id=eq.${order.id}`, {
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    const orderItems = await itemsRes.json() || [];
+
+                    // 3. Generate download links for each item
+                    const itemsWithUrls = [];
+                    let hasValidLinks = false;
+                    
+                    for (const item of orderItems) {
+                        let downloadUrl = null;
+                        let filePath = item.resource_path || '';
+                        
+                        console.log(`🔍 Finding file for: ${item.resource_title}`);
+                        
+                        // If we have a resource_path, try to use it
+                        if (filePath) {
+                            const signedUrl = await generateSignedUrl(filePath);
+                            if (signedUrl) {
+                                downloadUrl = signedUrl;
+                                hasValidLinks = true;
+                                console.log(`✅ Found link from resource_path for ${item.resource_title}`);
+                            }
+                        }
+                        
+                        // If no link yet, try to find the file in the bucket
+                        if (!downloadUrl) {
+                            // Try to get the resource from the resources table to get file_url
+                            const resourceRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?title=eq.${encodeURIComponent(item.resource_title)}&limit=1`, {
+                                headers: {
+                                    'apikey': SUPABASE_ANON_KEY,
+                                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                                    'Content-Type': 'application/json'
+                                }
+                            });
+                            
+                            if (resourceRes.ok) {
+                                const resources = await resourceRes.json();
+                                if (resources.length > 0) {
+                                    const resource = resources[0];
+                                    // Extract file path from file_url
+                                    if (resource.file_url) {
+                                        const urlParts = resource.file_url.split(`/public/${STORAGE_BUCKET}/`);
+                                        if (urlParts.length > 1) {
+                                            filePath = urlParts[1];
+                                        } else {
+                                            // Try to extract from the URL
+                                            const match = resource.file_url.match(/\/public\/[^\/]+\/(.+)$/);
+                                            if (match) {
+                                                filePath = match[1];
+                                            }
+                                        }
+                                        
+                                        if (filePath) {
+                                            const signedUrl = await generateSignedUrl(filePath);
+                                            if (signedUrl) {
+                                                downloadUrl = signedUrl;
+                                                hasValidLinks = true;
+                                                console.log(`✅ Found link from resources table for ${item.resource_title}`);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // If still no link, try searching the storage bucket
+                        if (!downloadUrl) {
+                            // Try to find the file by searching the bucket
+                            const foundPath = await findResourceInStorage(item.resource_title, order.level || '', item.resource_title.split(' ')[0] || '');
+                            if (foundPath) {
+                                const signedUrl = await generateSignedUrl(foundPath);
+                                if (signedUrl) {
+                                    downloadUrl = signedUrl;
+                                    hasValidLinks = true;
+                                    console.log(`✅ Found link by searching bucket for ${item.resource_title}`);
+                                }
+                            }
+                        }
+                        
+                        itemsWithUrls.push({
+                            ...item,
+                            downloadUrl,
+                            filePath: filePath
+                        });
+                    }
+
+                    // 4. Build WhatsApp message with download links
+                    let message = `✅ *Your KenyaVault Order is Ready!*\n\n`;
+                    message += `Order #: *${ref}*\n\n`;
+                    
+                    // List all items
+                    if (itemsWithUrls.length > 0) {
+                        itemsWithUrls.forEach((item, idx) => {
+                            message += `Resource ${idx + 1}: *${item.resource_title}* (x${item.quantity || 1})\n`;
+                        });
+                        message += `\n`;
+                    } else {
+                        message += `Resource: *${order.product_title || 'Resource'}*\n\n`;
+                    }
+                    
+                    message += `Amount: *KES ${order.total_amount || 0}*\n\n`;
+                    
+                    // Add download links
+                    message += `📥 *Download Links:*\n`;
+                    
+                    let hasLinks = false;
+                    itemsWithUrls.forEach((item, idx) => {
+                        if (item.downloadUrl) {
+                            message += `\n${idx + 1}. ${item.resource_title}:\n${item.downloadUrl}\n`;
+                            hasLinks = true;
+                        }
+                    });
+                    
+                    // If no links were generated, add a note
+                    if (!hasLinks) {
+                        message += `\n⚠️ Your download links are being prepared. You will receive them shortly.\n`;
+                        message += `Please contact support if you don't receive them within 5 minutes.\n`;
+                    }
+                    
+                    message += `\n🔒 *Valid for 3 hours.*\n\n`;
+                    message += `Thank you for choosing KenyaVault! 📚\n`;
+                    message += `Need help? WhatsApp: +254 768 515 494`;
+
+                    // 5. Open WhatsApp with the message
+                    const phone = order.customer_phone || order.phone || '254700000000';
+                    const formattedPhone = phone.replace(/^0/, '254').replace(/^\+/, '');
+                    const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`;
+                    
+                    window.open(whatsappUrl, '_blank', 'width=400,height=600');
+                    
+                    showNotification('✅ Order confirmed and WhatsApp sent!', 'success');
+                    await loadOrders();
+                    setNewOrderIds(prev => prev.filter(id => id !== order.id));
+                    
+                } catch (e) {
+                    console.error('Confirm error:', e);
+                    showNotification('Error confirming order: ' + e.message, 'error');
+                }
+                setLoadingOrderId(null);
+            };
+
+            const handleRejectOrder = async (order) => {
+                const ref = order.payment_ref || order.id.slice(0, 8).toUpperCase();
+                if (!confirm(`Reject order #${ref}?`)) return;
+                
+                try {
+                    const updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${order.id}`, {
+                        method: 'PATCH',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ payment_status: 'cancelled' })
+                    });
+                    if (updateRes.ok) {
+                        showNotification('Order rejected', 'success');
+                        await loadOrders();
+                        setNewOrderIds(prev => prev.filter(id => id !== order.id));
+                    }
+                } catch (e) {
+                    showNotification('Error rejecting order', 'error');
+                }
+            };
+
+            // Resend WhatsApp for confirmed orders
+            const handleResendWhatsApp = async (order) => {
+                try {
+                    const itemsRes = await fetch(`${SUPABASE_URL}/rest/v1/order_items?order_id=eq.${order.id}`, {
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    const orderItems = await itemsRes.json() || [];
+
+                    const itemsWithUrls = [];
+                    let hasValidLinks = false;
+                    
+                    for (const item of orderItems) {
+                        let downloadUrl = null;
+                        let filePath = item.resource_path || '';
+                        
+                        if (filePath) {
+                            const signedUrl = await generateSignedUrl(filePath);
+                            if (signedUrl) {
+                                downloadUrl = signedUrl;
+                                hasValidLinks = true;
+                            }
+                        }
+                        
+                        if (!downloadUrl) {
+                            const resourceRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?title=eq.${encodeURIComponent(item.resource_title)}&limit=1`, {
+                                headers: {
+                                    'apikey': SUPABASE_ANON_KEY,
+                                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                                    'Content-Type': 'application/json'
+                                }
+                            });
+                            
+                            if (resourceRes.ok) {
+                                const resources = await resourceRes.json();
+                                if (resources.length > 0 && resources[0].file_url) {
+                                    const urlParts = resources[0].file_url.split(`/public/${STORAGE_BUCKET}/`);
+                                    if (urlParts.length > 1) {
+                                        filePath = urlParts[1];
+                                    } else {
+                                        const match = resources[0].file_url.match(/\/public\/[^\/]+\/(.+)$/);
+                                        if (match) {
+                                            filePath = match[1];
+                                        }
+                                    }
+                                    
+                                    if (filePath) {
+                                        const signedUrl = await generateSignedUrl(filePath);
+                                        if (signedUrl) {
+                                            downloadUrl = signedUrl;
+                                            hasValidLinks = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if (!downloadUrl) {
+                            const foundPath = await findResourceInStorage(item.resource_title, order.level || '', item.resource_title.split(' ')[0] || '');
+                            if (foundPath) {
+                                const signedUrl = await generateSignedUrl(foundPath);
+                                if (signedUrl) {
+                                    downloadUrl = signedUrl;
+                                    hasValidLinks = true;
+                                }
+                            }
+                        }
+                        
+                        itemsWithUrls.push({
+                            ...item,
+                            downloadUrl,
+                            filePath
+                        });
+                    }
+
+                    const ref = order.payment_ref || order.id.slice(0, 8).toUpperCase();
+                    
+                    let message = `✅ *Your KenyaVault Order is Ready!*\n\n`;
+                    message += `Order #: *${ref}*\n\n`;
+                    
+                    if (itemsWithUrls.length > 0) {
+                        itemsWithUrls.forEach((item, idx) => {
+                            message += `Resource ${idx + 1}: *${item.resource_title}* (x${item.quantity || 1})\n`;
+                        });
+                        message += `\n`;
+                    }
+                    
+                    message += `Amount: *KES ${order.total_amount || 0}*\n\n`;
+                    message += `📥 *Download Links:*\n`;
+                    
+                    let hasLinks = false;
+                    itemsWithUrls.forEach((item, idx) => {
+                        if (item.downloadUrl) {
+                            message += `\n${idx + 1}. ${item.resource_title}:\n${item.downloadUrl}\n`;
+                            hasLinks = true;
+                        }
+                    });
+                    
+                    if (!hasLinks) {
+                        message += `\n⚠️ Your download links are being prepared. You will receive them shortly.\n`;
+                        message += `Please contact support if you don't receive them within 5 minutes.\n`;
+                    }
+                    
+                    message += `\n🔒 *Valid for 3 hours.*\n\n`;
+                    message += `Thank you for choosing KenyaVault! 📚\n`;
+                    message += `Need help? WhatsApp: +254 768 515 494`;
+
+                    const phone = order.customer_phone || order.phone || '254700000000';
+                    const formattedPhone = phone.replace(/^0/, '254').replace(/^\+/, '');
+                    const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`;
+                    
+                    window.open(whatsappUrl, '_blank', 'width=400,height=600');
+                    showNotification('📱 WhatsApp resent!', 'success');
+                    
+                } catch (e) {
+                    console.error('Resend error:', e);
+                    showNotification('Error resending: ' + e.message, 'error');
+                }
+            };
+
+            const filteredOrders = orders.filter(o => {
+                if (filter === 'pending') return o.payment_status === 'pending' || o.payment_status === 'pending_verification';
+                if (filter === 'paid') return o.payment_status === 'paid' || o.payment_status === 'completed' || o.payment_status === 'confirmed';
+                if (filter === 'cancelled') return o.payment_status === 'cancelled';
+                return true;
+            });
+
+            const pendingCount = orders.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification').length;
+
+            return (
+                <div className="fade-in">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+                            <h2 className="text-xl font-bold text-gray-800 dark:text-white">
+                                📦 Orders ({orders.length})
+                                {pendingCount > 0 && (
+                                    <span className="ml-2 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-full animate-pulse">
+                                        {pendingCount} pending
+                                    </span>
+                                )}
+                            </h2>
+                            <button onClick={() => loadOrders()} className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg text-xs hover:bg-blue-200 transition">
+                                🔄 Refresh
+                            </button>
+                        </div>
+
+                        <div className="flex gap-2 flex-wrap mb-4">
+                            <button onClick={() => setFilter('all')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'all' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>All</button>
+                            <button onClick={() => setFilter('pending')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'pending' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Pending</button>
+                            <button onClick={() => setFilter('paid')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'paid' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Paid</button>
+                            <button onClick={() => setFilter('cancelled')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'cancelled' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Cancelled</button>
+                        </div>
+
+                        {filteredOrders.length === 0 ? (
+                            <div className="text-center py-8 text-gray-500 dark:text-gray-400">No orders found</div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead className="bg-gray-50 dark:bg-gray-700/50">
+                                        <tr>
+                                            <th className="px-4 py-2 text-left">Reference</th>
+                                            <th className="px-4 py-2 text-left">Customer</th>
+                                            <th className="px-4 py-2 text-left">Phone</th>
+                                            <th className="px-4 py-2 text-left">Items</th>
+                                            <th className="px-4 py-2 text-left">Total</th>
+                                            <th className="px-4 py-2 text-left">Status</th>
+                                            <th className="px-4 py-2 text-left">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {filteredOrders.map(o => {
+                                            const isNew = newOrderIds.includes(o.id);
+                                            const isPending = o.payment_status === 'pending' || o.payment_status === 'pending_verification';
+                                            return (
+                                                <tr key={o.id} className={`border-t border-gray-100 dark:border-gray-700 ${isPending ? 'bg-amber-50 dark:bg-amber-900/10' : ''} ${isNew ? 'new-order-flash' : ''}`}>
+                                                    <td className="px-4 py-2 font-medium text-gray-800 dark:text-white">#{o.payment_ref || o.id.slice(0, 8).toUpperCase()}</td>
+                                                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{o.customer_name || 'N/A'}</td>
+                                                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{o.customer_phone || 'N/A'}</td>
+                                                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">
+                                                        <span className="text-xs bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded-full">
+                                                            {o.item_count || 0} items
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-4 py-2 font-semibold text-[#D4A017]">KES {o.total_amount || 0}</td>
+                                                    <td className="px-4 py-2">
+                                                        <span className={`status-badge ${
+                                                            o.payment_status === 'pending_verification' ? 'pending_verification' :
+                                                            o.payment_status === 'paid' || o.payment_status === 'confirmed' ? 'paid' :
+                                                            o.payment_status === 'completed' ? 'completed' :
+                                                            o.payment_status === 'cancelled' ? 'rejected' :
+                                                            'pending'
+                                                        }`}>
+                                                            {o.payment_status === 'pending_verification' ? '⏳ Pending' :
+                                                             o.payment_status === 'paid' || o.payment_status === 'confirmed' ? '✅ Paid' :
+                                                             o.payment_status === 'completed' ? '✅ Completed' :
+                                                             o.payment_status === 'cancelled' ? '❌ Cancelled' :
+                                                             'Pending'}
+                                                        </span>
+                                                        {isNew && <span className="ml-1 text-xs text-green-500 font-bold">NEW!</span>}
+                                                    </td>
+                                                    <td className="px-4 py-2 flex gap-2 flex-wrap">
+                                                        {isPending && (
+                                                            <>
+                                                                <button 
+                                                                    onClick={() => handleConfirmOrder(o)} 
+                                                                    disabled={loadingOrderId === o.id}
+                                                                    className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg text-xs hover:bg-green-200 transition disabled:opacity-50 flex items-center gap-1"
+                                                                >
+                                                                    {loadingOrderId === o.id ? (
+                                                                        <><span className="spinner"></span> Processing</>
+                                                                    ) : (
+                                                                        '✅ Confirm & Send'
+                                                                    )}
+                                                                </button>
+                                                                <button 
+                                                                    onClick={() => handleRejectOrder(o)} 
+                                                                    className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg text-xs hover:bg-red-200 transition"
+                                                                >
+                                                                    ❌ Reject
+                                                                </button>
+                                                            </>
+                                                        )}
+                                                        {(o.payment_status === 'paid' || o.payment_status === 'confirmed') && (
+                                                            <button onClick={() => handleResendWhatsApp(o)} className="px-3 py-1 bg-[#25D366] text-white rounded-lg text-xs hover:bg-[#1da85a] transition">
+                                                                📱 Resend WhatsApp
+                                                            </button>
+                                                        )}
+                                                        {o.payment_status === 'completed' && <span className="text-xs text-green-600 dark:text-green-400">✓ Done</span>}
+                                                        {o.payment_status === 'cancelled' && <span className="text-xs text-red-600 dark:text-red-400">✗ Cancelled</span>}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
         // ── DASHBOARD MODULE ──
         function DashboardModule() {
             const { orders, resources, tutors, classes, showNotification } = useApp();
@@ -1030,7 +1591,7 @@
                     const fileExt = file.name.split('.').pop();
                     const filePath = `resources/${level}/${subject}/${Date.now()}.${fileExt}`;
                     
-                    const uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/academic-resources/${filePath}`, {
+                    const uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/${STORAGE_BUCKET}/${filePath}`, {
                         method: 'POST',
                         headers: {
                             'apikey': SUPABASE_ANON_KEY,
@@ -1043,7 +1604,7 @@
                     setCompressProgress(80);
                     setCompressionStatus('💾 Saving to database...');
 
-                    const fileUrl = `${SUPABASE_URL}/storage/v1/object/public/academic-resources/${filePath}`;
+                    const fileUrl = `${STORAGE_URL}/${filePath}`;
 
                     const resourceData = {
                         title,
@@ -1619,438 +2180,6 @@
                 </div>
             );
         }
-
-        // ── ORDERS MODULE ──
-function OrdersModule() {
-    const { orders, loadOrders, showNotification, newOrderIds, setNewOrderIds } = useApp();
-    const [filter, setFilter] = useState('all');
-    const [loadingOrderId, setLoadingOrderId] = useState(null);
-    const [whatsAppLinks, setWhatsAppLinks] = useState({});
-
-    useEffect(() => {
-        const interval = setInterval(() => loadOrders(), 10000);
-        return () => clearInterval(interval);
-    }, []);
-
-    // Generate a signed URL for a file
-    const generateSignedUrl = async (filePath) => {
-        try {
-            if (!filePath) return null;
-            
-            // First, try to get the public URL
-            const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/academic-resources/${encodeURIComponent(filePath)}`;
-            
-            // Try to generate a signed URL (valid for 3 hours = 10800 seconds)
-            const signedRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/academic-resources/${encodeURIComponent(filePath)}?expiresIn=10800`, {
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                }
-            });
-            
-            if (signedRes.ok) {
-                const signedData = await signedRes.json();
-                return signedData.signedURL || signedData.url || publicUrl;
-            }
-            
-            // Fallback to public URL if signed URL fails
-            return publicUrl;
-        } catch (e) {
-            console.error('Error generating signed URL:', e);
-            return null;
-        }
-    };
-
-    const handleConfirmOrder = async (order) => {
-        const ref = order.payment_ref || order.id.slice(0, 8).toUpperCase();
-        if (!confirm(`Confirm order #${ref}? This will send a WhatsApp message with download links to ${order.customer_phone}.`)) return;
-        
-        setLoadingOrderId(order.id);
-        try {
-            // 1. Update order status
-            const updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${order.id}`, {
-                method: 'PATCH',
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    payment_status: 'paid',
-                    confirmed_at: new Date().toISOString()
-                })
-            });
-
-            if (!updateRes.ok) throw new Error('Failed to update order');
-
-            // 2. Get order items
-            const itemsRes = await fetch(`${SUPABASE_URL}/rest/v1/order_items?order_id=eq.${order.id}`, {
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                    'Content-Type': 'application/json'
-                }
-            });
-            const orderItems = await itemsRes.json() || [];
-
-            // 3. Generate signed URLs for each item
-            const itemsWithUrls = [];
-            let hasValidLinks = false;
-            
-            for (const item of orderItems) {
-                let downloadUrl = null;
-                
-                // Try to get the file path from the order item
-                let filePath = item.resource_path || '';
-                
-                // If no resource_path, try to find the resource by title
-                if (!filePath) {
-                    // Try to find the resource in the resources table
-                    const resourceRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?title=eq.${encodeURIComponent(item.resource_title)}&limit=1`, {
-                        headers: {
-                            'apikey': SUPABASE_ANON_KEY,
-                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                            'Content-Type': 'application/json'
-                        }
-                    });
-                    if (resourceRes.ok) {
-                        const resources = await resourceRes.json();
-                        if (resources.length > 0 && resources[0].file_url) {
-                            // Extract the path from the file_url
-                            const urlParts = resources[0].file_url.split('/public/academic-resources/');
-                            if (urlParts.length > 1) {
-                                filePath = urlParts[1];
-                            } else {
-                                filePath = resources[0].file_url;
-                            }
-                        }
-                    }
-                }
-                
-                // If we have a file path, generate a signed URL
-                if (filePath) {
-                    // Remove any leading slashes or URL parts
-                    filePath = filePath.replace(/^\/+/, '');
-                    filePath = filePath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/academic-resources\//, '');
-                    
-                    const signedUrl = await generateSignedUrl(filePath);
-                    if (signedUrl) {
-                        downloadUrl = signedUrl;
-                        hasValidLinks = true;
-                    }
-                }
-                
-                itemsWithUrls.push({
-                    ...item,
-                    downloadUrl,
-                    filePath: filePath
-                });
-            }
-
-            // 4. Build WhatsApp message with download links
-            let message = `✅ *Your KenyaVault Order is Ready!*\n\n`;
-            message += `Order #: *${ref}*\n`;
-            
-            // List all items
-            if (itemsWithUrls.length > 0) {
-                itemsWithUrls.forEach((item, idx) => {
-                    message += `Resource ${idx + 1}: *${item.resource_title}* (x${item.quantity || 1})\n`;
-                });
-                message += `\n`;
-            } else {
-                message += `Resource: *${order.product_title || 'Resource'}*\n\n`;
-            }
-            
-            message += `Amount: *KES ${order.total_amount || 0}*\n\n`;
-            
-            // Add download links
-            message += `📥 *Download Links:*\n`;
-            
-            let hasLinks = false;
-            itemsWithUrls.forEach((item, idx) => {
-                if (item.downloadUrl) {
-                    message += `\n${idx + 1}. ${item.resource_title}:\n${item.downloadUrl}\n`;
-                    hasLinks = true;
-                }
-            });
-            
-            // If no links were generated, add a note
-            if (!hasLinks) {
-                message += `\nYour download links are being prepared. You will receive them shortly.\n`;
-            }
-            
-            message += `\n🔒 *Valid for 3 hours.*\n\n`;
-            message += `Thank you for choosing KenyaVault! 📚\n`;
-            message += `Need help? WhatsApp: +254 768 515 494`;
-
-            // 5. Open WhatsApp with the message
-            const phone = order.customer_phone || order.phone || '254700000000';
-            const formattedPhone = phone.replace(/^0/, '254').replace(/^\+/, '');
-            const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`;
-            
-            // Store the WhatsApp link for display
-            setWhatsAppLinks(prev => ({ ...prev, [order.id]: whatsappUrl }));
-            
-            window.open(whatsappUrl, '_blank', 'width=400,height=600');
-            
-            showNotification('✅ Order confirmed and WhatsApp sent!', 'success');
-            await loadOrders();
-            setNewOrderIds(prev => prev.filter(id => id !== order.id));
-            
-        } catch (e) {
-            console.error('Confirm error:', e);
-            showNotification('Error confirming order: ' + e.message, 'error');
-        }
-        setLoadingOrderId(null);
-    };
-
-    const handleRejectOrder = async (order) => {
-        const ref = order.payment_ref || order.id.slice(0, 8).toUpperCase();
-        if (!confirm(`Reject order #${ref}?`)) return;
-        
-        try {
-            const updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${order.id}`, {
-                method: 'PATCH',
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ payment_status: 'cancelled' })
-            });
-            if (updateRes.ok) {
-                showNotification('Order rejected', 'success');
-                await loadOrders();
-                setNewOrderIds(prev => prev.filter(id => id !== order.id));
-            }
-        } catch (e) {
-            showNotification('Error rejecting order', 'error');
-        }
-    };
-
-    // Resend WhatsApp for confirmed orders
-    const handleResendWhatsApp = async (order) => {
-        // Re-fetch order items to get fresh links
-        try {
-            const itemsRes = await fetch(`${SUPABASE_URL}/rest/v1/order_items?order_id=eq.${order.id}`, {
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                    'Content-Type': 'application/json'
-                }
-            });
-            const orderItems = await itemsRes.json() || [];
-
-            // Generate signed URLs
-            const itemsWithUrls = [];
-            let hasValidLinks = false;
-            
-            for (const item of orderItems) {
-                let downloadUrl = null;
-                let filePath = item.resource_path || '';
-                
-                if (!filePath) {
-                    const resourceRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?title=eq.${encodeURIComponent(item.resource_title)}&limit=1`, {
-                        headers: {
-                            'apikey': SUPABASE_ANON_KEY,
-                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                            'Content-Type': 'application/json'
-                        }
-                    });
-                    if (resourceRes.ok) {
-                        const resources = await resourceRes.json();
-                        if (resources.length > 0 && resources[0].file_url) {
-                            const urlParts = resources[0].file_url.split('/public/academic-resources/');
-                            if (urlParts.length > 1) {
-                                filePath = urlParts[1];
-                            }
-                        }
-                    }
-                }
-                
-                if (filePath) {
-                    filePath = filePath.replace(/^\/+/, '');
-                    filePath = filePath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/academic-resources\//, '');
-                    
-                    const signedUrl = await generateSignedUrl(filePath);
-                    if (signedUrl) {
-                        downloadUrl = signedUrl;
-                        hasValidLinks = true;
-                    }
-                }
-                
-                itemsWithUrls.push({
-                    ...item,
-                    downloadUrl,
-                    filePath
-                });
-            }
-
-            const ref = order.payment_ref || order.id.slice(0, 8).toUpperCase();
-            
-            let message = `✅ *Your KenyaVault Order is Ready!*\n\n`;
-            message += `Order #: *${ref}*\n`;
-            
-            if (itemsWithUrls.length > 0) {
-                itemsWithUrls.forEach((item, idx) => {
-                    message += `Resource ${idx + 1}: *${item.resource_title}* (x${item.quantity || 1})\n`;
-                });
-                message += `\n`;
-            }
-            
-            message += `Amount: *KES ${order.total_amount || 0}*\n\n`;
-            message += `📥 *Download Links:*\n`;
-            
-            let hasLinks = false;
-            itemsWithUrls.forEach((item, idx) => {
-                if (item.downloadUrl) {
-                    message += `\n${idx + 1}. ${item.resource_title}:\n${item.downloadUrl}\n`;
-                    hasLinks = true;
-                }
-            });
-            
-            if (!hasLinks) {
-                message += `\nYour download links are being prepared. You will receive them shortly.\n`;
-            }
-            
-            message += `\n🔒 *Valid for 3 hours.*\n\n`;
-            message += `Thank you for choosing KenyaVault! 📚\n`;
-            message += `Need help? WhatsApp: +254 768 515 494`;
-
-            const phone = order.customer_phone || order.phone || '254700000000';
-            const formattedPhone = phone.replace(/^0/, '254').replace(/^\+/, '');
-            const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`;
-            
-            window.open(whatsappUrl, '_blank', 'width=400,height=600');
-            showNotification('📱 WhatsApp resent!', 'success');
-            
-        } catch (e) {
-            console.error('Resend error:', e);
-            showNotification('Error resending: ' + e.message, 'error');
-        }
-    };
-
-    const filteredOrders = orders.filter(o => {
-        if (filter === 'pending') return o.payment_status === 'pending' || o.payment_status === 'pending_verification';
-        if (filter === 'paid') return o.payment_status === 'paid' || o.payment_status === 'completed' || o.payment_status === 'confirmed';
-        if (filter === 'cancelled') return o.payment_status === 'cancelled';
-        return true;
-    });
-
-    const pendingCount = orders.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification').length;
-
-    return (
-        <div className="fade-in">
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
-                <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
-                    <h2 className="text-xl font-bold text-gray-800 dark:text-white">
-                        📦 Orders ({orders.length})
-                        {pendingCount > 0 && (
-                            <span className="ml-2 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-full animate-pulse">
-                                {pendingCount} pending
-                            </span>
-                        )}
-                    </h2>
-                    <button onClick={() => loadOrders()} className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg text-xs hover:bg-blue-200 transition">
-                        🔄 Refresh
-                    </button>
-                </div>
-
-                <div className="flex gap-2 flex-wrap mb-4">
-                    <button onClick={() => setFilter('all')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'all' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>All</button>
-                    <button onClick={() => setFilter('pending')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'pending' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Pending</button>
-                    <button onClick={() => setFilter('paid')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'paid' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Paid</button>
-                    <button onClick={() => setFilter('cancelled')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'cancelled' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Cancelled</button>
-                </div>
-
-                {filteredOrders.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">No orders found</div>
-                ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead className="bg-gray-50 dark:bg-gray-700/50">
-                                <tr>
-                                    <th className="px-4 py-2 text-left">Reference</th>
-                                    <th className="px-4 py-2 text-left">Customer</th>
-                                    <th className="px-4 py-2 text-left">Phone</th>
-                                    <th className="px-4 py-2 text-left">Items</th>
-                                    <th className="px-4 py-2 text-left">Total</th>
-                                    <th className="px-4 py-2 text-left">Status</th>
-                                    <th className="px-4 py-2 text-left">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {filteredOrders.map(o => {
-                                    const isNew = newOrderIds.includes(o.id);
-                                    const isPending = o.payment_status === 'pending' || o.payment_status === 'pending_verification';
-                                    return (
-                                        <tr key={o.id} className={`border-t border-gray-100 dark:border-gray-700 ${isPending ? 'bg-amber-50 dark:bg-amber-900/10' : ''} ${isNew ? 'new-order-flash' : ''}`}>
-                                            <td className="px-4 py-2 font-medium text-gray-800 dark:text-white">#{o.payment_ref || o.id.slice(0, 8).toUpperCase()}</td>
-                                            <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{o.customer_name || 'N/A'}</td>
-                                            <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{o.customer_phone || 'N/A'}</td>
-                                            <td className="px-4 py-2 text-gray-600 dark:text-gray-400">
-                                                <span className="text-xs bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded-full">
-                                                    {o.item_count || 0} items
-                                                </span>
-                                            </td>
-                                            <td className="px-4 py-2 font-semibold text-[#D4A017]">KES {o.total_amount || 0}</td>
-                                            <td className="px-4 py-2">
-                                                <span className={`status-badge ${
-                                                    o.payment_status === 'pending_verification' ? 'pending_verification' :
-                                                    o.payment_status === 'paid' || o.payment_status === 'confirmed' ? 'paid' :
-                                                    o.payment_status === 'completed' ? 'completed' :
-                                                    o.payment_status === 'cancelled' ? 'rejected' :
-                                                    'pending'
-                                                }`}>
-                                                    {o.payment_status === 'pending_verification' ? '⏳ Pending' :
-                                                     o.payment_status === 'paid' || o.payment_status === 'confirmed' ? '✅ Paid' :
-                                                     o.payment_status === 'completed' ? '✅ Completed' :
-                                                     o.payment_status === 'cancelled' ? '❌ Cancelled' :
-                                                     'Pending'}
-                                                </span>
-                                                {isNew && <span className="ml-1 text-xs text-green-500 font-bold">NEW!</span>}
-                                            </td>
-                                            <td className="px-4 py-2 flex gap-2 flex-wrap">
-                                                {isPending && (
-                                                    <>
-                                                        <button 
-                                                            onClick={() => handleConfirmOrder(o)} 
-                                                            disabled={loadingOrderId === o.id}
-                                                            className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg text-xs hover:bg-green-200 transition disabled:opacity-50 flex items-center gap-1"
-                                                        >
-                                                            {loadingOrderId === o.id ? (
-                                                                <><span className="spinner"></span> Processing</>
-                                                            ) : (
-                                                                '✅ Confirm & Send'
-                                                            )}
-                                                        </button>
-                                                        <button 
-                                                            onClick={() => handleRejectOrder(o)} 
-                                                            className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg text-xs hover:bg-red-200 transition"
-                                                        >
-                                                            ❌ Reject
-                                                        </button>
-                                                    </>
-                                                )}
-                                                {(o.payment_status === 'paid' || o.payment_status === 'confirmed') && (
-                                                    <button onClick={() => handleResendWhatsApp(o)} className="px-3 py-1 bg-[#25D366] text-white rounded-lg text-xs hover:bg-[#1da85a] transition">
-                                                        📱 Resend WhatsApp
-                                                    </button>
-                                                )}
-                                                {o.payment_status === 'completed' && <span className="text-xs text-green-600 dark:text-green-400">✓ Done</span>}
-                                                {o.payment_status === 'cancelled' && <span className="text-xs text-red-600 dark:text-red-400">✗ Cancelled</span>}
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
-                )}
-            </div>
-        </div>
-    );
-}
 
         // ── FINANCE MODULE ──
         function FinanceModule() {
