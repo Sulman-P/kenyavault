@@ -133,6 +133,30 @@
             from { opacity: 0; transform: translateX(40px); }
             to { opacity: 1; transform: translateX(0); }
         }
+        /* Loading spinner */
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .btn-loading .spinner {
+            display: inline-block;
+        }
+        .btn-loading .btn-text {
+            display: none;
+        }
+        .btn-loading .btn-loading-text {
+            display: inline;
+        }
+        .btn-loading .btn-loading-text { display: none; }
+        .btn-loading .btn-loading-text { display: inline; }
     </style>
 </head>
 <body>
@@ -508,11 +532,50 @@
                 return () => clearInterval(interval);
             }, []);
 
+            const generateSignedUrl = async (filePath) => {
+                try {
+                    // Check if file path exists
+                    if (!filePath) return null;
+                    
+                    // First, check if the file exists in storage
+                    const checkRes = await fetch(`${SUPABASE_URL}/storage/v1/object/public/academic-resources/${encodeURIComponent(filePath)}`, {
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                        }
+                    });
+
+                    // If file exists, generate signed URL
+                    if (checkRes.ok) {
+                        const signedRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/academic-resources/${encodeURIComponent(filePath)}?expiresIn=604800`, {
+                            headers: {
+                                'apikey': SUPABASE_ANON_KEY,
+                                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                            }
+                        });
+                        
+                        if (signedRes.ok) {
+                            const signedData = await signedRes.json();
+                            return signedData.signedURL || signedData.url || null;
+                        }
+                    }
+                    
+                    // If file doesn't exist in storage, try to use the resource_path as is
+                    // but we know it might not work
+                    console.warn('File not found in storage, using path as fallback:', filePath);
+                    return null;
+                } catch (e) {
+                    console.error('Error generating signed URL:', e);
+                    return null;
+                }
+            };
+
             const handleConfirmOrder = async (order) => {
-                if (!confirm(`Confirm order #${order.payment_ref || order.id.slice(0, 8).toUpperCase()}? This will send a WhatsApp message to ${order.customer_phone}.`)) return;
+                if (!confirm(`Confirm order #${order.payment_ref || order.id.slice(0, 8).toUpperCase()}? This will send a WhatsApp message to ${order.customer_phone} with download links.`)) return;
                 
                 setLoadingOrderId(order.id);
                 try {
+                    // 1. Update order status
                     const updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${order.id}`, {
                         method: 'PATCH',
                         headers: {
@@ -528,6 +591,7 @@
 
                     if (!updateRes.ok) throw new Error('Failed to update order');
 
+                    // 2. Get order items
                     const itemsRes = await fetch(`${SUPABASE_URL}/rest/v1/order_items?order_id=eq.${order.id}`, {
                         headers: {
                             'apikey': SUPABASE_ANON_KEY,
@@ -537,12 +601,49 @@
                     });
                     const orderItems = await itemsRes.json() || [];
 
+                    // 3. Generate signed URLs for each item
+                    const itemsWithUrls = [];
+                    for (const item of orderItems) {
+                        let downloadUrl = null;
+                        let urlStatus = 'pending';
+                        
+                        if (item.resource_path) {
+                            const signedUrl = await generateSignedUrl(item.resource_path);
+                            if (signedUrl) {
+                                downloadUrl = signedUrl;
+                                urlStatus = 'ready';
+                            } else {
+                                // Try alternate path formats
+                                const altPath = item.resource_path.replace(/^resources\//, '');
+                                const altSignedUrl = await generateSignedUrl(altPath);
+                                if (altSignedUrl) {
+                                    downloadUrl = altSignedUrl;
+                                    urlStatus = 'ready';
+                                }
+                            }
+                        }
+                        
+                        // If still no URL, use a placeholder
+                        if (!downloadUrl) {
+                            // Use the resource path as a reference, admin will need to upload the file
+                            downloadUrl = `${SUPABASE_URL}/storage/v1/object/public/academic-resources/${encodeURIComponent(item.resource_path || '')}`;
+                            urlStatus = 'pending_upload';
+                        }
+                        
+                        itemsWithUrls.push({
+                            ...item,
+                            downloadUrl,
+                            urlStatus
+                        });
+                    }
+
+                    // 4. Build WhatsApp message with download links
                     let message = `📚 *KenyaVault Order Confirmed!*\n\n`;
                     message += `Hello *${order.customer_name || 'Customer'}*,\n\n`;
                     message += `Your order #${order.payment_ref || order.id.slice(0, 8).toUpperCase()} has been confirmed! ✅\n\n`;
                     message += `*Order Details:*\n`;
                     
-                    orderItems.forEach((item, idx) => {
+                    itemsWithUrls.forEach((item, idx) => {
                         message += `${idx + 1}. ${item.resource_title} (x${item.quantity || 1})\n`;
                     });
                     
@@ -550,37 +651,24 @@
                     message += `\n\n*📥 Download Your Resources:*\n`;
                     
                     let hasLinks = false;
-                    for (const item of orderItems) {
-                        if (item.resource_path) {
-                            try {
-                                const signedUrlRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/academic-resources/${encodeURIComponent(item.resource_path)}?expiresIn=604800`, {
-                                    headers: {
-                                        'apikey': SUPABASE_ANON_KEY,
-                                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                                    }
-                                });
-                                if (signedUrlRes.ok) {
-                                    const signedData = await signedUrlRes.json();
-                                    const downloadUrl = signedData.signedURL || signedData.url || item.resource_path;
-                                    message += `\n📄 ${item.resource_title}: ${downloadUrl}`;
-                                    hasLinks = true;
-                                } else {
-                                    message += `\n📄 ${item.resource_title}: Link sent separately`;
-                                }
-                            } catch (e) {
-                                message += `\n📄 ${item.resource_title}: Link sent separately`;
-                            }
+                    itemsWithUrls.forEach((item) => {
+                        if (item.downloadUrl && item.urlStatus === 'ready') {
+                            message += `\n📄 ${item.resource_title}: ${item.downloadUrl}`;
+                            hasLinks = true;
+                        } else if (item.downloadUrl) {
+                            message += `\n📄 ${item.resource_title}: ${item.downloadUrl} (Please ensure file is uploaded)`;
                         } else {
-                            message += `\n📄 ${item.resource_title}: Link sent separately`;
+                            message += `\n📄 ${item.resource_title}: Link will be sent separately`;
                         }
-                    }
+                    });
                     
                     if (!hasLinks) {
-                        message += `\nYour download links will be sent to you shortly.`;
+                        message += `\nYour download links are being prepared. You will receive them shortly.`;
                     }
                     
                     message += `\n\nThank you for choosing KenyaVault! 🇰🇪`;
 
+                    // 5. Open WhatsApp with the message
                     const phone = order.customer_phone || order.phone || '254700000000';
                     const formattedPhone = phone.replace(/^0/, '254').replace(/^\+/, '');
                     const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`;
@@ -708,9 +796,13 @@
                                                                 <button 
                                                                     onClick={() => handleConfirmOrder(o)} 
                                                                     disabled={loadingOrderId === o.id}
-                                                                    className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg text-xs hover:bg-green-200 transition disabled:opacity-50"
+                                                                    className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg text-xs hover:bg-green-200 transition disabled:opacity-50 flex items-center gap-1"
                                                                 >
-                                                                    {loadingOrderId === o.id ? '⏳' : '✅ Confirm & Send'}
+                                                                    {loadingOrderId === o.id ? (
+                                                                        <><span className="spinner"></span> Processing</>
+                                                                    ) : (
+                                                                        '✅ Confirm & Send'
+                                                                    )}
                                                                 </button>
                                                                 <button 
                                                                     onClick={() => handleRejectOrder(o)} 
