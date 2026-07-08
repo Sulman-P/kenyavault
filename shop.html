@@ -1595,9 +1595,8 @@
 <script>
     'use strict';
 
-    // ── SUPABASE CONFIG (SAME AS ADMIN DASHBOARD) ──
-    const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
+    // ── SUPABASE CONFIG ──
+    
     const MEGAPAY_LINK = 'https://megapay.co.ke/tags/S1Zzyjs';
 
     // ── STATE ──
@@ -1677,7 +1676,7 @@
     const searchInput = document.getElementById('searchInput');
     const sortSelect = document.getElementById('sortSelect');
 
-    // ── FETCH RESOURCES DIRECTLY ──
+    // ── FETCH RESOURCES ──
     async function fetchResources() {
         try {
             console.log('🔍 Fetching resources from Supabase...');
@@ -1711,6 +1710,13 @@
         try {
             allResources = await fetchResources();
             console.log('📦 Total resources:', allResources.length);
+            
+            // Log sample resource to see what fields exist
+            if (allResources.length > 0) {
+                console.log('📋 Sample resource fields:', Object.keys(allResources[0]));
+                console.log('📋 Sample resource:', allResources[0]);
+            }
+            
             updateCounts();
             applyLevelFromURL();
             renderShop();
@@ -1764,12 +1770,13 @@
         document.getElementById('universityCount').textContent = counts.university || 0;
         document.getElementById('totalCount').textContent = allResources.length;
 
-        // Category counts
-        const catCounts = { 'lesson-plan': 0, 'scheme-work': 0, 'revision-paper': 0, 'cbc-portfolio': 0,
-            'exam-paper': 0 };
+        // Category counts - check both resource_type and category fields
+        const catCounts = { 'lesson-plan': 0, 'scheme-work': 0, 'revision-paper': 0, 'cbc-portfolio': 0, 'exam-paper': 0 };
         allResources.forEach(function(r) {
-            const type = r.resource_type ? r.resource_type.toLowerCase().replace(/\s+/g, '-') : '';
-            if (catCounts.hasOwnProperty(type)) catCounts[type]++;
+            // Check multiple possible field names for category
+            const type = r.resource_type || r.category || r.type || '';
+            const typeClean = type.toLowerCase().replace(/\s+/g, '-');
+            if (catCounts.hasOwnProperty(typeClean)) catCounts[typeClean]++;
         });
         document.getElementById('catLessonPlan').textContent = catCounts['lesson-plan'] || 0;
         document.getElementById('catSchemeWork').textContent = catCounts['scheme-work'] || 0;
@@ -1792,8 +1799,8 @@
                 <div class="empty-state" style="grid-column:1/-1;">
                     <span class="empty-icon">📚</span>
                     <h3>No resources found</h3>
-                    <p>Try adjusting your filters or check back later for new resources.</p>
-                    <button onclick="resetFilters()">Reset Filters</button>
+                    <p style="font-size:0.85rem;color:#6B7280;">${allResources.length > 0 ? 'You have ' + allResources.length + ' resources, but none match your filters.' : 'No resources have been uploaded yet.'}</p>
+                    ${allResources.length > 0 ? '<button onclick="resetFilters()" style="margin-top:12px;padding:8px 20px;background:var(--gold);color:var(--navy);border:none;border-radius:8px;cursor:pointer;font-weight:700;">Reset Filters</button>' : ''}
                 </div>
             `;
             productCount.textContent = '0';
@@ -1837,6 +1844,7 @@
         // Level filter
         if (activeLevel !== 'all') {
             filtered = filtered.filter(function(r) { return r.level === activeLevel; });
+            console.log(`📊 After level filter (${activeLevel}): ${filtered.length}`);
         }
 
         // Curriculum filter
@@ -1845,14 +1853,25 @@
                 const curr = CURRICULUM_MAP[r.level] || 'other';
                 return curr === activeCurriculum;
             });
+            console.log(`📊 After curriculum filter (${activeCurriculum}): ${filtered.length}`);
         }
 
-        // Category filter
-        if (activeCategories.length > 0) {
-            filtered = filtered.filter(function(r) {
-                const type = r.resource_type ? r.resource_type.toLowerCase().replace(/\s+/g, '-') : '';
-                return activeCategories.includes(type);
+        // Category filter - only apply if there are active category filters
+        const activeCatFilters = activeCategories.filter(function(c) {
+            // Check if any resources actually have this category
+            return allResources.some(function(r) {
+                const type = r.resource_type || r.category || r.type || '';
+                return type.toLowerCase().replace(/\s+/g, '-') === c;
             });
+        });
+
+        if (activeCatFilters.length > 0 && activeCatFilters.length < 5) {
+            filtered = filtered.filter(function(r) {
+                const type = r.resource_type || r.category || r.type || '';
+                const typeClean = type.toLowerCase().replace(/\s+/g, '-');
+                return activeCatFilters.includes(typeClean);
+            });
+            console.log(`📊 After category filter: ${filtered.length}`);
         }
 
         // Search
@@ -1863,6 +1882,7 @@
                     (r.subject || '').toLowerCase().includes(searchTerm) ||
                     (r.description || '').toLowerCase().includes(searchTerm);
             });
+            console.log(`📊 After search filter: ${filtered.length}`);
         }
 
         // Sort
@@ -2042,6 +2062,11 @@
     function resetFilters() {
         activeLevel = 'all';
         activeCurriculum = 'all';
+        // Reset categories to all checked
+        activeCategories = ['lesson-plan', 'scheme-work', 'revision-paper', 'cbc-portfolio', 'exam-paper'];
+        document.querySelectorAll('.category-group input[type="checkbox"]').forEach(function(cb) {
+            cb.checked = true;
+        });
         searchInput.value = '';
         sortSelect.value = 'popular';
         currentPage = 1;
@@ -2216,7 +2241,7 @@
             });
         });
 
-        // Category checkboxes
+        // Category checkboxes - FIX: Only apply filter if at least one is checked
         document.querySelectorAll('.category-group input[type="checkbox"]').forEach(function(cb) {
             cb.addEventListener('change', function() {
                 const cat = this.dataset.category;
