@@ -1595,12 +1595,11 @@
 <script>
     'use strict';
 
-    // ────────────────────────────────────────────────
-     // SUPABASE CONFIG
-    // ────────────────────────────────────────────────
+    // ── SUPABASE CONFIG (SAME AS ADMIN DASHBOARD) ──
     const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
     const MEGAPAY_LINK = 'https://megapay.co.ke/tags/S1Zzyjs';
+
     // ── STATE ──
     let allResources = [];
     let currentPage = 1;
@@ -1678,9 +1677,13 @@
     const searchInput = document.getElementById('searchInput');
     const sortSelect = document.getElementById('sortSelect');
 
-    // ── FETCH RESOURCES DIRECTLY (NO SUPABASE CLIENT) ──
+    // ── FETCH RESOURCES DIRECTLY (USING SAME APPROACH AS ADMIN) ──
     async function fetchResources() {
         try {
+            console.log('🔍 Fetching resources from Supabase...');
+            console.log('📡 URL:', SUPABASE_URL);
+            console.log('🔑 Key present:', SUPABASE_ANON_KEY ? '✅ Yes' : '❌ No');
+
             const response = await fetch(`${SUPABASE_URL}/rest/v1/resources?select=*&order=created_at.desc`, {
                 headers: {
                     'apikey': SUPABASE_ANON_KEY,
@@ -1689,14 +1692,24 @@
                 }
             });
 
+            console.log('📊 Response status:', response.status);
+
             if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                let errorMsg = `HTTP ${response.status}`;
+                try {
+                    const errorData = await response.text();
+                    errorMsg += `: ${errorData.substring(0, 100)}`;
+                } catch (e) {
+                    errorMsg += `: ${response.statusText}`;
+                }
+                throw new Error(errorMsg);
             }
 
             const data = await response.json();
+            console.log(`✅ Loaded ${data.length} resources`);
             return data || [];
         } catch (error) {
-            console.error('Fetch error:', error);
+            console.error('❌ Fetch error:', error);
             throw error;
         }
     }
@@ -1706,7 +1719,6 @@
         renderLoading();
         try {
             allResources = await fetchResources();
-            console.log(`✅ Loaded ${allResources.length} resources`);
             updateCounts();
             applyLevelFromURL();
             renderShop();
@@ -2012,22 +2024,47 @@
             <div class="empty-state">
                 <span class="empty-icon">⚠️</span>
                 <h3>Unable to load resources</h3>
-                <p>${err ? err.message || 'Please try again later.' : 'Please try again later.'}</p>
-                <button onclick="init()">🔄 Retry</button>
-                <button onclick="viewDebugInfo()" style="margin-left:8px;background:#6B7280;">🔍 Debug</button>
+                <p style="font-size:0.85rem;color:#6B7280;margin:4px 0;">${err ? err.message || 'Please try again later.' : 'Please try again later.'}</p>
+                <div style="margin-top:8px;padding:8px 12px;background:#FEF3C7;border-radius:8px;font-size:0.75rem;color:#92400E;text-align:left;max-width:400px;margin-left:auto;margin-right:auto;">
+                    <strong>🔧 Troubleshooting:</strong><br>
+                    1. Check Supabase CORS settings<br>
+                    2. Verify API key is correct<br>
+                    3. Ensure 'resources' table exists<br>
+                    4. Check RLS policies
+                </div>
+                <button onclick="init()" style="margin-top:12px;padding:8px 20px;background:var(--gold);color:var(--navy);border:none;border-radius:8px;cursor:pointer;font-weight:700;">🔄 Retry</button>
+                <button onclick="testConnection()" style="margin-top:12px;margin-left:8px;padding:8px 20px;background:#6B7280;color:white;border:none;border-radius:8px;cursor:pointer;font-weight:600;">🔍 Test Connection</button>
             </div>
         `;
     }
 
-    function viewDebugInfo() {
-        const msg = `🔍 Debug Info:\n\n` +
-            `Supabase URL: ${SUPABASE_URL}\n` +
-            `Anon Key: ${SUPABASE_ANON_KEY ? '✅ Present (' + SUPABASE_ANON_KEY.substring(0, 20) + '...)' : '❌ Missing'}\n` +
-            `Resources Loaded: ${allResources.length}\n` +
-            `Active Level: ${activeLevel}\n` +
-            `Active Curriculum: ${activeCurriculum}\n\n` +
-            `Try:\n1. Check Supabase CORS settings\n2. Verify RLS policies\n3. Check if 'resources' table exists`;
-        alert(msg);
+    // ── TEST CONNECTION ──
+    async function testConnection() {
+        try {
+            const response = await fetch(`${SUPABASE_URL}/rest/v1/resources?limit=1`, {
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const result = {
+                status: response.status,
+                ok: response.ok,
+                statusText: response.statusText
+            };
+
+            if (response.ok) {
+                const data = await response.json();
+                alert(`✅ Connection successful!\n\nStatus: ${response.status}\nResources found: ${data.length}\n\nYour Supabase is working correctly.`);
+            } else {
+                let errorText = await response.text();
+                alert(`❌ Connection failed!\n\nStatus: ${response.status}\nMessage: ${response.statusText}\n\nError: ${errorText.substring(0, 200)}\n\nPlease check your Supabase configuration.`);
+            }
+        } catch (e) {
+            alert(`❌ Connection error!\n\n${e.message}\n\nPlease check your network connection.`);
+        }
     }
 
     // ── FILTERS ──
@@ -2444,7 +2481,7 @@
     window.closePreviewModal = closePreviewModal;
     window.openPreview = openPreview;
     window.showToast = showToast;
-    window.viewDebugInfo = viewDebugInfo;
+    window.testConnection = testConnection;
 
     // ── START ──
     document.addEventListener('DOMContentLoaded', function() {
