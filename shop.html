@@ -9,7 +9,6 @@
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
     <style>
-        /* ── All CSS styles remain the same as before ── */
         /* ── ROOT VARIABLES ── */
         :root {
             --navy: #0a1a3a;
@@ -1919,7 +1918,6 @@
     let activeCurriculum = 'all';
     let activeCategories = ['lesson-plan', 'scheme-work', 'revision-paper', 'cbc-portfolio', 'exam-paper'];
     let basket = [];
-    let currentOrderId = null;
 
     // ── LEVEL DATA ──
     const LEVEL_ORDER = [
@@ -2706,7 +2704,7 @@
 
             console.log('📦 Creating order...');
 
-            // 1. Create order - using correct column names
+            // 1. Create order
             const orderData = {
                 customer_name: name,
                 customer_phone: validation.formatted,
@@ -2741,48 +2739,68 @@
             const orderResult = await orderResponse.json();
             console.log('📦 Order result:', orderResult);
 
-            // Handle case where response is array or object
             const order = Array.isArray(orderResult) ? orderResult[0] : orderResult;
             const orderId = order.id;
 
             console.log('✅ Order created with ID:', orderId);
             console.log('✅ Order Ref:', ref);
 
-            // 2. Create order items
-            const orderItems = basket.map(item => ({
-                order_id: orderId,
-                resource_id: item.id,
-                resource_title: item.title,
-                resource_price: item.price,
-                resource_path: item.file_url || '',
-                quantity: item.quantity || 1
-            }));
+            // 2. Create order items - THIS IS THE KEY FIX
+            const orderItems = basket.map(item => {
+                // Get the full resource data to ensure we have the file path
+                const resource = allResources.find(r => r.id === item.id);
+                const filePath = resource?.file_url || item.file_url || '';
+                
+                // Clean the file path to store in the database
+                let cleanPath = filePath;
+                // Remove any URL prefixes to store just the path
+                cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
+                cleanPath = cleanPath.replace(/^\/+/, '');
+                
+                console.log(`📦 Creating order item: ${item.title} - Path: ${cleanPath}`);
+                
+                return {
+                    order_id: orderId,
+                    resource_id: item.id,
+                    resource_title: item.title,
+                    resource_price: item.price,
+                    resource_path: cleanPath || '',
+                    quantity: item.quantity || 1
+                };
+            });
 
-            console.log('📦 Creating ' + orderItems.length + ' order items');
+            console.log(`📦 Creating ${orderItems.length} order items`);
 
             let allItemsCreated = true;
             for (const item of orderItems) {
                 console.log('📦 Creating order item:', item);
-                const itemResponse = await fetch(`${SUPABASE_URL}/rest/v1/order_items`, {
-                    method: 'POST',
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(item)
-                });
-                if (!itemResponse.ok) {
-                    const errorText = await itemResponse.text();
-                    console.error('Failed to create order item:', errorText);
+                try {
+                    const itemResponse = await fetch(`${SUPABASE_URL}/rest/v1/order_items`, {
+                        method: 'POST',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(item)
+                    });
+                    
+                    if (!itemResponse.ok) {
+                        const errorText = await itemResponse.text();
+                        console.error('Failed to create order item:', errorText);
+                        allItemsCreated = false;
+                    } else {
+                        console.log(`✅ Order item created successfully for ${item.resource_title}`);
+                    }
+                } catch (err) {
+                    console.error('Error creating order item:', err);
                     allItemsCreated = false;
-                } else {
-                    console.log('✅ Order item created successfully');
                 }
             }
 
             if (!allItemsCreated) {
                 console.warn('Some order items failed to create, but order was placed');
+                showToast('⚠️', 'Order placed but some items may need manual processing', 'error');
             }
 
             // 3. Show success
