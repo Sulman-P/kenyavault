@@ -44,12 +44,16 @@
         .status-badge.rejected { background: #fee2e2; color: #991b1b; }
         .status-badge.success { background: #d1fae5; color: #065f46; }
         .status-badge.failed { background: #fee2e2; color: #991b1b; }
+        .status-badge.pending_verification { background: #fef3c7; color: #92400e; }
+        .status-badge.confirmed { background: #dbeafe; color: #1e40af; }
         .dark .status-badge.pending { background: #78350f; color: #fbbf24; }
         .dark .status-badge.active { background: #1e3a5f; color: #60a5fa; }
         .dark .status-badge.completed { background: #064e3b; color: #34d399; }
         .dark .status-badge.rejected { background: #7f1d1d; color: #f87171; }
         .dark .status-badge.success { background: #064e3b; color: #34d399; }
         .dark .status-badge.failed { background: #7f1d1d; color: #f87171; }
+        .dark .status-badge.pending_verification { background: #78350f; color: #fbbf24; }
+        .dark .status-badge.confirmed { background: #1e3a5f; color: #60a5fa; }
         .chat-bubble {
             max-width: 80%;
             padding: 10px 16px;
@@ -238,6 +242,30 @@
             0%, 100% { opacity: 1; }
             50% { opacity: 0.3; }
         }
+
+        /* Discount badge styling */
+        .discount-badge {
+            background: #dc2626;
+            color: white;
+            font-size: 0.6rem;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 99px;
+            display: inline-block;
+        }
+        .discount-badge.gold {
+            background: #D4A017;
+            color: #0a1a3a;
+        }
+        .original-price {
+            text-decoration: line-through;
+            color: #9ca3af;
+            font-size: 0.7rem;
+        }
+        .sale-price {
+            color: #dc2626;
+            font-weight: 700;
+        }
     </style>
 </head>
 <body>
@@ -264,7 +292,7 @@
             { id: 'dashboard', icon: '📊', label: 'Dashboard', desc: 'Overview & Analytics' },
             { id: 'upload', icon: '📤', label: 'Upload Resource', desc: 'Add new resources' },
             { id: 'resources', icon: '📚', label: 'Resources', desc: 'Manage resources' },
-            { id: 'orders', icon: '📦', label: 'Orders', desc: 'Manage orders' },
+            { id: 'orders', icon: '📦', label: 'Orders', desc: 'Manage orders & confirm payments' },
             { id: 'megapay', icon: '💳', label: 'MegaPay Logs', desc: 'Payment webhooks & logs' },
             { id: 'tutors', icon: '👨‍🏫', label: 'Tutors', desc: 'Manage tutors & royalties' },
             { id: 'finance', icon: '💰', label: 'Finance', desc: 'Revenue & Reconciliation' },
@@ -305,7 +333,6 @@
             const loadData = async () => {
                 setLoading(true);
                 try {
-                    // Load resources
                     const rRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?select=*&order=created_at.desc`, {
                         headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
                     });
@@ -314,7 +341,6 @@
                         setResources(data || []);
                     } else setResources([]);
 
-                    // Load orders
                     const oRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?select=*&order=created_at.desc`, {
                         headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
                     });
@@ -323,7 +349,6 @@
                         setOrders(data || []);
                     } else setOrders([]);
 
-                    // Load tutors
                     const tRes = await fetch(`${SUPABASE_URL}/rest/v1/tutors?select=*`, {
                         headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
                     });
@@ -332,7 +357,6 @@
                         setTutors(data || []);
                     } else setTutors([]);
 
-                    // Load MegaPay logs
                     const mRes = await fetch(`${SUPABASE_URL}/rest/v1/megapay_logs?select=*&order=created_at.desc&limit=50`, {
                         headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
                     });
@@ -635,12 +659,13 @@
         }
 
         // ────────────────────────────────────────────────
-        // UPLOAD RESOURCE MODULE (with Curriculum Tags)
+        // UPLOAD RESOURCE MODULE
         // ────────────────────────────────────────────────
         function UploadResourceModule() {
             const { showNotification, loadData } = useApp();
             const [title, setTitle] = useState('');
             const [price, setPrice] = useState(30);
+            const [discountPercent, setDiscountPercent] = useState(0);
             const [level, setLevel] = useState('');
             const [subject, setSubject] = useState('');
             const [description, setDescription] = useState('');
@@ -683,8 +708,6 @@
                 'engineering', 'law', 'medicine', 'personal-growth', 'financial-literacy', 'leadership'
             ];
 
-            const resourceTypes = ['Lesson Plan', 'Scheme of Work', 'CBC Portfolio', 'Revision Paper', 'Exam Paper', 'E-Book', 'Video Tutorial', 'Interactive Content'];
-
             const handleFileSelect = (e) => {
                 const file = e.target.files[0];
                 if (file && file.type === 'application/pdf') {
@@ -704,6 +727,11 @@
                 } else {
                     showNotification('Please select an image file', 'error');
                 }
+            };
+
+            const calculateDiscountedPrice = (originalPrice, discount) => {
+                if (discount <= 0) return originalPrice;
+                return originalPrice - (originalPrice * (discount / 100));
             };
 
             const handleUpload = async () => {
@@ -747,9 +775,13 @@
 
                     setProgress(80);
 
+                    const discountedPrice = calculateDiscountedPrice(parseInt(price), parseInt(discountPercent));
+
                     const resourceData = {
                         title,
                         price: parseInt(price),
+                        discount_percent: parseInt(discountPercent) || 0,
+                        discounted_price: discountedPrice,
                         level,
                         subject,
                         description,
@@ -787,6 +819,7 @@
                     
                     setTitle('');
                     setPrice(30);
+                    setDiscountPercent(0);
                     setLevel('');
                     setSubject('');
                     setDescription('');
@@ -818,12 +851,24 @@
                                 <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" placeholder="e.g. Grade 7 Mathematics Notes" />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Price (KES) *</label>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Original Price (KES) *</label>
                                 <input type="number" value={price} onChange={(e) => setPrice(e.target.value)} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" min="0" />
                             </div>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Discount Percentage (%)</label>
+                                <input type="number" value={discountPercent} onChange={(e) => setDiscountPercent(Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" min="0" max="100" placeholder="e.g., 20 for 20% off" />
+                                {discountPercent > 0 && (
+                                    <div className="mt-1 text-sm">
+                                        <span className="text-green-600 dark:text-green-400 font-semibold">
+                                            💰 Sale Price: KES {price - (price * (discountPercent / 100))}
+                                        </span>
+                                        <span className="ml-2 discount-badge">-{discountPercent}% OFF</span>
+                                    </div>
+                                )}
+                            </div>
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Level *</label>
                                 <select value={level} onChange={(e) => setLevel(e.target.value)} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
@@ -831,6 +876,9 @@
                                     {levels.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
                                 </select>
                             </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Subject *</label>
                                 <select value={subject} onChange={(e) => setSubject(e.target.value)} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
@@ -838,9 +886,6 @@
                                     {subjects.map(s => <option key={s} value={s}>{s.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>)}
                                 </select>
                             </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Curriculum</label>
                                 <select value={curriculum} onChange={(e) => setCurriculum(e.target.value)} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
@@ -857,6 +902,23 @@
                                     <option value="county">County Mock</option>
                                     <option value="top-school">Top School (Alliance, Mang'u, Kenya High)</option>
                                     <option value="international">International</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Pages</label>
+                                <input type="number" value={pages} onChange={(e) => setPages(e.target.value)} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" min="1" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Pricing Tier</label>
+                                <select value={pricingTier} onChange={(e) => setPricingTier(e.target.value)} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
+                                    <option value="single">Single Paper</option>
+                                    <option value="bundle">Subject Bundle</option>
+                                    <option value="termly">Termly Set</option>
+                                    <option value="kjsea">KJSEA Package</option>
+                                    <option value="free">Free Resource</option>
                                 </select>
                             </div>
                             <div className="flex items-center gap-4 pt-6">
@@ -916,11 +978,13 @@
         }
 
         // ────────────────────────────────────────────────
-        // RESOURCES MANAGEMENT MODULE
+        // RESOURCES MANAGEMENT MODULE (with Edit & Discount)
         // ────────────────────────────────────────────────
         function ResourcesModule() {
             const { resources, showNotification, loadData } = useApp();
             const [filter, setFilter] = useState('all');
+            const [editingResource, setEditingResource] = useState(null);
+            const [showEditModal, setShowEditModal] = useState(false);
 
             const deleteResource = async (id) => {
                 if (!confirm('Delete this resource permanently?')) return;
@@ -945,11 +1009,66 @@
                 } catch (e) { showNotification('Error', 'error'); }
             };
 
+            const openEditModal = (resource) => {
+                setEditingResource({ ...resource });
+                setShowEditModal(true);
+            };
+
+            const saveResourceEdit = async () => {
+                if (!editingResource) return;
+                
+                try {
+                    const discount = parseInt(editingResource.discount_percent) || 0;
+                    const originalPrice = parseInt(editingResource.price) || 0;
+                    const discountedPrice = discount > 0 ? originalPrice - (originalPrice * (discount / 100)) : originalPrice;
+
+                    const updateData = {
+                        title: editingResource.title,
+                        price: originalPrice,
+                        discount_percent: discount,
+                        discounted_price: discountedPrice,
+                        level: editingResource.level,
+                        subject: editingResource.subject,
+                        description: editingResource.description,
+                        pages: parseInt(editingResource.pages) || 0,
+                        curriculum: editingResource.curriculum,
+                        exam_tier: editingResource.exam_tier,
+                        published: editingResource.published,
+                        featured: editingResource.featured,
+                        kicd_aligned: editingResource.kicd_aligned,
+                        cbc_compliant: editingResource.cbc_compliant,
+                        teacher_reviewed: editingResource.teacher_reviewed
+                    };
+
+                    const res = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${editingResource.id}`, {
+                        method: 'PATCH',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(updateData)
+                    });
+
+                    if (res.ok) {
+                        showNotification('Resource updated successfully!', 'success');
+                        setShowEditModal(false);
+                        setEditingResource(null);
+                        loadData();
+                    } else {
+                        showNotification('Update failed', 'error');
+                    }
+                } catch (e) {
+                    showNotification('Error: ' + e.message, 'error');
+                }
+            };
+
             const filtered = resources.filter(r => {
                 if (filter === 'published') return r.published !== false;
                 if (filter === 'draft') return r.published === false;
                 if (filter === 'cbc') return r.curriculum === 'cbc' || r.cbc_compliant === true;
                 if (filter === '8-4-4') return r.curriculum === '8-4-4';
+                if (filter === 'discounted') return r.discount_percent > 0;
                 return true;
             });
 
@@ -962,6 +1081,7 @@
                                 <button onClick={() => setFilter('all')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'all' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>All</button>
                                 <button onClick={() => setFilter('published')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'published' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Published</button>
                                 <button onClick={() => setFilter('draft')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'draft' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Draft</button>
+                                <button onClick={() => setFilter('discounted')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'discounted' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>🔥 Discounted</button>
                                 <button onClick={() => setFilter('cbc')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'cbc' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>CBC</button>
                                 <button onClick={() => setFilter('8-4-4')} className={`px-3 py-1 rounded-lg text-sm ${filter === '8-4-4' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>8-4-4</button>
                             </div>
@@ -972,34 +1092,119 @@
                             <div className="overflow-x-auto">
                                 <table className="w-full text-sm">
                                     <thead className="bg-gray-50 dark:bg-gray-700/50">
-                                        <tr><th className="px-4 py-2 text-left">Title</th><th className="px-4 py-2 text-left">Level</th><th className="px-4 py-2 text-left">Curriculum</th><th className="px-4 py-2 text-left">Price</th><th className="px-4 py-2 text-left">Downloads</th><th className="px-4 py-2 text-left">Status</th><th className="px-4 py-2 text-left">Actions</th></tr>
+                                        <tr><th className="px-4 py-2 text-left">Title</th><th className="px-4 py-2 text-left">Level</th><th className="px-4 py-2 text-left">Price</th><th className="px-4 py-2 text-left">Discount</th><th className="px-4 py-2 text-left">Status</th><th className="px-4 py-2 text-left">Actions</th></tr>
                                     </thead>
                                     <tbody>
-                                        {filtered.map(r => (
-                                            <tr key={r.id} className="border-t border-gray-100 dark:border-gray-700">
-                                                <td className="px-4 py-2 font-medium text-gray-800 dark:text-white">{r.title}</td>
-                                                <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{r.level}</td>
-                                                <td className="px-4 py-2 text-gray-600 dark:text-gray-400"><span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">{r.curriculum || r.cbc_compliant ? 'CBC' : '8-4-4'}</span></td>
-                                                <td className="px-4 py-2 text-gray-600 dark:text-gray-400">KES {r.price}</td>
-                                                <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{r.download_count || 0}</td>
-                                                <td className="px-4 py-2"><span className={`status-badge ${r.published !== false ? 'completed' : 'pending'}`}>{r.published !== false ? '✅ Published' : '📌 Draft'}</span></td>
-                                                <td className="px-4 py-2 flex gap-2">
-                                                    <button onClick={() => togglePublish(r.id, r.published !== false)} className="px-3 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-lg text-xs">{r.published !== false ? 'Unpublish' : 'Publish'}</button>
-                                                    <button onClick={() => deleteResource(r.id)} className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg text-xs">Delete</button>
-                                                </td>
-                                            </tr>
-                                        ))}
+                                        {filtered.map(r => {
+                                            const hasDiscount = r.discount_percent > 0;
+                                            const discountedPrice = hasDiscount ? r.price - (r.price * (r.discount_percent / 100)) : r.price;
+                                            return (
+                                                <tr key={r.id} className="border-t border-gray-100 dark:border-gray-700">
+                                                    <td className="px-4 py-2 font-medium text-gray-800 dark:text-white">{r.title}</td>
+                                                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{r.level}</td>
+                                                    <td className="px-4 py-2">
+                                                        {hasDiscount ? (
+                                                            <div>
+                                                                <span className="original-price">KES {r.price}</span>
+                                                                <span className="sale-price ml-1">KES {Math.round(discountedPrice)}</span>
+                                                            </div>
+                                                        ) : (
+                                                            <span>KES {r.price}</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-2">
+                                                        {hasDiscount ? (
+                                                            <span className="discount-badge">-{r.discount_percent}%</span>
+                                                        ) : (
+                                                            <span className="text-gray-400">—</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-2"><span className={`status-badge ${r.published !== false ? 'completed' : 'pending'}`}>{r.published !== false ? '✅ Published' : '📌 Draft'}</span></td>
+                                                    <td className="px-4 py-2 flex gap-2 flex-wrap">
+                                                        <button onClick={() => openEditModal(r)} className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg text-xs">✏️ Edit</button>
+                                                        <button onClick={() => togglePublish(r.id, r.published !== false)} className="px-3 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-lg text-xs">{r.published !== false ? 'Unpublish' : 'Publish'}</button>
+                                                        <button onClick={() => deleteResource(r.id)} className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg text-xs">Delete</button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             </div>
                         )}
                     </div>
+
+                    {/* Edit Resource Modal */}
+                    {showEditModal && editingResource && (
+                        <div className={`modal-overlay open`} onClick={() => { setShowEditModal(false); setEditingResource(null); }}>
+                            <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="text-lg font-bold text-gray-800 dark:text-white">✏️ Edit Resource</h3>
+                                    <button onClick={() => { setShowEditModal(false); setEditingResource(null); }} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">✕</button>
+                                </div>
+                                <div className="space-y-3">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Title</label>
+                                        <input type="text" value={editingResource.title || ''} onChange={(e) => setEditingResource({...editingResource, title: e.target.value})} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Price (KES)</label>
+                                            <input type="number" value={editingResource.price || 0} onChange={(e) => setEditingResource({...editingResource, price: parseInt(e.target.value) || 0})} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" min="0" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Discount %</label>
+                                            <input type="number" value={editingResource.discount_percent || 0} onChange={(e) => setEditingResource({...editingResource, discount_percent: Math.min(100, Math.max(0, parseInt(e.target.value) || 0))})} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" min="0" max="100" />
+                                            {editingResource.discount_percent > 0 && (
+                                                <div className="mt-1 text-sm text-green-600 dark:text-green-400">
+                                                    Sale Price: KES {Math.round((editingResource.price || 0) - ((editingResource.price || 0) * ((editingResource.discount_percent || 0) / 100)))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Level</label>
+                                            <select value={editingResource.level || ''} onChange={(e) => setEditingResource({...editingResource, level: e.target.value})} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
+                                                <option value="">Select level...</option>
+                                                {['pp1','pp2','grade-1','grade-2','grade-3','grade-4','grade-5','grade-6','grade-7','grade-8','grade-9','grade-10','grade-11','grade-12','form-1','form-2','form-3','form-4','college','tvet','university','self-development'].map(l => (
+                                                    <option key={l} value={l}>{l.replace(/-/g, ' ').toUpperCase()}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Subject</label>
+                                            <select value={editingResource.subject || ''} onChange={(e) => setEditingResource({...editingResource, subject: e.target.value})} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
+                                                <option value="">Select subject...</option>
+                                                {['mathematics','english','kiswahili','integrated-science','social-studies','pre-technical','agriculture','religious-education','creative-arts','health-pe','biology','chemistry','physics','business','computer-studies','engineering','law','medicine','personal-growth','financial-literacy','leadership'].map(s => (
+                                                    <option key={s} value={s}>{s.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Description</label>
+                                        <textarea value={editingResource.description || ''} onChange={(e) => setEditingResource({...editingResource, description: e.target.value})} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" rows="2" />
+                                    </div>
+                                    <div className="flex flex-wrap gap-4">
+                                        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={editingResource.published !== false} onChange={(e) => setEditingResource({...editingResource, published: e.target.checked})} /> Published</label>
+                                        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={editingResource.featured || false} onChange={(e) => setEditingResource({...editingResource, featured: e.target.checked})} /> Featured</label>
+                                        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={editingResource.kicd_aligned !== false} onChange={(e) => setEditingResource({...editingResource, kicd_aligned: e.target.checked})} /> KICD Aligned</label>
+                                    </div>
+                                    <div className="flex gap-2 mt-4">
+                                        <button onClick={saveResourceEdit} className="btn-gold px-4 py-2 rounded-lg font-semibold flex-1">💾 Save Changes</button>
+                                        <button onClick={() => { setShowEditModal(false); setEditingResource(null); }} className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-400">Cancel</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         }
 
         // ────────────────────────────────────────────────
-        // ORDERS MANAGEMENT MODULE
+        // ORDERS MANAGEMENT MODULE (with Confirm & WhatsApp)
         // ────────────────────────────────────────────────
         function OrdersModule() {
             const { orders, showNotification, loadData } = useApp();
@@ -1010,15 +1215,53 @@
                     const res = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${id}`, {
                         method: 'PATCH',
                         headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ status, verified: status === 'completed' ? true : false, confirmed_at: status === 'completed' ? new Date().toISOString() : null })
+                        body: JSON.stringify({ 
+                            status, 
+                            verified: status === 'completed' || status === 'confirmed' ? true : false, 
+                            confirmed_at: status === 'completed' || status === 'confirmed' ? new Date().toISOString() : null
+                        })
                     });
-                    if (res.ok) { showNotification(`Order ${status}`, 'success'); loadData(); }
+                    if (res.ok) { 
+                        showNotification(`Order ${status}`, 'success'); 
+                        loadData();
+                        // If confirmed, send WhatsApp message
+                        if (status === 'confirmed' || status === 'completed') {
+                            const order = orders.find(o => o.id === id);
+                            if (order) {
+                                // Send WhatsApp notification
+                                sendWhatsAppNotification(order);
+                            }
+                        }
+                    }
                 } catch (e) { showNotification('Error', 'error'); }
+            };
+
+            const sendWhatsAppNotification = async (order) => {
+                try {
+                    const message = `📚 *KenyaVault Order Confirmed!*\n\n` +
+                        `Order Ref: *${order.ref || order.id.slice(0, 8).toUpperCase()}*\n` +
+                        `Resource: *${order.product_title || 'Resource'}*\n` +
+                        `Amount: *KES ${order.product_price || 0}*\n\n` +
+                        `✅ Your payment has been confirmed. Your download link will be sent shortly.\n\n` +
+                        `Thank you for choosing KenyaVault! 🇰🇪`;
+
+                    // Open WhatsApp with the message
+                    const phone = order.customer_phone || order.phone || '254700000000';
+                    const formattedPhone = phone.replace(/^0/, '254').replace(/^\+/, '');
+                    const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`;
+                    
+                    // Open WhatsApp in a new window
+                    window.open(whatsappUrl, '_blank', 'width=400,height=600');
+                    
+                    showNotification('📱 WhatsApp notification sent!', 'success');
+                } catch (e) {
+                    console.error('WhatsApp error:', e);
+                }
             };
 
             const filtered = orders.filter(o => {
                 if (filter === 'pending') return o.status === 'pending' || o.status === 'pending_verification';
-                if (filter === 'completed') return o.status === 'completed' || o.status === 'paid';
+                if (filter === 'completed') return o.status === 'completed' || o.status === 'paid' || o.status === 'confirmed';
                 if (filter === 'rejected') return o.status === 'rejected';
                 if (filter === 'megapay') return o.payment_method === 'megapay' || o.megapay_ref;
                 if (filter === 'international') return o.payment_method === 'stripe' || o.payment_method === 'paypal';
@@ -1035,7 +1278,6 @@
                                 <button onClick={() => setFilter('pending')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'pending' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Pending</button>
                                 <button onClick={() => setFilter('completed')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'completed' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Completed</button>
                                 <button onClick={() => setFilter('megapay')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'megapay' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>MegaPay</button>
-                                <button onClick={() => setFilter('international')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'international' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>International</button>
                             </div>
                         </div>
                         {filtered.length === 0 ? (
@@ -1044,7 +1286,7 @@
                             <div className="overflow-x-auto">
                                 <table className="w-full text-sm">
                                     <thead className="bg-gray-50 dark:bg-gray-700/50">
-                                        <tr><th className="px-4 py-2 text-left">Reference</th><th className="px-4 py-2 text-left">Customer</th><th className="px-4 py-2 text-left">Resource</th><th className="px-4 py-2 text-left">Amount</th><th className="px-4 py-2 text-left">Payment</th><th className="px-4 py-2 text-left">Status</th><th className="px-4 py-2 text-left">Actions</th></tr>
+                                        <tr><th className="px-4 py-2 text-left">Reference</th><th className="px-4 py-2 text-left">Customer</th><th className="px-4 py-2 text-left">Resource</th><th className="px-4 py-2 text-left">Amount</th><th className="px-4 py-2 text-left">M-PESA Code</th><th className="px-4 py-2 text-left">Status</th><th className="px-4 py-2 text-left">Actions</th></tr>
                                     </thead>
                                     <tbody>
                                         {filtered.map(o => (
@@ -1053,16 +1295,31 @@
                                                 <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{o.customer_phone || o.phone || 'N/A'}</td>
                                                 <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{o.product_title || o.resource || 'Resource'}</td>
                                                 <td className="px-4 py-2 text-gray-600 dark:text-gray-400">KES {o.product_price || o.amount || 0}</td>
-                                                <td className="px-4 py-2"><span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700">{o.payment_method || 'MegaPay'}</span></td>
-                                                <td className="px-4 py-2"><span className={`status-badge ${o.status || 'pending'}`}>{o.status || 'pending'}</span></td>
-                                                <td className="px-4 py-2 flex gap-2">
+                                                <td className="px-4 py-2 font-mono font-bold text-blue-600 dark:text-blue-400">{o.mpesa_code || '-'}</td>
+                                                <td className="px-4 py-2">
+                                                    <span className={`status-badge ${
+                                                        o.status === 'pending_verification' ? 'pending_verification' :
+                                                        o.status === 'completed' || o.status === 'confirmed' ? 'confirmed' :
+                                                        o.status === 'rejected' ? 'rejected' :
+                                                        o.status || 'pending'
+                                                    }`}>
+                                                        {o.status === 'pending_verification' ? '⏳ Pending' :
+                                                         o.status === 'confirmed' ? '✅ Confirmed' :
+                                                         o.status === 'completed' ? '✅ Completed' :
+                                                         o.status || 'Pending'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-2 flex gap-2 flex-wrap">
                                                     {(o.status === 'pending' || o.status === 'pending_verification') && (
                                                         <>
-                                                            <button onClick={() => updateOrderStatus(o.id, 'completed')} className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg text-xs">✅ Approve</button>
+                                                            <button onClick={() => updateOrderStatus(o.id, 'confirmed')} className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg text-xs">✅ Confirm & Send</button>
                                                             <button onClick={() => updateOrderStatus(o.id, 'rejected')} className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg text-xs">❌ Reject</button>
                                                         </>
                                                     )}
-                                                    {o.status === 'completed' && <span className="text-xs text-green-600 dark:text-green-400">✓ Verified</span>}
+                                                    {o.status === 'confirmed' && (
+                                                        <button onClick={() => sendWhatsAppNotification(o)} className="px-3 py-1 bg-[#25D366] text-white rounded-lg text-xs">📱 Resend WhatsApp</button>
+                                                    )}
+                                                    {o.status === 'completed' && <span className="text-xs text-green-600 dark:text-green-400">✓ Done</span>}
                                                     {o.status === 'rejected' && <span className="text-xs text-red-600 dark:text-red-400">✗ Rejected</span>}
                                                 </td>
                                             </tr>
@@ -1097,10 +1354,8 @@
                 if (!confirm(`Process MegaPay B2C payout of KES ${amount} to ${phone}?`)) return;
                 setProcessingPayout(true);
                 try {
-                    // Simulate MegaPay B2C API call
                     await new Promise(resolve => setTimeout(resolve, 1500));
                     showNotification(`✅ MegaPay B2C payout of KES ${amount} sent to ${phone}`, 'success');
-                    // Log the payout
                     const logData = {
                         event: 'b2c_payout',
                         phone: phone,
@@ -1231,7 +1486,7 @@
         }
 
         // ────────────────────────────────────────────────
-        // TUTORS MANAGEMENT MODULE (with Royalties)
+        // TUTORS MANAGEMENT MODULE
         // ────────────────────────────────────────────────
         function TutorsModule() {
             const { tutors, orders, showNotification, loadData } = useApp();
@@ -1277,7 +1532,6 @@
                 try {
                     await new Promise(resolve => setTimeout(resolve, 1500));
                     showNotification(`✅ MegaPay B2C payout of KES ${earnings} sent to ${tutor.name}`, 'success');
-                    // Update tutor's paid_out
                     const res = await fetch(`${SUPABASE_URL}/rest/v1/tutors?id=eq.${tutor.id}`, {
                         method: 'PATCH',
                         headers: {
@@ -1394,14 +1648,14 @@
         }
 
         // ────────────────────────────────────────────────
-        // FINANCE MODULE (with Reconciliation Ledger)
+        // FINANCE MODULE
         // ────────────────────────────────────────────────
         function FinanceModule() {
             const { orders, tutors, megapayLogs } = useApp();
             const [filter, setFilter] = useState('all');
 
             const totalRevenue = orders.reduce((s, o) => s + (o.product_price || o.amount || 0), 0);
-            const completedOrders = orders.filter(o => o.status === 'completed' || o.status === 'paid').length;
+            const completedOrders = orders.filter(o => o.status === 'completed' || o.status === 'paid' || o.status === 'confirmed').length;
             const pendingOrders = orders.filter(o => o.status === 'pending' || o.status === 'pending_verification').length;
             const totalTutorEarnings = tutors.reduce((s, t) => s + (t.total_earnings || 0), 0);
             const totalPaidOut = tutors.reduce((s, t) => s + (t.total_paid_out || 0), 0);
@@ -1409,7 +1663,7 @@
             const filteredOrders = orders.filter(o => {
                 if (filter === 'megapay') return o.payment_method === 'megapay' || o.megapay_ref;
                 if (filter === 'international') return o.payment_method === 'stripe' || o.payment_method === 'paypal';
-                if (filter === 'completed') return o.status === 'completed' || o.status === 'paid';
+                if (filter === 'completed') return o.status === 'completed' || o.status === 'paid' || o.status === 'confirmed';
                 if (filter === 'pending') return o.status === 'pending' || o.status === 'pending_verification';
                 return true;
             });
@@ -1425,7 +1679,6 @@
                             <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 text-center"><p className="text-2xl font-bold text-purple-600">KES {totalPaidOut.toLocaleString()}</p><p className="text-sm text-gray-600 dark:text-gray-400">Paid to Tutors</p></div>
                         </div>
 
-                        {/* Reconciliation Ledger */}
                         <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 mb-4">
                             <h4 className="font-semibold text-gray-800 dark:text-white mb-2">📊 Reconciliation Ledger</h4>
                             <div className="flex gap-2 flex-wrap mb-3">
@@ -1448,7 +1701,7 @@
                                                 <td className="px-3 py-2 text-gray-600 dark:text-gray-400">{o.customer_phone || o.phone || 'N/A'}</td>
                                                 <td className="px-3 py-2 text-gray-600 dark:text-gray-400">KES {o.product_price || o.amount || 0}</td>
                                                 <td className="px-3 py-2 text-[#D4A017] font-semibold">KES {o.tutor_share || Math.round((o.product_price || o.amount || 0) * 0.8)}</td>
-                                                <td className="px-3 py-2"><span className={`status-badge ${o.status === 'completed' ? 'completed' : o.status === 'pending' ? 'pending' : 'rejected'}`}>{o.status || 'pending'}</span></td>
+                                                <td className="px-3 py-2"><span className={`status-badge ${o.status === 'completed' || o.status === 'confirmed' ? 'completed' : o.status === 'pending' ? 'pending' : 'rejected'}`}>{o.status || 'pending'}</span></td>
                                                 <td className="px-3 py-2"><span className="text-xs px-2 py-0.5 rounded-full bg-gray-200 dark:bg-gray-600">{o.payment_method || 'MegaPay'}</span></td>
                                             </tr>
                                         ))}
@@ -1508,7 +1761,9 @@
                         "The reconciliation ledger shows all transactions with MegaPay reference IDs.",
                         "You can manually confirm pending transactions in the MegaPay Logs section.",
                         "Digital watermarking is automatically applied to PDFs upon successful payment confirmation.",
-                        "International payments are routed through Stripe and PayPal for USD/GBP transactions."
+                        "International payments are routed through Stripe and PayPal for USD/GBP transactions.",
+                        "You can edit resource prices and add discounts in the Resources section.",
+                        "When you confirm an order, a WhatsApp notification is sent to the customer automatically."
                     ];
                     setMessages(prev => [...prev, { id: Date.now() + 1, text: responses[Math.floor(Math.random() * responses.length)], sender: 'ai', timestamp: new Date() }]);
                     setIsTyping(false);
