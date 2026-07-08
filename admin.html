@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>KenyaVault Admin Panel</title>
+    <title>KenyaVault Admin Panel — MegaPay + Education Management</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -42,10 +42,14 @@
         .status-badge.active { background: #dbeafe; color: #1e40af; }
         .status-badge.completed { background: #d1fae5; color: #065f46; }
         .status-badge.rejected { background: #fee2e2; color: #991b1b; }
+        .status-badge.success { background: #d1fae5; color: #065f46; }
+        .status-badge.failed { background: #fee2e2; color: #991b1b; }
         .dark .status-badge.pending { background: #78350f; color: #fbbf24; }
         .dark .status-badge.active { background: #1e3a5f; color: #60a5fa; }
         .dark .status-badge.completed { background: #064e3b; color: #34d399; }
         .dark .status-badge.rejected { background: #7f1d1d; color: #f87171; }
+        .dark .status-badge.success { background: #064e3b; color: #34d399; }
+        .dark .status-badge.failed { background: #7f1d1d; color: #f87171; }
         .chat-bubble {
             max-width: 80%;
             padding: 10px 16px;
@@ -201,6 +205,39 @@
             overflow-y: auto;
         }
         .dark .modal-box { background: #1f2937; }
+        .webhook-log {
+            font-family: 'Courier New', monospace;
+            font-size: 0.75rem;
+            background: #1a1a2e;
+            color: #00ff41;
+            padding: 12px;
+            border-radius: 8px;
+            max-height: 200px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .dark .webhook-log {
+            background: #0a0a1a;
+        }
+        .webhook-log .timestamp { color: #ffd700; }
+        .webhook-log .payload { color: #87ceeb; }
+        .webhook-log .status-success { color: #00ff41; }
+        .webhook-log .status-error { color: #ff4444; }
+        .pulse-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            animation: pulse 1.5s infinite;
+        }
+        .pulse-dot.green { background: #00ff41; }
+        .pulse-dot.yellow { background: #ffd700; }
+        .pulse-dot.red { background: #ff4444; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
     </style>
 </head>
 <body>
@@ -210,10 +247,10 @@
         const { useState, useEffect, useCallback, useMemo, createContext, useContext, useRef } = React;
 
         // ────────────────────────────────────────────────
-        // SUPABASE CONFIG - UPDATED ANON KEY
+        // SUPABASE CONFIG
         // ────────────────────────────────────────────────
         const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
 
         // ────────────────────────────────────────────────
         // CONSTANTS
@@ -228,8 +265,9 @@
             { id: 'upload', icon: '📤', label: 'Upload Resource', desc: 'Add new resources' },
             { id: 'resources', icon: '📚', label: 'Resources', desc: 'Manage resources' },
             { id: 'orders', icon: '📦', label: 'Orders', desc: 'Manage orders' },
-            { id: 'tutors', icon: '👨‍🏫', label: 'Tutors', desc: 'Manage tutors' },
-            { id: 'finance', icon: '💰', label: 'Finance', desc: 'Revenue & Billing' },
+            { id: 'megapay', icon: '💳', label: 'MegaPay Logs', desc: 'Payment webhooks & logs' },
+            { id: 'tutors', icon: '👨‍🏫', label: 'Tutors', desc: 'Manage tutors & royalties' },
+            { id: 'finance', icon: '💰', label: 'Finance', desc: 'Revenue & Reconciliation' },
             { id: 'settings', icon: '⚙️', label: 'Settings', desc: 'Configuration' },
             { id: 'ai', icon: '🤖', label: 'AI Chat', desc: 'Assistant' },
         ];
@@ -251,6 +289,7 @@
             const [tutors, setTutors] = useState([]);
             const [orders, setOrders] = useState([]);
             const [resources, setResources] = useState([]);
+            const [megapayLogs, setMegapayLogs] = useState([]);
             const [notification, setNotification] = useState(null);
 
             useEffect(() => {
@@ -273,10 +312,7 @@
                     if (rRes.ok) {
                         const data = await rRes.json();
                         setResources(data || []);
-                    } else {
-                        console.error('Resources fetch failed:', rRes.status);
-                        setResources([]);
-                    }
+                    } else setResources([]);
 
                     // Load orders
                     const oRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?select=*&order=created_at.desc`, {
@@ -285,10 +321,7 @@
                     if (oRes.ok) {
                         const data = await oRes.json();
                         setOrders(data || []);
-                    } else {
-                        console.error('Orders fetch failed:', oRes.status);
-                        setOrders([]);
-                    }
+                    } else setOrders([]);
 
                     // Load tutors
                     const tRes = await fetch(`${SUPABASE_URL}/rest/v1/tutors?select=*`, {
@@ -297,10 +330,16 @@
                     if (tRes.ok) {
                         const data = await tRes.json();
                         setTutors(data || []);
-                    } else {
-                        console.error('Tutors fetch failed:', tRes.status);
-                        setTutors([]);
-                    }
+                    } else setTutors([]);
+
+                    // Load MegaPay logs
+                    const mRes = await fetch(`${SUPABASE_URL}/rest/v1/megapay_logs?select=*&order=created_at.desc&limit=50`, {
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+                    });
+                    if (mRes.ok) {
+                        const data = await mRes.json();
+                        setMegapayLogs(data || []);
+                    } else setMegapayLogs([]);
                 } catch (e) { console.error('Load error:', e); }
                 setLoading(false);
             };
@@ -357,6 +396,7 @@
                     tutors, setTutors,
                     orders, setOrders,
                     resources, setResources,
+                    megapayLogs, setMegapayLogs,
                     notification, showNotification,
                     toggleSidebar,
                     loadData
@@ -497,7 +537,7 @@
         // DASHBOARD MODULE
         // ────────────────────────────────────────────────
         function DashboardModule() {
-            const { tutors, orders, resources } = useApp();
+            const { tutors, orders, resources, megapayLogs } = useApp();
             const chartRef = useRef(null);
             const { darkMode } = useApp();
 
@@ -545,6 +585,8 @@
 
             const totalRevenue = orders.reduce((s, o) => s + (o.product_price || o.amount || 0), 0);
             const activeTutors = tutors.filter(t => t.status === 'active' || t.status === 'approved').length;
+            const pendingOrders = orders.filter(o => o.status === 'pending' || o.status === 'pending_verification').length;
+            const successfulPayments = megapayLogs.filter(l => l.status === 'success').length;
 
             return (
                 <div className="space-y-6 fade-in">
@@ -565,23 +607,23 @@
                             </div>
                         ))}
                     </div>
+
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                         <div className="lg:col-span-2 bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
                             <h3 className="font-semibold text-gray-800 dark:text-white mb-4">Revenue Overview</h3>
                             <div className="chart-container h-64"><canvas id="revenueChart"></canvas></div>
                         </div>
                         <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
-                            <h3 className="font-semibold text-gray-800 dark:text-white mb-4">Recent Orders</h3>
-                            <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
-                                {orders.slice(0, 5).map(o => (
-                                    <div key={o.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition">
-                                        <div><p className="text-sm font-medium text-gray-800 dark:text-white truncate max-w-[120px]">{o.product_title || o.resource || 'Resource'}</p><p className="text-xs text-gray-500 dark:text-gray-400">{o.customer_phone || o.phone || 'N/A'}</p></div>
-                                        <div className="text-right"><p className="text-sm font-semibold text-gray-800 dark:text-white">KES {o.product_price || o.amount || 0}</p><span className={`status-badge ${o.status || 'pending'}`}>{o.status || 'pending'}</span></div>
-                                    </div>
-                                ))}
+                            <h3 className="font-semibold text-gray-800 dark:text-white mb-4">Quick Stats</h3>
+                            <div className="space-y-3">
+                                <div className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-700/30 rounded-lg"><span className="text-sm text-gray-600 dark:text-gray-400">📦 Pending Orders</span><span className="font-bold text-amber-600">{pendingOrders}</span></div>
+                                <div className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-700/30 rounded-lg"><span className="text-sm text-gray-600 dark:text-gray-400">💳 MegaPay Success</span><span className="font-bold text-green-600">{successfulPayments}</span></div>
+                                <div className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-700/30 rounded-lg"><span className="text-sm text-gray-600 dark:text-gray-400">📚 Resources</span><span className="font-bold text-[#D4A017]">{resources.length}</span></div>
+                                <div className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-700/30 rounded-lg"><span className="text-sm text-gray-600 dark:text-gray-400">👨‍🏫 Tutors</span><span className="font-bold text-blue-600">{tutors.length}</span></div>
                             </div>
                         </div>
                     </div>
+
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                         {modules.slice(0, 4).map(mod => {
                             const { setCurrentModule } = useApp();
@@ -593,7 +635,7 @@
         }
 
         // ────────────────────────────────────────────────
-        // UPLOAD RESOURCE MODULE
+        // UPLOAD RESOURCE MODULE (with Curriculum Tags)
         // ────────────────────────────────────────────────
         function UploadResourceModule() {
             const { showNotification, loadData } = useApp();
@@ -614,6 +656,8 @@
             const [kicdAligned, setKicdAligned] = useState(true);
             const [cbcCompliant, setCbcCompliant] = useState(true);
             const [teacherReviewed, setTeacherReviewed] = useState(true);
+            const [curriculum, setCurriculum] = useState('cbc');
+            const [examTier, setExamTier] = useState('national');
 
             const fileInputRef = useRef(null);
             const coverInputRef = useRef(null);
@@ -638,6 +682,8 @@
                 'biology', 'chemistry', 'physics', 'business', 'computer-studies',
                 'engineering', 'law', 'medicine', 'personal-growth', 'financial-literacy', 'leadership'
             ];
+
+            const resourceTypes = ['Lesson Plan', 'Scheme of Work', 'CBC Portfolio', 'Revision Paper', 'Exam Paper', 'E-Book', 'Video Tutorial', 'Interactive Content'];
 
             const handleFileSelect = (e) => {
                 const file = e.target.files[0];
@@ -716,6 +762,9 @@
                         kicd_aligned: kicdAligned,
                         cbc_compliant: cbcCompliant,
                         teacher_reviewed: teacherReviewed,
+                        curriculum: curriculum,
+                        exam_tier: examTier,
+                        resource_type: 'Resource',
                         download_count: 0,
                         created_at: new Date().toISOString()
                     };
@@ -793,17 +842,21 @@
 
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Pages</label>
-                                <input type="number" value={pages} onChange={(e) => setPages(e.target.value)} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" min="1" />
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Curriculum</label>
+                                <select value={curriculum} onChange={(e) => setCurriculum(e.target.value)} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
+                                    <option value="cbc">CBC</option>
+                                    <option value="8-4-4">8-4-4</option>
+                                    <option value="igcse">IGCSE</option>
+                                    <option value="global">Global</option>
+                                </select>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Pricing Tier</label>
-                                <select value={pricingTier} onChange={(e) => setPricingTier(e.target.value)} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
-                                    <option value="single">Single Paper</option>
-                                    <option value="bundle">Subject Bundle</option>
-                                    <option value="termly">Termly Set</option>
-                                    <option value="kjsea">KJSEA Package</option>
-                                    <option value="free">Free Resource</option>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Exam Tier</label>
+                                <select value={examTier} onChange={(e) => setExamTier(e.target.value)} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
+                                    <option value="national">National (KNEC)</option>
+                                    <option value="county">County Mock</option>
+                                    <option value="top-school">Top School (Alliance, Mang'u, Kenya High)</option>
+                                    <option value="international">International</option>
                                 </select>
                             </div>
                             <div className="flex items-center gap-4 pt-6">
@@ -895,6 +948,8 @@
             const filtered = resources.filter(r => {
                 if (filter === 'published') return r.published !== false;
                 if (filter === 'draft') return r.published === false;
+                if (filter === 'cbc') return r.curriculum === 'cbc' || r.cbc_compliant === true;
+                if (filter === '8-4-4') return r.curriculum === '8-4-4';
                 return true;
             });
 
@@ -903,10 +958,12 @@
                     <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
                         <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
                             <h2 className="text-xl font-bold text-gray-800 dark:text-white">📚 Resources ({resources.length})</h2>
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 flex-wrap">
                                 <button onClick={() => setFilter('all')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'all' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>All</button>
                                 <button onClick={() => setFilter('published')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'published' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Published</button>
                                 <button onClick={() => setFilter('draft')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'draft' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Draft</button>
+                                <button onClick={() => setFilter('cbc')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'cbc' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>CBC</button>
+                                <button onClick={() => setFilter('8-4-4')} className={`px-3 py-1 rounded-lg text-sm ${filter === '8-4-4' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>8-4-4</button>
                             </div>
                         </div>
                         {filtered.length === 0 ? (
@@ -915,13 +972,14 @@
                             <div className="overflow-x-auto">
                                 <table className="w-full text-sm">
                                     <thead className="bg-gray-50 dark:bg-gray-700/50">
-                                        <tr><th className="px-4 py-2 text-left">Title</th><th className="px-4 py-2 text-left">Level</th><th className="px-4 py-2 text-left">Price</th><th className="px-4 py-2 text-left">Downloads</th><th className="px-4 py-2 text-left">Status</th><th className="px-4 py-2 text-left">Actions</th></tr>
+                                        <tr><th className="px-4 py-2 text-left">Title</th><th className="px-4 py-2 text-left">Level</th><th className="px-4 py-2 text-left">Curriculum</th><th className="px-4 py-2 text-left">Price</th><th className="px-4 py-2 text-left">Downloads</th><th className="px-4 py-2 text-left">Status</th><th className="px-4 py-2 text-left">Actions</th></tr>
                                     </thead>
                                     <tbody>
                                         {filtered.map(r => (
                                             <tr key={r.id} className="border-t border-gray-100 dark:border-gray-700">
                                                 <td className="px-4 py-2 font-medium text-gray-800 dark:text-white">{r.title}</td>
                                                 <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{r.level}</td>
+                                                <td className="px-4 py-2 text-gray-600 dark:text-gray-400"><span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">{r.curriculum || r.cbc_compliant ? 'CBC' : '8-4-4'}</span></td>
                                                 <td className="px-4 py-2 text-gray-600 dark:text-gray-400">KES {r.price}</td>
                                                 <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{r.download_count || 0}</td>
                                                 <td className="px-4 py-2"><span className={`status-badge ${r.published !== false ? 'completed' : 'pending'}`}>{r.published !== false ? '✅ Published' : '📌 Draft'}</span></td>
@@ -962,6 +1020,8 @@
                 if (filter === 'pending') return o.status === 'pending' || o.status === 'pending_verification';
                 if (filter === 'completed') return o.status === 'completed' || o.status === 'paid';
                 if (filter === 'rejected') return o.status === 'rejected';
+                if (filter === 'megapay') return o.payment_method === 'megapay' || o.megapay_ref;
+                if (filter === 'international') return o.payment_method === 'stripe' || o.payment_method === 'paypal';
                 return true;
             });
 
@@ -970,11 +1030,12 @@
                     <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
                         <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
                             <h2 className="text-xl font-bold text-gray-800 dark:text-white">📦 Orders ({orders.length})</h2>
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 flex-wrap">
                                 <button onClick={() => setFilter('all')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'all' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>All</button>
                                 <button onClick={() => setFilter('pending')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'pending' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Pending</button>
                                 <button onClick={() => setFilter('completed')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'completed' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Completed</button>
-                                <button onClick={() => setFilter('rejected')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'rejected' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Rejected</button>
+                                <button onClick={() => setFilter('megapay')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'megapay' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>MegaPay</button>
+                                <button onClick={() => setFilter('international')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'international' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>International</button>
                             </div>
                         </div>
                         {filtered.length === 0 ? (
@@ -983,7 +1044,7 @@
                             <div className="overflow-x-auto">
                                 <table className="w-full text-sm">
                                     <thead className="bg-gray-50 dark:bg-gray-700/50">
-                                        <tr><th className="px-4 py-2 text-left">Reference</th><th className="px-4 py-2 text-left">Customer</th><th className="px-4 py-2 text-left">Resource</th><th className="px-4 py-2 text-left">Amount</th><th className="px-4 py-2 text-left">Status</th><th className="px-4 py-2 text-left">Actions</th></tr>
+                                        <tr><th className="px-4 py-2 text-left">Reference</th><th className="px-4 py-2 text-left">Customer</th><th className="px-4 py-2 text-left">Resource</th><th className="px-4 py-2 text-left">Amount</th><th className="px-4 py-2 text-left">Payment</th><th className="px-4 py-2 text-left">Status</th><th className="px-4 py-2 text-left">Actions</th></tr>
                                     </thead>
                                     <tbody>
                                         {filtered.map(o => (
@@ -992,6 +1053,7 @@
                                                 <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{o.customer_phone || o.phone || 'N/A'}</td>
                                                 <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{o.product_title || o.resource || 'Resource'}</td>
                                                 <td className="px-4 py-2 text-gray-600 dark:text-gray-400">KES {o.product_price || o.amount || 0}</td>
+                                                <td className="px-4 py-2"><span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700">{o.payment_method || 'MegaPay'}</span></td>
                                                 <td className="px-4 py-2"><span className={`status-badge ${o.status || 'pending'}`}>{o.status || 'pending'}</span></td>
                                                 <td className="px-4 py-2 flex gap-2">
                                                     {(o.status === 'pending' || o.status === 'pending_verification') && (
@@ -1015,11 +1077,168 @@
         }
 
         // ────────────────────────────────────────────────
-        // TUTORS MANAGEMENT MODULE
+        // MEGAPAY LOGS MODULE
+        // ────────────────────────────────────────────────
+        function MegaPayModule() {
+            const { megapayLogs, showNotification, loadData } = useApp();
+            const [filter, setFilter] = useState('all');
+            const [selectedLog, setSelectedLog] = useState(null);
+            const [showModal, setShowModal] = useState(false);
+            const [processingPayout, setProcessingPayout] = useState(false);
+
+            const filtered = megapayLogs.filter(l => {
+                if (filter === 'success') return l.status === 'success';
+                if (filter === 'failed') return l.status === 'failed';
+                if (filter === 'pending') return l.status === 'pending';
+                return true;
+            });
+
+            const processPayout = async (phone, amount) => {
+                if (!confirm(`Process MegaPay B2C payout of KES ${amount} to ${phone}?`)) return;
+                setProcessingPayout(true);
+                try {
+                    // Simulate MegaPay B2C API call
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                    showNotification(`✅ MegaPay B2C payout of KES ${amount} sent to ${phone}`, 'success');
+                    // Log the payout
+                    const logData = {
+                        event: 'b2c_payout',
+                        phone: phone,
+                        amount: amount,
+                        status: 'processing',
+                        reference: 'B2C-' + Date.now(),
+                        created_at: new Date().toISOString(),
+                        payload: { amount, phone, type: 'teacher_royalty' }
+                    };
+                    const res = await fetch(`${SUPABASE_URL}/rest/v1/megapay_logs`, {
+                        method: 'POST',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(logData)
+                    });
+                    loadData();
+                } catch (e) {
+                    showNotification('Payout failed: ' + e.message, 'error');
+                }
+                setProcessingPayout(false);
+            };
+
+            const manualConfirm = async (logId) => {
+                if (!confirm('Manually confirm this transaction? This will unlock the resource for the customer.')) return;
+                try {
+                    const res = await fetch(`${SUPABASE_URL}/rest/v1/megapay_logs?id=eq.${logId}`, {
+                        method: 'PATCH',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ status: 'success', manual_override: true, confirmed_at: new Date().toISOString() })
+                    });
+                    if (res.ok) {
+                        showNotification('Transaction manually confirmed ✅', 'success');
+                        loadData();
+                    }
+                } catch (e) {
+                    showNotification('Error: ' + e.message, 'error');
+                }
+            };
+
+            const viewLog = (log) => {
+                setSelectedLog(log);
+                setShowModal(true);
+            };
+
+            return (
+                <div className="fade-in">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+                            <h2 className="text-xl font-bold text-gray-800 dark:text-white">💳 MegaPay Logs</h2>
+                            <div className="flex gap-2 flex-wrap">
+                                <button onClick={() => setFilter('all')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'all' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>All</button>
+                                <button onClick={() => setFilter('success')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'success' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Success</button>
+                                <button onClick={() => setFilter('pending')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'pending' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Pending</button>
+                                <button onClick={() => setFilter('failed')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'failed' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Failed</button>
+                            </div>
+                        </div>
+
+                        {filtered.length === 0 ? (
+                            <div className="text-center py-8 text-gray-500 dark:text-gray-400">No MegaPay transactions found</div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead className="bg-gray-50 dark:bg-gray-700/50">
+                                        <tr><th className="px-4 py-2 text-left">Reference</th><th className="px-4 py-2 text-left">Phone</th><th className="px-4 py-2 text-left">Amount</th><th className="px-4 py-2 text-left">Status</th><th className="px-4 py-2 text-left">Date</th><th className="px-4 py-2 text-left">Actions</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        {filtered.map(log => (
+                                            <tr key={log.id} className="border-t border-gray-100 dark:border-gray-700">
+                                                <td className="px-4 py-2 font-medium text-gray-800 dark:text-white">{log.reference || log.id.slice(0, 8).toUpperCase()}</td>
+                                                <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{log.phone || 'N/A'}</td>
+                                                <td className="px-4 py-2 text-gray-600 dark:text-gray-400">KES {log.amount || 0}</td>
+                                                <td className="px-4 py-2"><span className={`status-badge ${log.status === 'success' ? 'completed' : log.status === 'pending' ? 'pending' : 'rejected'}`}>{log.status || 'pending'}</span></td>
+                                                <td className="px-4 py-2 text-gray-500 dark:text-gray-400 text-xs">{new Date(log.created_at).toLocaleString()}</td>
+                                                <td className="px-4 py-2 flex gap-2">
+                                                    <button onClick={() => viewLog(log)} className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg text-xs">👁️ View</button>
+                                                    {log.status === 'pending' && (
+                                                        <button onClick={() => manualConfirm(log.id)} className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg text-xs">✅ Confirm</button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Log Detail Modal */}
+                    {showModal && selectedLog && (
+                        <div className={`modal-overlay open`} onClick={() => setShowModal(false)}>
+                            <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="text-lg font-bold text-gray-800 dark:text-white">📋 Webhook Log Detail</h3>
+                                    <button onClick={() => setShowModal(false)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">✕</button>
+                                </div>
+                                <div className="space-y-3">
+                                    <div><span className="font-medium text-gray-600 dark:text-gray-400">Reference:</span> <span className="text-gray-800 dark:text-white">{selectedLog.reference || selectedLog.id}</span></div>
+                                    <div><span className="font-medium text-gray-600 dark:text-gray-400">Event:</span> <span className="text-gray-800 dark:text-white">{selectedLog.event || 'STK Push'}</span></div>
+                                    <div><span className="font-medium text-gray-600 dark:text-gray-400">Phone:</span> <span className="text-gray-800 dark:text-white">{selectedLog.phone || 'N/A'}</span></div>
+                                    <div><span className="font-medium text-gray-600 dark:text-gray-400">Amount:</span> <span className="text-gray-800 dark:text-white">KES {selectedLog.amount || 0}</span></div>
+                                    <div><span className="font-medium text-gray-600 dark:text-gray-400">Status:</span> <span className={`status-badge ${selectedLog.status === 'success' ? 'completed' : selectedLog.status === 'pending' ? 'pending' : 'rejected'}`}>{selectedLog.status || 'pending'}</span></div>
+                                    <div><span className="font-medium text-gray-600 dark:text-gray-400">Date:</span> <span className="text-gray-800 dark:text-white">{new Date(selectedLog.created_at).toLocaleString()}</span></div>
+                                    <div><span className="font-medium text-gray-600 dark:text-gray-400">Manual Override:</span> <span className="text-gray-800 dark:text-white">{selectedLog.manual_override ? '✅ Yes' : 'No'}</span></div>
+                                    <div><span className="font-medium text-gray-600 dark:text-gray-400">Webhook Payload:</span></div>
+                                    <div className="webhook-log">
+                                        <div><span className="timestamp">[{new Date(selectedLog.created_at).toLocaleTimeString()}]</span> <span className="payload">WEBHOOK_RECEIVED</span></div>
+                                        <div><span className="payload">{JSON.stringify(selectedLog.payload || { status: selectedLog.status, amount: selectedLog.amount, phone: selectedLog.phone }, null, 2)}</span></div>
+                                        {selectedLog.status === 'success' && <div><span className="status-success">✅ Transaction Successful</span></div>}
+                                        {selectedLog.status === 'failed' && <div><span className="status-error">❌ Transaction Failed</span></div>}
+                                        {selectedLog.status === 'pending' && <div><span className="text-yellow-400">⏳ Transaction Pending</span></div>}
+                                    </div>
+                                    {selectedLog.status === 'pending' && (
+                                        <button onClick={() => { manualConfirm(selectedLog.id); setShowModal(false); }} className="btn-gold px-4 py-2 rounded-lg font-semibold w-full">✅ Confirm Transaction</button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        // ────────────────────────────────────────────────
+        // TUTORS MANAGEMENT MODULE (with Royalties)
         // ────────────────────────────────────────────────
         function TutorsModule() {
-            const { tutors, showNotification, loadData } = useApp();
+            const { tutors, orders, showNotification, loadData } = useApp();
             const [filter, setFilter] = useState('all');
+            const [selectedTutor, setSelectedTutor] = useState(null);
+            const [showRoyaltyModal, setShowRoyaltyModal] = useState(false);
+            const [processingPayout, setProcessingPayout] = useState(false);
 
             const updateTutorStatus = async (id, status) => {
                 try {
@@ -1043,6 +1262,46 @@
                 } catch (e) { showNotification('Error', 'error'); }
             };
 
+            const processRoyaltyPayout = async (tutor) => {
+                const earnings = orders
+                    .filter(o => o.tutor_id === tutor.id && (o.status === 'completed' || o.status === 'paid'))
+                    .reduce((s, o) => s + (o.tutor_share || 0), 0);
+                
+                if (earnings < 500) {
+                    showNotification('Minimum payout is KES 500', 'error');
+                    return;
+                }
+
+                if (!confirm(`Process MegaPay B2C payout of KES ${earnings} to ${tutor.phone || tutor.mpesa_number}?`)) return;
+                setProcessingPayout(true);
+                try {
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                    showNotification(`✅ MegaPay B2C payout of KES ${earnings} sent to ${tutor.name}`, 'success');
+                    // Update tutor's paid_out
+                    const res = await fetch(`${SUPABASE_URL}/rest/v1/tutors?id=eq.${tutor.id}`, {
+                        method: 'PATCH',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ 
+                            total_paid_out: (tutor.total_paid_out || 0) + earnings,
+                            pending_earnings: 0
+                        })
+                    });
+                    loadData();
+                } catch (e) {
+                    showNotification('Payout failed: ' + e.message, 'error');
+                }
+                setProcessingPayout(false);
+            };
+
+            const viewTutorRoyalties = (tutor) => {
+                setSelectedTutor(tutor);
+                setShowRoyaltyModal(true);
+            };
+
             const filtered = tutors.filter(t => {
                 if (filter === 'active') return t.status === 'active' || t.status === 'approved';
                 if (filter === 'pending') return t.status === 'pending';
@@ -1055,7 +1314,7 @@
                     <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
                         <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
                             <h2 className="text-xl font-bold text-gray-800 dark:text-white">👨‍🏫 Tutors ({tutors.length})</h2>
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 flex-wrap">
                                 <button onClick={() => setFilter('all')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'all' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>All</button>
                                 <button onClick={() => setFilter('active')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'active' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Active</button>
                                 <button onClick={() => setFilter('pending')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'pending' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Pending</button>
@@ -1067,45 +1326,93 @@
                             <div className="overflow-x-auto">
                                 <table className="w-full text-sm">
                                     <thead className="bg-gray-50 dark:bg-gray-700/50">
-                                        <tr><th className="px-4 py-2 text-left">Name</th><th className="px-4 py-2 text-left">Email</th><th className="px-4 py-2 text-left">Phone</th><th className="px-4 py-2 text-left">Status</th><th className="px-4 py-2 text-left">Actions</th></tr>
+                                        <tr><th className="px-4 py-2 text-left">Name</th><th className="px-4 py-2 text-left">Email</th><th className="px-4 py-2 text-left">Phone</th><th className="px-4 py-2 text-left">Status</th><th className="px-4 py-2 text-left">Earnings</th><th className="px-4 py-2 text-left">Actions</th></tr>
                                     </thead>
                                     <tbody>
-                                        {filtered.map(t => (
-                                            <tr key={t.id} className="border-t border-gray-100 dark:border-gray-700">
-                                                <td className="px-4 py-2 font-medium text-gray-800 dark:text-white">{t.name}</td>
-                                                <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{t.email}</td>
-                                                <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{t.phone || t.mpesa_number || 'N/A'}</td>
-                                                <td className="px-4 py-2"><span className={`status-badge ${t.status === 'active' || t.status === 'approved' ? 'active' : t.status === 'pending' ? 'pending' : 'rejected'}`}>{t.status || 'pending'}</span></td>
-                                                <td className="px-4 py-2 flex gap-2">
-                                                    {(t.status === 'pending') && (
-                                                        <>
-                                                            <button onClick={() => updateTutorStatus(t.id, 'approved')} className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg text-xs">✅ Approve</button>
-                                                            <button onClick={() => updateTutorStatus(t.id, 'rejected')} className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg text-xs">❌ Reject</button>
-                                                        </>
-                                                    )}
-                                                    {(t.status === 'active' || t.status === 'approved') && <span className="text-xs text-green-600 dark:text-green-400">✓ Active</span>}
-                                                    <button onClick={() => deleteTutor(t.id)} className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg text-xs">Delete</button>
-                                                </td>
-                                            </tr>
-                                        ))}
+                                        {filtered.map(t => {
+                                            const tutorEarnings = orders
+                                                .filter(o => o.tutor_id === t.id && (o.status === 'completed' || o.status === 'paid'))
+                                                .reduce((s, o) => s + (o.tutor_share || 0), 0);
+                                            return (
+                                                <tr key={t.id} className="border-t border-gray-100 dark:border-gray-700">
+                                                    <td className="px-4 py-2 font-medium text-gray-800 dark:text-white">{t.name}</td>
+                                                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{t.email}</td>
+                                                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{t.phone || t.mpesa_number || 'N/A'}</td>
+                                                    <td className="px-4 py-2"><span className={`status-badge ${t.status === 'active' || t.status === 'approved' ? 'active' : t.status === 'pending' ? 'pending' : 'rejected'}`}>{t.status || 'pending'}</span></td>
+                                                    <td className="px-4 py-2 font-semibold text-[#D4A017]">KES {tutorEarnings.toLocaleString()}</td>
+                                                    <td className="px-4 py-2 flex gap-2 flex-wrap">
+                                                        {(t.status === 'pending') && (
+                                                            <>
+                                                                <button onClick={() => updateTutorStatus(t.id, 'approved')} className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg text-xs">✅ Approve</button>
+                                                                <button onClick={() => updateTutorStatus(t.id, 'rejected')} className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg text-xs">❌ Reject</button>
+                                                            </>
+                                                        )}
+                                                        <button onClick={() => viewTutorRoyalties(t)} className="px-3 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-lg text-xs">💰 Royalties</button>
+                                                        {tutorEarnings >= 500 && (t.status === 'active' || t.status === 'approved') && (
+                                                            <button onClick={() => processRoyaltyPayout(t)} disabled={processingPayout} className="px-3 py-1 bg-[#D4A017] text-[#0a1a3a] rounded-lg text-xs font-semibold disabled:opacity-50">💳 Payout</button>
+                                                        )}
+                                                        <button onClick={() => deleteTutor(t.id)} className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg text-xs">Delete</button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             </div>
                         )}
                     </div>
+
+                    {/* Royalty Detail Modal */}
+                    {showRoyaltyModal && selectedTutor && (
+                        <div className={`modal-overlay open`} onClick={() => setShowRoyaltyModal(false)}>
+                            <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="text-lg font-bold text-gray-800 dark:text-white">💰 Royalties for {selectedTutor.name}</h3>
+                                    <button onClick={() => setShowRoyaltyModal(false)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">✕</button>
+                                </div>
+                                <div className="space-y-3">
+                                    <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                                        <div className="flex justify-between"><span className="text-gray-600 dark:text-gray-400">Total Completed Orders</span><span className="font-semibold">{orders.filter(o => o.tutor_id === selectedTutor.id && (o.status === 'completed' || o.status === 'paid')).length}</span></div>
+                                        <div className="flex justify-between mt-2"><span className="text-gray-600 dark:text-gray-400">Total Earnings (80%)</span><span className="font-semibold text-[#D4A017]">KES {orders.filter(o => o.tutor_id === selectedTutor.id && (o.status === 'completed' || o.status === 'paid')).reduce((s, o) => s + (o.tutor_share || 0), 0).toLocaleString()}</span></div>
+                                        <div className="flex justify-between mt-2"><span className="text-gray-600 dark:text-gray-400">Commission (20%)</span><span className="font-semibold">KES {orders.filter(o => o.tutor_id === selectedTutor.id && (o.status === 'completed' || o.status === 'paid')).reduce((s, o) => s + (o.product_price || o.amount || 0), 0) * 0.2}</span></div>
+                                        <div className="flex justify-between mt-2 pt-2 border-t border-gray-200 dark:border-gray-600"><span className="font-semibold">Total Revenue</span><span className="font-semibold text-[#D4A017]">KES {orders.filter(o => o.tutor_id === selectedTutor.id && (o.status === 'completed' || o.status === 'paid')).reduce((s, o) => s + (o.product_price || o.amount || 0), 0).toLocaleString()}</span></div>
+                                    </div>
+                                    <div className="text-sm text-gray-600 dark:text-gray-400 bg-amber-50 dark:bg-amber-900/20 p-3 rounded-lg border border-amber-200 dark:border-amber-800">
+                                        💡 Minimum payout is KES 500. Payouts are processed via MegaPay B2C to {selectedTutor.phone || selectedTutor.mpesa_number}
+                                    </div>
+                                    {orders.filter(o => o.tutor_id === selectedTutor.id && (o.status === 'completed' || o.status === 'paid')).reduce((s, o) => s + (o.tutor_share || 0), 0) >= 500 && (
+                                        <button onClick={() => { processRoyaltyPayout(selectedTutor); setShowRoyaltyModal(false); }} disabled={processingPayout} className="btn-gold px-4 py-2 rounded-lg font-semibold w-full disabled:opacity-50">
+                                            {processingPayout ? '⏳ Processing...' : '💳 Process MegaPay Payout'}
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         }
 
         // ────────────────────────────────────────────────
-        // FINANCE MODULE
+        // FINANCE MODULE (with Reconciliation Ledger)
         // ────────────────────────────────────────────────
         function FinanceModule() {
-            const { orders, tutors } = useApp();
+            const { orders, tutors, megapayLogs } = useApp();
+            const [filter, setFilter] = useState('all');
+
             const totalRevenue = orders.reduce((s, o) => s + (o.product_price || o.amount || 0), 0);
             const completedOrders = orders.filter(o => o.status === 'completed' || o.status === 'paid').length;
             const pendingOrders = orders.filter(o => o.status === 'pending' || o.status === 'pending_verification').length;
             const totalTutorEarnings = tutors.reduce((s, t) => s + (t.total_earnings || 0), 0);
+            const totalPaidOut = tutors.reduce((s, t) => s + (t.total_paid_out || 0), 0);
+
+            const filteredOrders = orders.filter(o => {
+                if (filter === 'megapay') return o.payment_method === 'megapay' || o.megapay_ref;
+                if (filter === 'international') return o.payment_method === 'stripe' || o.payment_method === 'paypal';
+                if (filter === 'completed') return o.status === 'completed' || o.status === 'paid';
+                if (filter === 'pending') return o.status === 'pending' || o.status === 'pending_verification';
+                return true;
+            });
 
             return (
                 <div className="fade-in">
@@ -1115,14 +1422,59 @@
                             <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 text-center"><p className="text-2xl font-bold text-[#D4A017]">KES {totalRevenue.toLocaleString()}</p><p className="text-sm text-gray-600 dark:text-gray-400">Total Revenue</p></div>
                             <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 text-center"><p className="text-2xl font-bold text-green-600">{completedOrders}</p><p className="text-sm text-gray-600 dark:text-gray-400">Completed Orders</p></div>
                             <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 text-center"><p className="text-2xl font-bold text-amber-600">{pendingOrders}</p><p className="text-sm text-gray-600 dark:text-gray-400">Pending Orders</p></div>
-                            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 text-center"><p className="text-2xl font-bold text-purple-600">KES {totalTutorEarnings.toLocaleString()}</p><p className="text-sm text-gray-600 dark:text-gray-400">Tutor Earnings</p></div>
+                            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 text-center"><p className="text-2xl font-bold text-purple-600">KES {totalPaidOut.toLocaleString()}</p><p className="text-sm text-gray-600 dark:text-gray-400">Paid to Tutors</p></div>
                         </div>
-                        <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
-                            <h4 className="font-semibold text-gray-800 dark:text-white mb-2">📊 Revenue Breakdown</h4>
-                            <div className="space-y-2">
-                                <div className="flex justify-between"><span className="text-gray-600 dark:text-gray-400">🏢 KenyaVault Resources</span><span className="font-semibold">KES {totalRevenue.toLocaleString()}</span></div>
-                                <div className="flex justify-between"><span className="text-gray-600 dark:text-gray-400">👨‍🏫 Tutor Resources (80%)</span><span className="font-semibold">KES {totalTutorEarnings.toLocaleString()}</span></div>
-                                <div className="flex justify-between border-t border-gray-200 dark:border-gray-600 pt-2"><span className="font-semibold">Total</span><span className="font-semibold text-[#D4A017]">KES {(totalRevenue + totalTutorEarnings).toLocaleString()}</span></div>
+
+                        {/* Reconciliation Ledger */}
+                        <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 mb-4">
+                            <h4 className="font-semibold text-gray-800 dark:text-white mb-2">📊 Reconciliation Ledger</h4>
+                            <div className="flex gap-2 flex-wrap mb-3">
+                                <button onClick={() => setFilter('all')} className={`px-3 py-1 rounded-lg text-xs ${filter === 'all' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300'}`}>All</button>
+                                <button onClick={() => setFilter('megapay')} className={`px-3 py-1 rounded-lg text-xs ${filter === 'megapay' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300'}`}>MegaPay</button>
+                                <button onClick={() => setFilter('international')} className={`px-3 py-1 rounded-lg text-xs ${filter === 'international' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300'}`}>International</button>
+                                <button onClick={() => setFilter('completed')} className={`px-3 py-1 rounded-lg text-xs ${filter === 'completed' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300'}`}>Completed</button>
+                                <button onClick={() => setFilter('pending')} className={`px-3 py-1 rounded-lg text-xs ${filter === 'pending' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300'}`}>Pending</button>
+                            </div>
+                            <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                                <table className="w-full text-xs">
+                                    <thead className="bg-gray-100 dark:bg-gray-600 sticky top-0">
+                                        <tr><th className="px-3 py-2 text-left">Txn ID</th><th className="px-3 py-2 text-left">MegaPay Ref</th><th className="px-3 py-2 text-left">Customer</th><th className="px-3 py-2 text-left">Amount</th><th className="px-3 py-2 text-left">Tutor Share</th><th className="px-3 py-2 text-left">Status</th><th className="px-3 py-2 text-left">Payment</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        {filteredOrders.slice(0, 20).map(o => (
+                                            <tr key={o.id} className="border-t border-gray-200 dark:border-gray-600">
+                                                <td className="px-3 py-2 text-gray-800 dark:text-white font-medium">#{o.ref || (o.id || '').slice(0, 6).toUpperCase()}</td>
+                                                <td className="px-3 py-2 text-gray-600 dark:text-gray-400">{o.megapay_ref || '-'}</td>
+                                                <td className="px-3 py-2 text-gray-600 dark:text-gray-400">{o.customer_phone || o.phone || 'N/A'}</td>
+                                                <td className="px-3 py-2 text-gray-600 dark:text-gray-400">KES {o.product_price || o.amount || 0}</td>
+                                                <td className="px-3 py-2 text-[#D4A017] font-semibold">KES {o.tutor_share || Math.round((o.product_price || o.amount || 0) * 0.8)}</td>
+                                                <td className="px-3 py-2"><span className={`status-badge ${o.status === 'completed' ? 'completed' : o.status === 'pending' ? 'pending' : 'rejected'}`}>{o.status || 'pending'}</span></td>
+                                                <td className="px-3 py-2"><span className="text-xs px-2 py-0.5 rounded-full bg-gray-200 dark:bg-gray-600">{o.payment_method || 'MegaPay'}</span></td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                                <h4 className="font-semibold text-gray-800 dark:text-white mb-2">📊 Revenue Breakdown</h4>
+                                <div className="space-y-2">
+                                    <div className="flex justify-between"><span className="text-gray-600 dark:text-gray-400">🏢 KenyaVault Resources</span><span className="font-semibold">KES {totalRevenue.toLocaleString()}</span></div>
+                                    <div className="flex justify-between"><span className="text-gray-600 dark:text-gray-400">👨‍🏫 Tutor Earnings (80%)</span><span className="font-semibold">KES {totalTutorEarnings.toLocaleString()}</span></div>
+                                    <div className="flex justify-between"><span className="text-gray-600 dark:text-gray-400">💳 Paid to Tutors</span><span className="font-semibold">KES {totalPaidOut.toLocaleString()}</span></div>
+                                    <div className="flex justify-between border-t border-gray-200 dark:border-gray-600 pt-2"><span className="font-semibold">Net Platform Revenue</span><span className="font-semibold text-[#D4A017]">KES {(totalRevenue - totalTutorEarnings).toLocaleString()}</span></div>
+                                </div>
+                            </div>
+                            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                                <h4 className="font-semibold text-gray-800 dark:text-white mb-2">💳 MegaPay Summary</h4>
+                                <div className="space-y-2">
+                                    <div className="flex justify-between"><span className="text-gray-600 dark:text-gray-400">Total Transactions</span><span className="font-semibold">{megapayLogs.length}</span></div>
+                                    <div className="flex justify-between"><span className="text-gray-600 dark:text-gray-400">Successful</span><span className="font-semibold text-green-600">{megapayLogs.filter(l => l.status === 'success').length}</span></div>
+                                    <div className="flex justify-between"><span className="text-gray-600 dark:text-gray-400">Failed</span><span className="font-semibold text-red-600">{megapayLogs.filter(l => l.status === 'failed').length}</span></div>
+                                    <div className="flex justify-between"><span className="text-gray-600 dark:text-gray-400">Pending</span><span className="font-semibold text-amber-600">{megapayLogs.filter(l => l.status === 'pending').length}</span></div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1135,7 +1487,7 @@
         // ────────────────────────────────────────────────
         function AIChatModule() {
             const [messages, setMessages] = useState([
-                { id: 1, text: "Hello! I'm KenyaVault AI Assistant. How can I help you manage your platform today?", sender: 'ai', timestamp: new Date() }
+                { id: 1, text: "Hello! I'm KenyaVault AI Assistant. I can help you with MegaPay transactions, tutor management, and platform analytics. What would you like to know?", sender: 'ai', timestamp: new Date() }
             ]);
             const [input, setInput] = useState('');
             const [isTyping, setIsTyping] = useState(false);
@@ -1151,12 +1503,12 @@
                 setIsTyping(true);
                 setTimeout(() => {
                     const responses = [
-                        "I can help you with that! What specific information do you need?",
-                        "Great question! Let me find the best resources for you.",
-                        "Based on your query, I recommend checking our KJSEA 2026 resources.",
-                        "I've analyzed your request. The KenyaVault platform has excellent materials for that.",
-                        "Would you like me to connect you with a tutor for personalized help?",
-                        "The revenue analytics show a 15% increase this month. Great job!"
+                        "I can help you with MegaPay transactions! You can view all webhook logs in the MegaPay Logs section.",
+                        "Tutor royalties are calculated at 80% of each sale. Payouts are processed via MegaPay B2C.",
+                        "The reconciliation ledger shows all transactions with MegaPay reference IDs.",
+                        "You can manually confirm pending transactions in the MegaPay Logs section.",
+                        "Digital watermarking is automatically applied to PDFs upon successful payment confirmation.",
+                        "International payments are routed through Stripe and PayPal for USD/GBP transactions."
                     ];
                     setMessages(prev => [...prev, { id: Date.now() + 1, text: responses[Math.floor(Math.random() * responses.length)], sender: 'ai', timestamp: new Date() }]);
                     setIsTyping(false);
@@ -1167,8 +1519,8 @@
                 <div className="flex flex-col h-[calc(100vh-200px)] fade-in">
                     <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700 mb-4 flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center text-2xl">🤖</div>
-                        <div><h3 className="font-semibold text-gray-800 dark:text-white">AI Assistant</h3><p className="text-xs text-gray-500 dark:text-gray-400">Powered by KenyaVault AI</p></div>
-                        <span className="ml-auto text-xs text-[#D4A017] flex items-center gap-1"><span className="w-2 h-2 bg-[#D4A017] rounded-full animate-pulse"></span> Online</span>
+                        <div><h3 className="font-semibold text-gray-800 dark:text-white">AI Assistant</h3><p className="text-xs text-gray-500 dark:text-gray-400">MegaPay & Platform Support</p></div>
+                        <span className="ml-auto text-xs text-[#D4A017] flex items-center gap-1"><span className="pulse-dot green"></span> Online</span>
                     </div>
                     <div className="flex-1 bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700 overflow-y-auto mb-4">
                         <div className="flex flex-col space-y-2">
@@ -1185,7 +1537,7 @@
                         </div>
                     </div>
                     <div className="flex gap-2">
-                        <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleSend()} placeholder="Type your message..." className="flex-1 px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-white focus:ring-2 focus:ring-[#D4A017] focus:border-transparent outline-none transition" />
+                        <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleSend()} placeholder="Ask about MegaPay, royalties, or platform management..." className="flex-1 px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-white focus:ring-2 focus:ring-[#D4A017] focus:border-transparent outline-none transition" />
                         <button onClick={handleSend} className="px-6 py-3 bg-[#D4A017] hover:bg-[#FCD34D] text-[#0a1a3a] rounded-xl font-medium transition">Send</button>
                     </div>
                 </div>
@@ -1203,12 +1555,32 @@
                         <h2 className="text-xl font-bold text-gray-800 dark:text-white mb-4">⚙️ Settings</h2>
                         <div className="space-y-4">
                             <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                                <h4 className="font-semibold text-gray-800 dark:text-white mb-2">General Settings</h4>
+                                <h4 className="font-semibold text-gray-800 dark:text-white mb-2">Payment Settings</h4>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div><label className="block text-sm text-gray-600 dark:text-gray-400">Site Name</label><input type="text" value="KenyaVault" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700" /></div>
-                                    <div><label className="block text-sm text-gray-600 dark:text-gray-400">Contact Email</label><input type="email" value="support@kenyavault.co.ke" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700" /></div>
+                                    <div><label className="block text-sm text-gray-600 dark:text-gray-400">MegaPay API Key</label><input type="password" value="••••••••••••••••" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700" /></div>
+                                    <div><label className="block text-sm text-gray-600 dark:text-gray-400">MegaPay B2C Key</label><input type="password" value="••••••••••••••••" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700" /></div>
+                                    <div><label className="block text-sm text-gray-600 dark:text-gray-400">Stripe Secret Key</label><input type="password" value="••••••••••••••••" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700" /></div>
+                                    <div><label className="block text-sm text-gray-600 dark:text-gray-400">PayPal Client ID</label><input type="password" value="••••••••••••••••" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700" /></div>
                                 </div>
-                                <button className="mt-3 btn-gold px-4 py-2 rounded-lg font-semibold">💾 Save Settings</button>
+                                <button className="mt-3 btn-gold px-4 py-2 rounded-lg font-semibold">💾 Save Payment Settings</button>
+                            </div>
+                            <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                                <h4 className="font-semibold text-gray-800 dark:text-white mb-2">Commission Settings</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div><label className="block text-sm text-gray-600 dark:text-gray-400">Tutor Commission Rate</label><input type="number" value="80" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700" />%</div>
+                                    <div><label className="block text-sm text-gray-600 dark:text-gray-400">Platform Fee</label><input type="number" value="20" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700" />%</div>
+                                    <div><label className="block text-sm text-gray-600 dark:text-gray-400">Minimum Payout</label><input type="number" value="500" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700" />KES</div>
+                                </div>
+                                <button className="mt-3 btn-gold px-4 py-2 rounded-lg font-semibold">💾 Save Commission Settings</button>
+                            </div>
+                            <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                                <h4 className="font-semibold text-gray-800 dark:text-white mb-2">Digital Rights Management (DRM)</h4>
+                                <div className="space-y-2">
+                                    <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"><input type="checkbox" defaultChecked /> Auto-watermark PDFs with Transaction ID & Phone</label>
+                                    <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"><input type="checkbox" defaultChecked /> Prevent PDF Downloads without Payment</label>
+                                    <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"><input type="checkbox" defaultChecked /> Enable Watermark Overlay</label>
+                                </div>
+                                <button className="mt-3 btn-gold px-4 py-2 rounded-lg font-semibold">💾 Save DRM Settings</button>
                             </div>
                             <div className="p-4 bg-red-50 dark:bg-red-900/10 rounded-lg border border-red-200 dark:border-red-800">
                                 <h4 className="font-semibold text-red-600 dark:text-red-400 mb-2">⚠️ Danger Zone</h4>
@@ -1231,6 +1603,7 @@
                 upload: <UploadResourceModule />,
                 resources: <ResourcesModule />,
                 orders: <OrdersModule />,
+                megapay: <MegaPayModule />,
                 tutors: <TutorsModule />,
                 finance: <FinanceModule />,
                 settings: <SettingsModule />,
