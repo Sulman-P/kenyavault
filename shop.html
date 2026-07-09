@@ -725,6 +725,7 @@
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         .empty-state .empty-icon { font-size: 2.4rem; margin-bottom: 12px; display: block; }
         .empty-state h3 { color: var(--navy); margin-bottom: 4px; font-family: 'Sora', sans-serif; font-size: 1rem; }
+        .empty-state .empty-detail { font-size: 0.85rem; color: #6B7280; margin-top: 4px; }
         .empty-state button {
             margin-top: 12px;
             padding: 8px 20px;
@@ -1522,6 +1523,7 @@
                 <div class="loading-spinner">
                     <span class="spin-icon">⏳</span>
                     Loading resources...
+                    <div style="margin-top:8px;font-size:0.7rem;color:#9CA3AF;">Please wait while we fetch from Supabase</div>
                 </div>
             </div>
         </div>
@@ -1711,7 +1713,6 @@
 
     // ── STATE ──
     let allResources = [];
-    let filteredResources = [];
     let currentPage = 1;
     const itemsPerPage = 20;
     let activeLevel = 'all';
@@ -1787,6 +1788,8 @@
     async function fetchResources() {
         try {
             console.log('🔍 Fetching resources from Supabase...');
+            console.log('📡 URL:', `${SUPABASE_URL}/rest/v1/resources?select=*&order=created_at.desc`);
+            
             const response = await fetch(`${SUPABASE_URL}/rest/v1/resources?select=*&order=created_at.desc`, {
                 headers: {
                     'apikey': SUPABASE_ANON_KEY,
@@ -1794,12 +1797,32 @@
                     'Content-Type': 'application/json'
                 }
             });
-            if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            
+            console.log('📊 Response status:', response.status);
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('❌ Response error:', errorText);
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
             const data = await response.json();
             console.log(`✅ Loaded ${data.length} resources`);
+            
+            if (data.length === 0) {
+                console.warn('⚠️ No resources found in the database');
+            } else {
+                console.log('📋 Sample resource:', data[0]);
+            }
+            
             return data || [];
         } catch (error) {
             console.error('❌ Fetch error:', error);
+            console.error('❌ Error details:', {
+                message: error.message,
+                stack: error.stack,
+                name: error.name
+            });
             throw error;
         }
     }
@@ -1821,7 +1844,6 @@
         try {
             console.log('📝 Creating order with ref:', orderRef);
             
-            // Insert order
             const response = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
                 method: 'POST',
                 headers: {
@@ -1835,6 +1857,7 @@
 
             if (!response.ok) {
                 const errorText = await response.text();
+                console.error('❌ Order creation error:', errorText);
                 throw new Error(`HTTP ${response.status}: ${errorText}`);
             }
 
@@ -1842,7 +1865,7 @@
             const createdOrder = result[0] || result;
             console.log('✅ Order created:', createdOrder);
 
-            // Now create order_item
+            // Create order item
             const orderItemData = {
                 order_ref: orderRef,
                 order_id: createdOrder.id,
@@ -1865,7 +1888,7 @@
 
             if (!itemResponse.ok) {
                 const errorText = await itemResponse.text();
-                console.warn('⚠️ Order item creation failed:', errorText);
+                console.warn('⚠️ Order item creation warning:', errorText);
             } else {
                 console.log('✅ Order item created');
             }
@@ -1915,7 +1938,6 @@
         const phone = phoneInput.value.trim().replace(/\s/g, '');
         const customerName = customerNameInput.value.trim();
 
-        // Validate
         if (!customerName) {
             customerNameInput.classList.add('error');
             showToast('⚠️', 'Please enter your full name', 'error');
@@ -1932,7 +1954,6 @@
         }
         phoneInput.classList.remove('error');
 
-        // Format phone number for MegaPay
         let formattedPhone = phone;
         if (phone.startsWith('0')) formattedPhone = '254' + phone.substring(1);
         if (phone.startsWith('+')) formattedPhone = phone.substring(1);
@@ -1952,7 +1973,6 @@
             return;
         }
 
-        // If free, skip payment and just verify
         if ((currentProduct.price || 0) === 0) {
             const { orderRef } = await createOrder(currentProduct, customerName, formattedPhone);
             currentOrderRef = orderRef;
@@ -2313,6 +2333,8 @@
     // ── RENDER SHOP ──
     function renderShop() {
         console.log('🔄 Rendering shop...');
+        console.log('📊 Total resources:', allResources.length);
+        
         const filtered = getFilteredAndSortedResources();
         console.log('📊 Filtered count:', filtered.length);
 
@@ -2320,9 +2342,18 @@
             productsGrid.innerHTML = `
                 <div class="empty-state" style="grid-column:1/-1;">
                     <span class="empty-icon">📚</span>
-                    <h3>No resources found</h3>
-                    <p style="font-size:0.85rem;color:#6B7280;">${allResources.length > 0 ? 'Try adjusting your search or filters.' : 'No resources have been uploaded yet.'}</p>
-                    ${allResources.length > 0 ? '<button onclick="resetFilters()" style="margin-top:12px;padding:8px 20px;background:var(--gold);color:var(--navy);border:none;border-radius:8px;cursor:pointer;font-weight:700;">Reset Filters</button>' : ''}
+                    <h3>${allResources.length === 0 ? 'No resources found in database' : 'No resources match your filters'}</h3>
+                    <p class="empty-detail">${allResources.length === 0 ? 'Please upload resources via the admin panel or check your database connection.' : 'Try adjusting your search or filters above.'}</p>
+                    ${allResources.length === 0 ? `
+                        <div style="margin-top:8px;font-size:0.8rem;color:#6B7280;">
+                            <p>💡 Database URL: ${SUPABASE_URL}</p>
+                            <p>📊 Resources in DB: ${allResources.length}</p>
+                            <button onclick="init()" style="margin-top:8px;padding:8px 20px;background:var(--gold);color:var(--navy);border:none;border-radius:8px;cursor:pointer;font-weight:700;">🔄 Reload</button>
+                            <button onclick="window.open('${SUPABASE_URL}/project/default/editor/205937', '_blank')" style="margin-top:8px;padding:8px 20px;background:#3B82F6;color:white;border:none;border-radius:8px;cursor:pointer;font-weight:700;margin-left:8px;">📊 View DB</button>
+                        </div>
+                    ` : `
+                        <button onclick="resetFilters()" style="margin-top:12px;padding:8px 20px;background:var(--gold);color:var(--navy);border:none;border-radius:8px;cursor:pointer;font-weight:700;">Reset Filters</button>
+                    `}
                 </div>
             `;
             productCount.textContent = '0';
@@ -2589,11 +2620,14 @@
 
     // ── INIT ──
     async function init() {
+        console.log('🚀 Initializing KenyaVault Shop...');
         renderLoading();
         try {
             allResources = await fetchResources();
             if (allResources.length > 0) {
                 console.log('📋 Sample resource:', allResources[0]);
+            } else {
+                console.warn('⚠️ No resources loaded. Check your Supabase database.');
             }
             updateCounts();
             applyLevelFromURL();
@@ -2601,7 +2635,7 @@
             checkPaymentCallback();
             setInterval(checkPaymentCallback, 3000);
         } catch (e) {
-            console.error('Init error:', e);
+            console.error('❌ Init error:', e);
             renderError(e);
         }
     }
@@ -2668,6 +2702,7 @@
             <div class="loading-spinner" style="grid-column:1/-1;">
                 <span class="spin-icon">⏳</span>
                 Loading resources...
+                <div style="margin-top:8px;font-size:0.7rem;color:#9CA3AF;">Connecting to Supabase...</div>
             </div>
         `;
     }
@@ -2677,8 +2712,13 @@
             <div class="empty-state" style="grid-column:1/-1;">
                 <span class="empty-icon">⚠️</span>
                 <h3>Unable to load resources</h3>
-                <p style="font-size:0.85rem;color:#6B7280;margin:4px 0;">${err ? err.message || 'Please try again later.' : 'Please try again later.'}</p>
-                <button onclick="init()" style="margin-top:12px;padding:8px 20px;background:var(--gold);color:var(--navy);border:none;border-radius:8px;cursor:pointer;font-weight:700;">🔄 Retry</button>
+                <p class="empty-detail">${err ? err.message || 'Please try again later.' : 'Please try again later.'}</p>
+                <div style="margin-top:8px;font-size:0.8rem;color:#6B7280;">
+                    <p>💡 Database URL: ${SUPABASE_URL}</p>
+                    <p>🔑 Using Supabase with anon key</p>
+                    <button onclick="init()" style="margin-top:12px;padding:8px 20px;background:var(--gold);color:var(--navy);border:none;border-radius:8px;cursor:pointer;font-weight:700;">🔄 Retry</button>
+                    <button onclick="window.open('${SUPABASE_URL}/project/default/editor/205937', '_blank')" style="margin-top:12px;padding:8px 20px;background:#3B82F6;color:white;border:none;border-radius:8px;cursor:pointer;font-weight:700;margin-left:8px;">📊 Open Supabase</button>
+                </div>
             </div>
         `;
     }
@@ -2767,6 +2807,7 @@
 
     console.log('✅ KenyaVault Shop initialized');
     console.log('📱 MegaPay Payment URL:', MEGAPAY_PAYMENT_URL);
+    console.log('🔗 Supabase URL:', SUPABASE_URL);
 </script>
 </body>
 </html>
