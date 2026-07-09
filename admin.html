@@ -323,23 +323,16 @@
         // ── SUPABASE CLIENT ──
         let sbClient = null;
         
-        // Initialize Supabase client safely
         try {
             if (typeof window.supabase !== 'undefined' && window.supabase.createClient) {
                 sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
                 console.log('✅ Supabase client initialized');
             } else {
                 console.warn('⚠️ Supabase library not loaded, waiting...');
-                // Try again after a delay
                 setTimeout(() => {
                     if (typeof window.supabase !== 'undefined' && window.supabase.createClient) {
                         sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
                         console.log('✅ Supabase client initialized (delayed)');
-                        // Re-render or reload data
-                        const root = document.getElementById('root');
-                        if (root) {
-                            // Force re-render if needed
-                        }
                     }
                 }, 2000);
             }
@@ -381,7 +374,6 @@
             const [newOrderIds, setNewOrderIds] = useState([]);
             const [chartRange, setChartRange] = useState('daily');
             const [orderBadgeCount, setOrderBadgeCount] = useState(0);
-            const [lastOrderCheck, setLastOrderCheck] = useState(null);
 
             useEffect(() => {
                 localStorage.setItem('kv-dark-mode', darkMode);
@@ -389,10 +381,8 @@
                 else document.documentElement.classList.remove('dark');
             }, [darkMode]);
 
-            // Initialize Supabase client
             const getSupabaseClient = () => {
                 if (sbClient) return sbClient;
-                // Try to re-initialize
                 try {
                     if (typeof window.supabase !== 'undefined' && window.supabase.createClient) {
                         sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -446,21 +436,16 @@
                                 const newOrder = payload.new;
                                 if (newOrder) {
                                     console.log('🆕 New order received via realtime:', newOrder);
-                                    // Add to orders list
                                     setOrders(prev => [newOrder, ...prev]);
-                                    // Track new order ID
                                     setNewOrderIds(prev => {
                                         const updated = [newOrder.id, ...prev];
                                         return updated.slice(0, 50);
                                     });
-                                    // Update badge
                                     setOrderBadgeCount(prev => prev + 1);
-                                    // Show toast notification
                                     showToast(
                                         '🆕 New Order!',
                                         `Order #${newOrder.payment_ref || newOrder.id.slice(0, 8).toUpperCase()} - ${newOrder.customer_name || 'Customer'}`
                                     );
-                                    // Play notification sound if available
                                     try {
                                         if (window.navigator && window.navigator.vibrate) {
                                             window.navigator.vibrate(200);
@@ -488,19 +473,15 @@
             };
 
             const startPolling = () => {
-                // Clear any existing interval
                 if (window._pollingInterval) {
                     clearInterval(window._pollingInterval);
                     window._pollingInterval = null;
                 }
                 
-                // Start polling every 5 seconds
                 const interval = setInterval(() => {
                     checkNewOrders();
                 }, 5000);
                 window._pollingInterval = interval;
-                
-                // Also check immediately
                 setTimeout(() => checkNewOrders(), 1000);
             };
 
@@ -531,7 +512,6 @@
                     }
                     
                     if (data && data.length > 0) {
-                        // Check for new orders
                         const currentIds = data.map(o => o.id);
                         const knownIds = newOrderIds;
                         const newIds = currentIds.filter(id => !knownIds.includes(id));
@@ -540,23 +520,19 @@
                             console.log(`🆕 Found ${newIds.length} new orders via polling`);
                             const newOrders = data.filter(o => newIds.includes(o.id));
                             
-                            // Update orders list with new orders at top
                             setOrders(prev => {
                                 const existingIds = prev.map(o => o.id);
                                 const filteredNew = newOrders.filter(o => !existingIds.includes(o.id));
                                 return [...filteredNew, ...prev];
                             });
                             
-                            // Update new order IDs
                             setNewOrderIds(prev => {
                                 const updated = [...newIds, ...prev];
                                 return updated.slice(0, 50);
                             });
                             
-                            // Update badge count
                             setOrderBadgeCount(prev => prev + newIds.length);
                             
-                            // Show notifications for each new order
                             newOrders.forEach(order => {
                                 showToast(
                                     '🆕 New Order!',
@@ -570,7 +546,6 @@
                             });
                         }
                         
-                        // Update badge count for pending orders
                         const pending = data.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification').length;
                         setOrderBadgeCount(pending);
                     }
@@ -621,7 +596,6 @@
 
                 setLoading(true);
                 try {
-                    // Load orders
                     const { data: ordersData, error: ordersError } = await client
                         .from('orders')
                         .select('*')
@@ -633,7 +607,6 @@
                         setOrderBadgeCount(pending);
                     }
 
-                    // Load resources
                     const { data: resourcesData, error: resourcesError } = await client
                         .from('resources')
                         .select('*')
@@ -643,7 +616,6 @@
                         setResources(resourcesData);
                     }
 
-                    // Load tutors
                     const { data: tutorsData, error: tutorsError } = await client
                         .from('tutors')
                         .select('*');
@@ -652,7 +624,6 @@
                         setTutors(tutorsData);
                     }
 
-                    // Load classes
                     const { data: classesData, error: classesError } = await client
                         .from('classes')
                         .select('*')
@@ -713,7 +684,6 @@
                 showToast(type === 'success' ? '✅ Success' : '❌ Error', msg);
             };
 
-            // ── Generate Signed URL ──
             const generateSignedUrl = async (filePath) => {
                 const client = getSupabaseClient();
                 if (!client) {
@@ -733,7 +703,7 @@
                     const { data, error } = await client
                         .storage
                         .from(STORAGE_BUCKET)
-                        .createSignedUrl(cleanPath, 604800); // 7 days
+                        .createSignedUrl(cleanPath, 604800);
                     
                     if (error) {
                         console.error('Signed URL error:', error);
@@ -747,7 +717,6 @@
                 }
             };
 
-            // ── Send WhatsApp ──
             const sendWhatsApp = async (order) => {
                 const client = getSupabaseClient();
                 if (!client) {
@@ -1184,7 +1153,7 @@
             );
         }
 
-        // ── RESOURCES MODULE ── (Full implementation)
+        // ── RESOURCES MODULE ──
         function ResourcesModule() {
             const { resources, setResources, showToast, getSupabaseClient } = useApp();
             const [uploading, setUploading] = useState(false);
@@ -1352,10 +1321,8 @@
                 }
             };
 
-            // Rest of the ResourcesModule render function (same as before)
             return (
                 <div className="fade-in space-y-6">
-                    {/* Upload Form */}
                     <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
                         <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">📤 Upload New Resource</h3>
                         <form onSubmit={handleUpload} className="space-y-4">
@@ -1514,8 +1481,448 @@
             );
         }
 
-        // ── TUTORS MODULE ── (Shortened for brevity - same pattern as resources)
-        // ── CLASSES MODULE ── (Shortened for brevity - same pattern as resources)
+        // ── TUTORS MODULE ──
+        function TutorsModule() {
+            const { tutors, setTutors, showToast, getSupabaseClient } = useApp();
+            const [formData, setFormData] = useState({ name: '', email: '', phone: '', specialization: '' });
+            const [editingTutor, setEditingTutor] = useState(null);
+            const [editFormData, setEditFormData] = useState({ name: '', email: '', phone: '', specialization: '', status: 'active' });
+            const [showEditModal, setShowEditModal] = useState(false);
+
+            const loadTutors = async () => {
+                const client = getSupabaseClient();
+                if (!client) {
+                    setTutors([]);
+                    return;
+                }
+                try {
+                    const { data, error } = await client
+                        .from('tutors')
+                        .select('*');
+                    if (!error && data) setTutors(data || []);
+                    else setTutors([]);
+                } catch (e) {
+                    console.error('Load tutors error:', e);
+                    setTutors([]);
+                }
+            };
+
+            useEffect(() => { loadTutors(); }, []);
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                const client = getSupabaseClient();
+                if (!client) {
+                    showToast('⚠️ Supabase client not available', 'error');
+                    return;
+                }
+
+                const { name, email, specialization } = formData;
+                if (!name || !email || !specialization) {
+                    showToast('⚠️ Please fill in all required fields', 'error');
+                    return;
+                }
+                const { error } = await client
+                    .from('tutors')
+                    .insert([{
+                        name, email, phone: formData.phone, specialization,
+                        status: 'active',
+                        created_at: new Date().toISOString()
+                    }]);
+
+                if (!error) {
+                    showToast('✅ Tutor added successfully!');
+                    setFormData({ name: '', email: '', phone: '', specialization: '' });
+                    loadTutors();
+                }
+            };
+
+            const openEditModal = (tutor) => {
+                setEditingTutor(tutor);
+                setEditFormData({
+                    name: tutor.name || '',
+                    email: tutor.email || '',
+                    phone: tutor.phone || '',
+                    specialization: tutor.specialization || '',
+                    status: tutor.status || 'active'
+                });
+                setShowEditModal(true);
+            };
+
+            const closeEditModal = () => {
+                setShowEditModal(false);
+                setEditingTutor(null);
+            };
+
+            const handleEditSave = async () => {
+                const client = getSupabaseClient();
+                if (!client || !editingTutor) return;
+
+                const { error } = await client
+                    .from('tutors')
+                    .update({
+                        name: editFormData.name,
+                        email: editFormData.email,
+                        phone: editFormData.phone,
+                        specialization: editFormData.specialization,
+                        status: editFormData.status
+                    })
+                    .eq('id', editingTutor.id);
+
+                if (!error) {
+                    showToast('✅ Tutor updated successfully!');
+                    closeEditModal();
+                    loadTutors();
+                }
+            };
+
+            const toggleStatus = async (id, currentStatus) => {
+                const client = getSupabaseClient();
+                if (!client) return;
+
+                const newStatus = currentStatus === 'active' ? 'suspended' : 'active';
+                const { error } = await client
+                    .from('tutors')
+                    .update({ status: newStatus })
+                    .eq('id', id);
+
+                if (!error) {
+                    showToast(`✅ Tutor ${newStatus === 'active' ? 'activated' : 'suspended'}`);
+                    loadTutors();
+                }
+            };
+
+            const deleteTutor = async (id) => {
+                const client = getSupabaseClient();
+                if (!client) return;
+
+                if (!confirm('Delete this tutor?')) return;
+                const { error } = await client
+                    .from('tutors')
+                    .delete()
+                    .eq('id', id);
+
+                if (!error) {
+                    showToast('✅ Tutor deleted');
+                    loadTutors();
+                }
+            };
+
+            return (
+                <div className="fade-in space-y-6">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">🧑‍🏫 Add New Tutor</h3>
+                        <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Full Name *</label>
+                                <input type="text" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" required />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email *</label>
+                                <input type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" required />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Phone</label>
+                                <input type="tel" value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Specialization *</label>
+                                <select value={formData.specialization} onChange={(e) => setFormData({...formData, specialization: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" required>
+                                    <option value="">Select</option>
+                                    <option value="mathematics">Mathematics</option>
+                                    <option value="english">English</option>
+                                    <option value="kiswahili">Kiswahili</option>
+                                    <option value="science">Science</option>
+                                    <option value="social-studies">Social Studies</option>
+                                    <option value="creative-arts">Creative Arts</option>
+                                    <option value="business">Business</option>
+                                    <option value="computer-studies">Computer Studies</option>
+                                </select>
+                            </div>
+                            <div className="md:col-span-2">
+                                <button type="submit" className="px-6 py-2 bg-[#D4A017] text-[#0a1a3a] font-semibold rounded-lg hover:bg-[#FCD34D] transition">➕ Add Tutor</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">📋 Tutor Roster</h3>
+                            <button onClick={loadTutors} className="text-sm text-[#D4A017] hover:text-[#FCD34D] transition">🔄 Refresh</button>
+                        </div>
+                        {tutors.length === 0 ? (
+                            <div className="text-center py-8 text-gray-500 dark:text-gray-400">No tutors added yet</div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead className="bg-gray-50 dark:bg-gray-700/50">
+                                        <tr>
+                                            <th className="px-4 py-2 text-left text-gray-600 dark:text-gray-400">Name</th>
+                                            <th className="px-4 py-2 text-left text-gray-600 dark:text-gray-400">Email</th>
+                                            <th className="px-4 py-2 text-left text-gray-600 dark:text-gray-400">Specialization</th>
+                                            <th className="px-4 py-2 text-left text-gray-600 dark:text-gray-400">Status</th>
+                                            <th className="px-4 py-2 text-left text-gray-600 dark:text-gray-400">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {tutors.map(t => (
+                                            <tr key={t.id} className="border-t border-gray-100 dark:border-gray-700">
+                                                <td className="px-4 py-2 font-medium text-gray-800 dark:text-white">{t.name}</td>
+                                                <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{t.email}</td>
+                                                <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{t.specialization || '—'}</td>
+                                                <td className="px-4 py-2"><span className={`status-badge ${t.status === 'active' ? 'active' : 'suspended'}`}>{t.status || 'inactive'}</span></td>
+                                                <td className="px-4 py-2 flex gap-2 flex-wrap">
+                                                    <button onClick={() => openEditModal(t)} className="btn-sm edit">✏️ Edit</button>
+                                                    <button onClick={() => toggleStatus(t.id, t.status)} className="btn-sm gold">
+                                                        {t.status === 'active' ? '⏸️ Suspend' : '▶️ Activate'}
+                                                    </button>
+                                                    <button onClick={() => deleteTutor(t.id)} className="btn-sm delete">🗑️</button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+
+                    {showEditModal && (
+                        <div className="modal-overlay open" onClick={closeEditModal}>
+                            <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+                                <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">✏️ Edit Tutor</h3>
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Full Name *</label>
+                                        <input type="text" value={editFormData.name} onChange={(e) => setEditFormData({...editFormData, name: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email *</label>
+                                        <input type="email" value={editFormData.email} onChange={(e) => setEditFormData({...editFormData, email: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Phone</label>
+                                        <input type="tel" value={editFormData.phone} onChange={(e) => setEditFormData({...editFormData, phone: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Specialization *</label>
+                                        <select value={editFormData.specialization} onChange={(e) => setEditFormData({...editFormData, specialization: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
+                                            <option value="mathematics">Mathematics</option>
+                                            <option value="english">English</option>
+                                            <option value="kiswahili">Kiswahili</option>
+                                            <option value="science">Science</option>
+                                            <option value="social-studies">Social Studies</option>
+                                            <option value="creative-arts">Creative Arts</option>
+                                            <option value="business">Business</option>
+                                            <option value="computer-studies">Computer Studies</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
+                                        <select value={editFormData.status} onChange={(e) => setEditFormData({...editFormData, status: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
+                                            <option value="active">Active</option>
+                                            <option value="suspended">Suspended</option>
+                                        </select>
+                                    </div>
+                                    <div className="flex gap-3">
+                                        <button onClick={handleEditSave} className="px-4 py-2 bg-[#D4A017] text-[#0a1a3a] font-semibold rounded-lg hover:bg-[#FCD34D] transition">💾 Save Changes</button>
+                                        <button onClick={closeEditModal} className="px-4 py-2 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 font-semibold rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 transition">Cancel</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        // ── CLASSES MODULE ──
+        function ClassesModule() {
+            const { classes, setClasses, tutors, showToast, getSupabaseClient } = useApp();
+            const [formData, setFormData] = useState({
+                title: '', level: '', tutor_id: '', price_per_learner: 0,
+                meeting_link: '', scheduled_time: '', is_live: false, description: ''
+            });
+
+            const loadClasses = async () => {
+                const client = getSupabaseClient();
+                if (!client) {
+                    setClasses([]);
+                    return;
+                }
+                try {
+                    const { data, error } = await client
+                        .from('classes')
+                        .select('*')
+                        .order('created_at', { ascending: false });
+                    if (!error && data) setClasses(data || []);
+                    else setClasses([]);
+                } catch (e) {
+                    console.error('Load classes error:', e);
+                    setClasses([]);
+                }
+            };
+
+            useEffect(() => { loadClasses(); }, []);
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                const client = getSupabaseClient();
+                if (!client) {
+                    showToast('⚠️ Supabase client not available', 'error');
+                    return;
+                }
+
+                const { title, level, tutor_id, meeting_link, scheduled_time } = formData;
+                if (!title || !level || !tutor_id || !meeting_link || !scheduled_time) {
+                    showToast('⚠️ Please fill in all required fields', 'error');
+                    return;
+                }
+                const { error } = await client
+                    .from('classes')
+                    .insert([{ ...formData, created_at: new Date().toISOString() }]);
+
+                if (!error) {
+                    showToast('✅ Class created successfully!');
+                    setFormData({ title: '', level: '', tutor_id: '', price_per_learner: 0, meeting_link: '', scheduled_time: '', is_live: false, description: '' });
+                    loadClasses();
+                }
+            };
+
+            const toggleStatus = async (id, currentStatus) => {
+                const client = getSupabaseClient();
+                if (!client) return;
+
+                const { error } = await client
+                    .from('classes')
+                    .update({ is_live: !currentStatus })
+                    .eq('id', id);
+
+                if (!error) {
+                    showToast(`✅ Class ${!currentStatus ? 'started' : 'ended'}`);
+                    loadClasses();
+                }
+            };
+
+            const deleteClass = async (id) => {
+                const client = getSupabaseClient();
+                if (!client) return;
+
+                if (!confirm('Delete this class?')) return;
+                const { error } = await client
+                    .from('classes')
+                    .delete()
+                    .eq('id', id);
+
+                if (!error) {
+                    showToast('✅ Class deleted');
+                    loadClasses();
+                }
+            };
+
+            return (
+                <div className="fade-in space-y-6">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">📹 Create Live Class</h3>
+                        <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Class Title *</label>
+                                <input type="text" value={formData.title} onChange={(e) => setFormData({...formData, title: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" required />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Target Level *</label>
+                                <select value={formData.level} onChange={(e) => setFormData({...formData, level: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" required>
+                                    <option value="">Select</option>
+                                    <option value="primary-cbc">Primary School CBC</option>
+                                    <option value="junior-secondary">Junior Secondary School (JSS)</option>
+                                    <option value="high-school">High School 8-4-4 / SSS</option>
+                                    <option value="exam-bootcamp">Exam Revision Bootcamp</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Assign Tutor *</label>
+                                <select value={formData.tutor_id} onChange={(e) => setFormData({...formData, tutor_id: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" required>
+                                    <option value="">Select Tutor</option>
+                                    {tutors.filter(t => t.status === 'active').map(t => (
+                                        <option key={t.id} value={t.id}>{t.name} ({t.specialization || 'General'})</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Price Per Learner (KES)</label>
+                                <input type="number" value={formData.price_per_learner} onChange={(e) => setFormData({...formData, price_per_learner: parseFloat(e.target.value) || 0})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" min="0" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Meeting Link *</label>
+                                <input type="url" value={formData.meeting_link} onChange={(e) => setFormData({...formData, meeting_link: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" placeholder="https://meet.google.com/..." required />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Scheduled Time *</label>
+                                <input type="datetime-local" value={formData.scheduled_time} onChange={(e) => setFormData({...formData, scheduled_time: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" required />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
+                                <select value={formData.is_live} onChange={(e) => setFormData({...formData, is_live: e.target.value === 'true'})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
+                                    <option value="false">🔴 Scheduled</option>
+                                    <option value="true">🟢 Live Now</option>
+                                </select>
+                            </div>
+                            <div className="md:col-span-2">
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
+                                <textarea value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" rows="2"></textarea>
+                            </div>
+                            <div className="md:col-span-2">
+                                <button type="submit" className="px-6 py-2 bg-[#D4A017] text-[#0a1a3a] font-semibold rounded-lg hover:bg-[#FCD34D] transition">📹 Create Class</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">📋 Live Classes</h3>
+                            <button onClick={loadClasses} className="text-sm text-[#D4A017] hover:text-[#FCD34D] transition">🔄 Refresh</button>
+                        </div>
+                        {classes.length === 0 ? (
+                            <div className="text-center py-8 text-gray-500 dark:text-gray-400">No classes created yet</div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead className="bg-gray-50 dark:bg-gray-700/50">
+                                        <tr>
+                                            <th className="px-4 py-2 text-left text-gray-600 dark:text-gray-400">Title</th>
+                                            <th className="px-4 py-2 text-left text-gray-600 dark:text-gray-400">Tutor</th>
+                                            <th className="px-4 py-2 text-left text-gray-600 dark:text-gray-400">Level</th>
+                                            <th className="px-4 py-2 text-left text-gray-600 dark:text-gray-400">Price</th>
+                                            <th className="px-4 py-2 text-left text-gray-600 dark:text-gray-400">Status</th>
+                                            <th className="px-4 py-2 text-left text-gray-600 dark:text-gray-400">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {classes.map(c => {
+                                            const tutor = tutors.find(t => t.id === c.tutor_id);
+                                            return (
+                                                <tr key={c.id} className="border-t border-gray-100 dark:border-gray-700">
+                                                    <td className="px-4 py-2 font-medium text-gray-800 dark:text-white">{c.title}</td>
+                                                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{tutor ? tutor.name : '—'}</td>
+                                                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{c.level || '—'}</td>
+                                                    <td className="px-4 py-2 font-semibold text-[#D4A017]">{c.price_per_learner === 0 ? 'FREE' : 'KES ' + c.price_per_learner}</td>
+                                                    <td className="px-4 py-2"><span className={`status-badge ${c.is_live ? 'live' : 'draft'}`}>{c.is_live ? '🟢 Live' : '⏳ Scheduled'}</span></td>
+                                                    <td className="px-4 py-2 flex gap-2 flex-wrap">
+                                                        <button onClick={() => toggleStatus(c.id, c.is_live)} className="btn-sm gold">
+                                                            {c.is_live ? '⏸️ End' : '▶️ Start'}
+                                                        </button>
+                                                        <button onClick={() => deleteClass(c.id)} className="btn-sm delete">🗑️</button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
 
         // ── ORDERS MODULE ──
         function OrdersModule() {
