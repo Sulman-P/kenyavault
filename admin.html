@@ -3,1795 +3,1985 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>KenyaVault Admin Panel — Advanced LMS Dashboard</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <title>KenyaVault — Admin Dashboard</title>
+    <meta name="description" content="Complete admin control panel for KenyaVault LMS and e-commerce platform." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
     <style>
+        /* ── ROOT VARIABLES ── */
+        :root {
+            --navy: #0a1a3a;
+            --navy-light: #1a2a5a;
+            --navy-dark: #060f24;
+            --gold: #D4A017;
+            --gold-light: #FCD34D;
+            --gold-pale: #fdf2d6;
+            --white: #FFFFFF;
+            --off-white: #fafcff;
+            --surface: #f5f7fa;
+            --text: #0a1a3a;
+            --muted: #4a5a7a;
+            --border: #e2e6ee;
+            --radius: 12px;
+            --shadow-sm: 0 1px 2px rgba(10,26,58,0.05);
+            --shadow-md: 0 4px 6px -1px rgba(10,26,58,0.1);
+            --shadow-lg: 0 10px 15px -3px rgba(10,26,58,0.1);
+            --transition: all 0.2s ease;
+            --max-width: 1440px;
+            --sidebar-width: 240px;
+            --safearea-bottom: env(safe-area-inset-bottom, 0px);
+        }
+
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: #f3f4f6;
-            transition: background 0.3s ease, color 0.3s ease;
+            background: #f1f5f9;
+            color: var(--text);
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+            padding-bottom: calc(20px + var(--safearea-bottom));
         }
-        .dark body {
-            background: #111827;
-            color: #e5e7eb;
-        }
+        a { text-decoration: none; color: inherit; }
+        button { cursor: pointer; border: none; background: none; font-family: inherit; }
+
+        /* ── SCROLLBAR ── */
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
-        .dark ::-webkit-scrollbar-thumb { background: #374151; }
-        .sidebar-transition {
-            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        ::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+        /* ── LAYOUT ── */
+        .admin-container {
+            display: flex;
+            min-height: 100vh;
         }
-        .fade-in {
-            animation: fadeIn 0.3s ease;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(8px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        .status-badge {
-            padding: 2px 10px;
-            border-radius: 9999px;
-            font-size: 0.75rem;
-            font-weight: 600;
-        }
-        .status-badge.pending { background: #fef3c7; color: #92400e; }
-        .status-badge.active { background: #dbeafe; color: #1e40af; }
-        .status-badge.completed { background: #d1fae5; color: #065f46; }
-        .status-badge.rejected { background: #fee2e2; color: #991b1b; }
-        .status-badge.pending_verification { background: #fef3c7; color: #92400e; }
-        .status-badge.confirmed { background: #dbeafe; color: #1e40af; }
-        .status-badge.suspended { background: #fee2e2; color: #991b1b; }
-        .status-badge.live { background: #d1fae5; color: #065f46; }
-        .status-badge.paid { background: #d1fae5; color: #065f46; }
-        .dark .status-badge.pending { background: #78350f; color: #fbbf24; }
-        .dark .status-badge.active { background: #1e3a5f; color: #60a5fa; }
-        .dark .status-badge.completed { background: #064e3b; color: #34d399; }
-        .dark .status-badge.rejected { background: #7f1d1d; color: #f87171; }
-        .dark .status-badge.pending_verification { background: #78350f; color: #fbbf24; }
-        .dark .status-badge.confirmed { background: #1e3a5f; color: #60a5fa; }
-        .dark .status-badge.suspended { background: #7f1d1d; color: #f87171; }
-        .dark .status-badge.live { background: #064e3b; color: #34d399; }
-        .dark .status-badge.paid { background: #064e3b; color: #34d399; }
-        
-        .login-bg {
-            background: linear-gradient(135deg, #0a1a3a 0%, #1a2a5a 50%, #2a3a6a 100%);
-            position: relative;
-            overflow: hidden;
-        }
-        .login-bg::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            background-image: url("data:image/svg+xml,%3Csvg width='80' height='80' viewBox='0 0 80 80' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23FFFFFF' fill-opacity='0.04'%3E%3Cpath d='M40 20c-2.2 0-4 1.8-4 4v24c0 2.2 1.8 4 4 4h24c2.2 0 4-1.8 4-4V24c0-2.2-1.8-4-4-4H40zm0 2h24c1.1 0 2 .9 2 2v24c0 1.1-.9 2-2 2H40c-1.1 0-2-.9-2-2V24c0-1.1.9-2 2-2zM16 32c-2.2 0-4 1.8-4 4v24c0 2.2 1.8 4 4 4h24c2.2 0 4-1.8 4-4V36c0-2.2-1.8-4-4-4H16zm0 2h24c1.1 0 2 .9 2 2v24c0 1.1-.9 2-2 2H16c-1.1 0-2-.9-2-2V36c0-1.1.9-2 2-2z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E"),
-                url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23FCD34D' fill-opacity='0.03'%3E%3Cpath d='M50 30L20 46l30 16 30-16-30-16zm0 0l-20 10 20 10 20-10-20-10zM20 46v18l30 16 30-16V46l-30 16-30-16z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
-            background-size: 80px 80px, 100px 100px;
-            background-position: 0 0, 40px 20px;
-            pointer-events: none;
-        }
-        .login-box {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-        .input-glow:focus {
-            box-shadow: 0 0 0 3px rgba(212, 160, 23, 0.3), 0 0 20px rgba(212, 160, 23, 0.1);
-        }
-        .btn-gold {
-            background: #D4A017;
-            color: #0a1a3a;
-            transition: all 0.2s ease;
-        }
-        .btn-gold:hover {
-            background: #FCD34D;
-            transform: translateY(-1px);
-        }
-        .gold-text { color: #D4A017; }
-        .gold-bg { background: #D4A017; }
-        .navy-bg { background: #0a1a3a; }
-        
-        .new-order-flash {
-            animation: flashRow 1s ease 3;
-        }
-        @keyframes flashRow {
-            0%, 100% { background: transparent; }
-            50% { background: rgba(212, 160, 23, 0.15); }
-        }
-        .dark .new-order-flash {
-            animation: flashRowDark 1s ease 3;
-        }
-        @keyframes flashRowDark {
-            0%, 100% { background: transparent; }
-            50% { background: rgba(212, 160, 23, 0.2); }
-        }
-        
-        .toast-container {
+
+        /* ── SIDEBAR ── */
+        .sidebar {
+            width: var(--sidebar-width);
+            background: var(--navy);
+            color: #c8d6e5;
             position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 99999;
-            max-width: 380px;
-            width: 100%;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            overflow-y: auto;
+            z-index: 100;
+            transition: transform 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid rgba(212,160,23,0.15);
         }
-        .toast-item {
-            background: white;
-            border-radius: 12px;
-            padding: 14px 18px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.15);
-            border-left: 4px solid #7C3AED;
-            margin-bottom: 8px;
-            animation: slideInRight 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        .sidebar-logo {
+            padding: 20px 20px 16px;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            font-family: 'Sora', sans-serif;
+            font-weight: 800;
+            font-size: 1.2rem;
+            color: var(--white);
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
-        .dark .toast-item {
-            background: #1f2937;
+        .sidebar-logo span { color: var(--gold-light); }
+        .sidebar-logo .badge-admin {
+            font-size: 0.5rem;
+            font-weight: 700;
+            background: var(--gold);
+            color: var(--navy);
+            padding: 2px 8px;
+            border-radius: 99px;
+            letter-spacing: 0.5px;
         }
-        .toast-item .toast-title {
-            font-weight: 600;
-            font-size: 0.85rem;
-            color: #1f2937;
+
+        .sidebar-nav {
+            padding: 16px 12px;
+            flex: 1;
         }
-        .dark .toast-item .toast-title { color: #f3f4f6; }
-        .toast-item .toast-msg {
-            font-size: 0.8rem;
-            color: #6b7280;
+        .sidebar-nav .nav-label {
+            font-size: 0.6rem;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: rgba(255,255,255,0.3);
+            padding: 8px 8px 4px;
         }
-        .dark .toast-item .toast-msg { color: #9ca3af; }
-        @keyframes slideInRight {
-            from { opacity: 0; transform: translateX(40px); }
-            to { opacity: 1; transform: translateX(0); }
-        }
-        
-        .spinner {
-            display: inline-block;
-            width: 16px;
-            height: 16px;
-            border: 2px solid rgba(255,255,255,0.3);
-            border-top-color: #fff;
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-        }
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        .btn-loading .spinner { display: inline-block; }
-        .btn-loading .btn-text { display: none; }
-        .btn-loading .btn-loading-text { display: inline; }
-        .btn-loading .btn-loading-text { display: none; }
-        .btn-loading .btn-loading-text { display: inline; }
-        
-        .drop-zone {
-            border: 2px dashed #d1d5db;
+        .sidebar-nav .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
             border-radius: 8px;
-            padding: 20px;
-            text-align: center;
+            color: #c8d6e5;
+            font-size: 0.82rem;
+            font-weight: 500;
+            transition: var(--transition);
             cursor: pointer;
-            transition: all 0.2s ease;
-            background: #f9fafb;
-        }
-        .drop-zone:hover {
-            border-color: #D4A017;
-            background: rgba(212, 160, 23, 0.05);
-        }
-        .dark .drop-zone {
-            background: #1f2937;
-            border-color: #374151;
-        }
-        .dark .drop-zone:hover {
-            border-color: #D4A017;
-            background: rgba(212, 160, 23, 0.1);
-        }
-        
-        .progress-track {
+            margin-bottom: 2px;
             width: 100%;
-            height: 6px;
-            background: #e5e7eb;
-            border-radius: 99px;
-            overflow: hidden;
-            margin-top: 5px;
+            text-align: left;
         }
-        .dark .progress-track { background: #374151; }
-        .progress-bar {
-            height: 100%;
-            background: #D4A017;
-            border-radius: 99px;
-            transition: width 0.3s ease;
+        .sidebar-nav .nav-item:hover {
+            background: rgba(255,255,255,0.06);
+            color: var(--white);
         }
-        
-        .modal-overlay {
-            position: fixed;
-            inset: 0;
-            z-index: 1000;
-            background: rgba(0,0,0,0.5);
-            backdrop-filter: blur(4px);
-            display: none;
+        .sidebar-nav .nav-item.active {
+            background: rgba(212,160,23,0.15);
+            color: var(--gold-light);
+        }
+        .sidebar-nav .nav-item .nav-icon { width: 20px; text-align: center; font-size: 0.9rem; }
+        .sidebar-nav .nav-item .nav-badge {
+            margin-left: auto;
+            background: var(--gold);
+            color: var(--navy);
+            font-size: 0.55rem;
+            font-weight: 700;
+            padding: 1px 8px;
+            border-radius: 99px;
+        }
+
+        .sidebar-footer {
+            padding: 16px 20px;
+            border-top: 1px solid rgba(255,255,255,0.06);
+            font-size: 0.7rem;
+            color: rgba(255,255,255,0.4);
+        }
+        .sidebar-footer .logout-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #ef4444;
+            font-weight: 600;
+            font-size: 0.78rem;
+            padding: 6px 0;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+        .sidebar-footer .logout-btn:hover { color: #dc2626; }
+
+        /* ── MAIN CONTENT ── */
+        .main-content {
+            margin-left: var(--sidebar-width);
+            flex: 1;
+            padding: 0;
+            min-height: 100vh;
+        }
+
+        /* ── TOP BAR ── */
+        .topbar {
+            background: var(--white);
+            border-bottom: 1px solid var(--border);
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            backdrop-filter: blur(8px);
+            background: rgba(255,255,255,0.95);
+        }
+        .topbar .page-title { font-family: 'Sora', sans-serif; font-weight: 700; font-size: 1.1rem; }
+        .topbar .page-title .sub { font-weight: 400; color: var(--muted); font-size: 0.8rem; font-family: 'Inter', sans-serif; }
+        .topbar-right { display: flex; align-items: center; gap: 12px; }
+        .topbar-right .admin-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: var(--gold);
+            color: var(--navy);
+            display: flex;
             align-items: center;
             justify-content: center;
-            padding: 20px;
+            font-weight: 700;
+            font-size: 0.9rem;
         }
-        .modal-overlay.open { display: flex; }
-        .modal-box {
-            background: white;
-            border-radius: 16px;
+        .topbar-right .live-indicator {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.7rem;
+            color: #16A34A;
+            font-weight: 600;
+        }
+        .topbar-right .live-indicator .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #16A34A;
+            animation: pulse-dot 1.5s infinite;
+        }
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.8); }
+        }
+
+        /* ── HAMBURGER ── */
+        .hamburger {
+            display: none;
+            flex-direction: column;
+            gap: 4px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 4px;
+        }
+        .hamburger span {
+            width: 24px;
+            height: 2px;
+            background: var(--navy);
+            border-radius: 2px;
+            transition: var(--transition);
+        }
+
+        /* ── TAB CONTENT ── */
+        .tab-content {
             padding: 24px;
-            max-width: 600px;
-            width: 100%;
-            max-height: 90vh;
-            overflow-y: auto;
+            display: none;
         }
-        .dark .modal-box { background: #1f2937; }
-        
-        .timeframe-toggle {
+        .tab-content.active { display: block; }
+
+        /* ── STAT CARDS ── */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            background: var(--white);
+            border-radius: var(--radius);
+            padding: 16px 20px;
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow-sm);
+            transition: var(--transition);
+        }
+        .stat-card:hover { box-shadow: var(--shadow-md); }
+        .stat-card .stat-label {
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--muted);
+        }
+        .stat-card .stat-value {
+            font-family: 'Sora', sans-serif;
+            font-size: 1.6rem;
+            font-weight: 800;
+            color: var(--navy);
+            margin-top: 2px;
+        }
+        .stat-card .stat-value .currency { font-size: 1rem; color: var(--muted); }
+        .stat-card .stat-change {
+            font-size: 0.7rem;
+            font-weight: 600;
+            margin-top: 4px;
+        }
+        .stat-card .stat-change.up { color: #16A34A; }
+        .stat-card .stat-change.down { color: #DC2626; }
+
+        /* ── CHART WRAPPER ── */
+        .chart-wrapper {
+            background: var(--white);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            padding: 20px;
+            margin-bottom: 24px;
+            box-shadow: var(--shadow-sm);
+        }
+        .chart-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .chart-header h3 {
+            font-family: 'Sora', sans-serif;
+            font-weight: 700;
+            font-size: 0.95rem;
+        }
+        .chart-header .chart-toggles {
             display: flex;
             gap: 4px;
-            background: #f3f4f6;
+            background: var(--surface);
             border-radius: 8px;
-            padding: 4px;
-            border: 1px solid #e5e7eb;
+            padding: 3px;
         }
-        .dark .timeframe-toggle {
-            background: #1f2937;
-            border-color: #374151;
-        }
-        .timeframe-toggle button {
-            padding: 6px 14px;
+        .chart-header .chart-toggles button {
+            padding: 4px 12px;
             border-radius: 6px;
-            font-size: 0.75rem;
+            font-size: 0.7rem;
             font-weight: 600;
-            color: #6b7280;
+            color: var(--muted);
+            transition: var(--transition);
             background: transparent;
             border: none;
             cursor: pointer;
-            transition: all 0.2s ease;
         }
-        .timeframe-toggle button:hover { color: #1f2937; }
-        .dark .timeframe-toggle button:hover { color: #f3f4f6; }
-        .timeframe-toggle button.active {
-            background: #D4A017;
-            color: #0a1a3a;
+        .chart-header .chart-toggles button.active {
+            background: var(--gold);
+            color: var(--navy);
+            box-shadow: var(--shadow-sm);
         }
-        .dark .timeframe-toggle button.active {
-            background: #D4A017;
-            color: #0a1a3a;
+        .chart-header .chart-toggles button:hover:not(.active) { background: rgba(0,0,0,0.04); }
+        .chart-container { position: relative; height: 280px; }
+
+        /* ── REAL-TIME ORDERS TABLE ── */
+        .orders-section {
+            background: var(--white);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            padding: 20px;
+            box-shadow: var(--shadow-sm);
+            margin-bottom: 24px;
         }
-        
-        .chart-container {
-            height: 280px;
-            position: relative;
+        .orders-section .section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 16px;
         }
-        
-        .class-card {
-            border: 1px solid #e5e7eb;
-            border-radius: 12px;
-            padding: 16px;
-            transition: all 0.2s ease;
+        .orders-section .section-header h3 {
+            font-family: 'Sora', sans-serif;
+            font-weight: 700;
+            font-size: 0.95rem;
         }
-        .class-card:hover {
-            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        .orders-section .section-header .live-badge {
+            font-size: 0.65rem;
+            font-weight: 700;
+            color: #16A34A;
+            background: #f0fdf4;
+            padding: 2px 12px;
+            border-radius: 99px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
         }
-        .dark .class-card {
-            border-color: #374151;
+        .orders-section .section-header .live-badge .pulse {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #16A34A;
+            animation: pulse-dot 1.5s infinite;
         }
-        .dark .class-card:hover {
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+
+        .table-wrap { overflow-x: auto; }
+        .orders-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.82rem;
         }
-        
-        .order-detail-item {
-            border-bottom: 1px solid #e5e7eb;
-            padding: 8px 0;
-        }
-        .order-detail-item:last-child {
-            border-bottom: none;
-        }
-        .dark .order-detail-item {
-            border-color: #374151;
-        }
-        .copy-btn {
-            cursor: pointer;
-            transition: all 0.2s ease;
-            padding: 2px 6px;
-            border-radius: 4px;
-            background: #f3f4f6;
+        .orders-table th {
+            text-align: left;
+            padding: 10px 12px;
+            font-weight: 600;
+            color: var(--muted);
             font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 2px solid var(--border);
         }
-        .copy-btn:hover {
-            background: #D4A017;
-            color: #0a1a3a;
+        .orders-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+            vertical-align: middle;
         }
-        .dark .copy-btn {
-            background: #374151;
-            color: #9ca3af;
+        .orders-table tr:hover td { background: #fafcff; }
+        .orders-table .status-badge {
+            font-size: 0.6rem;
+            font-weight: 700;
+            padding: 2px 10px;
+            border-radius: 99px;
+            display: inline-block;
         }
-        .dark .copy-btn:hover {
-            background: #D4A017;
-            color: #0a1a3a;
+        .status-badge.paid { background: #f0fdf4; color: #16A34A; }
+        .status-badge.pending { background: #fef3c7; color: #92400E; }
+        .status-badge.failed { background: #fef2f2; color: #DC2626; }
+
+        .mpesa-code-badge {
+            background: #f1f5f9;
+            color: var(--text);
+            font-family: 'Inter', monospace;
+            font-size: 0.8rem;
+            font-weight: 700;
+            padding: 2px 10px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            letter-spacing: 1px;
         }
+        .mpesa-code-badge.empty {
+            color: #f59e0b;
+            background: #fef3c7;
+            border-color: #fcd34d;
+            animation: pulse-amber 2s infinite;
+            font-weight: 600;
+        }
+        @keyframes pulse-amber {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        .btn-whatsapp {
+            padding: 4px 12px;
+            border-radius: 6px;
+            background: #25D366;
+            color: #fff;
+            font-size: 0.7rem;
+            font-weight: 600;
+            transition: var(--transition);
+            border: none;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .btn-whatsapp:hover { background: #1da851; transform: translateY(-1px); }
+
+        /* ── FORMS ── */
+        .admin-form {
+            background: var(--white);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            padding: 20px;
+            margin-bottom: 24px;
+            box-shadow: var(--shadow-sm);
+        }
+        .admin-form .form-title {
+            font-family: 'Sora', sans-serif;
+            font-weight: 700;
+            font-size: 0.95rem;
+            margin-bottom: 16px;
+        }
+        .admin-form .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+        .admin-form .form-grid .full-width { grid-column: 1 / -1; }
+        .admin-form label {
+            display: block;
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 4px;
+        }
+        .admin-form label .required { color: #DC2626; }
+        .admin-form input,
+        .admin-form select,
+        .admin-form textarea {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1.5px solid var(--border);
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-family: 'Inter', sans-serif;
+            transition: var(--transition);
+            background: var(--white);
+            color: var(--text);
+        }
+        .admin-form input:focus,
+        .admin-form select:focus,
+        .admin-form textarea:focus {
+            outline: none;
+            border-color: var(--gold);
+            box-shadow: 0 0 0 3px rgba(212,160,23,0.12);
+        }
+        .admin-form textarea { resize: vertical; min-height: 60px; }
+        .admin-form .file-upload-area {
+            border: 2px dashed var(--border);
+            border-radius: 8px;
+            padding: 24px;
+            text-align: center;
+            cursor: pointer;
+            transition: var(--transition);
+            background: var(--surface);
+        }
+        .admin-form .file-upload-area:hover { border-color: var(--gold); background: var(--gold-pale); }
+        .admin-form .file-upload-area .file-icon { font-size: 2rem; color: var(--muted); }
+        .admin-form .file-upload-area .file-text { font-size: 0.8rem; color: var(--muted); margin-top: 4px; }
+        .admin-form .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: var(--border);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 8px;
+            display: none;
+        }
+        .admin-form .progress-bar .progress-fill {
+            height: 100%;
+            background: var(--gold);
+            border-radius: 3px;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+        .btn-primary {
+            padding: 10px 24px;
+            background: var(--gold);
+            color: var(--navy);
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 0.85rem;
+            transition: var(--transition);
+            border: none;
+            cursor: pointer;
+            font-family: 'Sora', sans-serif;
+        }
+        .btn-primary:hover { background: var(--gold-light); transform: translateY(-1px); }
+        .btn-secondary {
+            padding: 10px 24px;
+            background: var(--surface);
+            color: var(--text);
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            transition: var(--transition);
+            border: 1px solid var(--border);
+            cursor: pointer;
+        }
+        .btn-secondary:hover { background: var(--border); }
+
+        /* ── DATA GRID ── */
+        .data-grid {
+            background: var(--white);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            padding: 20px;
+            box-shadow: var(--shadow-sm);
+            overflow-x: auto;
+        }
+        .data-grid .grid-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .data-grid .grid-header h3 {
+            font-family: 'Sora', sans-serif;
+            font-weight: 700;
+            font-size: 0.95rem;
+        }
+
+        .action-btns {
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
+        .action-btns .btn-sm {
+            padding: 2px 10px;
+            border-radius: 4px;
+            font-size: 0.65rem;
+            font-weight: 600;
+            transition: var(--transition);
+            border: none;
+            cursor: pointer;
+        }
+        .btn-sm.activate { background: #f0fdf4; color: #16A34A; }
+        .btn-sm.activate:hover { background: #dcfce7; }
+        .btn-sm.suspend { background: #fef2f2; color: #DC2626; }
+        .btn-sm.suspend:hover { background: #fee2e2; }
+        .btn-sm.edit { background: #eff6ff; color: #2563EB; }
+        .btn-sm.edit:hover { background: #dbeafe; }
+        .btn-sm.delete { background: #fef2f2; color: #DC2626; }
+        .btn-sm.delete:hover { background: #fee2e2; }
+        .btn-sm.draft { background: #fef3c7; color: #92400E; }
+        .btn-sm.live { background: #f0fdf4; color: #16A34A; }
+
+        /* ── TOAST ── */
+        .toast-notification {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 99999;
+            background: var(--navy);
+            color: #fff;
+            padding: 12px 18px;
+            border-radius: 12px;
+            font-size: 0.82rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+            transform: translateY(80px);
+            opacity: 0;
+            transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+            pointer-events: none;
+            max-width: 380px;
+        }
+        .toast-notification.show {
+            transform: translateY(0);
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .toast-notification.error { background: #DC2626; }
+        .toast-notification.success { background: #16A34A; }
+        .toast-notification.info { background: #2563EB; }
+
+        /* ── MOBILE ── */
+        @media (max-width: 768px) {
+            .sidebar {
+                transform: translateX(-100%);
+                width: 280px;
+            }
+            .sidebar.open { transform: translateX(0); }
+            .main-content { margin-left: 0; }
+            .hamburger { display: flex; }
+            .admin-form .form-grid { grid-template-columns: 1fr; }
+            .stats-grid { grid-template-columns: 1fr 1fr; }
+            .chart-container { height: 200px; }
+            .topbar .page-title .sub { display: none; }
+            .orders-table { font-size: 0.7rem; }
+            .orders-table th, .orders-table td { padding: 6px 8px; }
+        }
+        @media (max-width: 480px) {
+            .stats-grid { grid-template-columns: 1fr; }
+            .chart-header { flex-direction: column; align-items: stretch; }
+            .chart-header .chart-toggles { align-self: flex-start; }
+        }
+
+        /* ── SIDEBAR OVERLAY ── */
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.4);
+            z-index: 99;
+            backdrop-filter: blur(2px);
+        }
+        .sidebar-overlay.open { display: block; }
+
+        /* ── STATUS TOGGLES ── */
+        .toggle-switch {
+            position: relative;
+            width: 36px;
+            height: 20px;
+            background: #d1d5db;
+            border-radius: 99px;
+            transition: var(--transition);
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        .toggle-switch.active { background: #16A34A; }
+        .toggle-switch .toggle-knob {
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 16px;
+            height: 16px;
+            background: white;
+            border-radius: 50%;
+            transition: var(--transition);
+            box-shadow: var(--shadow-sm);
+        }
+        .toggle-switch.active .toggle-knob { left: 18px; }
     </style>
 </head>
 <body>
-    <div id="root"></div>
 
-    <script type="text/babel">
-        const { useState, useEffect, useCallback, useMemo, createContext, useContext, useRef, useReducer } = React;
+<div class="admin-container">
 
-        // ── SUPABASE CONFIG ──
-        const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
+    <!-- ════════════ SIDEBAR OVERLAY ════════════ -->
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+    <!-- ════════════ SIDEBAR ════════════ -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-logo">
+            Kenya<span>Vault</span>
+            <span class="badge-admin">ADMIN</span>
+        </div>
+        <nav class="sidebar-nav">
+            <div class="nav-label">Main</div>
+            <button class="nav-item active" data-tab="dashboard" onclick="switchTab('dashboard')">
+                <span class="nav-icon">📊</span> Dashboard
+                <span class="nav-badge" id="orderBadge">0</span>
+            </button>
+            <button class="nav-item" data-tab="resources" onclick="switchTab('resources')">
+                <span class="nav-icon">📦</span> Resources
+            </button>
+            <button class="nav-item" data-tab="tutors" onclick="switchTab('tutors')">
+                <span class="nav-icon">🧑‍🏫</span> Tutors
+            </button>
+            <button class="nav-item" data-tab="classes" onclick="switchTab('classes')">
+                <span class="nav-icon">📹</span> Live Classes
+            </button>
+            <div class="nav-label" style="margin-top:12px;">System</div>
+            <button class="nav-item" onclick="window.location.href='/shop.html'">
+                <span class="nav-icon">🛍️</span> Shop
+            </button>
+        </nav>
+        <div class="sidebar-footer">
+            <div class="logout-btn" onclick="handleLogout()">
+                <i class="fas fa-sign-out-alt"></i> Logout
+            </div>
+        </div>
+    </aside>
+
+    <!-- ════════════ MAIN CONTENT ════════════ -->
+    <main class="main-content">
+
+        <!-- TOP BAR -->
+        <div class="topbar">
+            <div style="display:flex;align-items:center;gap:12px;">
+                <button class="hamburger" onclick="toggleSidebar()">
+                    <span></span><span></span><span></span>
+                </button>
+                <div class="page-title">
+                    <span id="pageTitle">Dashboard</span>
+                    <span class="sub" id="pageSub">— Real-time overview</span>
+                </div>
+            </div>
+            <div class="topbar-right">
+                <div class="live-indicator">
+                    <span class="dot"></span>
+                    Live
+                </div>
+                <div class="admin-avatar">A</div>
+            </div>
+        </div>
+
+        <!-- ════════════ TAB: DASHBOARD ════════════ -->
+        <div class="tab-content active" id="tab-dashboard">
+
+            <!-- Stats -->
+            <div class="stats-grid" id="statsGrid">
+                <div class="stat-card">
+                    <div class="stat-label">Total Revenue</div>
+                    <div class="stat-value"><span class="currency">KES</span> <span id="totalRevenue">0</span></div>
+                    <div class="stat-change up" id="revenueChange">↑ 0% this month</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Total Orders</div>
+                    <div class="stat-value" id="totalOrders">0</div>
+                    <div class="stat-change up" id="ordersChange">↑ 0% this month</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Pending Verification</div>
+                    <div class="stat-value" id="pendingOrders">0</div>
+                    <div class="stat-change" style="color:#f59e0b;">⏳ Awaiting codes</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Active Resources</div>
+                    <div class="stat-value" id="activeResources">0</div>
+                    <div class="stat-change up">📚 Available</div>
+                </div>
+            </div>
+
+            <!-- Chart -->
+            <div class="chart-wrapper">
+                <div class="chart-header">
+                    <h3>📈 Revenue Overview</h3>
+                    <div class="chart-toggles" id="chartToggles">
+                        <button class="active" data-range="daily" onclick="setChartRange('daily')">Daily</button>
+                        <button data-range="weekly" onclick="setChartRange('weekly')">Weekly</button>
+                        <button data-range="monthly" onclick="setChartRange('monthly')">Monthly</button>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="revenueChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Real-time Orders -->
+            <div class="orders-section">
+                <div class="section-header">
+                    <h3>📋 Real-Time Order Monitoring</h3>
+                    <div class="live-badge">
+                        <span class="pulse"></span>
+                        Live Updates
+                    </div>
+                </div>
+                <div class="table-wrap">
+                    <table class="orders-table" id="ordersTable">
+                        <thead>
+                            <tr>
+                                <th>Order ID</th>
+                                <th>Customer</th>
+                                <th>Amount</th>
+                                <th>Status</th>
+                                <th>M-PESA Code</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ordersTableBody">
+                            <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">Loading orders...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ════════════ TAB: RESOURCES ════════════ -->
+        <div class="tab-content" id="tab-resources">
+            <!-- Upload Form -->
+            <div class="admin-form">
+                <div class="form-title">📤 Upload New Resource</div>
+                <form id="resourceForm" class="form-grid">
+                    <div>
+                        <label>Resource Title <span class="required">*</span></label>
+                        <input type="text" id="resTitle" placeholder="e.g., Grade 7 Mathematics Lesson Plan" required />
+                    </div>
+                    <div>
+                        <label>Subject <span class="required">*</span></label>
+                        <select id="resSubject" required>
+                            <option value="">Select Subject</option>
+                            <option value="mathematics">Mathematics</option>
+                            <option value="english">English</option>
+                            <option value="kiswahili">Kiswahili</option>
+                            <option value="integrated-science">Integrated Science</option>
+                            <option value="social-studies">Social Studies</option>
+                            <option value="pre-technical">Pre-Technical</option>
+                            <option value="agriculture">Agriculture</option>
+                            <option value="religious-education">Religious Education</option>
+                            <option value="creative-arts">Creative Arts</option>
+                            <option value="health-pe">Health & PE</option>
+                            <option value="biology">Biology</option>
+                            <option value="chemistry">Chemistry</option>
+                            <option value="physics">Physics</option>
+                            <option value="business">Business</option>
+                            <option value="computer-studies">Computer Studies</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Level <span class="required">*</span></label>
+                        <select id="resLevel" required>
+                            <option value="">Select Level</option>
+                            <option value="pp1">PP1</option>
+                            <option value="pp2">PP2</option>
+                            <option value="grade-1">Grade 1</option>
+                            <option value="grade-2">Grade 2</option>
+                            <option value="grade-3">Grade 3</option>
+                            <option value="grade-4">Grade 4</option>
+                            <option value="grade-5">Grade 5</option>
+                            <option value="grade-6">Grade 6</option>
+                            <option value="grade-7">Grade 7</option>
+                            <option value="grade-8">Grade 8</option>
+                            <option value="grade-9">Grade 9</option>
+                            <option value="grade-10">Grade 10</option>
+                            <option value="grade-11">Grade 11</option>
+                            <option value="grade-12">Grade 12</option>
+                            <option value="form-1">Form 1</option>
+                            <option value="form-2">Form 2</option>
+                            <option value="form-3">Form 3</option>
+                            <option value="form-4">Form 4</option>
+                            <option value="college">College</option>
+                            <option value="tvet">TVET</option>
+                            <option value="university">University</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Curriculum <span class="required">*</span></label>
+                        <select id="resCurriculum" required>
+                            <option value="cbc">CBC</option>
+                            <option value="8-4-4">8-4-4</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Resource Type <span class="required">*</span></label>
+                        <select id="resType" required>
+                            <option value="lesson-plan">Lesson Plan</option>
+                            <option value="scheme-work">Scheme of Work</option>
+                            <option value="revision-paper">Revision Paper</option>
+                            <option value="cbc-portfolio">CBC Portfolio</option>
+                            <option value="exam-paper">Exam Paper</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Price (KES) <span class="required">*</span></label>
+                        <input type="number" id="resPrice" placeholder="0 for free" min="0" value="0" required />
+                    </div>
+                    <div class="full-width">
+                        <label>Description</label>
+                        <textarea id="resDescription" placeholder="Brief description of the resource..." rows="2"></textarea>
+                    </div>
+                    <div class="full-width">
+                        <label>Upload File <span class="required">*</span></label>
+                        <div class="file-upload-area" id="fileUploadArea" onclick="document.getElementById('fileInput').click()">
+                            <div class="file-icon">📄</div>
+                            <div class="file-text">Click to upload or drag & drop</div>
+                            <div style="font-size:0.65rem;color:var(--muted);margin-top:4px;">PDF, DOCX, PPTX, or image files (max 50MB)</div>
+                            <input type="file" id="fileInput" style="display:none;" accept=".pdf,.docx,.pptx,.jpg,.jpeg,.png" onchange="handleFileSelect(this)" />
+                            <div id="fileName" style="font-size:0.75rem;color:var(--gold);margin-top:4px;"></div>
+                        </div>
+                        <div class="progress-bar" id="compressProgress">
+                            <div class="progress-fill" id="compressProgressFill"></div>
+                        </div>
+                        <div id="compressStatus" style="font-size:0.7rem;color:var(--muted);margin-top:4px;"></div>
+                    </div>
+                    <div class="full-width" style="display:flex;gap:12px;flex-wrap:wrap;">
+                        <button type="submit" class="btn-primary" id="uploadBtn">📤 Upload Resource</button>
+                        <button type="reset" class="btn-secondary">Clear</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Resource Grid -->
+            <div class="data-grid">
+                <div class="grid-header">
+                    <h3>📚 Resource Inventory</h3>
+                    <button class="btn-primary" onclick="loadResources()" style="padding:6px 16px;font-size:0.75rem;">🔄 Refresh</button>
+                </div>
+                <div class="table-wrap">
+                    <table class="orders-table">
+                        <thead>
+                            <tr>
+                                <th>Title</th>
+                                <th>Subject</th>
+                                <th>Level</th>
+                                <th>Price</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resourcesTableBody">
+                            <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">Loading resources...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ════════════ TAB: TUTORS ════════════ -->
+        <div class="tab-content" id="tab-tutors">
+            <!-- Add Tutor Form -->
+            <div class="admin-form">
+                <div class="form-title">🧑‍🏫 Add New Tutor</div>
+                <form id="tutorForm" class="form-grid">
+                    <div>
+                        <label>Full Name <span class="required">*</span></label>
+                        <input type="text" id="tutorName" placeholder="e.g., Jane Mwangi" required />
+                    </div>
+                    <div>
+                        <label>Email <span class="required">*</span></label>
+                        <input type="email" id="tutorEmail" placeholder="tutor@example.com" required />
+                    </div>
+                    <div>
+                        <label>Phone</label>
+                        <input type="tel" id="tutorPhone" placeholder="0712 345 678" />
+                    </div>
+                    <div>
+                        <label>Specialization <span class="required">*</span></label>
+                        <select id="tutorSpecialization" required>
+                            <option value="">Select Specialization</option>
+                            <option value="mathematics">Mathematics</option>
+                            <option value="english">English</option>
+                            <option value="kiswahili">Kiswahili</option>
+                            <option value="science">Science</option>
+                            <option value="social-studies">Social Studies</option>
+                            <option value="creative-arts">Creative Arts</option>
+                            <option value="business">Business</option>
+                            <option value="computer-studies">Computer Studies</option>
+                            <option value="special-education">Special Education</option>
+                            <option value="early-childhood">Early Childhood</option>
+                            <option value="tvet">TVET</option>
+                            <option value="university">University</option>
+                        </select>
+                    </div>
+                    <div class="full-width" style="display:flex;gap:12px;flex-wrap:wrap;">
+                        <button type="submit" class="btn-primary">➕ Add Tutor</button>
+                        <button type="reset" class="btn-secondary">Clear</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Tutors List -->
+            <div class="data-grid">
+                <div class="grid-header">
+                    <h3>📋 Tutor Roster</h3>
+                    <button class="btn-primary" onclick="loadTutors()" style="padding:6px 16px;font-size:0.75rem;">🔄 Refresh</button>
+                </div>
+                <div class="table-wrap">
+                    <table class="orders-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Email</th>
+                                <th>Specialization</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tutorsTableBody">
+                            <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px;">Loading tutors...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ════════════ TAB: LIVE CLASSES ════════════ -->
+        <div class="tab-content" id="tab-classes">
+            <!-- Create Class Form -->
+            <div class="admin-form">
+                <div class="form-title">📹 Create Live Class</div>
+                <form id="classForm" class="form-grid">
+                    <div>
+                        <label>Class Title <span class="required">*</span></label>
+                        <input type="text" id="classTitle" placeholder="e.g., Grade 9 Mathematics - KJSEA Prep" required />
+                    </div>
+                    <div>
+                        <label>Target Grade/Level <span class="required">*</span></label>
+                        <select id="classLevel" required>
+                            <option value="">Select Level</option>
+                            <option value="grade-7">Grade 7</option>
+                            <option value="grade-8">Grade 8</option>
+                            <option value="grade-9">Grade 9 (KJSEA)</option>
+                            <option value="grade-10">Grade 10</option>
+                            <option value="grade-11">Grade 11</option>
+                            <option value="grade-12">Grade 12</option>
+                            <option value="form-1">Form 1</option>
+                            <option value="form-2">Form 2</option>
+                            <option value="form-3">Form 3</option>
+                            <option value="form-4">Form 4</option>
+                            <option value="college">College</option>
+                            <option value="tvet">TVET</option>
+                            <option value="university">University</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Assign Tutor <span class="required">*</span></label>
+                        <select id="classTutor" required>
+                            <option value="">Select Tutor</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Price Per Learner (KES) <span class="required">*</span></label>
+                        <input type="number" id="classPrice" placeholder="0 for free" min="0" value="500" required />
+                    </div>
+                    <div>
+                        <label>Meeting Link <span class="required">*</span></label>
+                        <input type="url" id="classMeetingLink" placeholder="https://meet.google.com/..." required />
+                    </div>
+                    <div>
+                        <label>Scheduled Time <span class="required">*</span></label>
+                        <input type="datetime-local" id="classTime" required />
+                    </div>
+                    <div>
+                        <label>Live Status</label>
+                        <select id="classStatus">
+                            <option value="true">🟢 Live Now</option>
+                            <option value="false">🔴 Scheduled (Draft)</option>
+                        </select>
+                    </div>
+                    <div class="full-width">
+                        <label>Description</label>
+                        <textarea id="classDescription" placeholder="What will be covered in this class?" rows="2"></textarea>
+                    </div>
+                    <div class="full-width" style="display:flex;gap:12px;flex-wrap:wrap;">
+                        <button type="submit" class="btn-primary">📹 Create Class</button>
+                        <button type="reset" class="btn-secondary">Clear</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Classes List -->
+            <div class="data-grid">
+                <div class="grid-header">
+                    <h3>📋 Live Classes</h3>
+                    <button class="btn-primary" onclick="loadClasses()" style="padding:6px 16px;font-size:0.75rem;">🔄 Refresh</button>
+                </div>
+                <div class="table-wrap">
+                    <table class="orders-table">
+                        <thead>
+                            <tr>
+                                <th>Title</th>
+                                <th>Tutor</th>
+                                <th>Level</th>
+                                <th>Price</th>
+                                <th>Status</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="classesTableBody">
+                            <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">Loading classes...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </main>
+</div>
+
+<!-- ════════════ TOAST ════════════ -->
+<div class="toast-notification" id="toastNotification">
+    <span id="toastIcon">✅</span>
+    <span id="toastMsg">Success</span>
+</div>
+
+<script>
+    'use strict';
+
+    // ── SUPABASE CONFIG ──
+    const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
+
+    // ── STATE ──
+    let allOrders = [];
+    let allResources = [];
+    let allTutors = [];
+    let allClasses = [];
+    let chartInstance = null;
+    let currentChartRange = 'daily';
+    let selectedFile = null;
+    let compressedFile = null;
+    let supabaseChannel = null;
+
+    // ── TOAST ──
+    let toastTimeout = null;
+
+    function showToast(icon, message, type = 'success') {
+        const toast = document.getElementById('toastNotification');
+        const toastIcon = document.getElementById('toastIcon');
+        const toastMsg = document.getElementById('toastMsg');
         
-        // ── STORAGE CONFIG ──
-        const STORAGE_BUCKET = 'kenyavault-pdfs';
-        const STORAGE_URL = `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}`;
+        toastIcon.textContent = icon;
+        toastMsg.textContent = message;
+        toast.className = 'toast-notification ' + type;
+        
+        if (toastTimeout) clearTimeout(toastTimeout);
+        
+        setTimeout(() => {
+            toast.classList.add('show');
+        }, 10);
+        
+        toastTimeout = setTimeout(() => {
+            toast.classList.remove('show');
+        }, 5000);
+    }
 
-        // ── CONSTANTS ──
-        const ADMIN_CREDENTIALS = {
-            username: 'adminnexalearn@gmail.com',
-            password: 'KenyaVault2026'
+    // ── SIDEBAR ──
+    function toggleSidebar() {
+        document.getElementById('sidebar').classList.toggle('open');
+        document.getElementById('sidebarOverlay').classList.toggle('open');
+    }
+
+    // ── TAB SWITCHING ──
+    function switchTab(tab) {
+        // Update sidebar
+        document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+        document.querySelector(`.nav-item[data-tab="${tab}"]`)?.classList.add('active');
+
+        // Update content
+        document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+        document.getElementById(`tab-${tab}`)?.classList.add('active');
+
+        // Update title
+        const titles = {
+            dashboard: ['Dashboard', '— Real-time overview'],
+            resources: ['Resources', '— Manage content'],
+            tutors: ['Tutors', '— Manage educators'],
+            classes: ['Live Classes', '— Virtual sessions']
         };
+        const t = titles[tab] || ['Dashboard', ''];
+        document.getElementById('pageTitle').textContent = t[0];
+        document.getElementById('pageSub').textContent = t[1];
 
-        const adminModules = [
-            { id: 'dashboard', icon: '📊', label: 'Dashboard', desc: 'Overview & Analytics' },
-            { id: 'resources', icon: '📚', label: 'Resources', desc: 'Advanced Resource Manager' },
-            { id: 'tutors', icon: '🧑‍🏫', label: 'Tutors', desc: 'Tutor Operations Center' },
-            { id: 'classes', icon: '📹', label: 'Classes', desc: 'Virtual Online Class Engine' },
-            { id: 'orders', icon: '📦', label: 'Orders', desc: 'Real-time order management' },
-            { id: 'finance', icon: '💰', label: 'Finance', desc: 'Revenue & Reconciliation' },
-            { id: 'settings', icon: '⚙️', label: 'Settings', desc: 'Configuration' },
-        ];
+        // Load data
+        if (tab === 'dashboard') { loadDashboardData(); }
+        if (tab === 'resources') { loadResources(); }
+        if (tab === 'tutors') { loadTutors(); }
+        if (tab === 'classes') { loadClasses(); }
 
-        // ── CONTEXT ──
-        const AppContext = createContext(null);
+        // Close sidebar on mobile
+        if (window.innerWidth <= 768) {
+            document.getElementById('sidebar').classList.remove('open');
+            document.getElementById('sidebarOverlay').classList.remove('open');
+        }
+    }
 
-        function AppProvider({ children }) {
-            const [darkMode, setDarkMode] = useState(() => localStorage.getItem('kv-dark-mode') === 'true');
-            const [sidebarOpen, setSidebarOpen] = useState(true);
-            const [currentModule, setCurrentModule] = useState('dashboard');
-            const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-            const [isAuthenticated, setIsAuthenticated] = useState(() => sessionStorage.getItem('kv-auth') === 'true');
-            const [authLoading, setAuthLoading] = useState(false);
-            const [authError, setAuthError] = useState('');
-            const [loading, setLoading] = useState(true);
-            const [tutors, setTutors] = useState([]);
-            const [orders, setOrders] = useState([]);
-            const [resources, setResources] = useState([]);
-            const [classes, setClasses] = useState([]);
-            const [toast, setToast] = useState(null);
-            const [newOrderIds, setNewOrderIds] = useState([]);
+    // ── AUTH ──
+    function handleLogout() {
+        if (confirm('Are you sure you want to logout?')) {
+            localStorage.removeItem('supabase.auth.token');
+            window.location.href = '/';
+        }
+    }
 
-            useEffect(() => {
-                localStorage.setItem('kv-dark-mode', darkMode);
-                if (darkMode) document.documentElement.classList.add('dark');
-                else document.documentElement.classList.remove('dark');
-            }, [darkMode]);
+    // ── HELPER: FETCH ──
+    async function supabaseFetch(path, options = {}) {
+        const headers = {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json'
+        };
+        const url = `${SUPABASE_URL}/rest/v1/${path}`;
+        const response = await fetch(url, { ...options, headers });
+        if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        return response.json();
+    }
 
-            useEffect(() => {
-                if (isAuthenticated) {
-                    loadData();
-                    startPolling();
+    async function supabasePost(path, data) {
+        return supabaseFetch(path, {
+            method: 'POST',
+            body: JSON.stringify(data)
+        });
+    }
+
+    async function supabasePatch(path, data) {
+        return supabaseFetch(path, {
+            method: 'PATCH',
+            body: JSON.stringify(data)
+        });
+    }
+
+    async function supabaseDelete(path) {
+        return supabaseFetch(path, { method: 'DELETE' });
+    }
+
+    // ── UPLOAD FILE TO STORAGE ──
+    async function uploadFileToStorage(file, path) {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const response = await fetch(`${SUPABASE_URL}/storage/v1/object/academic-resources/${path}`, {
+            method: 'POST',
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            },
+            body: formData
+        });
+
+        if (!response.ok) throw new Error(`Upload failed: ${response.statusText}`);
+        return response.json();
+    }
+
+    // ── FILE COMPRESSION ──
+    function compressPDF(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    const pdfBytes = new Uint8Array(e.target.result);
+                    const pdfDoc = await PDFLib.PDFDocument.load(pdfBytes);
+                    const compressedBytes = await pdfDoc.save({
+                        useObjectStreams: true,
+                        addDefaultPage: false
+                    });
+                    const compressedFile = new File([compressedBytes], file.name, {
+                        type: 'application/pdf',
+                        lastModified: Date.now()
+                    });
+                    resolve(compressedFile);
+                } catch (err) {
+                    reject(err);
                 }
-                return () => {
-                    stopPolling();
-                };
-            }, [isAuthenticated]);
+            };
+            reader.readAsArrayBuffer(file);
+        });
+    }
 
-            const startPolling = () => {
+    // ── FILE UPLOAD HANDLING ──
+    async function handleFileSelect(input) {
+        const file = input.files[0];
+        if (!file) return;
+
+        selectedFile = file;
+        compressedFile = null;
+        document.getElementById('fileName').textContent = `📎 ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
+        document.getElementById('compressStatus').textContent = '';
+
+        // Show compression progress
+        const progressBar = document.getElementById('compressProgress');
+        const progressFill = document.getElementById('compressProgressFill');
+        progressBar.style.display = 'block';
+        progressFill.style.width = '0%';
+
+        // Compress if PDF
+        if (file.type === 'application/pdf' && file.size > 1024 * 1024) {
+            document.getElementById('compressStatus').textContent = '🔄 Compressing PDF...';
+            
+            try {
+                // Simulate compression progress
+                let progress = 0;
                 const interval = setInterval(() => {
-                    checkNewOrders();
-                }, 8000);
-                window._pollingInterval = interval;
-                setTimeout(checkNewOrders, 2000);
-            };
-
-            const stopPolling = () => {
-                if (window._pollingInterval) {
-                    clearInterval(window._pollingInterval);
-                    window._pollingInterval = null;
-                }
-            };
-
-            const checkNewOrders = async () => {
-                try {
-                    const response = await fetch(`${SUPABASE_URL}/rest/v1/orders?select=*&order=created_at.desc&limit=10`, {
-                        headers: { 
-                            'apikey': SUPABASE_ANON_KEY, 
-                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                            'Content-Type': 'application/json'
-                        }
-                    });
-                    if (response.ok) {
-                        const data = await response.json();
-                        const pendingOrders = data.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification');
-                        
-                        const currentIds = pendingOrders.map(o => o.id);
-                        const newIds = currentIds.filter(id => !newOrderIds.includes(id));
-                        
-                        if (newIds.length > 0) {
-                            setNewOrderIds(prev => [...prev, ...newIds]);
-                            const newOrders = pendingOrders.filter(o => newIds.includes(o.id));
-                            newOrders.forEach(order => {
-                                showToast(
-                                    '🆕 New Order!',
-                                    `Order #${order.payment_ref || order.id.slice(0, 8).toUpperCase()} - ${order.customer_name || 'Customer'}`
-                                );
-                            });
-                            await loadOrders();
-                        }
+                    progress += Math.random() * 15;
+                    if (progress > 90) {
+                        clearInterval(interval);
+                        progress = 90;
                     }
-                } catch (e) {
-                    console.error('Polling error:', e);
-                }
+                    progressFill.style.width = progress + '%';
+                }, 200);
+
+                compressedFile = await compressPDF(file);
+                clearInterval(interval);
+                progressFill.style.width = '100%';
+                
+                const savedSize = ((file.size - compressedFile.size) / 1024 / 1024).toFixed(2);
+                document.getElementById('compressStatus').textContent = `✅ Compressed! Saved ${savedSize} MB (${(compressedFile.size / 1024 / 1024).toFixed(2)} MB)`;
+                document.getElementById('fileName').textContent = `📎 ${compressedFile.name} (${(compressedFile.size / 1024 / 1024).toFixed(2)} MB) ✅`;
+                
+                setTimeout(() => {
+                    progressBar.style.display = 'none';
+                }, 2000);
+                
+            } catch (err) {
+                console.error('Compression error:', err);
+                document.getElementById('compressStatus').textContent = '⚠️ Compression failed, using original file.';
+                compressedFile = file;
+                progressBar.style.display = 'none';
+            }
+        } else {
+            compressedFile = file;
+            progressBar.style.display = 'none';
+            document.getElementById('compressStatus').textContent = '📄 Ready for upload';
+        }
+    }
+
+    // ── RESOURCE MANAGEMENT ──
+    document.getElementById('resourceForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const btn = document.getElementById('uploadBtn');
+        btn.disabled = true;
+        btn.textContent = '⏳ Uploading...';
+
+        try {
+            const title = document.getElementById('resTitle').value.trim();
+            const subject = document.getElementById('resSubject').value;
+            const level = document.getElementById('resLevel').value;
+            const curriculum = document.getElementById('resCurriculum').value;
+            const type = document.getElementById('resType').value;
+            const price = parseFloat(document.getElementById('resPrice').value) || 0;
+            const description = document.getElementById('resDescription').value.trim();
+
+            if (!title || !subject || !level || !type) {
+                showToast('⚠️', 'Please fill in all required fields', 'error');
+                btn.disabled = false;
+                btn.textContent = '📤 Upload Resource';
+                return;
+            }
+
+            if (!compressedFile && !selectedFile) {
+                showToast('⚠️', 'Please select a file to upload', 'error');
+                btn.disabled = false;
+                btn.textContent = '📤 Upload Resource';
+                return;
+            }
+
+            const fileToUpload = compressedFile || selectedFile;
+            const fileExt = fileToUpload.name.split('.').pop();
+            const filePath = `resources/${Date.now()}-${title.replace(/\s+/g, '_')}.${fileExt}`;
+
+            // Upload to storage
+            await uploadFileToStorage(fileToUpload, filePath);
+
+            // Create resource record
+            const resourceData = {
+                title,
+                subject,
+                level,
+                curriculum,
+                resource_type: type,
+                price,
+                description,
+                file_url: filePath,
+                status: 'draft',
+                created_at: new Date().toISOString(),
+                download_count: 0
             };
 
-            const showToast = (title, message) => {
-                setToast({ title, message, id: Date.now() });
-                setTimeout(() => setToast(null), 6000);
-            };
+            await supabasePost('resources', resourceData);
+            showToast('✅', 'Resource uploaded successfully!', 'success');
+            this.reset();
+            document.getElementById('fileName').textContent = '';
+            document.getElementById('compressStatus').textContent = '';
+            selectedFile = null;
+            compressedFile = null;
+            loadResources();
 
-            const loadOrders = async () => {
-                try {
-                    const response = await fetch(`${SUPABASE_URL}/rest/v1/orders?select=*&order=created_at.desc`, {
-                        headers: { 
-                            'apikey': SUPABASE_ANON_KEY, 
-                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                            'Content-Type': 'application/json'
-                        }
-                    });
-                    if (response.ok) {
-                        const data = await response.json();
-                        setOrders(data || []);
-                    }
-                } catch (e) {
-                    console.error('Load orders error:', e);
-                }
-            };
-
-            const loadData = async () => {
-                setLoading(true);
-                try {
-                    await loadOrders();
-                    
-                    const rRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?select=*&order=created_at.desc`, {
-                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
-                    });
-                    if (rRes.ok) {
-                        const data = await rRes.json();
-                        setResources(data || []);
-                    }
-
-                    const tRes = await fetch(`${SUPABASE_URL}/rest/v1/tutors?select=*`, {
-                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
-                    });
-                    if (tRes.ok) {
-                        const data = await tRes.json();
-                        setTutors(data || []);
-                    }
-
-                    const cRes = await fetch(`${SUPABASE_URL}/rest/v1/classes?select=*&order=created_at.desc`, {
-                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
-                    });
-                    if (cRes.ok) {
-                        const data = await cRes.json();
-                        setClasses(data || []);
-                    }
-                } catch (e) { console.error('Load error:', e); }
-                setLoading(false);
-            };
-
-            const toggleDarkMode = () => setDarkMode(!darkMode);
-            const toggleSidebar = () => {
-                if (window.innerWidth < 1024) setMobileSidebarOpen(!mobileSidebarOpen);
-                else setSidebarOpen(!sidebarOpen);
-            };
-
-            const login = (username, password) => {
-                setAuthLoading(true);
-                setAuthError('');
-                return new Promise((resolve, reject) => {
-                    setTimeout(() => {
-                        if (username === ADMIN_CREDENTIALS.username && password === ADMIN_CREDENTIALS.password) {
-                            sessionStorage.setItem('kv-auth', 'true');
-                            sessionStorage.setItem('kv-user', username);
-                            setIsAuthenticated(true);
-                            setAuthLoading(false);
-                            resolve(true);
-                        } else {
-                            setAuthError('Invalid username or password.');
-                            setAuthLoading(false);
-                            reject(new Error('Invalid credentials'));
-                        }
-                    }, 800);
-                });
-            };
-
-            const logout = () => {
-                stopPolling();
-                sessionStorage.removeItem('kv-auth');
-                sessionStorage.removeItem('kv-user');
-                setIsAuthenticated(false);
-                setCurrentModule('dashboard');
-                window.location.href = '/';
-            };
-
-            const showNotification = (msg, type = 'success') => {
-                setToast({ title: type === 'success' ? '✅ Success' : '❌ Error', message: msg, id: Date.now() });
-                setTimeout(() => setToast(null), 4000);
-            };
-
-            return (
-                <AppContext.Provider value={{
-                    darkMode, toggleDarkMode,
-                    sidebarOpen, setSidebarOpen,
-                    mobileSidebarOpen, setMobileSidebarOpen,
-                    currentModule, setCurrentModule,
-                    isAuthenticated,
-                    authLoading, authError,
-                    login, logout,
-                    loading,
-                    tutors, setTutors,
-                    orders, setOrders,
-                    resources, setResources,
-                    classes, setClasses,
-                    toast, showToast,
-                    toggleSidebar,
-                    loadData,
-                    loadOrders,
-                    newOrderIds,
-                    setNewOrderIds,
-                    showNotification
-                }}>
-                    {children}
-                </AppContext.Provider>
-            );
+        } catch (err) {
+            console.error('Upload error:', err);
+            showToast('❌', 'Upload failed: ' + err.message, 'error');
         }
 
-        function useApp() {
-            const context = useContext(AppContext);
-            if (!context) throw new Error('useApp must be used within AppProvider');
-            return context;
+        btn.disabled = false;
+        btn.textContent = '📤 Upload Resource';
+    });
+
+    async function loadResources() {
+        try {
+            const data = await supabaseFetch('resources?order=created_at.desc');
+            allResources = data || [];
+            renderResources();
+        } catch (err) {
+            console.error('Load resources error:', err);
+            document.getElementById('resourcesTableBody').innerHTML = 
+                `<tr><td colspan="6" style="text-align:center;color:#DC2626;padding:24px;">❌ Failed to load resources</td></tr>`;
+        }
+    }
+
+    function renderResources() {
+        const tbody = document.getElementById('resourcesTableBody');
+        if (!allResources.length) {
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">No resources found</td></tr>`;
+            return;
         }
 
-        // ── TOAST ──
-        function ToastContainer() {
-            const { toast } = useApp();
-            if (!toast) return null;
-
-            return (
-                <div className="toast-container">
-                    <div className="toast-item">
-                        <div className="toast-title">{toast.title}</div>
-                        <div className="toast-msg">{toast.message}</div>
+        tbody.innerHTML = allResources.map(r => `
+            <tr>
+                <td><strong>${r.title}</strong></td>
+                <td>${r.subject || '—'}</td>
+                <td>${r.level || '—'}</td>
+                <td>${r.price === 0 ? 'FREE' : 'KES ' + r.price}</td>
+                <td><span class="status-badge ${r.status === 'live' ? 'paid' : 'pending'}">${r.status || 'draft'}</span></td>
+                <td>
+                    <div class="action-btns">
+                        <button class="btn-sm edit" onclick="toggleResourceStatus('${r.id}')">${r.status === 'live' ? '📄 Draft' : '✅ Publish'}</button>
+                        <button class="btn-sm edit" onclick="editResourcePrice('${r.id}')">💰 Price</button>
+                        <button class="btn-sm delete" onclick="deleteResource('${r.id}')">🗑️</button>
                     </div>
-                </div>
-            );
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    async function toggleResourceStatus(id) {
+        const resource = allResources.find(r => r.id === id);
+        if (!resource) return;
+        const newStatus = resource.status === 'live' ? 'draft' : 'live';
+        try {
+            await supabasePatch(`resources?id=eq.${id}`, { status: newStatus });
+            showToast('✅', `Resource ${newStatus === 'live' ? 'published' : 'drafted'}`, 'success');
+            loadResources();
+        } catch (err) {
+            showToast('❌', 'Status update failed', 'error');
         }
+    }
 
-        // ── LOGIN PAGE ──
-        function LoginPage() {
-            const { login, authLoading, authError, darkMode, toggleDarkMode } = useApp();
-            const [username, setUsername] = useState('adminnexalearn@gmail.com');
-            const [password, setPassword] = useState('');
-
-            const handleSubmit = async (e) => {
-                e.preventDefault();
-                try { await login(username, password); } catch (err) {}
-            };
-
-            return (
-                <div className="min-h-screen login-bg flex items-center justify-center p-4 relative">
-                    <button onClick={toggleDarkMode} className="absolute top-4 right-4 p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition">
-                        {darkMode ? '☀️' : '🌙'}
-                    </button>
-                    <div className="w-full max-w-md relative z-10">
-                        <div className="text-center mb-8">
-                            <div className="inline-flex items-center gap-3 bg-white/10 backdrop-blur-sm px-6 py-3 rounded-2xl border border-white/10">
-                                <div className="w-10 h-10 rounded-xl bg-[#D4A017] flex items-center justify-center text-[#0a1a3a] font-bold text-lg">KV</div>
-                                <div className="text-left">
-                                    <h1 className="text-xl font-bold text-white">Kenya<span className="text-[#FCD34D]">Vault</span></h1>
-                                    <p className="text-xs text-gray-400">Admin Portal</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="login-box rounded-2xl p-8 shadow-2xl border border-white/10">
-                            <h2 className="text-2xl font-bold text-white mb-2">Welcome Back</h2>
-                            <p className="text-gray-400 text-sm mb-6">Sign in to manage your KenyaVault platform</p>
-                            {authError && <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm">{authError}</div>}
-                            <form onSubmit={handleSubmit}>
-                                <div className="mb-4">
-                                    <label className="block text-gray-300 text-sm font-medium mb-2">Email / Username</label>
-                                    <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#D4A017] input-glow transition" required />
-                                </div>
-                                <div className="mb-4">
-                                    <label className="block text-gray-300 text-sm font-medium mb-2">Password</label>
-                                    <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#D4A017] input-glow transition" required />
-                                </div>
-                                <button type="submit" disabled={authLoading} className="w-full py-3 bg-[#D4A017] hover:bg-[#FCD34D] text-[#0a1a3a] font-semibold rounded-xl transition flex items-center justify-center gap-2 disabled:opacity-50">
-                                    {authLoading ? '⏳ Signing in...' : '🔑 Sign In'}
-                                </button>
-                            </form>
-                        </div>
-                    </div>
-                </div>
-            );
+    async function editResourcePrice(id) {
+        const resource = allResources.find(r => r.id === id);
+        if (!resource) return;
+        const newPrice = prompt('Enter new price (KES):', resource.price);
+        if (newPrice === null) return;
+        const price = parseFloat(newPrice);
+        if (isNaN(price) || price < 0) {
+            showToast('⚠️', 'Please enter a valid price', 'error');
+            return;
         }
-
-        // ── SIDEBAR ──
-        function Sidebar() {
-            const { darkMode, sidebarOpen, mobileSidebarOpen, currentModule, setCurrentModule, toggleSidebar, logout } = useApp();
-            const isVisible = sidebarOpen || mobileSidebarOpen;
-
-            return (
-                <>
-                    {mobileSidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={toggleSidebar} />}
-                    <aside className={`fixed lg:sticky top-0 left-0 z-50 h-screen w-64 bg-[#0a1a3a] border-r border-[#D4A017]/20 sidebar-transition ${isVisible ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'} lg:w-20 lg:hover:w-64 group flex flex-col`}>
-                        <div className="flex items-center gap-3 px-4 h-16 border-b border-[#D4A017]/20 flex-shrink-0">
-                            <div className="w-8 h-8 rounded-lg bg-[#D4A017] flex items-center justify-center text-[#0a1a3a] font-bold text-sm flex-shrink-0">KV</div>
-                            <span className={`font-bold text-lg text-white whitespace-nowrap transition-opacity duration-300 ${!sidebarOpen ? 'lg:opacity-0 lg:group-hover:opacity-100' : 'opacity-100'}`}>KenyaVault</span>
-                            <span className={`text-[10px] font-bold text-[#D4A017] bg-[#D4A017]/20 px-2 py-0.5 rounded-full transition-opacity duration-300 ${!sidebarOpen ? 'lg:opacity-0 lg:group-hover:opacity-100' : 'opacity-100'}`}>Admin</span>
-                        </div>
-                        <nav className="flex-1 overflow-y-auto py-4 px-3">
-                            {adminModules.map((mod) => (
-                                <button key={mod.id} onClick={() => { setCurrentModule(mod.id); if (mobileSidebarOpen) toggleSidebar(); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all group/item relative ${currentModule === mod.id ? 'bg-[#D4A017]/20 text-[#FCD34D]' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}>
-                                    <span className="text-xl flex-shrink-0">{mod.icon}</span>
-                                    <span className={`text-sm font-medium whitespace-nowrap transition-opacity duration-300 ${!sidebarOpen ? 'lg:opacity-0 lg:group-hover:opacity-100' : 'opacity-100'}`}>{mod.label}</span>
-                                    <span className={`absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-xs rounded-md opacity-0 pointer-events-none transition-opacity duration-200 ${!sidebarOpen ? 'lg:group-hover/item:opacity-100' : 'opacity-0'}`}>{mod.label}</span>
-                                </button>
-                            ))}
-                        </nav>
-                        <div className="border-t border-[#D4A017]/20 p-4 flex-shrink-0 space-y-3">
-                            <button onClick={() => setCurrentModule('settings')} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-400 hover:bg-white/5 hover:text-white transition">
-                                <span className="text-xl flex-shrink-0">⚙️</span>
-                                <span className={`text-sm font-medium transition-opacity duration-300 ${!sidebarOpen ? 'lg:opacity-0 lg:group-hover:opacity-100' : 'opacity-100'}`}>Settings</span>
-                            </button>
-                            <button onClick={logout} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-red-400 hover:bg-red-500/10 transition">
-                                <span className="text-xl flex-shrink-0">🚪</span>
-                                <span className={`text-sm font-medium transition-opacity duration-300 ${!sidebarOpen ? 'lg:opacity-0 lg:group-hover:opacity-100' : 'opacity-100'}`}>Logout</span>
-                            </button>
-                        </div>
-                    </aside>
-                </>
-            );
+        try {
+            await supabasePatch(`resources?id=eq.${id}`, { price });
+            showToast('✅', 'Price updated successfully', 'success');
+            loadResources();
+        } catch (err) {
+            showToast('❌', 'Price update failed', 'error');
         }
+    }
 
-        // ── TOPBAR ──
-        function Topbar() {
-            const { darkMode, toggleDarkMode, toggleSidebar, currentModule } = useApp();
-            const currentMod = adminModules.find(m => m.id === currentModule) || adminModules[0];
-
-            return (
-                <header className="sticky top-0 z-40 bg-white/80 dark:bg-[#0a1a3a]/80 backdrop-blur-md border-b border-gray-200 dark:border-[#D4A017]/20">
-                    <div className="flex items-center justify-between px-4 h-16">
-                        <div className="flex items-center gap-3">
-                            <button onClick={toggleSidebar} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 lg:hidden">
-                                <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
-                            </button>
-                            <div>
-                                <h1 className="text-lg font-semibold text-gray-800 dark:text-white hidden sm:block">{currentMod.label}</h1>
-                                <p className="text-xs text-gray-500 dark:text-gray-400 hidden sm:block">{currentMod.desc || 'Manage your platform'}</p>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <span className="text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 px-2 py-1 rounded-full flex items-center gap-1">
-                                <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
-                                Live
-                            </span>
-                            <button onClick={toggleDarkMode} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5">
-                                {darkMode ? <svg className="w-5 h-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" /></svg> : <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>}
-                            </button>
-                            <button className="w-8 h-8 rounded-full bg-[#D4A017] flex items-center justify-center text-[#0a1a3a] font-bold text-sm">A</button>
-                        </div>
-                    </div>
-                </header>
-            );
+    async function deleteResource(id) {
+        if (!confirm('Are you sure you want to delete this resource? This cannot be undone.')) return;
+        try {
+            await supabaseDelete(`resources?id=eq.${id}`);
+            showToast('✅', 'Resource deleted', 'success');
+            loadResources();
+        } catch (err) {
+            showToast('❌', 'Delete failed', 'error');
         }
+    }
 
-        // ── PDF COMPRESSION UTILITY ──
-        function compressPDF(file, onProgress) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = async function(e) {
-                    try {
-                        const arrayBuffer = e.target.result;
-                        const originalSize = file.size;
-                        
-                        const pdfDoc = await PDFLib.PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
-                        const pageCount = pdfDoc.getPageCount();
-                        const newPdf = await PDFLib.PDFDocument.create();
-                        
-                        for (let i = 0; i < pageCount; i++) {
-                            const [page] = await newPdf.copyPages(pdfDoc, [i]);
-                            newPdf.addPage(page);
-                            if (onProgress) {
-                                const progress = ((i + 1) / pageCount) * 100;
-                                onProgress(progress, originalSize);
-                            }
-                        }
-                        
-                        const compressedBytes = await newPdf.save({
-                            useObjectStreams: true,
-                            addDefaultPage: false,
-                            objectsPerTick: 50,
-                        });
-                        
-                        const compressedSize = compressedBytes.length;
-                        const compressionRatio = (1 - compressedSize / originalSize) * 100;
-                        
-                        if (onProgress) {
-                            onProgress(100, originalSize, compressedSize);
-                        }
-                        
-                        const compressedFile = new File(
-                            [compressedBytes],
-                            file.name,
-                            { type: 'application/pdf' }
-                        );
-                        
-                        compressedFile.compressionRatio = compressionRatio;
-                        compressedFile.originalSize = originalSize;
-                        compressedFile.compressedSize = compressedSize;
-                        compressedFile.pageCount = pageCount;
-                        
-                        resolve(compressedFile);
-                    } catch (error) {
-                        console.error('PDF compression error:', error);
-                        reject(error);
-                    }
-                };
-                reader.readAsArrayBuffer(file);
+    // ── TUTOR MANAGEMENT ──
+    document.getElementById('tutorForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        try {
+            const name = document.getElementById('tutorName').value.trim();
+            const email = document.getElementById('tutorEmail').value.trim();
+            const phone = document.getElementById('tutorPhone').value.trim();
+            const specialization = document.getElementById('tutorSpecialization').value;
+
+            if (!name || !email || !specialization) {
+                showToast('⚠️', 'Please fill in all required fields', 'error');
+                return;
+            }
+
+            await supabasePost('tutors', {
+                name,
+                email,
+                phone,
+                specialization,
+                status: 'active',
+                created_at: new Date().toISOString()
             });
+
+            showToast('✅', 'Tutor added successfully!', 'success');
+            this.reset();
+            loadTutors();
+            populateTutorSelect();
+        } catch (err) {
+            showToast('❌', 'Failed to add tutor: ' + err.message, 'error');
         }
+    });
 
-        // ── GENERATE SIGNED URL ──
-        const generateSignedUrl = async (filePath) => {
-            try {
-                if (!filePath) return null;
-                
-                let cleanPath = filePath;
-                cleanPath = cleanPath.replace(/^kenyavault-pdfs\//, '');
-                cleanPath = cleanPath.replace(/^academic-resources\//, '');
-                cleanPath = cleanPath.replace(/^resources\//, '');
-                cleanPath = cleanPath.replace(/^kenyavault-resources\//, '');
-                cleanPath = cleanPath.replace(/^kenyavault-covers\//, '');
-                cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
-                cleanPath = cleanPath.replace(/^\/+/, '');
-                cleanPath = decodeURIComponent(cleanPath);
-                
-                console.log('📁 Generating signed URL for:', cleanPath);
-                
-                const signedRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${STORAGE_BUCKET}/${encodeURIComponent(cleanPath)}?expiresIn=10800`, {
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                    }
-                });
-                
-                if (signedRes.ok) {
-                    const signedData = await signedRes.json();
-                    console.log('✅ Signed URL generated successfully');
-                    return signedData.signedURL || signedData.url || null;
-                } else {
-                    console.log('⚠️ Signed URL failed, trying public URL');
-                    const publicUrl = `${STORAGE_URL}/${encodeURIComponent(cleanPath)}`;
-                    
-                    const checkRes = await fetch(publicUrl, {
-                        method: 'HEAD',
-                        headers: {
-                            'apikey': SUPABASE_ANON_KEY,
-                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                        }
-                    });
-                    
-                    if (checkRes.ok) {
-                        console.log('✅ Public URL works');
-                        return publicUrl;
-                    }
-                    
-                    console.log('❌ File not found:', cleanPath);
-                    return null;
-                }
-            } catch (e) {
-                console.error('❌ Error generating signed URL:', e);
-                return null;
-            }
-        };
-
-        // ── FIND RESOURCE IN STORAGE ──
-        const findResourceInStorage = async (resourceTitle, resourceLevel, resourceSubject) => {
-            try {
-                const listRes = await fetch(`${SUPABASE_URL}/storage/v1/object/list/${STORAGE_BUCKET}`, {
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                    }
-                });
-                
-                if (!listRes.ok) {
-                    console.log('⚠️ Could not list bucket contents');
-                    return null;
-                }
-                
-                const files = await listRes.json();
-                console.log(`📁 Found ${files.length} files in bucket`);
-                
-                const searchTitle = resourceTitle ? resourceTitle.toLowerCase() : '';
-                const searchLevel = resourceLevel ? resourceLevel.toLowerCase() : '';
-                const searchSubject = resourceSubject ? resourceSubject.toLowerCase() : '';
-                
-                const matchingFiles = files.filter(f => {
-                    const fileName = f.name.toLowerCase();
-                    return fileName.includes(searchTitle) || 
-                           (searchLevel && fileName.includes(searchLevel)) || 
-                           (searchSubject && fileName.includes(searchSubject));
-                });
-                
-                if (matchingFiles.length > 0) {
-                    console.log(`✅ Found ${matchingFiles.length} matching files`);
-                    return matchingFiles[matchingFiles.length - 1].name;
-                }
-                
-                return null;
-            } catch (e) {
-                console.error('Error finding resource:', e);
-                return null;
-            }
-        };
-
-        // ── DASHBOARD MODULE ──
-        function DashboardModule() {
-            const { orders, resources, tutors, classes, showNotification } = useApp();
-            const chartRef = useRef(null);
-            const [timeframe, setTimeframe] = useState('daily');
-            const [chartData, setChartData] = useState({ labels: [], values: [] });
-            const { darkMode } = useApp();
-
-            const fetchAndRenderRevenue = useCallback(async (tf) => {
-                try {
-                    const response = await fetch(`${SUPABASE_URL}/rest/v1/orders?select=total_amount,created_at,payment_status`, {
-                        headers: {
-                            'apikey': SUPABASE_ANON_KEY,
-                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                            'Content-Type': 'application/json'
-                        }
-                    });
-                    
-                    if (!response.ok) throw new Error('Failed to fetch revenue data');
-                    
-                    const data = await response.json();
-                    const paidOrders = data.filter(o => o.payment_status === 'paid' || o.payment_status === 'completed' || o.payment_status === 'confirmed');
-                    
-                    let labels = [];
-                    let values = [];
-                    const now = new Date();
-                    
-                    if (tf === 'daily') {
-                        for (let i = 6; i >= 0; i--) {
-                            const date = new Date(now);
-                            date.setDate(date.getDate() - i);
-                            const dateStr = date.toISOString().split('T')[0];
-                            const dayTotal = paidOrders
-                                .filter(o => o.created_at && o.created_at.startsWith(dateStr))
-                                .reduce((sum, o) => sum + (o.total_amount || 0), 0);
-                            labels.push(date.toLocaleDateString('en', { weekday: 'short' }));
-                            values.push(dayTotal);
-                        }
-                    } else if (tf === 'weekly') {
-                        for (let i = 3; i >= 0; i--) {
-                            const weekStart = new Date(now);
-                            weekStart.setDate(weekStart.getDate() - (weekStart.getDay() + 7 * i));
-                            const weekEnd = new Date(weekStart);
-                            weekEnd.setDate(weekEnd.getDate() + 6);
-                            
-                            const weekTotal = paidOrders
-                                .filter(o => {
-                                    if (!o.created_at) return false;
-                                    const orderDate = new Date(o.created_at);
-                                    return orderDate >= weekStart && orderDate <= weekEnd;
-                                })
-                                .reduce((sum, o) => sum + (o.total_amount || 0), 0);
-                            
-                            labels.push(`W${4 - i}`);
-                            values.push(weekTotal);
-                        }
-                    } else if (tf === 'monthly') {
-                        for (let i = 11; i >= 0; i--) {
-                            const month = new Date(now);
-                            month.setMonth(month.getMonth() - i);
-                            const monthStr = month.toISOString().slice(0, 7);
-                            const monthTotal = paidOrders
-                                .filter(o => o.created_at && o.created_at.startsWith(monthStr))
-                                .reduce((sum, o) => sum + (o.total_amount || 0), 0);
-                            labels.push(month.toLocaleDateString('en', { month: 'short' }));
-                            values.push(monthTotal);
-                        }
-                    }
-                    
-                    setChartData({ labels, values });
-                    
-                    if (chartRef.current) {
-                        chartRef.current.data.labels = labels;
-                        chartRef.current.data.datasets[0].data = values;
-                        chartRef.current.update();
-                    }
-                    
-                } catch (error) {
-                    console.error('Revenue fetch error:', error);
-                    showNotification('Error loading revenue data', 'error');
-                }
-            }, [showNotification]);
-
-            useEffect(() => {
-                if (typeof Chart === 'undefined') return;
-                
-                const ctx = document.getElementById('revenueChart')?.getContext('2d');
-                if (!ctx) return;
-                
-                if (chartRef.current) {
-                    chartRef.current.destroy();
-                }
-                
-                const isDark = document.documentElement.classList.contains('dark');
-                const gradient = ctx.createLinearGradient(0, 0, 0, 280);
-                gradient.addColorStop(0, 'rgba(212, 160, 23, 0.3)');
-                gradient.addColorStop(1, 'rgba(212, 160, 23, 0)');
-                
-                chartRef.current = new Chart(ctx, {
-                    type: 'line',
-                    data: {
-                        labels: chartData.labels.length ? chartData.labels : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-                        datasets: [{
-                            label: 'Revenue (KES)',
-                            data: chartData.values.length ? chartData.values : [0, 0, 0, 0, 0, 0, 0],
-                            borderColor: '#D4A017',
-                            backgroundColor: gradient,
-                            fill: true,
-                            tension: 0.4,
-                            pointBackgroundColor: '#D4A017',
-                            pointBorderColor: isDark ? '#1f2937' : '#ffffff',
-                            pointBorderWidth: 2,
-                            pointRadius: 4,
-                            pointHoverRadius: 6,
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: { display: false },
-                            tooltip: {
-                                callbacks: {
-                                    label: function(context) {
-                                        return 'KES ' + context.parsed.y.toLocaleString();
-                                    }
-                                }
-                            }
-                        },
-                        scales: {
-                            y: {
-                                beginAtZero: true,
-                                ticks: {
-                                    callback: (v) => 'KES ' + v.toLocaleString(),
-                                    color: isDark ? '#9ca3af' : '#6b7280'
-                                },
-                                grid: {
-                                    color: isDark ? 'rgba(55,65,81,0.3)' : 'rgba(209,213,219,0.3)'
-                                }
-                            },
-                            x: {
-                                ticks: {
-                                    color: isDark ? '#9ca3af' : '#6b7280'
-                                },
-                                grid: { display: false }
-                            }
-                        },
-                        interaction: {
-                            intersect: false,
-                            mode: 'index'
-                        }
-                    }
-                });
-            }, [darkMode]);
-
-            useEffect(() => {
-                fetchAndRenderRevenue(timeframe);
-            }, [timeframe, fetchAndRenderRevenue]);
-
-            useEffect(() => {
-                const interval = setInterval(() => {
-                    fetchAndRenderRevenue(timeframe);
-                }, 10000);
-                return () => clearInterval(interval);
-            }, [timeframe, fetchAndRenderRevenue]);
-
-            const totalRevenue = orders.reduce((s, o) => s + (o.total_amount || 0), 0);
-            const pendingOrders = orders.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification').length;
-            const confirmedOrders = orders.filter(o => o.payment_status === 'confirmed').length;
-            const completedOrders = orders.filter(o => o.payment_status === 'completed' || o.payment_status === 'paid').length;
-            const activeTutors = tutors.filter(t => t.status === 'active').length;
-            const totalClasses = classes.length;
-            const liveClasses = classes.filter(c => c.is_live === true).length;
-
-            return (
-                <div className="space-y-6 fade-in">
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                        {[
-                            { label: 'Total Revenue', value: 'KES ' + totalRevenue.toLocaleString(), change: '+15%', icon: '💰' },
-                            { label: 'Pending Orders', value: pendingOrders, change: '', icon: '⏳' },
-                            { label: 'Active Tutors', value: activeTutors, change: '', icon: '🧑‍🏫' },
-                            { label: 'Live Classes', value: liveClasses, change: '', icon: '📹' },
-                        ].map((stat, i) => (
-                            <div key={i} className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
-                                <div className="flex items-center justify-between">
-                                    <div className="w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-xl">{stat.icon}</div>
-                                    {stat.change && <span className="text-xs font-medium text-[#D4A017] bg-[#D4A017]/10 px-2 py-0.5 rounded-full">{stat.change}</span>}
-                                </div>
-                                <p className="text-2xl font-bold text-gray-800 dark:text-white mt-2">{stat.value}</p>
-                                <p className="text-sm text-gray-500 dark:text-gray-400">{stat.label}</p>
-                            </div>
-                        ))}
-                    </div>
-
-                    <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="font-semibold text-gray-800 dark:text-white">📈 Revenue Overview</h3>
-                            <div className="timeframe-toggle">
-                                <button onClick={() => setTimeframe('daily')} className={timeframe === 'daily' ? 'active' : ''}>Daily</button>
-                                <button onClick={() => setTimeframe('weekly')} className={timeframe === 'weekly' ? 'active' : ''}>Weekly</button>
-                                <button onClick={() => setTimeframe('monthly')} className={timeframe === 'monthly' ? 'active' : ''}>Monthly</button>
-                            </div>
-                        </div>
-                        <div className="chart-container">
-                            <canvas id="revenueChart"></canvas>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
-                            <div className="flex items-center justify-between">
-                                <span className="text-sm text-gray-500 dark:text-gray-400">Total Orders</span>
-                                <span className="text-2xl font-bold text-blue-600">{orders.length}</span>
-                            </div>
-                        </div>
-                        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
-                            <div className="flex items-center justify-between">
-                                <span className="text-sm text-gray-500 dark:text-gray-400">Total Resources</span>
-                                <span className="text-2xl font-bold text-green-600">{resources.length}</span>
-                            </div>
-                        </div>
-                        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
-                            <div className="flex items-center justify-between">
-                                <span className="text-sm text-gray-500 dark:text-gray-400">Confirmed Orders</span>
-                                <span className="text-2xl font-bold text-purple-600">{confirmedOrders}</span>
-                            </div>
-                        </div>
-                        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
-                            <div className="flex items-center justify-between">
-                                <span className="text-sm text-gray-500 dark:text-gray-400">Total Classes</span>
-                                <span className="text-2xl font-bold text-amber-600">{totalClasses}</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            );
-        }
-
-        // ── RESOURCES MODULE ──
-        function ResourcesModule() {
-            // ... (keep the existing ResourcesModule code)
-            // I'll include it in the full file below
-        }
-
-        // ── TUTORS MODULE ──
-        function TutorsModule() {
-            // ... (keep the existing TutorsModule code)
-        }
-
-        // ── CLASSES MODULE ──
-        function ClassesModule() {
-            // ... (keep the existing ClassesModule code)
-        }
-
-        // ── FINANCE MODULE ──
-        function FinanceModule() {
-            // ... (keep the existing FinanceModule code)
-        }
-
-        // ── SETTINGS MODULE ──
-        function SettingsModule() {
-            // ... (keep the existing SettingsModule code)
-        }
-
-        // ── ORDERS MODULE (FIXED - Handles missing order items) ──
-function OrdersModule() {
-    const { orders, loadOrders, showNotification, newOrderIds, setNewOrderIds, resources } = useApp();
-    const [filter, setFilter] = useState('all');
-    const [loadingOrderId, setLoadingOrderId] = useState(null);
-    const [selectedOrder, setSelectedOrder] = useState(null);
-    const [showOrderDetails, setShowOrderDetails] = useState(false);
-    const [orderItems, setOrderItems] = useState([]);
-    const [generatingLinks, setGeneratingLinks] = useState({});
-    const [loadingItems, setLoadingItems] = useState(false);
-
-    useEffect(() => {
-        const interval = setInterval(() => loadOrders(), 10000);
-        return () => clearInterval(interval);
-    }, []);
-
-    // Fetch order items with resource details - FIXED to handle missing data
-    const fetchOrderItemsWithDetails = async (order) => {
-        setLoadingItems(true);
+    async function loadTutors() {
         try {
-            let items = [];
-            
-            // Try to fetch order items from the database
-            try {
-                const itemsRes = await fetch(`${SUPABASE_URL}/rest/v1/order_items?order_id=eq.${order.id}`, {
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
-                
-                if (itemsRes.ok) {
-                    const data = await itemsRes.json();
-                    if (data && data.length > 0) {
-                        items = data;
-                    }
-                }
-            } catch (e) {
-                console.log('No order items found, using fallback');
-            }
-
-            // If no order items found, create a fallback item from the order data
-            if (items.length === 0) {
-                console.log('Creating fallback item from order data');
-                const fallbackItem = {
-                    id: order.id + '-fallback',
-                    order_id: order.id,
-                    resource_title: order.product_title || 'Educational Resource',
-                    resource_price: order.total_amount || order.product_price || 0,
-                    quantity: 1,
-                    resource_path: order.resource_path || '',
-                    is_fallback: true
-                };
-                
-                // Try to find the resource in the resources table by title
-                if (order.product_title) {
-                    try {
-                        const searchTitle = encodeURIComponent(order.product_title);
-                        const resourceRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?title=ilike.%25${searchTitle}%25&limit=1`, {
-                            headers: {
-                                'apikey': SUPABASE_ANON_KEY,
-                                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                                'Content-Type': 'application/json'
-                            }
-                        });
-                        if (resourceRes.ok) {
-                            const resourcesData = await resourceRes.json();
-                            if (resourcesData && resourcesData.length > 0) {
-                                const matchedResource = resourcesData[0];
-                                fallbackItem.resource_title = matchedResource.title || fallbackItem.resource_title;
-                                fallbackItem.resource_price = matchedResource.price || fallbackItem.resource_price;
-                                fallbackItem.resource_path = matchedResource.file_url || fallbackItem.resource_path;
-                                fallbackItem.resource_id = matchedResource.id;
-                                console.log('✅ Found matching resource:', matchedResource.title);
-                            }
-                        }
-                    } catch (e) {
-                        console.log('Could not find resource in resources table');
-                    }
-                }
-                
-                items = [fallbackItem];
-            }
-
-            // Process each item to get download URLs
-            const itemsWithDetails = await Promise.all(items.map(async (item) => {
-                let downloadUrl = null;
-                let filePath = item.resource_path || '';
-                
-                // If we have a resource_path, try to generate a signed URL
-                if (filePath) {
-                    let cleanPath = filePath;
-                    cleanPath = cleanPath.replace(/^kenyavault-pdfs\//, '');
-                    cleanPath = cleanPath.replace(/^academic-resources\//, '');
-                    cleanPath = cleanPath.replace(/^resources\//, '');
-                    cleanPath = cleanPath.replace(/^kenyavault-resources\//, '');
-                    cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
-                    cleanPath = cleanPath.replace(/^\/+/, '');
-                    cleanPath = decodeURIComponent(cleanPath);
-                    
-                    if (cleanPath) {
-                        try {
-                            const signedRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${STORAGE_BUCKET}/${encodeURIComponent(cleanPath)}?expiresIn=10800`, {
-                                headers: {
-                                    'apikey': SUPABASE_ANON_KEY,
-                                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                                }
-                            });
-                            if (signedRes.ok) {
-                                const signedData = await signedRes.json();
-                                downloadUrl = signedData.signedURL || signedData.url || null;
-                            }
-                        } catch (e) {
-                            console.error('Error generating signed URL:', e);
-                        }
-                        
-                        // If signed URL failed, try public URL
-                        if (!downloadUrl && cleanPath) {
-                            downloadUrl = `${STORAGE_URL}/${encodeURIComponent(cleanPath)}`;
-                        }
-                    }
-                }
-                
-                // If still no download URL, try to find the resource by title in the resources table
-                if (!downloadUrl && item.resource_title) {
-                    try {
-                        const searchTitle = encodeURIComponent(item.resource_title);
-                        const resourceRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?title=ilike.%25${searchTitle}%25&limit=1`, {
-                            headers: {
-                                'apikey': SUPABASE_ANON_KEY,
-                                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                                'Content-Type': 'application/json'
-                            }
-                        });
-                        if (resourceRes.ok) {
-                            const resourcesData = await resourceRes.json();
-                            if (resourcesData && resourcesData.length > 0) {
-                                const resource = resourcesData[0];
-                                if (resource.file_url) {
-                                    // Try to generate signed URL from the resource file_url
-                                    let cleanPath = resource.file_url;
-                                    cleanPath = cleanPath.replace(/^kenyavault-pdfs\//, '');
-                                    cleanPath = cleanPath.replace(/^academic-resources\//, '');
-                                    cleanPath = cleanPath.replace(/^resources\//, '');
-                                    cleanPath = cleanPath.replace(/^kenyavault-resources\//, '');
-                                    cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
-                                    cleanPath = cleanPath.replace(/^\/+/, '');
-                                    cleanPath = decodeURIComponent(cleanPath);
-                                    
-                                    if (cleanPath) {
-                                        try {
-                                            const signedRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${STORAGE_BUCKET}/${encodeURIComponent(cleanPath)}?expiresIn=10800`, {
-                                                headers: {
-                                                    'apikey': SUPABASE_ANON_KEY,
-                                                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                                                }
-                                            });
-                                            if (signedRes.ok) {
-                                                const signedData = await signedRes.json();
-                                                downloadUrl = signedData.signedURL || signedData.url || null;
-                                            }
-                                        } catch (e) {}
-                                        
-                                        if (!downloadUrl && cleanPath) {
-                                            downloadUrl = `${STORAGE_URL}/${encodeURIComponent(cleanPath)}`;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } catch (e) {
-                        console.log('Could not find resource in resources table');
-                    }
-                }
-                
-                return {
-                    ...item,
-                    download_url: downloadUrl,
-                    has_download: !!downloadUrl,
-                    file_url: filePath || item.resource_path || ''
-                };
-            }));
-            
-            setOrderItems(itemsWithDetails);
-            return itemsWithDetails;
-            
-        } catch (e) {
-            console.error('Error fetching order items:', e);
-            showNotification('Error loading order details', 'error');
-            // Create fallback items
-            const fallbackItem = {
-                id: 'fallback',
-                order_id: order.id,
-                resource_title: order.product_title || 'Educational Resource',
-                resource_price: order.total_amount || 0,
-                quantity: 1,
-                resource_path: '',
-                is_fallback: true,
-                download_url: null,
-                has_download: false
-            };
-            setOrderItems([fallbackItem]);
-            return [fallbackItem];
-        } finally {
-            setLoadingItems(false);
+            const data = await supabaseFetch('tutors?order=created_at.desc');
+            allTutors = data || [];
+            renderTutors();
+            populateTutorSelect();
+        } catch (err) {
+            console.error('Load tutors error:', err);
+            document.getElementById('tutorsTableBody').innerHTML = 
+                `<tr><td colspan="5" style="text-align:center;color:#DC2626;padding:24px;">❌ Failed to load tutors</td></tr>`;
         }
-    };
+    }
 
-    const viewOrderDetails = async (order) => {
-        setSelectedOrder(order);
-        setShowOrderDetails(true);
-        setOrderItems([]);
-        setLoadingItems(true);
-        await fetchOrderItemsWithDetails(order);
-    };
+    function renderTutors() {
+        const tbody = document.getElementById('tutorsTableBody');
+        if (!allTutors.length) {
+            tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px;">No tutors found</td></tr>`;
+            return;
+        }
 
-    const closeOrderDetails = () => {
-        setShowOrderDetails(false);
-        setSelectedOrder(null);
-        setOrderItems([]);
-    };
+        tbody.innerHTML = allTutors.map(t => `
+            <tr>
+                <td><strong>${t.name}</strong></td>
+                <td>${t.email}</td>
+                <td>${t.specialization || '—'}</td>
+                <td><span class="status-badge ${t.status === 'active' ? 'paid' : 'pending'}">${t.status || 'inactive'}</span></td>
+                <td>
+                    <div class="action-btns">
+                        <button class="btn-sm ${t.status === 'active' ? 'suspend' : 'activate'}" onclick="toggleTutorStatus('${t.id}')">
+                            ${t.status === 'active' ? '⏸️ Suspend' : '▶️ Activate'}
+                        </button>
+                        <button class="btn-sm delete" onclick="deleteTutor('${t.id}')">🗑️</button>
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+    }
 
-    const handleConfirmOrder = async (order) => {
-        const ref = order.payment_ref || order.id.slice(0, 8).toUpperCase();
-        if (!confirm(`Confirm order #${ref}? This will mark the order as confirmed.`)) return;
+    async function toggleTutorStatus(id) {
+        const tutor = allTutors.find(t => t.id === id);
+        if (!tutor) return;
+        const newStatus = tutor.status === 'active' ? 'suspended' : 'active';
+        try {
+            await supabasePatch(`tutors?id=eq.${id}`, { status: newStatus });
+            showToast('✅', `Tutor ${newStatus === 'active' ? 'activated' : 'suspended'}`, 'success');
+            loadTutors();
+        } catch (err) {
+            showToast('❌', 'Status update failed', 'error');
+        }
+    }
+
+    async function deleteTutor(id) {
+        if (!confirm('Are you sure you want to delete this tutor?')) return;
+        try {
+            await supabaseDelete(`tutors?id=eq.${id}`);
+            showToast('✅', 'Tutor deleted', 'success');
+            loadTutors();
+        } catch (err) {
+            showToast('❌', 'Delete failed', 'error');
+        }
+    }
+
+    function populateTutorSelect() {
+        const select = document.getElementById('classTutor');
+        select.innerHTML = '<option value="">Select Tutor</option>';
+        allTutors.filter(t => t.status === 'active').forEach(t => {
+            select.innerHTML += `<option value="${t.id}">${t.name} (${t.specialization || 'General'})</option>`;
+        });
+    }
+
+    // ── LIVE CLASS MANAGEMENT ──
+    document.getElementById('classForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        try {
+            const title = document.getElementById('classTitle').value.trim();
+            const level = document.getElementById('classLevel').value;
+            const tutor_id = document.getElementById('classTutor').value;
+            const price = parseFloat(document.getElementById('classPrice').value) || 0;
+            const meeting_link = document.getElementById('classMeetingLink').value.trim();
+            const scheduled_time = document.getElementById('classTime').value;
+            const is_live = document.getElementById('classStatus').value === 'true';
+            const description = document.getElementById('classDescription').value.trim();
+
+            if (!title || !level || !tutor_id || !meeting_link || !scheduled_time) {
+                showToast('⚠️', 'Please fill in all required fields', 'error');
+                return;
+            }
+
+            await supabasePost('classes', {
+                title,
+                level,
+                tutor_id,
+                price_per_learner: price,
+                meeting_link,
+                scheduled_time,
+                is_live,
+                description,
+                created_at: new Date().toISOString()
+            });
+
+            showToast('✅', 'Class created successfully!', 'success');
+            this.reset();
+            loadClasses();
+        } catch (err) {
+            showToast('❌', 'Failed to create class: ' + err.message, 'error');
+        }
+    });
+
+    async function loadClasses() {
+        try {
+            const data = await supabaseFetch('classes?order=created_at.desc');
+            allClasses = data || [];
+            renderClasses();
+        } catch (err) {
+            console.error('Load classes error:', err);
+            document.getElementById('classesTableBody').innerHTML = 
+                `<tr><td colspan="6" style="text-align:center;color:#DC2626;padding:24px;">❌ Failed to load classes</td></tr>`;
+        }
+    }
+
+    function renderClasses() {
+        const tbody = document.getElementById('classesTableBody');
+        if (!allClasses.length) {
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">No classes found</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = allClasses.map(c => {
+            const tutor = allTutors.find(t => t.id === c.tutor_id);
+            return `
+            <tr>
+                <td><strong>${c.title}</strong></td>
+                <td>${tutor ? tutor.name : '—'}</td>
+                <td>${c.level || '—'}</td>
+                <td>${c.price_per_learner === 0 ? 'FREE' : 'KES ' + c.price_per_learner}</td>
+                <td><span class="status-badge ${c.is_live ? 'paid' : 'pending'}">${c.is_live ? '🟢 Live' : '⏳ Scheduled'}</span></td>
+                <td>
+                    <div class="action-btns">
+                        <button class="btn-sm edit" onclick="toggleClassStatus('${c.id}')">${c.is_live ? '⏸️ End' : '▶️ Start'}</button>
+                        <button class="btn-sm delete" onclick="deleteClass('${c.id}')">🗑️</button>
+                    </div>
+                </td>
+            </tr>
+        `}).join('');
+    }
+
+    async function toggleClassStatus(id) {
+        const cls = allClasses.find(c => c.id === id);
+        if (!cls) return;
+        const newStatus = !cls.is_live;
+        try {
+            await supabasePatch(`classes?id=eq.${id}`, { is_live: newStatus });
+            showToast('✅', `Class ${newStatus ? 'started' : 'ended'}`, 'success');
+            loadClasses();
+        } catch (err) {
+            showToast('❌', 'Status update failed', 'error');
+        }
+    }
+
+    async function deleteClass(id) {
+        if (!confirm('Are you sure you want to delete this class?')) return;
+        try {
+            await supabaseDelete(`classes?id=eq.${id}`);
+            showToast('✅', 'Class deleted', 'success');
+            loadClasses();
+        } catch (err) {
+            showToast('❌', 'Delete failed', 'error');
+        }
+    }
+
+    // ── DASHBOARD DATA ──
+    async function loadDashboardData() {
+        try {
+            // Load orders
+            const orders = await supabaseFetch('orders?order=created_at.desc');
+            allOrders = orders || [];
+            renderOrders();
+            updateStats();
+            updateChart();
+
+            // Count active resources
+            const resources = await supabaseFetch('resources?status=eq.live');
+            document.getElementById('activeResources').textContent = resources.length || 0;
+
+            // Update badge
+            const pending = allOrders.filter(o => o.payment_status === 'pending').length;
+            document.getElementById('orderBadge').textContent = pending;
+
+        } catch (err) {
+            console.error('Dashboard load error:', err);
+        }
+    }
+
+    function renderOrders() {
+        const tbody = document.getElementById('ordersTableBody');
+        if (!allOrders.length) {
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">No orders found</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = allOrders.slice(0, 50).map(o => {
+            const hasCode = o.mpesa_last_four && o.mpesa_last_four.length === 4;
+            const codeDisplay = hasCode 
+                ? `<span class="mpesa-code-badge">${o.mpesa_last_four}</span>`
+                : `<span class="mpesa-code-badge empty">⏳ Awaiting Code...</span>`;
+
+            return `
+            <tr>
+                <td><code style="font-size:0.7rem;">${o.id?.slice(0, 8) || '—'}</code></td>
+                <td>${o.customer_name || '—'}<br><small style="color:var(--muted);">${o.customer_phone || ''}</small></td>
+                <td>KES ${o.amount || 0}</td>
+                <td><span class="status-badge ${o.payment_status || 'pending'}">${o.payment_status || 'pending'}</span></td>
+                <td>${codeDisplay}</td>
+                <td>
+                    <button class="btn-whatsapp" onclick="sendWhatsAppLink('${o.id}')">
+                        💬 Send Link
+                    </button>
+                </td>
+            </tr>
+        `}).join('');
+    }
+
+    function updateStats() {
+        const totalRevenue = allOrders.reduce((sum, o) => sum + (o.amount || 0), 0);
+        const totalOrders = allOrders.length;
+        const pendingOrders = allOrders.filter(o => o.payment_status === 'pending').length;
+
+        document.getElementById('totalRevenue').textContent = totalRevenue.toLocaleString();
+        document.getElementById('totalOrders').textContent = totalOrders;
+        document.getElementById('pendingOrders').textContent = pendingOrders;
+
+        // Calculate monthly change (simplified)
+        const thisMonth = allOrders.filter(o => {
+            const d = new Date(o.created_at);
+            return d.getMonth() === new Date().getMonth();
+        });
+        const lastMonth = allOrders.filter(o => {
+            const d = new Date(o.created_at);
+            return d.getMonth() === new Date().getMonth() - 1;
+        });
+        const change = lastMonth.length ? ((thisMonth.length - lastMonth.length) / lastMonth.length * 100).toFixed(0) : 0;
+        document.getElementById('ordersChange').textContent = `↑ ${change}% this month`;
+    }
+
+    // ── CHART ──
+    function updateChart() {
+        const labels = [];
+        const data = [];
+        let days = 7;
+
+        if (currentChartRange === 'daily') days = 7;
+        else if (currentChartRange === 'weekly') days = 30;
+        else days = 90;
+
+        for (let i = days - 1; i >= 0; i--) {
+            const d = new Date();
+            d.setDate(d.getDate() - i);
+            const label = currentChartRange === 'daily' 
+                ? d.toLocaleDateString('en', { weekday: 'short' })
+                : currentChartRange === 'weekly'
+                ? d.toLocaleDateString('en', { month: 'short', day: 'numeric' })
+                : d.toLocaleDateString('en', { month: 'short' });
+            labels.push(label);
+
+            const dailyTotal = allOrders
+                .filter(o => {
+                    const od = new Date(o.created_at);
+                    return od.toDateString() === d.toDateString() && o.payment_status === 'paid';
+                })
+                .reduce((sum, o) => sum + (o.amount || 0), 0);
+            data.push(dailyTotal);
+        }
+
+        const ctx = document.getElementById('revenueChart').getContext('2d');
         
-        setLoadingOrderId(order.id);
+        if (chartInstance) {
+            chartInstance.destroy();
+        }
+
+        chartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Revenue (KES)',
+                    data: data,
+                    borderColor: '#D4A017',
+                    backgroundColor: 'rgba(212, 160, 23, 0.1)',
+                    fill: true,
+                    tension: 0.3,
+                    borderWidth: 3,
+                    pointBackgroundColor: '#D4A017',
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2,
+                    pointRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return 'KES ' + context.parsed.y.toLocaleString();
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return 'KES ' + value.toLocaleString();
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    function setChartRange(range) {
+        currentChartRange = range;
+        document.querySelectorAll('.chart-toggles button').forEach(b => b.classList.remove('active'));
+        document.querySelector(`.chart-toggles button[data-range="${range}"]`)?.classList.add('active');
+        updateChart();
+    }
+
+    // ── WHATSAPP LINK GENERATION ──
+    async function sendWhatsAppLink(orderId) {
         try {
-            const updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${order.id}`, {
-                method: 'PATCH',
+            const order = allOrders.find(o => o.id === orderId);
+            if (!order) {
+                showToast('⚠️', 'Order not found', 'error');
+                return;
+            }
+
+            // Generate signed URL for the resource
+            const productId = order.product_id;
+            if (!productId) {
+                showToast('⚠️', 'No product associated with this order', 'error');
+                return;
+            }
+
+            // Get resource details
+            const resources = await supabaseFetch(`resources?id=eq.${productId}`);
+            const resource = resources[0];
+            if (!resource || !resource.file_url) {
+                showToast('⚠️', 'Resource file not found', 'error');
+                return;
+            }
+
+            // Generate signed URL (expires in 7 days)
+            const signedUrl = await generateSignedUrl(resource.file_url);
+            
+            const phone = order.customer_phone || '254700000000';
+            const cleanPhone = phone.replace(/[^0-9]/g, '');
+            const formattedPhone = cleanPhone.startsWith('254') ? cleanPhone : '254' + cleanPhone.replace(/^0/, '');
+
+            const message = `📚 *KenyaVault Resource Download*
+            
+✅ Your order has been confirmed!
+
+📄 *Resource:* ${resource.title || 'Educational Resource'}
+🔗 *Download Link:* ${signedUrl}
+⏰ *Link expires in 7 days*
+
+Thank you for choosing KenyaVault! 🎓`;
+
+            const encodedMessage = encodeURIComponent(message);
+            const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodedMessage}`;
+
+            window.open(whatsappUrl, '_blank');
+            showToast('✅', 'WhatsApp link opened!', 'success');
+
+        } catch (err) {
+            console.error('WhatsApp error:', err);
+            showToast('❌', 'Failed to generate link: ' + err.message, 'error');
+        }
+    }
+
+    async function generateSignedUrl(filePath) {
+        try {
+            const response = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/academic-resources/${filePath}?expiresIn=604800`, {
+                method: 'POST',
                 headers: {
                     'apikey': SUPABASE_ANON_KEY,
                     'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
                     'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    payment_status: 'confirmed',
-                    confirmed_at: new Date().toISOString()
-                })
-            });
-
-            if (!updateRes.ok) throw new Error('Failed to update order');
-
-            showNotification('✅ Order confirmed!', 'success');
-            await loadOrders();
-            setNewOrderIds(prev => prev.filter(id => id !== order.id));
-            
-        } catch (e) {
-            console.error('Confirm error:', e);
-            showNotification('Error confirming order: ' + e.message, 'error');
-        }
-        setLoadingOrderId(null);
-    };
-
-    const handleResendWhatsApp = async (order) => {
-        setGeneratingLinks(prev => ({ ...prev, [order.id]: true }));
-        try {
-            const items = await fetchOrderItemsWithDetails(order);
-            const ref = order.payment_ref || order.id.slice(0, 8).toUpperCase();
-            
-            let message = `✅ *Your KenyaVault Order is Ready!*\n\n`;
-            message += `Order #: *${ref}*\n\n`;
-            
-            if (items && items.length > 0) {
-                items.forEach((item, idx) => {
-                    message += `Resource ${idx + 1}: *${item.resource_title || 'Educational Resource'}* (x${item.quantity || 1})\n`;
-                });
-                message += `\n`;
-            } else {
-                message += `Resource: *${order.product_title || 'Educational Resource'}*\n\n`;
-            }
-            
-            message += `Amount: *KES ${order.total_amount || 0}*\n\n`;
-            message += `📥 *Download Links:*\n`;
-            
-            let hasLinks = false;
-            if (items && items.length > 0) {
-                items.forEach((item, idx) => {
-                    if (item.download_url) {
-                        message += `\n${idx + 1}. ${item.resource_title || 'Resource'}:\n${item.download_url}\n`;
-                        hasLinks = true;
-                    } else if (item.file_url) {
-                        message += `\n${idx + 1}. ${item.resource_title || 'Resource'}:\n${item.file_url}\n`;
-                        hasLinks = true;
-                    }
-                });
-            }
-            
-            if (!hasLinks) {
-                message += `\n⚠️ Please contact support to get your download links.\n`;
-                message += `Support WhatsApp: +254 768 515 494\n`;
-            }
-            
-            message += `\n🔒 *Valid for 3 hours.*\n\n`;
-            message += `Thank you for choosing KenyaVault! 📚\n`;
-            message += `Need help? WhatsApp: +254 768 515 494`;
-
-            const phone = order.customer_phone || order.phone || '254700000000';
-            const formattedPhone = phone.replace(/^0/, '254').replace(/^\+/, '');
-            const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`;
-            
-            window.open(whatsappUrl, '_blank', 'width=400,height=600');
-            showNotification('📱 WhatsApp opened!', 'success');
-            
-        } catch (e) {
-            console.error('Resend error:', e);
-            showNotification('Error: ' + e.message, 'error');
-        }
-        setGeneratingLinks(prev => ({ ...prev, [order.id]: false }));
-    };
-
-    const copyToClipboard = (text) => {
-        navigator.clipboard.writeText(text).then(() => {
-            showNotification('📋 Copied to clipboard!', 'success');
-        }).catch(() => {
-            // Fallback
-            const textarea = document.createElement('textarea');
-            textarea.value = text;
-            document.body.appendChild(textarea);
-            textarea.select();
-            document.execCommand('copy');
-            document.body.removeChild(textarea);
-            showNotification('📋 Copied to clipboard!', 'success');
-        });
-    };
-
-    const generateDownloadMessage = (order, items) => {
-        const ref = order.payment_ref || order.id.slice(0, 8).toUpperCase();
-        let message = `✅ *Your KenyaVault Order is Ready!*\n\n`;
-        message += `Order #: *${ref}*\n\n`;
-        
-        if (items && items.length > 0) {
-            items.forEach((item, idx) => {
-                message += `Resource ${idx + 1}: *${item.resource_title || 'Educational Resource'}* (x${item.quantity || 1})\n`;
-            });
-            message += `\n`;
-        } else {
-            message += `Resource: *${order.product_title || 'Educational Resource'}*\n\n`;
-        }
-        
-        message += `Amount: *KES ${order.total_amount || 0}*\n\n`;
-        message += `📥 *Download Links:*\n`;
-        
-        let hasLinks = false;
-        if (items && items.length > 0) {
-            items.forEach((item, idx) => {
-                if (item.download_url) {
-                    message += `\n${idx + 1}. ${item.resource_title || 'Resource'}:\n${item.download_url}\n`;
-                    hasLinks = true;
-                } else if (item.file_url) {
-                    message += `\n${idx + 1}. ${item.resource_title || 'Resource'}:\n${item.file_url}\n`;
-                    hasLinks = true;
                 }
             });
+            const data = await response.json();
+            return data.signedURL || `${SUPABASE_URL}/storage/v1/object/public/academic-resources/${filePath}`;
+        } catch (err) {
+            console.error('Signed URL error:', err);
+            return `${SUPABASE_URL}/storage/v1/object/public/academic-resources/${filePath}`;
         }
-        
-        if (!hasLinks) {
-            message += `\n⚠️ Please contact support to get your download links.\n`;
-            message += `Support WhatsApp: +254 768 515 494\n`;
-        }
-        
-        message += `\n🔒 *Valid for 3 hours.*\n\n`;
-        message += `Thank you for choosing KenyaVault! 📚\n`;
-        message += `Need help? WhatsApp: +254 768 515 494`;
-        
-        return message;
-    };
+    }
 
-    const filteredOrders = orders.filter(o => {
-        if (filter === 'pending') return o.payment_status === 'pending' || o.payment_status === 'pending_verification';
-        if (filter === 'confirmed') return o.payment_status === 'confirmed';
-        if (filter === 'paid') return o.payment_status === 'paid' || o.payment_status === 'completed';
-        if (filter === 'cancelled') return o.payment_status === 'cancelled';
-        return true;
-    });
-
-    const pendingCount = orders.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification').length;
-
-    return (
-        <div className="fade-in">
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
-                <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
-                    <h2 className="text-xl font-bold text-gray-800 dark:text-white">
-                        📦 Orders ({orders.length})
-                        {pendingCount > 0 && (
-                            <span className="ml-2 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-full animate-pulse">
-                                {pendingCount} pending
-                            </span>
-                        )}
-                    </h2>
-                    <button onClick={() => loadOrders()} className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg text-xs hover:bg-blue-200 transition">
-                        🔄 Refresh
-                    </button>
-                </div>
-
-                <div className="flex gap-2 flex-wrap mb-4">
-                    <button onClick={() => setFilter('all')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'all' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>All</button>
-                    <button onClick={() => setFilter('pending')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'pending' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Pending</button>
-                    <button onClick={() => setFilter('confirmed')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'confirmed' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Confirmed</button>
-                    <button onClick={() => setFilter('paid')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'paid' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Paid</button>
-                    <button onClick={() => setFilter('cancelled')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'cancelled' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>Cancelled</button>
-                </div>
-
-                {filteredOrders.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">No orders found</div>
-                ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead className="bg-gray-50 dark:bg-gray-700/50">
-                                <tr>
-                                    <th className="px-4 py-2 text-left">Reference</th>
-                                    <th className="px-4 py-2 text-left">Customer</th>
-                                    <th className="px-4 py-2 text-left">Phone</th>
-                                    <th className="px-4 py-2 text-left">Items</th>
-                                    <th className="px-4 py-2 text-left">Total</th>
-                                    <th className="px-4 py-2 text-left">Status</th>
-                                    <th className="px-4 py-2 text-left">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {filteredOrders.map(o => {
-                                    const isNew = newOrderIds.includes(o.id);
-                                    const isPending = o.payment_status === 'pending' || o.payment_status === 'pending_verification';
-                                    return (
-                                        <tr key={o.id} className={`border-t border-gray-100 dark:border-gray-700 ${isPending ? 'bg-amber-50 dark:bg-amber-900/10' : ''} ${isNew ? 'new-order-flash' : ''}`}>
-                                            <td className="px-4 py-2 font-medium text-gray-800 dark:text-white">#{o.payment_ref || o.id.slice(0, 8).toUpperCase()}</td>
-                                            <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{o.customer_name || 'N/A'}</td>
-                                            <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{o.customer_phone || 'N/A'}</td>
-                                            <td className="px-4 py-2 text-gray-600 dark:text-gray-400">
-                                                <button 
-                                                    onClick={() => viewOrderDetails(o)} 
-                                                    className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-1 rounded-full hover:bg-blue-200 transition"
-                                                >
-                                                    View Items
-                                                </button>
-                                            </td>
-                                            <td className="px-4 py-2 font-semibold text-[#D4A017]">KES {o.total_amount || 0}</td>
-                                            <td className="px-4 py-2">
-                                                <span className={`status-badge ${
-                                                    o.payment_status === 'pending_verification' ? 'pending_verification' :
-                                                    o.payment_status === 'confirmed' ? 'confirmed' :
-                                                    o.payment_status === 'paid' || o.payment_status === 'completed' ? 'paid' :
-                                                    o.payment_status === 'cancelled' ? 'rejected' :
-                                                    'pending'
-                                                }`}>
-                                                    {o.payment_status === 'pending_verification' ? '⏳ Pending' :
-                                                     o.payment_status === 'confirmed' ? '✅ Confirmed' :
-                                                     o.payment_status === 'paid' || o.payment_status === 'completed' ? '✅ Paid' :
-                                                     o.payment_status === 'cancelled' ? '❌ Cancelled' :
-                                                     'Pending'}
-                                                </span>
-                                                {isNew && <span className="ml-1 text-xs text-green-500 font-bold">NEW!</span>}
-                                            </td>
-                                            <td className="px-4 py-2 flex gap-2 flex-wrap">
-                                                {isPending && (
-                                                    <>
-                                                        <button 
-                                                            onClick={() => handleConfirmOrder(o)} 
-                                                            disabled={loadingOrderId === o.id}
-                                                            className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg text-xs hover:bg-green-200 transition disabled:opacity-50 flex items-center gap-1"
-                                                        >
-                                                            {loadingOrderId === o.id ? (
-                                                                <><span className="spinner"></span> Processing</>
-                                                            ) : (
-                                                                '✅ Confirm'
-                                                            )}
-                                                        </button>
-                                                        <button 
-                                                            onClick={() => viewOrderDetails(o)} 
-                                                            className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg text-xs hover:bg-blue-200 transition"
-                                                        >
-                                                            📋 Details
-                                                        </button>
-                                                    </>
-                                                )}
-                                                {(o.payment_status === 'confirmed' || o.payment_status === 'paid' || o.payment_status === 'completed') && (
-                                                    <>
-                                                        <button 
-                                                            onClick={() => handleResendWhatsApp(o)} 
-                                                            disabled={generatingLinks[o.id]}
-                                                            className="px-3 py-1 bg-[#25D366] text-white rounded-lg text-xs hover:bg-[#1da85a] transition flex items-center gap-1"
-                                                        >
-                                                            {generatingLinks[o.id] ? (
-                                                                <><span className="spinner"></span> Sending</>
-                                                            ) : (
-                                                                '📱 Resend WhatsApp'
-                                                            )}
-                                                        </button>
-                                                        <button 
-                                                            onClick={() => viewOrderDetails(o)} 
-                                                            className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg text-xs hover:bg-blue-200 transition"
-                                                        >
-                                                            📋 Details
-                                                        </button>
-                                                    </>
-                                                )}
-                                                {o.payment_status === 'cancelled' && <span className="text-xs text-red-600 dark:text-red-400">✗ Cancelled</span>}
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
-                )}
-            </div>
-
-            {/* Order Details Modal */}
-            {showOrderDetails && selectedOrder && (
-                <div className={`modal-overlay open`} onClick={closeOrderDetails}>
-                    <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-lg font-bold text-gray-800 dark:text-white">📋 Order Details</h3>
-                            <button onClick={closeOrderDetails} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">✕</button>
-                        </div>
-                        
-                        <div className="space-y-4">
-                            <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-4">
-                                <div className="grid grid-cols-2 gap-2 text-sm">
-                                    <div><span className="text-gray-500 dark:text-gray-400">Reference:</span> <span className="font-semibold">#{selectedOrder.payment_ref || selectedOrder.id.slice(0, 8).toUpperCase()}</span></div>
-                                    <div><span className="text-gray-500 dark:text-gray-400">Customer:</span> <span className="font-semibold">{selectedOrder.customer_name || 'N/A'}</span></div>
-                                    <div><span className="text-gray-500 dark:text-gray-400">Phone:</span> <span className="font-semibold">{selectedOrder.customer_phone || 'N/A'}</span></div>
-                                    <div><span className="text-gray-500 dark:text-gray-400">Total:</span> <span className="font-semibold text-[#D4A017]">KES {selectedOrder.total_amount || 0}</span></div>
-                                    <div><span className="text-gray-500 dark:text-gray-400">Status:</span> <span className={`status-badge ${selectedOrder.payment_status}`}>{selectedOrder.payment_status}</span></div>
-                                    <div><span className="text-gray-500 dark:text-gray-400">Date:</span> <span className="font-semibold">{new Date(selectedOrder.created_at).toLocaleString()}</span></div>
-                                </div>
-                            </div>
-
-                            <div>
-                                <h4 className="font-semibold text-gray-800 dark:text-white mb-2">📦 Resources Ordered</h4>
-                                {loadingItems ? (
-                                    <div className="text-center py-4">
-                                        <span className="spinner"></span>
-                                        <span className="ml-2 text-gray-500 dark:text-gray-400">Loading items...</span>
-                                    </div>
-                                ) : orderItems.length === 0 ? (
-                                    <div className="text-center py-4 text-gray-500 dark:text-gray-400">
-                                        <p>No items found for this order.</p>
-                                        <p className="text-sm mt-1">The customer may have ordered directly from the shop.</p>
-                                    </div>
-                                ) : (
-                                    <div className="space-y-2 max-h-60 overflow-y-auto">
-                                        {orderItems.map((item, idx) => (
-                                            <div key={item.id} className="order-detail-item p-3 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
-                                                <div className="flex justify-between items-start">
-                                                    <div className="flex-1">
-                                                        <div className="font-medium text-gray-800 dark:text-white">
-                                                            {item.resource_title || 'Educational Resource'}
-                                                            {item.is_fallback && <span className="text-xs text-amber-500 ml-2">(from order)</span>}
-                                                        </div>
-                                                        <div className="text-xs text-gray-500 dark:text-gray-400">
-                                                            Qty: {item.quantity || 1} | Price: KES {item.resource_price || 0}
-                                                        </div>
-                                                        {item.file_url && (
-                                                            <div className="text-xs mt-1">
-                                                                <span className="text-gray-500 dark:text-gray-400">File: </span>
-                                                                <code className="bg-gray-200 dark:bg-gray-600 px-1 rounded text-xs break-all">{item.file_url.split('/').pop() || 'Unknown'}</code>
-                                                            </div>
-                                                        )}
-                                                        {item.download_url && (
-                                                            <div className="text-xs mt-1">
-                                                                <span className="text-green-600 dark:text-green-400">✅ Download link available</span>
-                                                            </div>
-                                                        )}
-                                                        {!item.download_url && !item.file_url && (
-                                                            <div className="text-xs mt-1">
-                                                                <span className="text-amber-600 dark:text-amber-400">⚠️ No download link available</span>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    <div className="flex gap-1 flex-shrink-0 flex-wrap ml-2">
-                                                        {item.download_url && (
-                                                            <button 
-                                                                onClick={() => copyToClipboard(item.download_url)} 
-                                                                className="copy-btn text-xs"
-                                                                title="Copy download link"
-                                                            >
-                                                                📋 Link
-                                                            </button>
-                                                        )}
-                                                        {item.file_url && (
-                                                            <button 
-                                                                onClick={() => copyToClipboard(item.file_url)} 
-                                                                className="copy-btn text-xs"
-                                                                title="Copy file URL"
-                                                            >
-                                                                📋 URL
-                                                            </button>
-                                                        )}
-                                                        {item.resource_title && (
-                                                            <button 
-                                                                onClick={() => copyToClipboard(item.resource_title)} 
-                                                                className="copy-btn text-xs"
-                                                                title="Copy title"
-                                                            >
-                                                                📋 Title
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="border-t border-gray-200 dark:border-gray-600 pt-4 flex gap-2 flex-wrap">
-                                <button 
-                                    onClick={() => {
-                                        const message = generateDownloadMessage(selectedOrder, orderItems);
-                                        copyToClipboard(message);
-                                    }} 
-                                    className="btn-gold px-4 py-2 rounded-lg font-semibold text-sm flex-1"
-                                >
-                                    📋 Copy All Links
-                                </button>
-                                <button 
-                                    onClick={() => handleResendWhatsApp(selectedOrder)} 
-                                    disabled={generatingLinks[selectedOrder.id]}
-                                    className="bg-[#25D366] text-white px-4 py-2 rounded-lg font-semibold text-sm flex-1 hover:bg-[#1da85a] transition flex items-center justify-center gap-1 disabled:opacity-50"
-                                >
-                                    {generatingLinks[selectedOrder.id] ? (
-                                        <><span className="spinner"></span> Sending</>
-                                    ) : (
-                                        '📱 Send WhatsApp'
-                                    )}
-                                </button>
-                            </div>
-                            
-                            {orderItems.length === 0 && (
-                                <div className="text-xs text-gray-500 dark:text-gray-400 bg-amber-50 dark:bg-amber-900/20 p-3 rounded-lg border border-amber-200 dark:border-amber-800">
-                                    💡 No order items found. The customer may have placed this order directly. 
-                                    You can manually forward the resources by copying the links above or contacting support.
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-}
-        // ── MODULE RENDERER ──
-        function ModuleRenderer() {
-            const { currentModule } = useApp();
-            const map = {
-                dashboard: <DashboardModule />,
-                resources: <ResourcesModule />,
-                tutors: <TutorsModule />,
-                classes: <ClassesModule />,
-                orders: <OrdersModule />,
-                finance: <FinanceModule />,
-                settings: <SettingsModule />,
-            };
-            return map[currentModule] || <DashboardModule />;
+    // ── REAL-TIME SUBSCRIPTION ──
+    function setupRealtimeSubscription() {
+        if (supabaseChannel) {
+            supabaseChannel.unsubscribe();
         }
 
-        // ── MAIN APP ──
-        function App() {
-            const { isAuthenticated } = useApp();
-
-            if (!isAuthenticated) {
-                return <LoginPage />;
+        // For Supabase realtime via REST polling (simplified)
+        // In production, use supabase-js client for proper websocket
+        console.log('📡 Setting up real-time order monitoring...');
+        
+        // Poll for new orders every 10 seconds
+        setInterval(async () => {
+            try {
+                const orders = await supabaseFetch('orders?order=created_at.desc&limit=50');
+                if (JSON.stringify(orders) !== JSON.stringify(allOrders)) {
+                    allOrders = orders || [];
+                    renderOrders();
+                    updateStats();
+                    updateChart();
+                    
+                    // Update badge
+                    const pending = allOrders.filter(o => o.payment_status === 'pending').length;
+                    document.getElementById('orderBadge').textContent = pending;
+                }
+            } catch (err) {
+                // Silent fail for polling
             }
+        }, 10000);
+    }
 
-            return (
-                <div className="flex min-h-screen bg-white dark:bg-gray-950">
-                    <Sidebar />
-                    <div className="flex-1 min-w-0">
-                        <Topbar />
-                        <main className="p-4 lg:p-6 bg-gray-50 dark:bg-gray-900 min-h-screen">
-                            <ModuleRenderer />
-                        </main>
-                    </div>
-                    <ToastContainer />
-                </div>
-            );
-        }
+    // ── INIT ──
+    async function init() {
+        console.log('🚀 Initializing KenyaVault Admin Panel...');
+        
+        // Load tutors first for dropdowns
+        await loadTutors();
+        
+        // Load dashboard data
+        await loadDashboardData();
+        
+        // Load resources
+        await loadResources();
+        
+        // Load classes
+        await loadClasses();
+        
+        // Setup real-time
+        setupRealtimeSubscription();
+        
+        // Set default date for class creation
+        const now = new Date();
+        now.setHours(now.getHours() + 2);
+        document.getElementById('classTime').value = now.toISOString().slice(0, 16);
 
-        // ── RENDER ──
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(
-            <AppProvider>
-                <App />
-            </AppProvider>
-        );
-    </script>
+        console.log('✅ Admin panel ready!');
+    }
 
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    // ── START ──
+    document.addEventListener('DOMContentLoaded', init);
+</script>
+
 </body>
 </html>
