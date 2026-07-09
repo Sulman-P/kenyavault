@@ -8,7 +8,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        /* ── CSS VARIABLES: PREMIUM BRAND PALETTE ── */
+        /* ── CSS VARIABLES ── */
         :root {
             --navy: #0A192F;
             --navy-light: #172A45;
@@ -663,7 +663,7 @@
         }
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        /* ── ALERT WARNING (FIXED) ── */
+        /* ── ALERT ── */
         .alert-warning {
             background: #FEF3C7;
             color: #92400E;
@@ -767,11 +767,16 @@
 <body>
     <div id="root"></div>
 
-    <script>
+    <script type="text/babel">
+        const { useState, useEffect, useCallback, useMemo, useContext, createContext, useRef } = React;
+
         // ── SUPABASE CONFIG ──
         const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
         const STORAGE_BUCKET = 'academic-resources';
+
+        // ── SUPABASE CLIENT ──
+        const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         const ADMIN_CREDENTIALS = {
             username: 'adminnexalearn@gmail.com',
@@ -788,36 +793,33 @@
         ];
 
         // ── CONTEXT ──
-        const AppContext = React.createContext(null);
+        const AppContext = createContext(null);
 
         function AppProvider({ children }) {
-            const [darkMode, setDarkMode] = React.useState(() => localStorage.getItem('kv-dark-mode') === 'true');
-            const [sidebarOpen, setSidebarOpen] = React.useState(true);
-            const [currentModule, setCurrentModule] = React.useState('dashboard');
-            const [mobileSidebarOpen, setMobileSidebarOpen] = React.useState(false);
-            const [isAuthenticated, setIsAuthenticated] = React.useState(() => sessionStorage.getItem('kv-auth') === 'true');
-            const [authLoading, setAuthLoading] = React.useState(false);
-            const [authError, setAuthError] = React.useState('');
-            const [loading, setLoading] = React.useState(true);
-            const [tutors, setTutors] = React.useState([]);
-            const [orders, setOrders] = React.useState([]);
-            const [resources, setResources] = React.useState([]);
-            const [classes, setClasses] = React.useState([]);
-            const [toast, setToast] = React.useState(null);
-            const [newOrderIds, setNewOrderIds] = React.useState([]);
-            const [chartRange, setChartRange] = React.useState('daily');
-            const [orderBadgeCount, setOrderBadgeCount] = React.useState(0);
+            const [darkMode, setDarkMode] = useState(() => localStorage.getItem('kv-dark-mode') === 'true');
+            const [sidebarOpen, setSidebarOpen] = useState(true);
+            const [currentModule, setCurrentModule] = useState('dashboard');
+            const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+            const [isAuthenticated, setIsAuthenticated] = useState(() => sessionStorage.getItem('kv-auth') === 'true');
+            const [authLoading, setAuthLoading] = useState(false);
+            const [authError, setAuthError] = useState('');
+            const [loading, setLoading] = useState(true);
+            const [tutors, setTutors] = useState([]);
+            const [orders, setOrders] = useState([]);
+            const [resources, setResources] = useState([]);
+            const [classes, setClasses] = useState([]);
+            const [toast, setToast] = useState(null);
+            const [newOrderIds, setNewOrderIds] = useState([]);
+            const [chartRange, setChartRange] = useState('daily');
+            const [orderBadgeCount, setOrderBadgeCount] = useState(0);
 
-            // ── Supabase Client ──
-            const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-            React.useEffect(() => {
+            useEffect(() => {
                 localStorage.setItem('kv-dark-mode', darkMode);
                 if (darkMode) document.documentElement.classList.add('dark');
                 else document.documentElement.classList.remove('dark');
             }, [darkMode]);
 
-            React.useEffect(() => {
+            useEffect(() => {
                 if (isAuthenticated) {
                     loadAllData();
                     setupRealtimeSubscription();
@@ -836,7 +838,7 @@
                     window._realtimeChannel.unsubscribe();
                 }
 
-                const channel = supabase
+                const channel = sbClient
                     .channel('orders-live')
                     .on(
                         'postgres_changes',
@@ -844,14 +846,9 @@
                         (payload) => {
                             const newOrder = payload.new;
                             if (newOrder) {
-                                // Prepend to orders list
                                 setOrders(prev => [newOrder, ...prev]);
                                 setNewOrderIds(prev => [newOrder.id, ...prev]);
-                                
-                                // Update badge
                                 setOrderBadgeCount(prev => prev + 1);
-                                
-                                // Show notification
                                 showToast(
                                     '🆕 New Order!',
                                     `Order #${newOrder.payment_ref || newOrder.id.slice(0, 8).toUpperCase()} - ${newOrder.customer_name || 'Customer'}`
@@ -879,7 +876,7 @@
 
             const checkNewOrders = async () => {
                 try {
-                    const { data, error } = await supabase
+                    const { data, error } = await sbClient
                         .from('orders')
                         .select('*')
                         .order('created_at', { ascending: false })
@@ -912,53 +909,22 @@
                 setTimeout(() => setToast(null), 6000);
             };
 
-            const fetchWithErrorHandling = async (endpoint, options = {}) => {
+            const loadOrders = async () => {
                 try {
-                    const response = await fetch(`${SUPABASE_URL}/rest/v1/${endpoint}`, {
-                        ...options,
-                        headers: {
-                            'apikey': SUPABASE_ANON_KEY,
-                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                            'Content-Type': 'application/json',
-                            ...(options.headers || {})
-                        }
-                    });
+                    const { data, error } = await sbClient
+                        .from('orders')
+                        .select('*')
+                        .order('created_at', { ascending: false });
                     
-                    if (!response.ok) {
-                        const errorText = await response.text();
-                        console.error(`❌ ${endpoint} error (${response.status}):`, errorText);
-                        return { error: true, status: response.status, message: errorText || response.statusText };
-                    }
-                    
-                    const text = await response.text();
-                    if (!text || text.trim() === '') {
-                        return { data: [], error: false };
-                    }
-                    
-                    try {
-                        const data = JSON.parse(text);
-                        return { data, error: false };
-                    } catch (parseError) {
-                        console.error(`❌ JSON parse error for ${endpoint}:`, parseError);
-                        return { data: [], error: false };
+                    if (!error && data) {
+                        setOrders(data || []);
+                        const pending = data.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification').length;
+                        setOrderBadgeCount(pending);
+                    } else {
+                        setOrders([]);
                     }
                 } catch (e) {
-                    console.error(`❌ ${endpoint} fetch error:`, e);
-                    return { error: true, message: e.message };
-                }
-            };
-
-            const loadOrders = async () => {
-                const { data, error } = await supabase
-                    .from('orders')
-                    .select('*')
-                    .order('created_at', { ascending: false });
-                
-                if (!error && data) {
-                    setOrders(data || []);
-                    const pending = data.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification').length;
-                    setOrderBadgeCount(pending);
-                } else {
+                    console.error('Load orders error:', e);
                     setOrders([]);
                 }
             };
@@ -966,37 +932,49 @@
             const loadAllData = async () => {
                 setLoading(true);
                 try {
-                    // Load orders via Supabase client
-                    const { data: ordersData } = await supabase
+                    // Load orders
+                    const { data: ordersData, error: ordersError } = await sbClient
                         .from('orders')
                         .select('*')
                         .order('created_at', { ascending: false });
-                    if (ordersData) {
+                    
+                    if (!ordersError && ordersData) {
                         setOrders(ordersData);
                         const pending = ordersData.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification').length;
                         setOrderBadgeCount(pending);
                     }
 
                     // Load resources
-                    const { data: resourcesData } = await supabase
+                    const { data: resourcesData, error: resourcesError } = await sbClient
                         .from('resources')
                         .select('*')
                         .order('created_at', { ascending: false });
-                    if (resourcesData) setResources(resourcesData);
+                    
+                    if (!resourcesError && resourcesData) {
+                        setResources(resourcesData);
+                    }
 
                     // Load tutors
-                    const { data: tutorsData } = await supabase
+                    const { data: tutorsData, error: tutorsError } = await sbClient
                         .from('tutors')
                         .select('*');
-                    if (tutorsData) setTutors(tutorsData);
+                    
+                    if (!tutorsError && tutorsData) {
+                        setTutors(tutorsData);
+                    }
 
                     // Load classes
-                    const { data: classesData } = await supabase
+                    const { data: classesData, error: classesError } = await sbClient
                         .from('classes')
                         .select('*')
                         .order('created_at', { ascending: false });
-                    if (classesData) setClasses(classesData);
-                } catch (e) { console.error('Load error:', e); }
+                    
+                    if (!classesError && classesData) {
+                        setClasses(classesData);
+                    }
+                } catch (e) { 
+                    console.error('Load error:', e);
+                }
                 setLoading(false);
             };
 
@@ -1041,7 +1019,6 @@
                 showToast(type === 'success' ? '✅ Success' : '❌ Error', msg);
             };
 
-            // ── Generate Signed URL ──
             const generateSignedUrl = async (filePath) => {
                 try {
                     if (!filePath) return null;
@@ -1052,10 +1029,10 @@
                     cleanPath = cleanPath.replace(/^\/+/, '');
                     cleanPath = decodeURIComponent(cleanPath);
                     
-                    const { data, error } = await supabase
+                    const { data, error } = await sbClient
                         .storage
                         .from(STORAGE_BUCKET)
-                        .createSignedUrl(cleanPath, 604800); // 7 days
+                        .createSignedUrl(cleanPath, 604800);
                     
                     if (error) {
                         console.error('Signed URL error:', error);
@@ -1069,13 +1046,16 @@
                 }
             };
 
-            // ── Send WhatsApp ──
             const sendWhatsApp = async (order) => {
                 try {
-                    const { data: items } = await supabase
+                    const { data: items, error: itemsError } = await sbClient
                         .from('order_items')
                         .select('*')
                         .eq('order_id', order.id);
+                    
+                    if (itemsError) {
+                        console.error('Items error:', itemsError);
+                    }
                     
                     const orderItems = items || [];
                     const itemsWithUrls = [];
@@ -1090,14 +1070,14 @@
                         }
                         
                         if (!downloadUrl) {
-                            const { data: resources } = await supabase
+                            const { data: resourcesData, error: resourcesError } = await sbClient
                                 .from('resources')
                                 .select('*')
                                 .eq('title', item.resource_title)
                                 .limit(1);
                             
-                            if (resources && resources.length > 0 && resources[0].file_url) {
-                                const signedUrl = await generateSignedUrl(resources[0].file_url);
+                            if (!resourcesError && resourcesData && resourcesData.length > 0 && resourcesData[0].file_url) {
+                                const signedUrl = await generateSignedUrl(resourcesData[0].file_url);
                                 if (signedUrl) downloadUrl = signedUrl;
                             }
                         }
@@ -1134,8 +1114,7 @@
                     window.open(whatsappUrl, '_blank', 'width=400,height=600');
                     showNotification('📱 WhatsApp opened with download links!', 'success');
                     
-                    // Update order status
-                    await supabase
+                    await sbClient
                         .from('orders')
                         .update({ payment_status: 'confirmed', confirmed_at: new Date().toISOString() })
                         .eq('id', order.id);
@@ -1168,10 +1147,8 @@
                     loadOrders,
                     newOrderIds, setNewOrderIds,
                     chartRange, setChartRange,
-                    fetchWithErrorHandling,
                     orderBadgeCount,
                     sendWhatsApp,
-                    supabase,
                     generateSignedUrl
                 }}>
                     {children}
@@ -1180,7 +1157,7 @@
         }
 
         function useApp() {
-            const context = React.useContext(AppContext);
+            const context = useContext(AppContext);
             if (!context) throw new Error('useApp must be used within AppProvider');
             return context;
         }
@@ -1202,8 +1179,8 @@
         // ── LOGIN PAGE ──
         function LoginPage() {
             const { login, authLoading, authError } = useApp();
-            const [username, setUsername] = React.useState('adminnexalearn@gmail.com');
-            const [password, setPassword] = React.useState('');
+            const [username, setUsername] = useState('adminnexalearn@gmail.com');
+            const [password, setPassword] = useState('');
 
             const handleSubmit = async (e) => {
                 e.preventDefault();
@@ -1297,7 +1274,6 @@
                             </button>
                             <div>
                                 <h1 className="text-lg font-semibold text-[#0A192F] hidden sm:block">{currentMod.label}</h1>
-                                <p className="text-xs text-[#64748B] hidden sm:block">{currentMod.desc || 'Manage your platform'}</p>
                             </div>
                         </div>
                         <div className="flex items-center gap-3">
@@ -1320,10 +1296,10 @@
         // ── DASHBOARD MODULE ──
         function DashboardModule() {
             const { orders, resources, tutors, classes, chartRange, setChartRange } = useApp();
-            const chartRef = React.useRef(null);
-            const chartInstance = React.useRef(null);
+            const chartRef = useRef(null);
+            const chartInstance = useRef(null);
 
-            const stats = React.useMemo(() => {
+            const stats = useMemo(() => {
                 const totalRevenue = orders.reduce((sum, o) => sum + (o.total_amount || 0), 0);
                 const pendingOrders = orders.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification').length;
                 const paidOrders = orders.filter(o => o.payment_status === 'paid' || o.payment_status === 'confirmed' || o.payment_status === 'completed').length;
@@ -1331,7 +1307,7 @@
                 return { totalRevenue, pendingOrders, paidOrders, activeResources, totalOrders: orders.length };
             }, [orders, resources]);
 
-            React.useEffect(() => {
+            useEffect(() => {
                 if (chartInstance.current) {
                     chartInstance.current.destroy();
                     chartInstance.current = null;
@@ -1498,13 +1474,13 @@
             );
         }
 
-        // ── ORDERS MODULE ── (Full implementation with WhatsApp)
+        // ── ORDERS MODULE ──
         function OrdersModule() {
             const { orders, loadOrders, showToast, newOrderIds, sendWhatsApp } = useApp();
-            const [filter, setFilter] = React.useState('all');
-            const [loadingOrderId, setLoadingOrderId] = React.useState(null);
+            const [filter, setFilter] = useState('all');
+            const [loadingOrderId, setLoadingOrderId] = useState(null);
 
-            React.useEffect(() => {
+            useEffect(() => {
                 const interval = setInterval(() => loadOrders(), 10000);
                 return () => clearInterval(interval);
             }, []);
@@ -1525,7 +1501,7 @@
             const handleRejectOrder = async (order) => {
                 if (!confirm(`Reject order #${order.payment_ref || order.id.slice(0, 8).toUpperCase()}?`)) return;
                 try {
-                    const { error } = await supabase
+                    const { error } = await sbClient
                         .from('orders')
                         .update({ payment_status: 'cancelled' })
                         .eq('id', order.id);
@@ -1674,28 +1650,33 @@
             );
         }
 
-        // ── RESOURCES MODULE ── (Full implementation)
+        // ── RESOURCES MODULE ──
         function ResourcesModule() {
-            const { resources, setResources, showToast, fetchWithErrorHandling, supabase } = useApp();
-            const [uploading, setUploading] = React.useState(false);
-            const [selectedFile, setSelectedFile] = React.useState(null);
-            const [editingResource, setEditingResource] = React.useState(null);
-            const [editFormData, setEditFormData] = React.useState({ title: '', price: 0, status: 'draft' });
-            const [showEditModal, setShowEditModal] = React.useState(false);
-            const [formData, setFormData] = React.useState({
+            const { resources, setResources, showToast } = useApp();
+            const [uploading, setUploading] = useState(false);
+            const [selectedFile, setSelectedFile] = useState(null);
+            const [editingResource, setEditingResource] = useState(null);
+            const [editFormData, setEditFormData] = useState({ title: '', price: 0, status: 'draft' });
+            const [showEditModal, setShowEditModal] = useState(false);
+            const [formData, setFormData] = useState({
                 title: '', subject: '', level: '', curriculum: 'cbc', resource_type: 'lesson-plan', price: 0, description: ''
             });
 
             const loadResources = async () => {
-                const { data, error } = await supabase
-                    .from('resources')
-                    .select('*')
-                    .order('created_at', { ascending: false });
-                if (!error && data) setResources(data);
-                else setResources([]);
+                try {
+                    const { data, error } = await sbClient
+                        .from('resources')
+                        .select('*')
+                        .order('created_at', { ascending: false });
+                    if (!error && data) setResources(data || []);
+                    else setResources([]);
+                } catch (e) {
+                    console.error('Load resources error:', e);
+                    setResources([]);
+                }
             };
 
-            React.useEffect(() => { loadResources(); }, []);
+            useEffect(() => { loadResources(); }, []);
 
             const handleFileSelect = (e) => {
                 const file = e.target.files[0];
@@ -1715,7 +1696,7 @@
                     const fileExt = selectedFile.name.split('.').pop();
                     const filePath = `resources/${Date.now()}-${title.replace(/\s+/g, '_')}.${fileExt}`;
 
-                    const { error: uploadError } = await supabase
+                    const { error: uploadError } = await sbClient
                         .storage
                         .from(STORAGE_BUCKET)
                         .upload(filePath, selectedFile);
@@ -1734,7 +1715,7 @@
                         download_count: 0
                     };
 
-                    const { error: insertError } = await supabase
+                    const { error: insertError } = await sbClient
                         .from('resources')
                         .insert([resourceData]);
 
@@ -1769,7 +1750,7 @@
             const handleEditSave = async () => {
                 if (!editingResource) return;
                 try {
-                    const { error } = await supabase
+                    const { error } = await sbClient
                         .from('resources')
                         .update({
                             title: editFormData.title,
@@ -1790,7 +1771,7 @@
 
             const toggleStatus = async (id, currentStatus) => {
                 const newStatus = currentStatus === 'live' ? 'draft' : 'live';
-                const { error } = await supabase
+                const { error } = await sbClient
                     .from('resources')
                     .update({ status: newStatus })
                     .eq('id', id);
@@ -1804,7 +1785,7 @@
             const deleteResource = async (id) => {
                 if (!confirm('Delete this resource permanently?')) return;
                 try {
-                    const { error } = await supabase
+                    const { error } = await sbClient
                         .from('resources')
                         .delete()
                         .eq('id', id);
@@ -1982,21 +1963,26 @@
 
         // ── TUTORS MODULE ──
         function TutorsModule() {
-            const { tutors, setTutors, showToast, supabase } = useApp();
-            const [formData, setFormData] = React.useState({ name: '', email: '', phone: '', specialization: '' });
-            const [editingTutor, setEditingTutor] = React.useState(null);
-            const [editFormData, setEditFormData] = React.useState({ name: '', email: '', phone: '', specialization: '', status: 'active' });
-            const [showEditModal, setShowEditModal] = React.useState(false);
+            const { tutors, setTutors, showToast } = useApp();
+            const [formData, setFormData] = useState({ name: '', email: '', phone: '', specialization: '' });
+            const [editingTutor, setEditingTutor] = useState(null);
+            const [editFormData, setEditFormData] = useState({ name: '', email: '', phone: '', specialization: '', status: 'active' });
+            const [showEditModal, setShowEditModal] = useState(false);
 
             const loadTutors = async () => {
-                const { data, error } = await supabase
-                    .from('tutors')
-                    .select('*');
-                if (!error && data) setTutors(data);
-                else setTutors([]);
+                try {
+                    const { data, error } = await sbClient
+                        .from('tutors')
+                        .select('*');
+                    if (!error && data) setTutors(data || []);
+                    else setTutors([]);
+                } catch (e) {
+                    console.error('Load tutors error:', e);
+                    setTutors([]);
+                }
             };
 
-            React.useEffect(() => { loadTutors(); }, []);
+            useEffect(() => { loadTutors(); }, []);
 
             const handleSubmit = async (e) => {
                 e.preventDefault();
@@ -2005,7 +1991,7 @@
                     showToast('⚠️ Please fill in all required fields', 'error');
                     return;
                 }
-                const { error } = await supabase
+                const { error } = await sbClient
                     .from('tutors')
                     .insert([{
                         name, email, phone: formData.phone, specialization,
@@ -2039,7 +2025,7 @@
 
             const handleEditSave = async () => {
                 if (!editingTutor) return;
-                const { error } = await supabase
+                const { error } = await sbClient
                     .from('tutors')
                     .update({
                         name: editFormData.name,
@@ -2059,7 +2045,7 @@
 
             const toggleStatus = async (id, currentStatus) => {
                 const newStatus = currentStatus === 'active' ? 'suspended' : 'active';
-                const { error } = await supabase
+                const { error } = await sbClient
                     .from('tutors')
                     .update({ status: newStatus })
                     .eq('id', id);
@@ -2072,7 +2058,7 @@
 
             const deleteTutor = async (id) => {
                 if (!confirm('Delete this tutor?')) return;
-                const { error } = await supabase
+                const { error } = await sbClient
                     .from('tutors')
                     .delete()
                     .eq('id', id);
@@ -2214,22 +2200,27 @@
 
         // ── CLASSES MODULE ──
         function ClassesModule() {
-            const { classes, setClasses, tutors, showToast, supabase } = useApp();
-            const [formData, setFormData] = React.useState({
+            const { classes, setClasses, tutors, showToast } = useApp();
+            const [formData, setFormData] = useState({
                 title: '', level: '', tutor_id: '', price_per_learner: 0,
                 meeting_link: '', scheduled_time: '', is_live: false, description: ''
             });
 
             const loadClasses = async () => {
-                const { data, error } = await supabase
-                    .from('classes')
-                    .select('*')
-                    .order('created_at', { ascending: false });
-                if (!error && data) setClasses(data);
-                else setClasses([]);
+                try {
+                    const { data, error } = await sbClient
+                        .from('classes')
+                        .select('*')
+                        .order('created_at', { ascending: false });
+                    if (!error && data) setClasses(data || []);
+                    else setClasses([]);
+                } catch (e) {
+                    console.error('Load classes error:', e);
+                    setClasses([]);
+                }
             };
 
-            React.useEffect(() => { loadClasses(); }, []);
+            useEffect(() => { loadClasses(); }, []);
 
             const handleSubmit = async (e) => {
                 e.preventDefault();
@@ -2238,7 +2229,7 @@
                     showToast('⚠️ Please fill in all required fields', 'error');
                     return;
                 }
-                const { error } = await supabase
+                const { error } = await sbClient
                     .from('classes')
                     .insert([{ ...formData, created_at: new Date().toISOString() }]);
 
@@ -2250,7 +2241,7 @@
             };
 
             const toggleStatus = async (id, currentStatus) => {
-                const { error } = await supabase
+                const { error } = await sbClient
                     .from('classes')
                     .update({ is_live: !currentStatus })
                     .eq('id', id);
@@ -2263,7 +2254,7 @@
 
             const deleteClass = async (id) => {
                 if (!confirm('Delete this class?')) return;
-                const { error } = await supabase
+                const { error } = await sbClient
                     .from('classes')
                     .delete()
                     .eq('id', id);
@@ -2385,7 +2376,7 @@
         function FinanceModule() {
             const { orders } = useApp();
             
-            const stats = React.useMemo(() => {
+            const stats = useMemo(() => {
                 const totalRevenue = orders.reduce((sum, o) => sum + (o.total_amount || 0), 0);
                 const paidOrders = orders.filter(o => o.payment_status === 'paid' || o.payment_status === 'confirmed' || o.payment_status === 'completed').length;
                 const pendingOrders = orders.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification').length;
