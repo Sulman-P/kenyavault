@@ -3,9 +3,11 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>KenyaVault Admin Panel</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    <title>KenyaVault Admin Panel — Complete Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Sora:wght@400;600;700;800&display=swap" rel="stylesheet" />
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         tailwind.config = {
             darkMode: 'class',
@@ -15,15 +17,15 @@
                         gold: '#D4A017',
                         'gold-light': '#FCD34D',
                         navy: '#0a1a3a',
+                        'navy-light': '#1a2a5a',
                     }
                 }
             }
         }
     </script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: #f3f4f6; }
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: #f8fafc; }
         .dark body { background: #111827; color: #e5e7eb; }
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
@@ -238,6 +240,65 @@
             color: #0a1a3a;
         }
         
+        .btn-whatsapp {
+            padding: 4px 14px;
+            border-radius: 6px;
+            background: #25D366;
+            color: #fff;
+            font-size: 0.7rem;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            border: none;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .btn-whatsapp:hover { 
+            background: #1DA851; 
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(37,211,102,0.3);
+        }
+        
+        .mpesa-code-badge {
+            background: #fdf2d6;
+            color: #0a1a3a;
+            font-family: 'Inter', monospace;
+            font-size: 0.8rem;
+            font-weight: 700;
+            padding: 2px 12px;
+            border-radius: 6px;
+            border: 1px solid #D4A017;
+            letter-spacing: 1px;
+        }
+        .mpesa-code-badge.empty {
+            color: #f59e0b;
+            background: #fef3c7;
+            border-color: #fcd34d;
+            animation: pulse-amber 2s infinite;
+            font-weight: 600;
+        }
+        @keyframes pulse-amber {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        .btn-sm {
+            padding: 2px 12px;
+            border-radius: 4px;
+            font-size: 0.65rem;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            border: none;
+            cursor: pointer;
+        }
+        .btn-sm.navy { background: #0a1a3a; color: #fff; }
+        .btn-sm.navy:hover { background: #1a2a5a; }
+        .btn-sm.gold { background: #D4A017; color: #0a1a3a; }
+        .btn-sm.gold:hover { background: #FCD34D; }
+        .btn-sm.delete { background: #fee2e2; color: #991b1b; }
+        .btn-sm.delete:hover { background: #fecaca; }
+        .btn-sm.edit { background: #dbeafe; color: #1e40af; }
+        .btn-sm.edit:hover { background: #bfdbfe; }
+        
         @media (max-width: 768px) {
             .chart-container { height: 200px; }
             .modal-box { margin: 0 10px; }
@@ -258,6 +319,9 @@
         const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
         const STORAGE_BUCKET = 'academic-resources';
+
+        // ── SUPABASE CLIENT ──
+        const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         const ADMIN_CREDENTIALS = {
             username: 'adminnexalearn@gmail.com',
@@ -292,6 +356,7 @@
             const [toast, setToast] = useState(null);
             const [newOrderIds, setNewOrderIds] = useState([]);
             const [chartRange, setChartRange] = useState('daily');
+            const [orderBadgeCount, setOrderBadgeCount] = useState(0);
 
             useEffect(() => {
                 localStorage.setItem('kv-dark-mode', darkMode);
@@ -302,10 +367,44 @@
             useEffect(() => {
                 if (isAuthenticated) {
                     loadAllData();
+                    setupRealtimeSubscription();
                     startPolling();
                 }
-                return () => stopPolling();
+                return () => {
+                    stopPolling();
+                    if (window._realtimeChannel) {
+                        window._realtimeChannel.unsubscribe();
+                    }
+                };
             }, [isAuthenticated]);
+
+            const setupRealtimeSubscription = () => {
+                if (window._realtimeChannel) {
+                    window._realtimeChannel.unsubscribe();
+                }
+
+                const channel = sbClient
+                    .channel('orders-live')
+                    .on(
+                        'postgres_changes',
+                        { event: 'INSERT', schema: 'public', table: 'orders' },
+                        (payload) => {
+                            const newOrder = payload.new;
+                            if (newOrder) {
+                                setOrders(prev => [newOrder, ...prev]);
+                                setNewOrderIds(prev => [newOrder.id, ...prev]);
+                                setOrderBadgeCount(prev => prev + 1);
+                                showToast(
+                                    '🆕 New Order!',
+                                    `Order #${newOrder.payment_ref || newOrder.id.slice(0, 8).toUpperCase()} - ${newOrder.customer_name || 'Customer'}`
+                                );
+                            }
+                        }
+                    )
+                    .subscribe();
+
+                window._realtimeChannel = channel;
+            };
 
             const startPolling = () => {
                 const interval = setInterval(() => checkNewOrders(), 10000);
@@ -322,15 +421,13 @@
 
             const checkNewOrders = async () => {
                 try {
-                    const response = await fetch(`${SUPABASE_URL}/rest/v1/orders?select=*&order=created_at.desc&limit=20`, {
-                        headers: { 
-                            'apikey': SUPABASE_ANON_KEY, 
-                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                            'Content-Type': 'application/json'
-                        }
-                    });
-                    if (response.ok) {
-                        const data = await response.json();
+                    const { data, error } = await sbClient
+                        .from('orders')
+                        .select('*')
+                        .order('created_at', { ascending: false })
+                        .limit(20);
+                    
+                    if (!error && data) {
                         const pendingOrders = data.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification');
                         const currentIds = pendingOrders.map(o => o.id);
                         const newIds = currentIds.filter(id => !newOrderIds.includes(id));
@@ -357,72 +454,71 @@
                 setTimeout(() => setToast(null), 6000);
             };
 
-            const fetchWithErrorHandling = async (endpoint, options = {}) => {
+            const loadOrders = async () => {
                 try {
-                    const response = await fetch(`${SUPABASE_URL}/rest/v1/${endpoint}`, {
-                        ...options,
-                        headers: {
-                            'apikey': SUPABASE_ANON_KEY,
-                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                            'Content-Type': 'application/json',
-                            ...(options.headers || {})
-                        }
-                    });
+                    const { data, error } = await sbClient
+                        .from('orders')
+                        .select('*')
+                        .order('created_at', { ascending: false });
                     
-                    if (!response.ok) {
-                        const errorText = await response.text();
-                        console.error(`❌ ${endpoint} error (${response.status}):`, errorText);
-                        return { error: true, status: response.status, message: errorText || response.statusText };
-                    }
-                    
-                    const text = await response.text();
-                    if (!text || text.trim() === '') {
-                        return { data: [], error: false };
-                    }
-                    
-                    try {
-                        const data = JSON.parse(text);
-                        return { data, error: false };
-                    } catch (parseError) {
-                        console.error(`❌ JSON parse error for ${endpoint}:`, parseError);
-                        return { data: [], error: false };
+                    if (!error && data) {
+                        setOrders(data || []);
+                        const pending = data.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification').length;
+                        setOrderBadgeCount(pending);
+                    } else {
+                        setOrders([]);
                     }
                 } catch (e) {
-                    console.error(`❌ ${endpoint} fetch error:`, e);
-                    return { error: true, message: e.message };
+                    console.error('Load orders error:', e);
+                    setOrders([]);
                 }
-            };
-
-            const loadOrders = async () => {
-                const result = await fetchWithErrorHandling('orders?select=*&order=created_at.desc');
-                if (!result.error) setOrders(result.data || []);
-                else setOrders([]);
             };
 
             const loadAllData = async () => {
                 setLoading(true);
                 try {
-                    await loadOrders();
+                    // Load orders
+                    const { data: ordersData, error: ordersError } = await sbClient
+                        .from('orders')
+                        .select('*')
+                        .order('created_at', { ascending: false });
                     
-                    const [rRes, tRes, cRes] = await Promise.all([
-                        fetchWithErrorHandling('resources?select=*&order=created_at.desc'),
-                        fetchWithErrorHandling('tutors?select=*'),
-                        fetchWithErrorHandling('classes?select=*&order=created_at.desc')
-                    ]);
+                    if (!ordersError && ordersData) {
+                        setOrders(ordersData);
+                        const pending = ordersData.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification').length;
+                        setOrderBadgeCount(pending);
+                    }
 
-                    if (!rRes.error) setResources(rRes.data || []);
-                    else setResources([]);
+                    // Load resources
+                    const { data: resourcesData, error: resourcesError } = await sbClient
+                        .from('resources')
+                        .select('*')
+                        .order('created_at', { ascending: false });
                     
-                    if (!tRes.error) setTutors(tRes.data || []);
-                    else setTutors([]);
+                    if (!resourcesError && resourcesData) {
+                        setResources(resourcesData);
+                    }
+
+                    // Load tutors
+                    const { data: tutorsData, error: tutorsError } = await sbClient
+                        .from('tutors')
+                        .select('*');
                     
-                    if (!cRes.error) setClasses(cRes.data || []);
-                    else setClasses([]);
+                    if (!tutorsError && tutorsData) {
+                        setTutors(tutorsData);
+                    }
+
+                    // Load classes
+                    const { data: classesData, error: classesError } = await sbClient
+                        .from('classes')
+                        .select('*')
+                        .order('created_at', { ascending: false });
+                    
+                    if (!classesError && classesData) {
+                        setClasses(classesData);
+                    }
                 } catch (e) { 
                     console.error('Load error:', e);
-                    setResources([]);
-                    setTutors([]);
-                    setClasses([]);
                 }
                 setLoading(false);
             };
@@ -447,14 +543,15 @@
                 });
             };
 
-            // ── UPDATED LOGOUT FUNCTION ── Redirects to index.html ──
             const logout = () => {
                 stopPolling();
+                if (window._realtimeChannel) {
+                    window._realtimeChannel.unsubscribe();
+                }
                 sessionStorage.removeItem('kv-auth');
                 sessionStorage.removeItem('kv-user');
                 setIsAuthenticated(false);
                 setCurrentModule('dashboard');
-                // Redirect to homepage (index.html)
                 window.location.href = '/index.html';
             };
 
@@ -465,6 +562,116 @@
 
             const showNotification = (msg, type = 'success') => {
                 showToast(type === 'success' ? '✅ Success' : '❌ Error', msg);
+            };
+
+            // ── Generate Signed URL ──
+            const generateSignedUrl = async (filePath) => {
+                try {
+                    if (!filePath) return null;
+                    
+                    let cleanPath = filePath;
+                    cleanPath = cleanPath.replace(/^academic-resources\//, '');
+                    cleanPath = cleanPath.replace(/^resources\//, '');
+                    cleanPath = cleanPath.replace(/^\/+/, '');
+                    cleanPath = decodeURIComponent(cleanPath);
+                    
+                    const { data, error } = await sbClient
+                        .storage
+                        .from(STORAGE_BUCKET)
+                        .createSignedUrl(cleanPath, 604800); // 7 days
+                    
+                    if (error) {
+                        console.error('Signed URL error:', error);
+                        return null;
+                    }
+                    
+                    return data?.signedUrl || null;
+                } catch (e) {
+                    console.error('Error generating signed URL:', e);
+                    return null;
+                }
+            };
+
+            // ── Send WhatsApp ──
+            const sendWhatsApp = async (order) => {
+                try {
+                    const { data: items, error: itemsError } = await sbClient
+                        .from('order_items')
+                        .select('*')
+                        .eq('order_id', order.id);
+                    
+                    if (itemsError) {
+                        console.error('Items error:', itemsError);
+                    }
+                    
+                    const orderItems = items || [];
+                    const itemsWithUrls = [];
+                    
+                    for (const item of orderItems) {
+                        let downloadUrl = null;
+                        let filePath = item.resource_path || '';
+                        
+                        if (filePath) {
+                            const signedUrl = await generateSignedUrl(filePath);
+                            if (signedUrl) downloadUrl = signedUrl;
+                        }
+                        
+                        if (!downloadUrl) {
+                            const { data: resourcesData, error: resourcesError } = await sbClient
+                                .from('resources')
+                                .select('*')
+                                .eq('title', item.resource_title)
+                                .limit(1);
+                            
+                            if (!resourcesError && resourcesData && resourcesData.length > 0 && resourcesData[0].file_url) {
+                                const signedUrl = await generateSignedUrl(resourcesData[0].file_url);
+                                if (signedUrl) downloadUrl = signedUrl;
+                            }
+                        }
+                        
+                        itemsWithUrls.push({ ...item, downloadUrl });
+                    }
+
+                    const ref = order.payment_ref || order.id.slice(0, 8).toUpperCase();
+                    let message = `✅ *Your KenyaVault Order is Ready!*\n\n`;
+                    message += `Order #: *${ref}*\n\n`;
+                    message += `Amount: *KES ${order.total_amount || 0}*\n\n`;
+                    message += `📥 *Download Links:*\n`;
+                    
+                    let hasLinks = false;
+                    itemsWithUrls.forEach((item, idx) => {
+                        if (item.downloadUrl) {
+                            message += `\n${idx + 1}. ${item.resource_title}:\n${item.downloadUrl}\n`;
+                            hasLinks = true;
+                        }
+                    });
+                    
+                    if (!hasLinks) {
+                        message += `\n⚠️ Your download links are being prepared. You will receive them shortly.\n`;
+                        message += `Please contact support if you don't receive them within 5 minutes.\n`;
+                    }
+                    
+                    message += `\n🔒 *Valid for 7 days.*\n\n`;
+                    message += `Thank you for choosing KenyaVault! 📚\n`;
+
+                    const phone = order.customer_phone || '254700000000';
+                    const formattedPhone = phone.replace(/^0/, '254').replace(/^\+/, '');
+                    const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`;
+                    
+                    window.open(whatsappUrl, '_blank', 'width=400,height=600');
+                    showNotification('📱 WhatsApp opened with download links!', 'success');
+                    
+                    await sbClient
+                        .from('orders')
+                        .update({ payment_status: 'confirmed', confirmed_at: new Date().toISOString() })
+                        .eq('id', order.id);
+                    
+                    await loadOrders();
+                    
+                } catch (e) {
+                    console.error('WhatsApp error:', e);
+                    showNotification('Error sending WhatsApp: ' + e.message, 'error');
+                }
             };
 
             return (
@@ -487,7 +694,10 @@
                     loadOrders,
                     newOrderIds, setNewOrderIds,
                     chartRange, setChartRange,
-                    fetchWithErrorHandling
+                    orderBadgeCount,
+                    sendWhatsApp,
+                    generateSignedUrl,
+                    sbClient
                 }}>
                     {children}
                 </AppContext.Provider>
@@ -565,7 +775,7 @@
 
         // ── SIDEBAR ──
         function Sidebar() {
-            const { sidebarOpen, mobileSidebarOpen, currentModule, setCurrentModule, toggleSidebar, logout } = useApp();
+            const { sidebarOpen, mobileSidebarOpen, currentModule, setCurrentModule, toggleSidebar, logout, orderBadgeCount } = useApp();
             const isVisible = sidebarOpen || mobileSidebarOpen;
 
             return (
@@ -582,6 +792,11 @@
                                 <button key={mod.id} onClick={() => { setCurrentModule(mod.id); if (mobileSidebarOpen) toggleSidebar(); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${currentModule === mod.id ? 'bg-[#D4A017]/20 text-[#FCD34D]' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}>
                                     <span className="text-xl flex-shrink-0">{mod.icon}</span>
                                     <span className={`text-sm font-medium whitespace-nowrap transition-opacity duration-300 ${!sidebarOpen ? 'lg:opacity-0 lg:group-hover:opacity-100' : 'opacity-100'}`}>{mod.label}</span>
+                                    {mod.id === 'orders' && orderBadgeCount > 0 && (
+                                        <span className="ml-auto text-xs bg-[#D4A017] text-[#0a1a3a] font-bold px-2 py-0.5 rounded-full animate-pulse">
+                                            {orderBadgeCount}
+                                        </span>
+                                    )}
                                 </button>
                             ))}
                         </nav>
@@ -598,7 +813,7 @@
 
         // ── TOPBAR ──
         function Topbar() {
-            const { darkMode, setDarkMode, toggleSidebar, currentModule } = useApp();
+            const { darkMode, setDarkMode, toggleSidebar, currentModule, orderBadgeCount } = useApp();
             const currentMod = adminModules.find(m => m.id === currentModule) || adminModules[0];
 
             return (
@@ -610,9 +825,15 @@
                             </button>
                             <div>
                                 <h1 className="text-lg font-semibold text-gray-800 dark:text-white hidden sm:block">{currentMod.label}</h1>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 hidden sm:block">{currentMod.desc || 'Manage your platform'}</p>
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
+                            {currentModule === 'orders' && orderBadgeCount > 0 && (
+                                <span className="text-xs bg-[#D4A017] text-[#0a1a3a] font-bold px-3 py-1 rounded-full animate-pulse">
+                                    {orderBadgeCount} pending
+                                </span>
+                            )}
                             <span className="text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 px-2 py-1 rounded-full flex items-center gap-1">
                                 <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
                                 Live
@@ -802,9 +1023,9 @@
             );
         }
 
-        // ── RESOURCES MODULE ── (Full implementation)
+        // ── RESOURCES MODULE ──
         function ResourcesModule() {
-            const { resources, setResources, showToast, fetchWithErrorHandling } = useApp();
+            const { resources, setResources, showToast, sbClient } = useApp();
             const [uploading, setUploading] = useState(false);
             const [selectedFile, setSelectedFile] = useState(null);
             const [editingResource, setEditingResource] = useState(null);
@@ -815,9 +1036,17 @@
             });
 
             const loadResources = async () => {
-                const result = await fetchWithErrorHandling('resources?select=*&order=created_at.desc');
-                if (!result.error) setResources(result.data || []);
-                else setResources([]);
+                try {
+                    const { data, error } = await sbClient
+                        .from('resources')
+                        .select('*')
+                        .order('created_at', { ascending: false });
+                    if (!error && data) setResources(data || []);
+                    else setResources([]);
+                } catch (e) {
+                    console.error('Load resources error:', e);
+                    setResources([]);
+                }
             };
 
             useEffect(() => { loadResources(); }, []);
@@ -840,19 +1069,12 @@
                     const fileExt = selectedFile.name.split('.').pop();
                     const filePath = `resources/${Date.now()}-${title.replace(/\s+/g, '_')}.${fileExt}`;
 
-                    const formData2 = new FormData();
-                    formData2.append('file', selectedFile);
+                    const { error: uploadError } = await sbClient
+                        .storage
+                        .from(STORAGE_BUCKET)
+                        .upload(filePath, selectedFile);
 
-                    const uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/${STORAGE_BUCKET}/${filePath}`, {
-                        method: 'POST',
-                        headers: {
-                            'apikey': SUPABASE_ANON_KEY,
-                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                        },
-                        body: formData2
-                    });
-
-                    if (!uploadRes.ok) throw new Error('Upload failed');
+                    if (uploadError) throw new Error(uploadError.message);
 
                     const resourceData = {
                         title, subject, level,
@@ -866,12 +1088,11 @@
                         download_count: 0
                     };
 
-                    const createResult = await fetchWithErrorHandling('resources', {
-                        method: 'POST',
-                        body: JSON.stringify(resourceData)
-                    });
+                    const { error: insertError } = await sbClient
+                        .from('resources')
+                        .insert([resourceData]);
 
-                    if (createResult.error) throw new Error('Failed to create resource record');
+                    if (insertError) throw new Error(insertError.message);
 
                     showToast('✅ Resource uploaded successfully!');
                     setFormData({ title: '', subject: '', level: '', curriculum: 'cbc', resource_type: 'lesson-plan', price: 0, description: '' });
@@ -902,21 +1123,20 @@
             const handleEditSave = async () => {
                 if (!editingResource) return;
                 try {
-                    const result = await fetchWithErrorHandling(`resources?id=eq.${editingResource.id}`, {
-                        method: 'PATCH',
-                        body: JSON.stringify({
+                    const { error } = await sbClient
+                        .from('resources')
+                        .update({
                             title: editFormData.title,
                             price: parseFloat(editFormData.price) || 0,
                             status: editFormData.status
                         })
-                    });
-                    if (!result.error) {
-                        showToast('✅ Resource updated successfully!');
-                        closeEditModal();
-                        loadResources();
-                    } else {
-                        showToast('❌ Update failed', 'error');
-                    }
+                        .eq('id', editingResource.id);
+
+                    if (error) throw new Error(error.message);
+
+                    showToast('✅ Resource updated successfully!');
+                    closeEditModal();
+                    loadResources();
                 } catch (e) {
                     showToast('❌ Update failed: ' + e.message, 'error');
                 }
@@ -924,11 +1144,12 @@
 
             const toggleStatus = async (id, currentStatus) => {
                 const newStatus = currentStatus === 'live' ? 'draft' : 'live';
-                const result = await fetchWithErrorHandling(`resources?id=eq.${id}`, {
-                    method: 'PATCH',
-                    body: JSON.stringify({ status: newStatus })
-                });
-                if (!result.error) {
+                const { error } = await sbClient
+                    .from('resources')
+                    .update({ status: newStatus })
+                    .eq('id', id);
+
+                if (!error) {
                     showToast(`✅ Resource ${newStatus === 'live' ? 'published' : 'drafted'}`);
                     loadResources();
                 }
@@ -936,10 +1157,18 @@
 
             const deleteResource = async (id) => {
                 if (!confirm('Delete this resource permanently?')) return;
-                const result = await fetchWithErrorHandling(`resources?id=eq.${id}`, { method: 'DELETE' });
-                if (!result.error) {
-                    showToast('✅ Resource deleted');
-                    loadResources();
+                try {
+                    const { error } = await sbClient
+                        .from('resources')
+                        .delete()
+                        .eq('id', id);
+
+                    if (!error) {
+                        showToast('✅ Resource deleted');
+                        loadResources();
+                    }
+                } catch (e) {
+                    showToast('❌ Delete failed', 'error');
                 }
             };
 
@@ -1056,11 +1285,11 @@
                                                 <td className="px-4 py-2 font-semibold text-[#D4A017]">{r.price === 0 ? 'FREE' : 'KES ' + r.price}</td>
                                                 <td className="px-4 py-2"><span className={`status-badge ${r.status === 'live' ? 'live' : r.status === 'archived' ? 'archived' : 'draft'}`}>{r.status || 'draft'}</span></td>
                                                 <td className="px-4 py-2 flex gap-2 flex-wrap">
-                                                    <button onClick={() => openEditModal(r)} className="px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded hover:bg-blue-200 transition">✏️ Edit</button>
-                                                    <button onClick={() => toggleStatus(r.id, r.status)} className="px-2 py-1 text-xs bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded hover:bg-green-200 transition">
+                                                    <button onClick={() => openEditModal(r)} className="btn-sm edit">✏️ Edit</button>
+                                                    <button onClick={() => toggleStatus(r.id, r.status)} className="btn-sm gold">
                                                         {r.status === 'live' ? '📄 Draft' : '✅ Publish'}
                                                     </button>
-                                                    <button onClick={() => deleteResource(r.id)} className="px-2 py-1 text-xs bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded hover:bg-red-200 transition">🗑️</button>
+                                                    <button onClick={() => deleteResource(r.id)} className="btn-sm delete">🗑️</button>
                                                 </td>
                                             </tr>
                                         ))}
@@ -1105,16 +1334,23 @@
 
         // ── TUTORS MODULE ──
         function TutorsModule() {
-            const { tutors, setTutors, showToast, fetchWithErrorHandling } = useApp();
+            const { tutors, setTutors, showToast, sbClient } = useApp();
             const [formData, setFormData] = useState({ name: '', email: '', phone: '', specialization: '' });
             const [editingTutor, setEditingTutor] = useState(null);
             const [editFormData, setEditFormData] = useState({ name: '', email: '', phone: '', specialization: '', status: 'active' });
             const [showEditModal, setShowEditModal] = useState(false);
 
             const loadTutors = async () => {
-                const result = await fetchWithErrorHandling('tutors?select=*');
-                if (!result.error) setTutors(result.data || []);
-                else setTutors([]);
+                try {
+                    const { data, error } = await sbClient
+                        .from('tutors')
+                        .select('*');
+                    if (!error && data) setTutors(data || []);
+                    else setTutors([]);
+                } catch (e) {
+                    console.error('Load tutors error:', e);
+                    setTutors([]);
+                }
             };
 
             useEffect(() => { loadTutors(); }, []);
@@ -1126,15 +1362,15 @@
                     showToast('⚠️ Please fill in all required fields', 'error');
                     return;
                 }
-                const result = await fetchWithErrorHandling('tutors', {
-                    method: 'POST',
-                    body: JSON.stringify({
+                const { error } = await sbClient
+                    .from('tutors')
+                    .insert([{
                         name, email, phone: formData.phone, specialization,
                         status: 'active',
                         created_at: new Date().toISOString()
-                    })
-                });
-                if (!result.error) {
+                    }]);
+
+                if (!error) {
                     showToast('✅ Tutor added successfully!');
                     setFormData({ name: '', email: '', phone: '', specialization: '' });
                     loadTutors();
@@ -1160,34 +1396,32 @@
 
             const handleEditSave = async () => {
                 if (!editingTutor) return;
-                try {
-                    const result = await fetchWithErrorHandling(`tutors?id=eq.${editingTutor.id}`, {
-                        method: 'PATCH',
-                        body: JSON.stringify({
-                            name: editFormData.name,
-                            email: editFormData.email,
-                            phone: editFormData.phone,
-                            specialization: editFormData.specialization,
-                            status: editFormData.status
-                        })
-                    });
-                    if (!result.error) {
-                        showToast('✅ Tutor updated successfully!');
-                        closeEditModal();
-                        loadTutors();
-                    }
-                } catch (e) {
-                    showToast('❌ Update failed: ' + e.message, 'error');
+                const { error } = await sbClient
+                    .from('tutors')
+                    .update({
+                        name: editFormData.name,
+                        email: editFormData.email,
+                        phone: editFormData.phone,
+                        specialization: editFormData.specialization,
+                        status: editFormData.status
+                    })
+                    .eq('id', editingTutor.id);
+
+                if (!error) {
+                    showToast('✅ Tutor updated successfully!');
+                    closeEditModal();
+                    loadTutors();
                 }
             };
 
             const toggleStatus = async (id, currentStatus) => {
                 const newStatus = currentStatus === 'active' ? 'suspended' : 'active';
-                const result = await fetchWithErrorHandling(`tutors?id=eq.${id}`, {
-                    method: 'PATCH',
-                    body: JSON.stringify({ status: newStatus })
-                });
-                if (!result.error) {
+                const { error } = await sbClient
+                    .from('tutors')
+                    .update({ status: newStatus })
+                    .eq('id', id);
+
+                if (!error) {
                     showToast(`✅ Tutor ${newStatus === 'active' ? 'activated' : 'suspended'}`);
                     loadTutors();
                 }
@@ -1195,8 +1429,12 @@
 
             const deleteTutor = async (id) => {
                 if (!confirm('Delete this tutor?')) return;
-                const result = await fetchWithErrorHandling(`tutors?id=eq.${id}`, { method: 'DELETE' });
-                if (!result.error) {
+                const { error } = await sbClient
+                    .from('tutors')
+                    .delete()
+                    .eq('id', id);
+
+                if (!error) {
                     showToast('✅ Tutor deleted');
                     loadTutors();
                 }
@@ -1266,11 +1504,11 @@
                                                 <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{t.specialization || '—'}</td>
                                                 <td className="px-4 py-2"><span className={`status-badge ${t.status === 'active' ? 'active' : 'suspended'}`}>{t.status || 'inactive'}</span></td>
                                                 <td className="px-4 py-2 flex gap-2 flex-wrap">
-                                                    <button onClick={() => openEditModal(t)} className="px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded hover:bg-blue-200 transition">✏️ Edit</button>
-                                                    <button onClick={() => toggleStatus(t.id, t.status)} className="px-2 py-1 text-xs bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded hover:bg-green-200 transition">
+                                                    <button onClick={() => openEditModal(t)} className="btn-sm edit">✏️ Edit</button>
+                                                    <button onClick={() => toggleStatus(t.id, t.status)} className="btn-sm gold">
                                                         {t.status === 'active' ? '⏸️ Suspend' : '▶️ Activate'}
                                                     </button>
-                                                    <button onClick={() => deleteTutor(t.id)} className="px-2 py-1 text-xs bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded hover:bg-red-200 transition">🗑️</button>
+                                                    <button onClick={() => deleteTutor(t.id)} className="btn-sm delete">🗑️</button>
                                                 </td>
                                             </tr>
                                         ))}
@@ -1331,16 +1569,24 @@
 
         // ── CLASSES MODULE ──
         function ClassesModule() {
-            const { classes, setClasses, tutors, showToast, fetchWithErrorHandling } = useApp();
+            const { classes, setClasses, tutors, showToast, sbClient } = useApp();
             const [formData, setFormData] = useState({
                 title: '', level: '', tutor_id: '', price_per_learner: 0,
                 meeting_link: '', scheduled_time: '', is_live: false, description: ''
             });
 
             const loadClasses = async () => {
-                const result = await fetchWithErrorHandling('classes?select=*&order=created_at.desc');
-                if (!result.error) setClasses(result.data || []);
-                else setClasses([]);
+                try {
+                    const { data, error } = await sbClient
+                        .from('classes')
+                        .select('*')
+                        .order('created_at', { ascending: false });
+                    if (!error && data) setClasses(data || []);
+                    else setClasses([]);
+                } catch (e) {
+                    console.error('Load classes error:', e);
+                    setClasses([]);
+                }
             };
 
             useEffect(() => { loadClasses(); }, []);
@@ -1352,11 +1598,11 @@
                     showToast('⚠️ Please fill in all required fields', 'error');
                     return;
                 }
-                const result = await fetchWithErrorHandling('classes', {
-                    method: 'POST',
-                    body: JSON.stringify({ ...formData, created_at: new Date().toISOString() })
-                });
-                if (!result.error) {
+                const { error } = await sbClient
+                    .from('classes')
+                    .insert([{ ...formData, created_at: new Date().toISOString() }]);
+
+                if (!error) {
                     showToast('✅ Class created successfully!');
                     setFormData({ title: '', level: '', tutor_id: '', price_per_learner: 0, meeting_link: '', scheduled_time: '', is_live: false, description: '' });
                     loadClasses();
@@ -1364,11 +1610,12 @@
             };
 
             const toggleStatus = async (id, currentStatus) => {
-                const result = await fetchWithErrorHandling(`classes?id=eq.${id}`, {
-                    method: 'PATCH',
-                    body: JSON.stringify({ is_live: !currentStatus })
-                });
-                if (!result.error) {
+                const { error } = await sbClient
+                    .from('classes')
+                    .update({ is_live: !currentStatus })
+                    .eq('id', id);
+
+                if (!error) {
                     showToast(`✅ Class ${!currentStatus ? 'started' : 'ended'}`);
                     loadClasses();
                 }
@@ -1376,8 +1623,12 @@
 
             const deleteClass = async (id) => {
                 if (!confirm('Delete this class?')) return;
-                const result = await fetchWithErrorHandling(`classes?id=eq.${id}`, { method: 'DELETE' });
-                if (!result.error) {
+                const { error } = await sbClient
+                    .from('classes')
+                    .delete()
+                    .eq('id', id);
+
+                if (!error) {
                     showToast('✅ Class deleted');
                     loadClasses();
                 }
@@ -1396,16 +1647,10 @@
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Target Level *</label>
                                 <select value={formData.level} onChange={(e) => setFormData({...formData, level: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" required>
                                     <option value="">Select</option>
-                                    <option value="grade-7">Grade 7</option>
-                                    <option value="grade-8">Grade 8</option>
-                                    <option value="grade-9">Grade 9 (KJSEA)</option>
-                                    <option value="grade-10">Grade 10</option>
-                                    <option value="grade-11">Grade 11</option>
-                                    <option value="grade-12">Grade 12</option>
-                                    <option value="form-1">Form 1</option>
-                                    <option value="form-2">Form 2</option>
-                                    <option value="form-3">Form 3</option>
-                                    <option value="form-4">Form 4</option>
+                                    <option value="primary-cbc">Primary School CBC</option>
+                                    <option value="junior-secondary">Junior Secondary School (JSS)</option>
+                                    <option value="high-school">High School 8-4-4 / SSS</option>
+                                    <option value="exam-bootcamp">Exam Revision Bootcamp</option>
                                 </select>
                             </div>
                             <div>
@@ -1477,10 +1722,10 @@
                                                     <td className="px-4 py-2 font-semibold text-[#D4A017]">{c.price_per_learner === 0 ? 'FREE' : 'KES ' + c.price_per_learner}</td>
                                                     <td className="px-4 py-2"><span className={`status-badge ${c.is_live ? 'live' : 'draft'}`}>{c.is_live ? '🟢 Live' : '⏳ Scheduled'}</span></td>
                                                     <td className="px-4 py-2 flex gap-2 flex-wrap">
-                                                        <button onClick={() => toggleStatus(c.id, c.is_live)} className="px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded hover:bg-blue-200 transition">
+                                                        <button onClick={() => toggleStatus(c.id, c.is_live)} className="btn-sm gold">
                                                             {c.is_live ? '⏸️ End' : '▶️ Start'}
                                                         </button>
-                                                        <button onClick={() => deleteClass(c.id)} className="px-2 py-1 text-xs bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded hover:bg-red-200 transition">🗑️</button>
+                                                        <button onClick={() => deleteClass(c.id)} className="btn-sm delete">🗑️</button>
                                                     </td>
                                                 </tr>
                                             );
@@ -1496,38 +1741,41 @@
 
         // ── ORDERS MODULE ──
         function OrdersModule() {
-            const { orders, loadOrders, showToast, newOrderIds, fetchWithErrorHandling } = useApp();
+            const { orders, loadOrders, showToast, newOrderIds, sendWhatsApp } = useApp();
             const [filter, setFilter] = useState('all');
             const [loadingOrderId, setLoadingOrderId] = useState(null);
 
             useEffect(() => {
-                const interval = setInterval(() => loadOrders(), 15000);
+                const interval = setInterval(() => loadOrders(), 10000);
                 return () => clearInterval(interval);
             }, []);
 
             const confirmOrder = async (order) => {
                 if (!confirm(`Confirm order #${order.payment_ref || order.id.slice(0, 8).toUpperCase()}?`)) return;
                 setLoadingOrderId(order.id);
-                const result = await fetchWithErrorHandling(`orders?id=eq.${order.id}`, {
-                    method: 'PATCH',
-                    body: JSON.stringify({ payment_status: 'paid', confirmed_at: new Date().toISOString() })
-                });
-                if (!result.error) {
-                    showToast('✅ Order confirmed');
-                    loadOrders();
+                try {
+                    await sendWhatsApp(order);
+                    await loadOrders();
+                    showToast('✅ Order confirmed and WhatsApp sent!', 'success');
+                } catch (e) {
+                    showToast('❌ Error confirming order: ' + e.message, 'error');
                 }
                 setLoadingOrderId(null);
             };
 
             const rejectOrder = async (order) => {
                 if (!confirm(`Reject order #${order.payment_ref || order.id.slice(0, 8).toUpperCase()}?`)) return;
-                const result = await fetchWithErrorHandling(`orders?id=eq.${order.id}`, {
-                    method: 'PATCH',
-                    body: JSON.stringify({ payment_status: 'cancelled' })
-                });
-                if (!result.error) {
-                    showToast('❌ Order rejected');
-                    loadOrders();
+                try {
+                    const { error } = await sbClient
+                        .from('orders')
+                        .update({ payment_status: 'cancelled' })
+                        .eq('id', order.id);
+                    if (!error) {
+                        showToast('❌ Order rejected', 'success');
+                        await loadOrders();
+                    }
+                } catch (e) {
+                    showToast('Error rejecting order', 'error');
                 }
             };
 
@@ -1576,6 +1824,7 @@
                                             <th className="px-4 py-2 text-left text-gray-600 dark:text-gray-400">Items</th>
                                             <th className="px-4 py-2 text-left text-gray-600 dark:text-gray-400">Total</th>
                                             <th className="px-4 py-2 text-left text-gray-600 dark:text-gray-400">Status</th>
+                                            <th className="px-4 py-2 text-left text-gray-600 dark:text-gray-400">M-PESA Code</th>
                                             <th className="px-4 py-2 text-left text-gray-600 dark:text-gray-400">Actions</th>
                                         </tr>
                                     </thead>
@@ -1583,14 +1832,29 @@
                                         {filteredOrders.map(o => {
                                             const isNew = newOrderIds.includes(o.id);
                                             const isPending = o.payment_status === 'pending' || o.payment_status === 'pending_verification';
+                                            const hasCode = o.mpesa_code && o.mpesa_code.length >= 4;
+                                            
                                             return (
                                                 <tr key={o.id} className={`border-t border-gray-100 dark:border-gray-700 ${isPending ? 'bg-amber-50 dark:bg-amber-900/10' : ''} ${isNew ? 'new-order-flash' : ''}`}>
                                                     <td className="px-4 py-2 font-medium text-gray-800 dark:text-white">#{o.payment_ref || o.id.slice(0, 8).toUpperCase()}</td>
-                                                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{o.customer_name || 'N/A'}</td>
-                                                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{o.item_count || 0}</td>
+                                                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">
+                                                        {o.customer_name || 'N/A'}
+                                                        <br /><small className="text-xs">{o.customer_phone || ''}</small>
+                                                    </td>
+                                                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">
+                                                        <span className="text-xs bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded-full">
+                                                            {o.item_count || 0} items
+                                                        </span>
+                                                    </td>
                                                     <td className="px-4 py-2 font-semibold text-[#D4A017]">KES {o.total_amount || 0}</td>
                                                     <td className="px-4 py-2">
-                                                        <span className={`status-badge ${o.payment_status || 'pending'}`}>
+                                                        <span className={`status-badge ${
+                                                            o.payment_status === 'pending_verification' ? 'pending_verification' :
+                                                            o.payment_status === 'paid' || o.payment_status === 'confirmed' ? 'paid' :
+                                                            o.payment_status === 'completed' ? 'completed' :
+                                                            o.payment_status === 'cancelled' ? 'rejected' :
+                                                            'pending'
+                                                        }`}>
                                                             {o.payment_status === 'pending_verification' ? '⏳ Pending' :
                                                              o.payment_status === 'paid' || o.payment_status === 'confirmed' ? '✅ Paid' :
                                                              o.payment_status === 'completed' ? '✅ Completed' :
@@ -1599,15 +1863,45 @@
                                                         </span>
                                                         {isNew && <span className="ml-1 text-xs text-green-500 font-bold">NEW!</span>}
                                                     </td>
-                                                    <td className="px-4 py-2 flex gap-2 flex-wrap">
-                                                        {isPending && (
-                                                            <>
-                                                                <button onClick={() => confirmOrder(o)} disabled={loadingOrderId === o.id} className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg text-xs hover:bg-green-200 transition disabled:opacity-50 flex items-center gap-1">
-                                                                    {loadingOrderId === o.id ? <><span className="spinner"></span> Processing</> : '✅ Confirm'}
-                                                                </button>
-                                                                <button onClick={() => rejectOrder(o)} className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg text-xs hover:bg-red-200 transition">❌ Reject</button>
-                                                            </>
+                                                    <td className="px-4 py-2">
+                                                        {hasCode ? (
+                                                            <span className="mpesa-code-badge">{o.mpesa_code}</span>
+                                                        ) : (
+                                                            <span className="mpesa-code-badge empty">⏳ Awaiting Code...</span>
                                                         )}
+                                                    </td>
+                                                    <td className="px-4 py-2">
+                                                        <div className="flex gap-2 flex-wrap">
+                                                            {isPending && (
+                                                                <>
+                                                                    <button 
+                                                                        onClick={() => confirmOrder(o)} 
+                                                                        disabled={loadingOrderId === o.id}
+                                                                        className="btn-sm navy flex items-center gap-1"
+                                                                    >
+                                                                        {loadingOrderId === o.id ? (
+                                                                            <><span className="spinner"></span> Processing</>
+                                                                        ) : (
+                                                                            '✅ Confirm'
+                                                                        )}
+                                                                    </button>
+                                                                    <button 
+                                                                        onClick={() => rejectOrder(o)} 
+                                                                        className="btn-sm gold"
+                                                                    >
+                                                                        ❌ Reject
+                                                                    </button>
+                                                                </>
+                                                            )}
+                                                            {(o.payment_status === 'paid' || o.payment_status === 'confirmed') && (
+                                                                <button 
+                                                                    onClick={() => sendWhatsApp(o)} 
+                                                                    className="btn-whatsapp"
+                                                                >
+                                                                    💬 Resend
+                                                                </button>
+                                                            )}
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             );
