@@ -8,6 +8,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700;800&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">
+        // This loads the Supabase JS library and exposes window.supabase
+    </script>
     <style>
         /* ── ROOT VARIABLES ── */
         :root {
@@ -1719,8 +1722,34 @@
     const STORAGE_BUCKET = 'academic-resources';
 
     // ── SUPABASE CLIENT ──
-    // Create client using the global supabase object from CDN
-    const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    let sbClient = null;
+    
+    // Initialize Supabase client when the script loads
+    try {
+        if (typeof window.supabase !== 'undefined' && window.supabase.createClient) {
+            sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            console.log('✅ Supabase client initialized successfully');
+        } else {
+            console.warn('⚠️ Supabase library not loaded, waiting...');
+            // Check again after a short delay
+            setTimeout(() => {
+                if (typeof window.supabase !== 'undefined' && window.supabase.createClient) {
+                    sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                    console.log('✅ Supabase client initialized (delayed)');
+                    // Reload resources now that client is ready
+                    if (typeof init === 'function') {
+                        init();
+                    }
+                } else {
+                    console.error('❌ Supabase library failed to load');
+                    renderError(new Error('Supabase library failed to load. Please refresh the page.'));
+                }
+            }, 2000);
+        }
+    } catch (e) {
+        console.error('❌ Error initializing Supabase:', e);
+        renderError(e);
+    }
 
     // ── STATE ──
     let allResources = [];
@@ -1847,6 +1876,9 @@
     // ── FETCH RESOURCES ──
     async function fetchResources() {
         try {
+            if (!sbClient) {
+                throw new Error('Supabase client not initialized');
+            }
             console.log('🔍 Fetching resources from Supabase...');
             const { data, error } = await sbClient
                 .from('resources')
@@ -1865,6 +1897,32 @@
 
     // ── INIT ──
     async function init() {
+        // Check if Supabase client is ready
+        if (!sbClient) {
+            renderLoading();
+            showToast('⏳', 'Loading Supabase client...', 'info');
+            // Wait for client to be available
+            let retries = 0;
+            const maxRetries = 10;
+            const checkClient = setInterval(() => {
+                retries++;
+                if (typeof window.supabase !== 'undefined' && window.supabase.createClient) {
+                    sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                    console.log('✅ Supabase client initialized');
+                    clearInterval(checkClient);
+                    // Now load resources
+                    loadResources();
+                } else if (retries >= maxRetries) {
+                    clearInterval(checkClient);
+                    renderError(new Error('Failed to load Supabase client. Please refresh the page.'));
+                }
+            }, 1000);
+            return;
+        }
+        await loadResources();
+    }
+
+    async function loadResources() {
         renderLoading();
         try {
             allResources = await fetchResources();
@@ -2303,6 +2361,9 @@
     // ── SEND ORDER TO ADMIN (Supabase) ──
     async function sendOrderToAdmin(orderData) {
         try {
+            if (!sbClient) {
+                throw new Error('Supabase client not initialized');
+            }
             console.log('📤 Sending order to admin:', orderData);
             
             const { data, error } = await sbClient
