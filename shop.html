@@ -2465,166 +2465,231 @@
         }
     }
 
-    // ── SEND ORDER TO ADMIN (Supabase) - FIXED COLUMN NAMES ──
-    async function sendOrderToAdmin(orderData) {
-        try {
-            console.log('📤 Sending order to admin:', orderData);
-            
-            // Use column names that match your actual Supabase schema
-            const response = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
-                method: 'POST',
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                    'Content-Type': 'application/json',
-                    'Prefer': 'return=representation'
-                },
-                body: JSON.stringify({
-                    // Use column names that exist in your orders table
-                    id: orderData.order_ref, // Use order_ref as id if that's the primary key
-                    payment_ref: orderData.order_ref,
-                    customer_name: orderData.customer_name,
-                    customer_phone: orderData.customer_phone,
-                    total_amount: orderData.amount,
-                    payment_status: 'pending_verification',
-                    mpesa_code: orderData.mpesa_code,
-                    item_count: 1,
-                    created_at: new Date().toISOString()
-                })
+    // ── SEND ORDER TO ADMIN (Supabase) - FIXED UUID ISSUE ──
+async function sendOrderToAdmin(orderData) {
+    try {
+        console.log('📤 Sending order to admin:', orderData);
+        
+        // Generate a proper UUID for the order
+        // Use the browser's crypto API or a simple UUID generator
+        const generateUUID = () => {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                const r = Math.random() * 16 | 0;
+                const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
             });
+        };
+        
+        const orderUuid = generateUUID();
+        
+        // Use column names that match your actual Supabase schema
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
+            method: 'POST',
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=representation'
+            },
+            body: JSON.stringify({
+                // Generate a proper UUID for the id field
+                id: orderUuid,
+                // Store the order reference in a separate column (if it exists)
+                order_ref: orderData.order_ref,
+                payment_ref: orderData.order_ref,
+                customer_name: orderData.customer_name,
+                customer_phone: orderData.customer_phone,
+                total_amount: orderData.amount,
+                payment_status: 'pending_verification',
+                mpesa_code: orderData.mpesa_code,
+                item_count: 1,
+                created_at: new Date().toISOString()
+            })
+        });
 
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error('❌ Supabase insert error:', errorText);
-                throw new Error(errorText || 'Failed to create order');
-            }
-
-            const data = await response.json();
-            console.log('✅ Order sent to admin successfully:', data);
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ Supabase insert error:', errorText);
             
-            if (data && data.length > 0) {
-                const orderId = data[0].id || data[0].order_ref || orderData.order_ref;
-                // Create order item
-                const itemResponse = await fetch(`${SUPABASE_URL}/rest/v1/order_items`, {
+            // If the error is about missing columns, try without those columns
+            if (errorText.includes('column') && errorText.includes('does not exist')) {
+                console.log('⚠️ Trying to insert with minimal columns...');
+                const minimalResponse = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
                     method: 'POST',
                     headers: {
                         'apikey': SUPABASE_ANON_KEY,
                         'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'Prefer': 'return=representation'
                     },
                     body: JSON.stringify({
-                        order_id: orderId,
-                        resource_title: orderData.product_title,
-                        resource_path: orderData.file_path || '',
-                        quantity: 1,
-                        price: orderData.amount
+                        id: orderUuid,
+                        customer_name: orderData.customer_name,
+                        customer_phone: orderData.customer_phone,
+                        total_amount: orderData.amount,
+                        payment_status: 'pending_verification',
+                        mpesa_code: orderData.mpesa_code,
+                        created_at: new Date().toISOString()
                     })
                 });
-
-                if (!itemResponse.ok) {
-                    console.error('❌ Order item insert error:', await itemResponse.text());
+                
+                if (!minimalResponse.ok) {
+                    const minimalError = await minimalResponse.text();
+                    console.error('❌ Minimal insert error:', minimalError);
+                    throw new Error(minimalError || 'Failed to create order');
                 }
+                
+                const minimalData = await minimalResponse.json();
+                console.log('✅ Order sent with minimal columns:', minimalData);
+                
+                // Try to create order item
+                if (minimalData && minimalData.length > 0) {
+                    const orderId = minimalData[0].id || orderUuid;
+                    await createOrderItem(orderId, orderData);
+                }
+                
+                return minimalData;
             }
-
-            return data;
-        } catch (error) {
-            console.error('❌ Error sending order:', error);
-            throw error;
+            
+            throw new Error(errorText || 'Failed to create order');
         }
+
+        const data = await response.json();
+        console.log('✅ Order sent to admin successfully:', data);
+        
+        if (data && data.length > 0) {
+            const orderId = data[0].id || orderUuid;
+            await createOrderItem(orderId, orderData);
+        }
+
+        return data;
+    } catch (error) {
+        console.error('❌ Error sending order:', error);
+        throw error;
     }
+}
+
+// ── CREATE ORDER ITEM ──
+async function createOrderItem(orderId, orderData) {
+    try {
+        const itemResponse = await fetch(`${SUPABASE_URL}/rest/v1/order_items`, {
+            method: 'POST',
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                order_id: orderId,
+                resource_title: orderData.product_title,
+                resource_path: orderData.file_path || '',
+                quantity: 1,
+                price: orderData.amount
+            })
+        });
+
+        if (!itemResponse.ok) {
+            console.error('❌ Order item insert error:', await itemResponse.text());
+        } else {
+            console.log('✅ Order item created successfully');
+        }
+    } catch (error) {
+        console.error('❌ Error creating order item:', error);
+    }
+}
 
     // ── VERIFY AND COMPLETE ORDER ──
-    function verifyAndCompleteOrder() {
-        const code = mpesaCodeInput.value.trim().toUpperCase();
-        
-        if (!code || code.length < 4) {
-            mpesaCodeInput.classList.add('error');
-            showToast('⚠️', 'Please enter the last 4 digits of your M-PESA transaction code', 'error');
-            return;
-        }
-        mpesaCodeInput.classList.remove('error');
-
-        if (!currentProduct) {
-            showToast('⚠️', 'No product selected', 'error');
-            return;
-        }
-
-        // Show loading state
-        verifyOrderBtn.classList.add('loading');
-        verifyOrderBtn.disabled = true;
-
-        // Get customer info
-        const name = sessionStorage.getItem('checkout_name') || customerNameInput.value.trim();
-        const phone = sessionStorage.getItem('checkout_phone') || '254700000000';
-        const phoneFormatted = sessionStorage.getItem('checkout_phone_formatted') || '0700000000';
-        const orderRef = sessionStorage.getItem('checkout_order_ref') || currentOrderRef || 
-            'KV-' + Date.now().toString().slice(-8) + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
-
-        // Prepare order data with all required fields
-        const orderData = {
-            order_ref: orderRef,
-            product_id: currentProduct.id,
-            product_title: currentProduct.title,
-            customer_name: name,
-            customer_phone: phone,
-            amount: currentProduct.price || 0,
-            mpesa_code: code,
-            file_path: currentProduct.file_url || '',
-            payment_method: 'megapay',
-            verified_at: new Date().toISOString(),
-            created_at: new Date().toISOString()
-        };
-
-        console.log('📦 Verifying Order with data:', orderData);
-
-        // Send order to admin via Supabase
-        sendOrderToAdmin(orderData)
-            .then(() => {
-                verifyOrderBtn.classList.remove('loading');
-                verifyOrderBtn.disabled = false;
-                
-                // Close checkout modal
-                closeCheckoutModal();
-                
-                // Show success modal
-                successOrderRef.textContent = orderRef;
-                successPhone.textContent = phoneFormatted;
-                successModal.classList.add('open');
-                
-                showToast('✅', 'Order verified and sent to admin! Your download link will be sent shortly.', 'success');
-                
-                // Increment download count
-                if (currentProduct) {
-                    currentProduct.download_count = (currentProduct.download_count || 0) + 1;
-                }
-                
-                // Clear session storage
-                sessionStorage.removeItem('checkout_name');
-                sessionStorage.removeItem('checkout_phone');
-                sessionStorage.removeItem('checkout_phone_formatted');
-                sessionStorage.removeItem('checkout_order_ref');
-                sessionStorage.removeItem('checkout_product_id');
-                sessionStorage.removeItem('checkout_product_title');
-                sessionStorage.removeItem('checkout_amount');
-                
-                currentProduct = null;
-                currentOrderRef = null;
-                isProcessing = false;
-                
-                // Reset button states
-                payPrimaryBtn.classList.remove('loading', 'opacity-75');
-                payPrimaryBtn.disabled = false;
-                payPrimaryBtn.querySelector('.btn-text').textContent = '📱 Buy Now';
-                mpesaVerificationBox.classList.remove('visible');
-                mpesaVerificationBox.style.display = 'none';
-            })
-            .catch((error) => {
-                console.error('❌ Verification error:', error);
-                showToast('❌', 'Failed to verify payment. Please try again.', 'error');
-                verifyOrderBtn.classList.remove('loading');
-                verifyOrderBtn.disabled = false;
-            });
+function verifyAndCompleteOrder() {
+    const code = mpesaCodeInput.value.trim().toUpperCase();
+    
+    if (!code || code.length < 4) {
+        mpesaCodeInput.classList.add('error');
+        showToast('⚠️', 'Please enter the last 4 digits of your M-PESA transaction code', 'error');
+        return;
     }
+    mpesaCodeInput.classList.remove('error');
+
+    if (!currentProduct) {
+        showToast('⚠️', 'No product selected', 'error');
+        return;
+    }
+
+    // Show loading state
+    verifyOrderBtn.classList.add('loading');
+    verifyOrderBtn.disabled = true;
+
+    // Get customer info
+    const name = sessionStorage.getItem('checkout_name') || customerNameInput.value.trim();
+    const phone = sessionStorage.getItem('checkout_phone') || '254700000000';
+    const phoneFormatted = sessionStorage.getItem('checkout_phone_formatted') || '0700000000';
+    const orderRef = sessionStorage.getItem('checkout_order_ref') || currentOrderRef || 
+        'KV-' + Date.now().toString().slice(-8) + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
+
+    // Prepare order data with all required fields
+    const orderData = {
+        order_ref: orderRef,
+        product_id: currentProduct.id,
+        product_title: currentProduct.title,
+        customer_name: name,
+        customer_phone: phone,
+        amount: currentProduct.price || 0,
+        mpesa_code: code,
+        file_path: currentProduct.file_url || '',
+        payment_method: 'megapay',
+        verified_at: new Date().toISOString(),
+        created_at: new Date().toISOString()
+    };
+
+    console.log('📦 Verifying Order with data:', orderData);
+
+    // Send order to admin via Supabase
+    sendOrderToAdmin(orderData)
+        .then(() => {
+            verifyOrderBtn.classList.remove('loading');
+            verifyOrderBtn.disabled = false;
+            
+            // Close checkout modal
+            closeCheckoutModal();
+            
+            // Show success modal
+            successOrderRef.textContent = orderRef;
+            successPhone.textContent = phoneFormatted;
+            successModal.classList.add('open');
+            
+            showToast('✅', 'Order verified and sent to admin! Your download link will be sent shortly.', 'success');
+            
+            // Increment download count
+            if (currentProduct) {
+                currentProduct.download_count = (currentProduct.download_count || 0) + 1;
+            }
+            
+            // Clear session storage
+            sessionStorage.removeItem('checkout_name');
+            sessionStorage.removeItem('checkout_phone');
+            sessionStorage.removeItem('checkout_phone_formatted');
+            sessionStorage.removeItem('checkout_order_ref');
+            sessionStorage.removeItem('checkout_product_id');
+            sessionStorage.removeItem('checkout_product_title');
+            sessionStorage.removeItem('checkout_amount');
+            
+            currentProduct = null;
+            currentOrderRef = null;
+            isProcessing = false;
+            
+            // Reset button states
+            payPrimaryBtn.classList.remove('loading', 'opacity-75');
+            payPrimaryBtn.disabled = false;
+            payPrimaryBtn.querySelector('.btn-text').textContent = '📱 Buy Now';
+            mpesaVerificationBox.classList.remove('visible');
+            mpesaVerificationBox.style.display = 'none';
+        })
+        .catch((error) => {
+            console.error('❌ Verification error:', error);
+            showToast('❌', 'Failed to verify payment. Please try again.', 'error');
+            verifyOrderBtn.classList.remove('loading');
+            verifyOrderBtn.disabled = false;
+        });
+}
 
     // ── MOBILE SIDEBAR ──
     function toggleMobileSidebar() {
