@@ -1813,10 +1813,10 @@
         }, 5000);
     }
 
-    // ── FETCH RESOURCES ──
+    // ── FETCH RESOURCES ── (UPDATED: Fetches ALL resources without status filter)
     async function fetchResources() {
         try {
-            console.log('🔍 Fetching resources from Supabase...');
+            console.log('🔍 Fetching ALL resources from Supabase...');
             const response = await fetch(`${SUPABASE_URL}/rest/v1/resources?select=*&order=created_at.desc`, {
                 headers: {
                     'apikey': SUPABASE_ANON_KEY,
@@ -1826,7 +1826,16 @@
             });
             if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             const data = await response.json();
-            console.log(`✅ Loaded ${data.length} resources`);
+            console.log(`✅ Loaded ${data.length} total resources`);
+            
+            // Log status breakdown for debugging
+            const statusCounts = {};
+            data.forEach(function(r) {
+                const status = r.status || 'null';
+                statusCounts[status] = (statusCounts[status] || 0) + 1;
+            });
+            console.log('📊 Resource status breakdown:', statusCounts);
+            
             return data || [];
         } catch (error) {
             console.error('❌ Fetch error:', error);
@@ -2306,6 +2315,71 @@
         closeCheckoutModal();
     }
 
+    // ── SEND ORDER TO ADMIN (Supabase) ──
+    async function sendOrderToAdmin(orderData) {
+        try {
+            console.log('📤 Sending order to admin:', orderData);
+            
+            const response = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
+                method: 'POST',
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    order_ref: orderData.order_ref,
+                    payment_ref: orderData.order_ref,
+                    customer_name: orderData.customer_name,
+                    customer_phone: orderData.customer_phone,
+                    total_amount: orderData.amount,
+                    payment_status: 'pending_verification',
+                    mpesa_code: orderData.mpesa_code,
+                    item_count: 1,
+                    created_at: new Date().toISOString()
+                })
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('❌ Supabase insert error:', errorText);
+                throw new Error(errorText || 'Failed to create order');
+            }
+
+            const data = await response.json();
+            console.log('✅ Order sent to admin successfully:', data);
+            
+            if (data && data.length > 0) {
+                const orderId = data[0].id;
+                // Create order item
+                const itemResponse = await fetch(`${SUPABASE_URL}/rest/v1/order_items`, {
+                    method: 'POST',
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        order_id: orderId,
+                        resource_title: orderData.product_title,
+                        resource_path: orderData.file_path || '',
+                        quantity: 1,
+                        price: orderData.amount
+                    })
+                });
+
+                if (!itemResponse.ok) {
+                    console.error('❌ Order item insert error:', await itemResponse.text());
+                }
+            }
+
+            return data;
+        } catch (error) {
+            console.error('❌ Error sending order:', error);
+            throw error;
+        }
+    }
+
     // ── INITIATE PAYMENT ──
     function initiatePayment() {
         if (isProcessing) return;
@@ -2457,11 +2531,6 @@
                 document.getElementById('mpesaCodeInput').focus();
             }, 500);
             
-            // Increment download count
-            if (currentProduct) {
-                currentProduct.download_count = (currentProduct.download_count || 0) + 1;
-            }
-            
             // Reset processing state
             isProcessing = false;
             payPrimaryBtn.classList.remove('loading', 'opacity-75');
@@ -2470,7 +2539,7 @@
         }
     }
 
-    // ── VERIFY AND COMPLETE ORDER ──
+    // ── VERIFY AND COMPLETE ORDER ── (UPDATED: Sends order to admin with all details)
     function verifyAndCompleteOrder() {
         const code = mpesaCodeInput.value.trim().toUpperCase();
         
@@ -2497,7 +2566,7 @@
         const orderRef = sessionStorage.getItem('checkout_order_ref') || currentOrderRef || 
             'KV-' + Date.now().toString().slice(-8) + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
 
-        // Prepare order data for Supabase
+        // Prepare order data with all required fields
         const orderData = {
             order_ref: orderRef,
             product_id: currentProduct.id,
@@ -2505,56 +2574,62 @@
             customer_name: name,
             customer_phone: phone,
             amount: currentProduct.price || 0,
-            status: 'verified',
-            payment_code: code,
+            mpesa_code: code,
+            file_path: currentProduct.file_url || '',
             payment_method: 'megapay',
             verified_at: new Date().toISOString(),
             created_at: new Date().toISOString()
         };
 
-        console.log('📦 Verifying Order with Supabase:', orderData);
+        console.log('📦 Verifying Order with data:', orderData);
 
-        // Simulate Supabase update (Replace with actual API call)
-        setTimeout(() => {
-            verifyOrderBtn.classList.remove('loading');
-            verifyOrderBtn.disabled = false;
-            
-            // Close checkout modal
-            closeCheckoutModal();
-            
-            // Show success modal
-            successOrderRef.textContent = orderRef;
-            successPhone.textContent = phoneFormatted;
-            successModal.classList.add('open');
-            
-            showToast('✅', 'Order verified and completed successfully!', 'success');
-            
-            // Increment download count
-            if (currentProduct) {
-                currentProduct.download_count = (currentProduct.download_count || 0) + 1;
-            }
-            
-            // Clear session storage
-            sessionStorage.removeItem('checkout_name');
-            sessionStorage.removeItem('checkout_phone');
-            sessionStorage.removeItem('checkout_phone_formatted');
-            sessionStorage.removeItem('checkout_order_ref');
-            sessionStorage.removeItem('checkout_product_id');
-            sessionStorage.removeItem('checkout_product_title');
-            sessionStorage.removeItem('checkout_amount');
-            
-            currentProduct = null;
-            currentOrderRef = null;
-            isProcessing = false;
-            
-            // Reset button states
-            payPrimaryBtn.classList.remove('loading', 'opacity-75');
-            payPrimaryBtn.disabled = false;
-            payPrimaryBtn.querySelector('.btn-text').textContent = '📱 Buy Now';
-            mpesaVerificationBox.classList.remove('visible');
-            mpesaVerificationBox.style.display = 'none';
-            
-        }, 1500);
+        // Send order to admin via Supabase
+        sendOrderToAdmin(orderData)
+            .then(() => {
+                verifyOrderBtn.classList.remove('loading');
+                verifyOrderBtn.disabled = false;
+                
+                // Close checkout modal
+                closeCheckoutModal();
+                
+                // Show success modal
+                successOrderRef.textContent = orderRef;
+                successPhone.textContent = phoneFormatted;
+                successModal.classList.add('open');
+                
+                showToast('✅', 'Order verified and sent to admin! Your download link will be sent shortly.', 'success');
+                
+                // Increment download count
+                if (currentProduct) {
+                    currentProduct.download_count = (currentProduct.download_count || 0) + 1;
+                }
+                
+                // Clear session storage
+                sessionStorage.removeItem('checkout_name');
+                sessionStorage.removeItem('checkout_phone');
+                sessionStorage.removeItem('checkout_phone_formatted');
+                sessionStorage.removeItem('checkout_order_ref');
+                sessionStorage.removeItem('checkout_product_id');
+                sessionStorage.removeItem('checkout_product_title');
+                sessionStorage.removeItem('checkout_amount');
+                
+                currentProduct = null;
+                currentOrderRef = null;
+                isProcessing = false;
+                
+                // Reset button states
+                payPrimaryBtn.classList.remove('loading', 'opacity-75');
+                payPrimaryBtn.disabled = false;
+                payPrimaryBtn.querySelector('.btn-text').textContent = '📱 Buy Now';
+                mpesaVerificationBox.classList.remove('visible');
+                mpesaVerificationBox.style.display = 'none';
+            })
+            .catch((error) => {
+                console.error('❌ Verification error:', error);
+                showToast('❌', 'Failed to verify payment. Please try again.', 'error');
+                verifyOrderBtn.classList.remove('loading');
+                verifyOrderBtn.disabled = false;
+            });
     }
 
     // ── MOBILE SIDEBAR ──
