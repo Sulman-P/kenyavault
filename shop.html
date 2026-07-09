@@ -1566,7 +1566,7 @@
                 <input type="tel" id="phoneInput" placeholder="0712 345 678 or 2547..." maxlength="13" autocomplete="tel" inputmode="numeric" />
                 <div class="phone-hint">
                     <span class="hint-icon">⏳</span>
-                    You'll receive an M-PESA STK Push on this number
+                    You'll be redirected to MegaPay in a new tab to complete payment
                 </div>
             </div>
 
@@ -1574,7 +1574,7 @@
             <button class="btn-pay-primary" id="payPrimaryBtn" onclick="initiatePayment()">
                 <span class="spinner"></span>
                 <span class="btn-text">📱 Buy Now</span>
-                <span class="btn-loading-text">⚡ Processing Payment...</span>
+                <span class="btn-loading-text">⚡ Opening MegaPay...</span>
             </button>
 
             <!-- Conditional M-PESA Verification Box (Hidden by Default) -->
@@ -1582,6 +1582,8 @@
                 <span class="verify-label">🔑 Verify Your Payment</span>
                 <p class="verify-sub">
                     Once you receive your M-PESA SMS confirmation, enter your transaction details below to unlock your downloads.
+                    <br><br>
+                    <strong>💡 Tip:</strong> After completing payment in the MegaPay tab, return here to verify.
                 </p>
                 <input 
                     type="text" 
@@ -1702,6 +1704,7 @@
     let currentProduct = null;
     let currentOrderRef = null;
     let isProcessing = false;
+    let megapayWindow = null;
 
     // ── LEVEL DATA ──
     const LEVEL_ORDER = [
@@ -1842,7 +1845,13 @@
             updateCounts();
             applyLevelFromURL();
             renderShop();
+            
+            // Check for MegaPay callback on page load
             checkPaymentCallback();
+            
+            // Also check for callback periodically
+            setInterval(checkPaymentCallback, 3000);
+            
         } catch (e) {
             console.error('Init error:', e);
             renderError(e);
@@ -2332,7 +2341,7 @@
         // Generate order reference
         currentOrderRef = 'KV-' + Date.now().toString().slice(-8) + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
         
-        // Store customer info
+        // Store customer info in sessionStorage
         sessionStorage.setItem('checkout_name', name);
         sessionStorage.setItem('checkout_phone', validation.international);
         sessionStorage.setItem('checkout_phone_formatted', validation.formatted);
@@ -2341,42 +2350,38 @@
         sessionStorage.setItem('checkout_product_title', currentProduct.title);
         sessionStorage.setItem('checkout_amount', currentProduct.price || 0);
 
-        // ── 1. Fire MegaPay API Request ──
-        triggerMegaPayAPI(name, validation.international, currentProduct);
+        // ── 1. Open MegaPay in NEW TAB ──
+        openMegaPayInNewTab(name, validation.international, currentProduct);
 
         // ── 2. Change button text to show processing state ──
-        payPrimaryBtn.querySelector('.btn-text').textContent = '⚡ Waiting for M-PESA Transaction...';
+        payPrimaryBtn.querySelector('.btn-text').textContent = '⚡ Opening MegaPay...';
         payPrimaryBtn.classList.add('opacity-75');
 
-        // ── 3. Dynamically reveal the verification container ──
+        // ── 3. Reveal the verification container after delay ──
         setTimeout(() => {
             mpesaVerificationBox.style.display = 'block';
             // Force reflow for animation
             void mpesaVerificationBox.offsetWidth;
             mpesaVerificationBox.classList.add('visible');
             
+            // Update button text
+            payPrimaryBtn.querySelector('.btn-text').textContent = '📱 Return after payment';
+            payPrimaryBtn.classList.remove('loading');
+            payPrimaryBtn.disabled = false;
+            
             // Focus on code input
             setTimeout(() => {
                 mpesaCodeInput.focus();
             }, 300);
             
-            showToast('📲', 'STK Push sent! Check your phone for the M-PESA prompt.', 'success');
-        }, 1500);
-
-        // Reset processing after 30 seconds (safety net)
-        setTimeout(() => {
-            if (isProcessing) {
-                isProcessing = false;
-                payPrimaryBtn.classList.remove('loading', 'opacity-75');
-                payPrimaryBtn.disabled = false;
-                payPrimaryBtn.querySelector('.btn-text').textContent = '📱 Buy Now';
-            }
-        }, 30000);
+            showToast('💳', 'MegaPay opened in new tab. Complete payment and return here to verify.', 'success');
+            isProcessing = false;
+        }, 2000);
     }
 
-    // ── TRIGGER MEGAPAY API ──
-    function triggerMegaPayAPI(name, phone, product) {
-        console.log('🚀 Triggering MegaPay API...');
+    // ── OPEN MEGAPAY IN NEW TAB ──
+    function openMegaPayInNewTab(name, phone, product) {
+        console.log('🚀 Opening MegaPay in new tab...');
         console.log('📦 Order Details:', {
             name: name,
             phone: phone,
@@ -2400,13 +2405,22 @@
         
         console.log('🔗 MegaPay URL:', paymentUrl);
         
-        // Open MegaPay in new window/tab
-        window.open(paymentUrl, '_blank');
+        // Open MegaPay in NEW TAB
+        megapayWindow = window.open(paymentUrl, '_blank');
         
-        // Also try to navigate in current window as fallback
-        setTimeout(() => {
-            window.location.href = paymentUrl;
-        }, 500);
+        // If popup was blocked, show a message
+        if (!megapayWindow || megapayWindow.closed || typeof megapayWindow.closed === 'undefined') {
+            showToast('⚠️', 'Popup blocked! Please allow popups or click the link below.', 'error');
+            
+            // Show a fallback link
+            const fallbackLink = document.createElement('div');
+            fallbackLink.style.cssText = 'margin-top:10px;padding:10px;background:#fef2f2;border-radius:8px;border:1px solid #fca5a5;text-align:center;';
+            fallbackLink.innerHTML = `
+                <p style="font-size:0.8rem;color:#991b1b;margin-bottom:6px;">Click the link below to complete payment:</p>
+                <a href="${paymentUrl}" target="_blank" style="color:#D4A017;font-weight:600;text-decoration:underline;">${paymentUrl}</a>
+            `;
+            mpesaVerificationBox.appendChild(fallbackLink);
+        }
     }
 
     // ── CHECK PAYMENT CALLBACK ──
@@ -2429,30 +2443,30 @@
             // Get stored customer info
             const phone = sessionStorage.getItem('checkout_phone_formatted') || '0700000000';
             
-            showToast('✅', 'Payment successful! Please verify your order.', 'success');
+            showToast('✅', 'Payment successful! Please enter your verification code.', 'success');
             
-            // Show success modal
+            // Auto-fill the code if provided
+            if (transaction_id && transaction_id.length >= 4) {
+                const code = transaction_id.slice(-4).toUpperCase();
+                document.getElementById('mpesaCodeInput').value = code;
+                showToast('🔑', 'Transaction code auto-filled. Click verify to complete.', 'success');
+            }
+            
+            // Focus on code input
             setTimeout(() => {
-                successOrderRef.textContent = reference;
-                successPhone.textContent = phone;
-                successModal.classList.add('open');
-                
-                // Increment download count
-                if (currentProduct) {
-                    currentProduct.download_count = (currentProduct.download_count || 0) + 1;
-                }
-                
-                // Clear processing state
-                isProcessing = false;
-                payPrimaryBtn.classList.remove('loading', 'opacity-75');
-                payPrimaryBtn.disabled = false;
-                payPrimaryBtn.querySelector('.btn-text').textContent = '📱 Buy Now';
-                
-                // Hide verification box
-                mpesaVerificationBox.classList.remove('visible');
-                mpesaVerificationBox.style.display = 'none';
-                
-            }, 800);
+                document.getElementById('mpesaCodeInput').focus();
+            }, 500);
+            
+            // Increment download count
+            if (currentProduct) {
+                currentProduct.download_count = (currentProduct.download_count || 0) + 1;
+            }
+            
+            // Reset processing state
+            isProcessing = false;
+            payPrimaryBtn.classList.remove('loading', 'opacity-75');
+            payPrimaryBtn.disabled = false;
+            payPrimaryBtn.querySelector('.btn-text').textContent = '📱 Payment Completed';
         }
     }
 
@@ -2588,9 +2602,8 @@
         }
     });
 
-    // ── CODE INPUT AUTO-FOCUS AND FORMAT ──
+    // ── CODE INPUT AUTO-FORMAT ──
     document.addEventListener('DOMContentLoaded', function() {
-        // Auto-advance to next field if needed (for mobile)
         const codeInput = document.getElementById('mpesaCodeInput');
         if (codeInput) {
             codeInput.addEventListener('input', function() {
@@ -2599,12 +2612,30 @@
                     // Optionally auto-submit
                 }
             });
+            
+            // Auto-submit on Enter key
+            codeInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' && this.value.length === 4) {
+                    verifyAndCompleteOrder();
+                }
+            });
         }
+    });
+
+    // ── CHECK FOR PAYMENT CALLBACK ON LOAD ──
+    document.addEventListener('DOMContentLoaded', function() {
+        // Check immediately
+        checkPaymentCallback();
+        
+        // Check again after 1 second (for slower callbacks)
+        setTimeout(checkPaymentCallback, 1000);
+        
+        // And every 5 seconds after that
+        setInterval(checkPaymentCallback, 5000);
     });
 
     // ── INIT ──
     document.addEventListener('DOMContentLoaded', function() {
-        checkPaymentCallback();
         init();
     });
 </script>
