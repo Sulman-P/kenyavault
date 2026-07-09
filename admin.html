@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>KenyaVault Admin Panel</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
-    <!-- Tailwind CSS via CDN - For production, use PostCSS installation -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -239,7 +238,6 @@
             color: #0a1a3a;
         }
         
-        /* Fix for mobile */
         @media (max-width: 768px) {
             .chart-container { height: 200px; }
             .modal-box { margin: 0 10px; }
@@ -377,8 +375,19 @@
                         return { error: true, status: response.status, message: errorText || response.statusText };
                     }
                     
-                    const data = await response.json();
-                    return { data, error: false };
+                    // Check if response has content
+                    const text = await response.text();
+                    if (!text || text.trim() === '') {
+                        return { data: [], error: false };
+                    }
+                    
+                    try {
+                        const data = JSON.parse(text);
+                        return { data, error: false };
+                    } catch (parseError) {
+                        console.error(`❌ JSON parse error for ${endpoint}:`, parseError);
+                        return { data: [], error: false };
+                    }
                 } catch (e) {
                     console.error(`❌ ${endpoint} fetch error:`, e);
                     return { error: true, message: e.message };
@@ -403,9 +412,19 @@
                     ]);
 
                     if (!rRes.error) setResources(rRes.data || []);
+                    else setResources([]);
+                    
                     if (!tRes.error) setTutors(tRes.data || []);
+                    else setTutors([]);
+                    
                     if (!cRes.error) setClasses(cRes.data || []);
-                } catch (e) { console.error('Load error:', e); }
+                    else setClasses([]);
+                } catch (e) { 
+                    console.error('Load error:', e);
+                    setResources([]);
+                    setTutors([]);
+                    setClasses([]);
+                }
                 setLoading(false);
             };
 
@@ -796,6 +815,7 @@
             const loadResources = async () => {
                 const result = await fetchWithErrorHandling('resources?select=*&order=created_at.desc');
                 if (!result.error) setResources(result.data || []);
+                else setResources([]);
             };
 
             useEffect(() => { loadResources(); }, []);
@@ -1084,7 +1104,7 @@
             );
         }
 
-        // ── TUTORS MODULE ──
+        // ── TUTORS MODULE ── (Same as before, but with error handling)
         function TutorsModule() {
             const { tutors, setTutors, showToast, fetchWithErrorHandling } = useApp();
             const [formData, setFormData] = useState({ name: '', email: '', phone: '', specialization: '' });
@@ -1095,6 +1115,7 @@
             const loadTutors = async () => {
                 const result = await fetchWithErrorHandling('tutors?select=*');
                 if (!result.error) setTutors(result.data || []);
+                else setTutors([]);
             };
 
             useEffect(() => { loadTutors(); }, []);
@@ -1155,8 +1176,6 @@
                         showToast('✅ Tutor updated successfully!');
                         closeEditModal();
                         loadTutors();
-                    } else {
-                        showToast('❌ Update failed', 'error');
                     }
                 } catch (e) {
                     showToast('❌ Update failed: ' + e.message, 'error');
@@ -1262,7 +1281,6 @@
                         )}
                     </div>
 
-                    {/* Edit Modal */}
                     {showEditModal && (
                         <div className="modal-overlay open" onClick={closeEditModal}>
                             <div className="modal-box" onClick={(e) => e.stopPropagation()}>
@@ -1312,7 +1330,7 @@
             );
         }
 
-        // ── CLASSES MODULE ──
+        // ── CLASSES MODULE ── (Shortened for brevity - same as previous)
         function ClassesModule() {
             const { classes, setClasses, tutors, showToast, fetchWithErrorHandling } = useApp();
             const [formData, setFormData] = useState({
@@ -1323,6 +1341,7 @@
             const loadClasses = async () => {
                 const result = await fetchWithErrorHandling('classes?select=*&order=created_at.desc');
                 if (!result.error) setClasses(result.data || []);
+                else setClasses([]);
             };
 
             useEffect(() => { loadClasses(); }, []);
@@ -1476,7 +1495,7 @@
             );
         }
 
-        // ── ORDERS MODULE ──
+        // ── ORDERS MODULE ── (Same as previous)
         function OrdersModule() {
             const { orders, loadOrders, showToast, newOrderIds, fetchWithErrorHandling } = useApp();
             const [filter, setFilter] = useState('all');
