@@ -1051,7 +1051,7 @@
         .btn-mpesa-stk.loading .btn-loading-text { display: inline; }
         .btn-mpesa-stk .btn-loading-text { display: none; }
 
-        .btn-confirm-order {
+        .btn-megapay {
             width: 100%;
             padding: 14px 20px;
             background: linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%);
@@ -1069,29 +1069,17 @@
             gap: 10px;
             min-height: 56px;
             box-shadow: 0 4px 16px rgba(124, 58, 237, 0.3);
+            margin-top: 10px;
         }
-        .btn-confirm-order:hover:not(:disabled) {
+        .btn-megapay:hover:not(:disabled) {
             transform: translateY(-2px);
             box-shadow: 0 8px 28px rgba(124, 58, 237, 0.4);
         }
-        .btn-confirm-order:disabled {
+        .btn-megapay:disabled {
             opacity: 0.7;
             cursor: not-allowed;
             transform: none;
         }
-        .btn-confirm-order .spinner {
-            display: none;
-            width: 20px;
-            height: 20px;
-            border: 2.5px solid rgba(255, 255, 255, 0.3);
-            border-top-color: #ffffff;
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-        }
-        .btn-confirm-order.loading .spinner { display: inline-block; }
-        .btn-confirm-order.loading .btn-text { display: none; }
-        .btn-confirm-order.loading .btn-loading-text { display: inline; }
-        .btn-confirm-order .btn-loading-text { display: none; }
 
         .mpesa-footer-note {
             text-align: center;
@@ -1574,7 +1562,12 @@
                 <span class="btn-loading-text">⏳ Sending STK Push...</span>
             </button>
 
-            <!-- Confirm Order Button -->
+            <!-- MegaPay Payment Button -->
+            <button class="btn-megapay" id="megapayBtn" onclick="redirectToMegaPay()">
+                💳 Pay with M-PESA via MegaPay
+            </button>
+
+            <!-- Confirm Order Button (for manual verification) -->
             <button class="btn-confirm-order" id="confirmOrderBtn" style="display:none;" onclick="confirmOrder()">
                 <span class="spinner"></span>
                 <span class="btn-text">✅ Confirm & Place Order</span>
@@ -1592,13 +1585,15 @@
 <div class="success-modal-overlay" id="successModal">
     <div class="success-modal">
         <div class="success-icon">✅</div>
-        <h3>Order Placed Successfully!</h3>
+        <h3>Payment Initiated!</h3>
         <p style="font-size:0.82rem;color:var(--muted);margin-bottom:4px;">Your order reference is:</p>
         <div class="order-ref" id="successOrderRef">—</div>
         <p class="success-note">
-            📱 Your download link will be sent to your WhatsApp number <strong id="successPhone">—</strong> once the admin confirms your payment.
+            📱 You will receive a payment confirmation via SMS from M-PESA.
             <br><br>
-            💡 Please allow up to 5 minutes for confirmation.
+            💡 Your download link will be sent to your WhatsApp number <strong id="successPhone">—</strong> once payment is confirmed.
+            <br><br>
+            ⏳ Please allow up to 5 minutes for confirmation.
         </p>
         <button class="btn-done" onclick="closeSuccessModal()">Got it, thanks!</button>
     </div>
@@ -1668,7 +1663,11 @@
     // ── SUPABASE CONFIG ──
     const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
-    const MEGAPAY_LINK = 'https://megapay.co.ke/tags/S1Zzyjs';
+    
+    // ── MEGAPAY CONFIG ──
+    const MEGAPAY_BASE_URL = 'https://megapay.co.ke';
+    const MEGAPAY_TAG = 'S1Zzyjs';
+    const MEGAPAY_PAYMENT_URL = `${MEGAPAY_BASE_URL}/tags/${MEGAPAY_TAG}`;
 
     // ── STATE ──
     let allResources = [];
@@ -1749,8 +1748,8 @@
 
     // ── M-PESA MODAL DOM REFS ──
     const mpesaModal = document.getElementById('mpesaModal');
-    const mpesaModalClose = document.getElementById('mpesaModalClose');
     const mpesaStkBtn = document.getElementById('mpesaStkBtn');
+    const megapayBtn = document.getElementById('megapayBtn');
     const confirmOrderBtn = document.getElementById('confirmOrderBtn');
     const mpesaPhoneInput = document.getElementById('mpesaPhoneInput');
     const mpesaCodeInput = document.getElementById('mpesaCodeInput');
@@ -2236,6 +2235,7 @@
         mpesaCodeInput.value = '';
         mpesaCodeGroup.style.display = 'none';
         mpesaStkBtn.style.display = 'flex';
+        megapayBtn.style.display = 'flex';
         confirmOrderBtn.style.display = 'none';
         mpesaStkBtn.classList.remove('loading');
         mpesaStkBtn.disabled = false;
@@ -2257,6 +2257,7 @@
         mpesaStkBtn.querySelector('.btn-text').textContent = '📲 Send STK Push Request';
         mpesaCodeGroup.style.display = 'none';
         mpesaStkBtn.style.display = 'flex';
+        megapayBtn.style.display = 'flex';
         confirmOrderBtn.style.display = 'none';
     }
 
@@ -2265,7 +2266,70 @@
         closeMPesaModal();
     }
 
-    // ── HANDLE STK PUSH ──
+    // ── REDIRECT TO MEGAPAY ──
+    function redirectToMegaPay() {
+        const name = customerNameInput.value.trim();
+        const phone = mpesaPhoneInput.value.trim();
+
+        if (!name) {
+            customerNameInput.classList.add('error');
+            showToast('⚠️', 'Please enter your full name', 'error');
+            return;
+        }
+        customerNameInput.classList.remove('error');
+
+        const validation = validateKenyanPhone(phone);
+        if (!validation.valid) {
+            mpesaPhoneInput.classList.add('error');
+            showToast('⚠️', 'Please enter a valid Safaricom phone number (e.g., 0712 345 678)', 'error');
+            return;
+        }
+        mpesaPhoneInput.classList.remove('error');
+
+        if (!currentProduct) {
+            showToast('⚠️', 'No product selected', 'error');
+            return;
+        }
+
+        // Store customer info for order tracking
+        const orderRef = 'KV-' + Date.now().toString().slice(-8) + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
+        
+        sessionStorage.setItem('checkout_name', name);
+        sessionStorage.setItem('checkout_phone', validation.international);
+        sessionStorage.setItem('checkout_phone_formatted', validation.formatted);
+        sessionStorage.setItem('checkout_order_ref', orderRef);
+        sessionStorage.setItem('checkout_product_id', currentProduct.id);
+        sessionStorage.setItem('checkout_product_title', currentProduct.title);
+        sessionStorage.setItem('checkout_amount', currentProduct.price || 0);
+
+        // Build MegaPay URL with parameters
+        const paymentParams = new URLSearchParams({
+            name: name,
+            phone: validation.international,
+            email: 'customer@kenyavault.co.ke',
+            amount: currentProduct.price || 0,
+            reference: orderRef,
+            description: currentProduct.title || 'Educational Resource',
+            callback: window.location.origin + '/payment-callback.html'
+        });
+
+        const paymentUrl = `${MEGAPAY_PAYMENT_URL}?${paymentParams.toString()}`;
+        
+        console.log('🔗 Redirecting to MegaPay:', paymentUrl);
+        
+        // Close modal and redirect
+        closeMPesaModal();
+        
+        // Show loading toast
+        showToast('⏳', 'Redirecting to MegaPay...', 'success');
+        
+        // Redirect after short delay
+        setTimeout(function() {
+            window.location.href = paymentUrl;
+        }, 1000);
+    }
+
+    // ── HANDLE STK PUSH (Legacy/Alternative) ──
     function handleSTKPush() {
         const phone = mpesaPhoneInput.value.trim();
         const name = customerNameInput.value.trim();
@@ -2298,23 +2362,21 @@
 
         // Simulate STK Push (Replace with actual API call)
         setTimeout(function() {
-            // Show success for STK Push
             mpesaStkBtn.classList.remove('loading');
             mpesaStkBtn.disabled = false;
             
             // Show code input
             mpesaCodeGroup.style.display = 'block';
             mpesaStkBtn.style.display = 'none';
+            megapayBtn.style.display = 'none';
             confirmOrderBtn.style.display = 'flex';
             
             showToast('✅', 'STK Push sent! Check your phone for the prompt.', 'success');
             
-            // Store customer data for order confirmation
             sessionStorage.setItem('checkout_name', name);
             sessionStorage.setItem('checkout_phone', validation.international);
             sessionStorage.setItem('checkout_phone_formatted', validation.formatted);
             
-            // Focus on code input
             setTimeout(function() {
                 mpesaCodeInput.focus();
             }, 300);
@@ -2322,7 +2384,7 @@
         }, 2000);
     }
 
-    // ── CONFIRM ORDER ──
+    // ── CONFIRM ORDER (Manual verification) ──
     function confirmOrder() {
         const code = mpesaCodeInput.value.trim().toUpperCase();
         
@@ -2338,19 +2400,15 @@
             return;
         }
 
-        // Show loading
         confirmOrderBtn.classList.add('loading');
         confirmOrderBtn.disabled = true;
 
-        // Get customer info
         const name = sessionStorage.getItem('checkout_name') || customerNameInput.value.trim();
         const phone = sessionStorage.getItem('checkout_phone') || '254700000000';
         const phoneFormatted = sessionStorage.getItem('checkout_phone_formatted') || '0700000000';
 
-        // Generate order reference
         const orderRef = 'KV-' + Date.now().toString().slice(-8) + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
 
-        // Prepare order data
         const orderData = {
             order_ref: orderRef,
             product_id: currentProduct.id,
@@ -2363,31 +2421,24 @@
             payment_code: code
         };
 
-        // Save order to Supabase (Replace with actual API call)
         console.log('📦 Order Data:', orderData);
 
-        // Simulate order processing
         setTimeout(function() {
-            // Show success
             confirmOrderBtn.classList.remove('loading');
             confirmOrderBtn.disabled = false;
             
-            // Close checkout modal
             closeMPesaModal();
             
-            // Show success modal
             successOrderRef.textContent = orderRef;
             successPhone.textContent = phoneFormatted;
             successModal.classList.add('open');
             
             showToast('✅', 'Order placed successfully!', 'success');
             
-            // Increment download count (simulate)
             if (currentProduct) {
                 currentProduct.download_count = (currentProduct.download_count || 0) + 1;
             }
             
-            // Reset
             currentProduct = null;
             sessionStorage.removeItem('checkout_name');
             sessionStorage.removeItem('checkout_phone');
@@ -2418,7 +2469,6 @@
         tab.addEventListener('click', function() {
             const level = this.dataset.level;
             setLevel(level);
-            // Update URL
             const url = new URL(window.location);
             if (level === 'all') {
                 url.searchParams.delete('level');
@@ -2442,8 +2492,44 @@
         }
     });
 
+    // ── CHECK FOR PAYMENT CALLBACK ──
+    function checkPaymentCallback() {
+        const params = new URLSearchParams(window.location.search);
+        const status = params.get('status');
+        const reference = params.get('reference');
+        
+        if (status === 'success' && reference) {
+            showToast('✅', 'Payment successful! Your order is being processed.', 'success');
+            
+            // Clear URL params
+            const url = new URL(window.location);
+            url.searchParams.delete('status');
+            url.searchParams.delete('reference');
+            window.history.replaceState({}, '', url);
+            
+            // Show success modal with order details
+            const orderRef = reference || sessionStorage.getItem('checkout_order_ref') || 'KV-' + Date.now().toString().slice(-8);
+            const phone = sessionStorage.getItem('checkout_phone_formatted') || '0700000000';
+            
+            setTimeout(function() {
+                successOrderRef.textContent = orderRef;
+                successPhone.textContent = phone;
+                successModal.classList.add('open');
+            }, 500);
+        } else if (status === 'failed') {
+            showToast('❌', 'Payment failed. Please try again.', 'error');
+            const url = new URL(window.location);
+            url.searchParams.delete('status');
+            url.searchParams.delete('reference');
+            window.history.replaceState({}, '', url);
+        }
+    }
+
     // ── INIT ──
-    document.addEventListener('DOMContentLoaded', init);
+    document.addEventListener('DOMContentLoaded', function() {
+        checkPaymentCallback();
+        init();
+    });
 </script>
 
 </body>
