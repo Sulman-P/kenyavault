@@ -48,6 +48,8 @@
         .status-badge.suspended { background: #fee2e2; color: #991b1b; }
         .status-badge.live { background: #d1fae5; color: #065f46; }
         .status-badge.paid { background: #d1fae5; color: #065f46; }
+        .status-badge.paid-out { background: #d1fae5; color: #065f46; }
+        .status-badge.pending-payment { background: #fef3c7; color: #92400e; }
         .dark .status-badge.pending { background: #78350f; color: #fbbf24; }
         .dark .status-badge.active { background: #1e3a5f; color: #60a5fa; }
         .dark .status-badge.completed { background: #064e3b; color: #34d399; }
@@ -57,6 +59,8 @@
         .dark .status-badge.suspended { background: #7f1d1d; color: #f87171; }
         .dark .status-badge.live { background: #064e3b; color: #34d399; }
         .dark .status-badge.paid { background: #064e3b; color: #34d399; }
+        .dark .status-badge.paid-out { background: #064e3b; color: #34d399; }
+        .dark .status-badge.pending-payment { background: #78350f; color: #fbbf24; }
         
         .login-bg {
             background: linear-gradient(135deg, #0a1a3a 0%, #1a2a5a 50%, #2a3a6a 100%);
@@ -159,8 +163,6 @@
         }
         .btn-loading .spinner { display: inline-block; }
         .btn-loading .btn-text { display: none; }
-        .btn-loading .btn-loading-text { display: inline; }
-        .btn-loading .btn-loading-text { display: none; }
         .btn-loading .btn-loading-text { display: inline; }
         
         .drop-zone {
@@ -309,6 +311,27 @@
             background: #D4A017;
             color: #0a1a3a;
         }
+        
+        .payout-card {
+            border-left: 4px solid #D4A017;
+        }
+        .payout-card.paid {
+            border-left-color: #16A34A;
+        }
+        .payout-card.pending {
+            border-left-color: #F59E0B;
+        }
+        
+        .settings-section {
+            padding: 16px 0;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .settings-section:last-child {
+            border-bottom: none;
+        }
+        .dark .settings-section {
+            border-color: #374151;
+        }
     </style>
 </head>
 <body>
@@ -330,6 +353,7 @@
             username: 'adminnexalearn@gmail.com',
             password: 'KenyaVault2026'
         };
+        const TUTOR_PAYOUT_PERCENTAGE = 80;
 
         const adminModules = [
             { id: 'dashboard', icon: '📊', label: 'Dashboard', desc: 'Overview & Analytics' },
@@ -359,6 +383,7 @@
             const [classes, setClasses] = useState([]);
             const [toast, setToast] = useState(null);
             const [newOrderIds, setNewOrderIds] = useState([]);
+            const [payments, setPayments] = useState([]);
 
             useEffect(() => {
                 localStorage.setItem('kv-dark-mode', darkMode);
@@ -475,6 +500,15 @@
                         const data = await cRes.json();
                         setClasses(data || []);
                     }
+
+                    // Load payments
+                    const pRes = await fetch(`${SUPABASE_URL}/rest/v1/tutor_payments?select=*&order=created_at.desc`, {
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+                    });
+                    if (pRes.ok) {
+                        const data = await pRes.json();
+                        setPayments(data || []);
+                    }
                 } catch (e) { console.error('Load error:', e); }
                 setLoading(false);
             };
@@ -533,13 +567,15 @@
                     orders, setOrders,
                     resources, setResources,
                     classes, setClasses,
+                    payments, setPayments,
                     toast, showToast,
                     toggleSidebar,
                     loadData,
                     loadOrders,
                     newOrderIds,
                     setNewOrderIds,
-                    showNotification
+                    showNotification,
+                    TUTOR_PAYOUT_PERCENTAGE
                 }}>
                     {children}
                 </AppContext.Provider>
@@ -639,11 +675,7 @@
                                 </button>
                             ))}
                         </nav>
-                        <div className="border-t border-[#D4A017]/20 p-4 flex-shrink-0 space-y-3">
-                            <button onClick={() => setCurrentModule('settings')} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-400 hover:bg-white/5 hover:text-white transition">
-                                <span className="text-xl flex-shrink-0">⚙️</span>
-                                <span className={`text-sm font-medium transition-opacity duration-300 ${!sidebarOpen ? 'lg:opacity-0 lg:group-hover:opacity-100' : 'opacity-100'}`}>Settings</span>
-                            </button>
+                        <div className="border-t border-[#D4A017]/20 p-4 flex-shrink-0">
                             <button onClick={logout} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-red-400 hover:bg-red-500/10 transition">
                                 <span className="text-xl flex-shrink-0">🚪</span>
                                 <span className={`text-sm font-medium transition-opacity duration-300 ${!sidebarOpen ? 'lg:opacity-0 lg:group-hover:opacity-100' : 'opacity-100'}`}>Logout</span>
@@ -677,7 +709,7 @@
                                 Live
                             </span>
                             <button onClick={toggleDarkMode} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5">
-                                {darkMode ? <svg className="w-5 h-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" /></svg> : <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>}
+                                {darkMode ? '☀️' : '🌙'}
                             </button>
                             <button className="w-8 h-8 rounded-full bg-[#D4A017] flex items-center justify-center text-[#0a1a3a] font-bold text-sm">A</button>
                         </div>
@@ -1077,31 +1109,847 @@
 
         // ── RESOURCES MODULE ──
         function ResourcesModule() {
-            // ... (keep the existing ResourcesModule code)
-            // I'll include it in the full file below
+            const { resources, setResources, showToast } = useApp();
+            const [uploading, setUploading] = useState(false);
+            const [selectedFile, setSelectedFile] = useState(null);
+            const [compressedFile, setCompressedFile] = useState(null);
+            const [progress, setProgress] = useState(0);
+            const [formData, setFormData] = useState({
+                title: '', subject: '', level: '', curriculum: 'cbc',
+                resource_type: 'lesson-plan', price: 0, description: ''
+            });
+            const [editingResource, setEditingResource] = useState(null);
+            const [showEditModal, setShowEditModal] = useState(false);
+            const [editFormData, setEditFormData] = useState({ title: '', price: 0, status: 'draft' });
+
+            const loadResources = async () => {
+                try {
+                    const response = await fetch(`${SUPABASE_URL}/rest/v1/resources?select=*&order=created_at.desc`, {
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+                    });
+                    if (response.ok) {
+                        const data = await response.json();
+                        setResources(data || []);
+                    }
+                } catch (e) { console.error('Load resources error:', e); }
+            };
+
+            useEffect(() => { loadResources(); }, []);
+
+            const handleFileSelect = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                setSelectedFile(file);
+                setCompressedFile(null);
+                setProgress(0);
+
+                if (file.type === 'application/pdf' && file.size > 1024 * 1024) {
+                    showToast('🔄 Compressing PDF...', 'Compressing file to reduce size');
+                    try {
+                        const compressed = await compressPDF(file, (pct) => {
+                            setProgress(pct);
+                        });
+                        setCompressedFile(compressed);
+                        setProgress(100);
+                        showToast('✅ Compression complete!', `Saved ${((1 - compressed.size / file.size) * 100).toFixed(0)}% space`);
+                    } catch (err) {
+                        showToast('⚠️ Compression failed', 'Using original file');
+                        setCompressedFile(file);
+                        setProgress(100);
+                    }
+                } else {
+                    setCompressedFile(file);
+                    setProgress(100);
+                }
+            };
+
+            const handleUpload = async (e) => {
+                e.preventDefault();
+                const { title, subject, level, resource_type } = formData;
+                if (!title || !subject || !level || !resource_type || !selectedFile) {
+                    showToast('⚠️ Please fill in all required fields and select a file', 'error');
+                    return;
+                }
+
+                setUploading(true);
+                try {
+                    const fileToUpload = compressedFile || selectedFile;
+                    const fileExt = fileToUpload.name.split('.').pop();
+                    const filePath = `resources/${Date.now()}-${title.replace(/\s+/g, '_')}.${fileExt}`;
+
+                    const formData2 = new FormData();
+                    formData2.append('file', fileToUpload);
+
+                    const uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/${STORAGE_BUCKET}/${filePath}`, {
+                        method: 'POST',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                        },
+                        body: formData2
+                    });
+
+                    if (!uploadRes.ok) throw new Error('Upload failed');
+
+                    const resourceData = {
+                        title, subject, level,
+                        curriculum: formData.curriculum,
+                        resource_type: formData.resource_type,
+                        price: parseFloat(formData.price) || 0,
+                        description: formData.description,
+                        file_url: filePath,
+                        status: 'draft',
+                        created_at: new Date().toISOString(),
+                        download_count: 0
+                    };
+
+                    const createRes = await fetch(`${SUPABASE_URL}/rest/v1/resources`, {
+                        method: 'POST',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(resourceData)
+                    });
+
+                    if (!createRes.ok) throw new Error('Failed to create resource record');
+
+                    showToast('✅ Resource uploaded successfully!');
+                    setFormData({ title: '', subject: '', level: '', curriculum: 'cbc', resource_type: 'lesson-plan', price: 0, description: '' });
+                    setSelectedFile(null);
+                    setCompressedFile(null);
+                    setProgress(0);
+                    loadResources();
+                } catch (err) {
+                    showToast('❌ Upload failed: ' + err.message, 'error');
+                }
+                setUploading(false);
+            };
+
+            const openEditModal = (resource) => {
+                setEditingResource(resource);
+                setEditFormData({
+                    title: resource.title || '',
+                    price: resource.price || 0,
+                    status: resource.status || 'draft'
+                });
+                setShowEditModal(true);
+            };
+
+            const closeEditModal = () => {
+                setShowEditModal(false);
+                setEditingResource(null);
+            };
+
+            const handleEditSave = async () => {
+                if (!editingResource) return;
+                try {
+                    const response = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${editingResource.id}`, {
+                        method: 'PATCH',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            title: editFormData.title,
+                            price: parseFloat(editFormData.price) || 0,
+                            status: editFormData.status
+                        })
+                    });
+                    if (response.ok) {
+                        showToast('✅ Resource updated successfully!');
+                        closeEditModal();
+                        loadResources();
+                    }
+                } catch (e) {
+                    showToast('❌ Update failed', 'error');
+                }
+            };
+
+            const toggleStatus = async (id, currentStatus) => {
+                const newStatus = currentStatus === 'live' ? 'draft' : 'live';
+                try {
+                    const response = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${id}`, {
+                        method: 'PATCH',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ status: newStatus })
+                    });
+                    if (response.ok) {
+                        showToast(`✅ Resource ${newStatus === 'live' ? 'published' : 'drafted'}`);
+                        loadResources();
+                    }
+                } catch (e) {
+                    showToast('❌ Status update failed', 'error');
+                }
+            };
+
+            const deleteResource = async (id) => {
+                if (!confirm('Delete this resource permanently?')) return;
+                try {
+                    const response = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${id}`, {
+                        method: 'DELETE',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                        }
+                    });
+                    if (response.ok) {
+                        showToast('✅ Resource deleted');
+                        loadResources();
+                    }
+                } catch (e) {
+                    showToast('❌ Delete failed', 'error');
+                }
+            };
+
+            return (
+                <div className="space-y-6 fade-in">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">📤 Upload New Resource</h3>
+                        <form onSubmit={handleUpload} className="space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Title *</label>
+                                    <input type="text" value={formData.title} onChange={(e) => setFormData({...formData, title: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" required />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Subject *</label>
+                                    <select value={formData.subject} onChange={(e) => setFormData({...formData, subject: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" required>
+                                        <option value="">Select</option>
+                                        <option value="mathematics">Mathematics</option>
+                                        <option value="english">English</option>
+                                        <option value="kiswahili">Kiswahili</option>
+                                        <option value="integrated-science">Integrated Science</option>
+                                        <option value="social-studies">Social Studies</option>
+                                        <option value="biology">Biology</option>
+                                        <option value="chemistry">Chemistry</option>
+                                        <option value="physics">Physics</option>
+                                        <option value="business">Business</option>
+                                        <option value="computer-studies">Computer Studies</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Level *</label>
+                                    <select value={formData.level} onChange={(e) => setFormData({...formData, level: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" required>
+                                        <option value="">Select</option>
+                                        <option value="pp1">PP1</option><option value="pp2">PP2</option>
+                                        <option value="grade-1">Grade 1</option><option value="grade-2">Grade 2</option>
+                                        <option value="grade-3">Grade 3</option><option value="grade-4">Grade 4</option>
+                                        <option value="grade-5">Grade 5</option><option value="grade-6">Grade 6</option>
+                                        <option value="grade-7">Grade 7</option><option value="grade-8">Grade 8</option>
+                                        <option value="grade-9">Grade 9</option><option value="grade-10">Grade 10</option>
+                                        <option value="grade-11">Grade 11</option><option value="grade-12">Grade 12</option>
+                                        <option value="form-1">Form 1</option><option value="form-2">Form 2</option>
+                                        <option value="form-3">Form 3</option><option value="form-4">Form 4</option>
+                                        <option value="college">College</option><option value="tvet">TVET</option>
+                                        <option value="university">University</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Resource Type *</label>
+                                    <select value={formData.resource_type} onChange={(e) => setFormData({...formData, resource_type: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" required>
+                                        <option value="lesson-plan">Lesson Plan</option>
+                                        <option value="scheme-work">Scheme of Work</option>
+                                        <option value="revision-paper">Revision Paper</option>
+                                        <option value="cbc-portfolio">CBC Portfolio</option>
+                                        <option value="exam-paper">Exam Paper</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Curriculum</label>
+                                    <select value={formData.curriculum} onChange={(e) => setFormData({...formData, curriculum: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
+                                        <option value="cbc">CBC</option>
+                                        <option value="8-4-4">8-4-4</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Price (KES)</label>
+                                    <input type="number" value={formData.price} onChange={(e) => setFormData({...formData, price: parseFloat(e.target.value) || 0})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" min="0" />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
+                                <textarea value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" rows="2"></textarea>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Upload File *</label>
+                                <div className="drop-zone" onClick={() => document.getElementById('fileInput').click()}>
+                                    <input type="file" id="fileInput" style={{display:'none'}} onChange={handleFileSelect} accept=".pdf,.docx,.pptx,.jpg,.jpeg,.png" />
+                                    <div className="text-2xl">📄</div>
+                                    <div className="text-sm text-gray-500 dark:text-gray-400">{selectedFile ? selectedFile.name : 'Click to upload or drag & drop'}</div>
+                                    {selectedFile && <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">{(selectedFile.size / 1024 / 1024).toFixed(2)} MB</div>}
+                                    {compressedFile && <div className="text-xs text-green-600 dark:text-green-400">✅ Compressed: {(compressedFile.size / 1024 / 1024).toFixed(2)} MB</div>}
+                                    {progress > 0 && progress < 100 && (
+                                        <div className="progress-track mt-2">
+                                            <div className="progress-bar" style={{width: progress + '%'}}></div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            <button type="submit" disabled={uploading} className="btn-gold px-6 py-2 rounded-lg font-semibold disabled:opacity-50">
+                                {uploading ? '⏳ Uploading...' : '📤 Upload Resource'}
+                            </button>
+                        </form>
+                    </div>
+
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">📚 Resource Inventory</h3>
+                            <button onClick={loadResources} className="text-sm text-[#D4A017] hover:text-[#FCD34D] transition">🔄 Refresh</button>
+                        </div>
+                        {resources.length === 0 ? (
+                            <div className="text-center py-8 text-gray-500 dark:text-gray-400">No resources uploaded yet</div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead className="bg-gray-50 dark:bg-gray-700/50">
+                                        <tr>
+                                            <th className="px-4 py-2 text-left">Title</th>
+                                            <th className="px-4 py-2 text-left">Subject</th>
+                                            <th className="px-4 py-2 text-left">Level</th>
+                                            <th className="px-4 py-2 text-left">Price</th>
+                                            <th className="px-4 py-2 text-left">Status</th>
+                                            <th className="px-4 py-2 text-left">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {resources.map(r => (
+                                            <tr key={r.id} className="border-t border-gray-100 dark:border-gray-700">
+                                                <td className="px-4 py-2 font-medium text-gray-800 dark:text-white">{r.title}</td>
+                                                <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{r.subject || '—'}</td>
+                                                <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{r.level || '—'}</td>
+                                                <td className="px-4 py-2 font-semibold text-[#D4A017]">{r.price === 0 ? 'FREE' : 'KES ' + r.price}</td>
+                                                <td className="px-4 py-2"><span className={`status-badge ${r.status === 'live' ? 'live' : 'draft'}`}>{r.status || 'draft'}</span></td>
+                                                <td className="px-4 py-2 flex gap-2 flex-wrap">
+                                                    <button onClick={() => openEditModal(r)} className="px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded hover:bg-blue-200 transition">✏️ Edit</button>
+                                                    <button onClick={() => toggleStatus(r.id, r.status)} className="px-2 py-1 text-xs bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded hover:bg-green-200 transition">
+                                                        {r.status === 'live' ? '📄 Draft' : '✅ Publish'}
+                                                    </button>
+                                                    <button onClick={() => deleteResource(r.id)} className="px-2 py-1 text-xs bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded hover:bg-red-200 transition">🗑️</button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Edit Modal */}
+                    {showEditModal && (
+                        <div className="modal-overlay open" onClick={closeEditModal}>
+                            <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+                                <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">✏️ Edit Resource</h3>
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Title *</label>
+                                        <input type="text" value={editFormData.title} onChange={(e) => setEditFormData({...editFormData, title: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Price (KES)</label>
+                                        <input type="number" value={editFormData.price} onChange={(e) => setEditFormData({...editFormData, price: parseFloat(e.target.value) || 0})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" min="0" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
+                                        <select value={editFormData.status} onChange={(e) => setEditFormData({...editFormData, status: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
+                                            <option value="draft">Draft</option>
+                                            <option value="live">Live</option>
+                                            <option value="archived">Archived</option>
+                                        </select>
+                                    </div>
+                                    <div className="flex gap-3">
+                                        <button onClick={handleEditSave} className="btn-gold px-4 py-2 rounded-lg font-semibold">💾 Save Changes</button>
+                                        <button onClick={closeEditModal} className="px-4 py-2 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg font-semibold hover:bg-gray-300 dark:hover:bg-gray-500 transition">Cancel</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
         }
 
         // ── TUTORS MODULE ──
         function TutorsModule() {
-            // ... (keep the existing TutorsModule code)
+            const { tutors, setTutors, showToast } = useApp();
+            const [formData, setFormData] = useState({ name: '', email: '', phone: '', specialization: '' });
+            const [editingTutor, setEditingTutor] = useState(null);
+            const [showEditModal, setShowEditModal] = useState(false);
+            const [editFormData, setEditFormData] = useState({ name: '', email: '', phone: '', specialization: '', status: 'active' });
+
+            const loadTutors = async () => {
+                try {
+                    const response = await fetch(`${SUPABASE_URL}/rest/v1/tutors?select=*`, {
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+                    });
+                    if (response.ok) {
+                        const data = await response.json();
+                        setTutors(data || []);
+                    }
+                } catch (e) { console.error('Load tutors error:', e); }
+            };
+
+            useEffect(() => { loadTutors(); }, []);
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                const { name, email, specialization } = formData;
+                if (!name || !email || !specialization) {
+                    showToast('⚠️ Please fill in all required fields', 'error');
+                    return;
+                }
+                try {
+                    const response = await fetch(`${SUPABASE_URL}/rest/v1/tutors`, {
+                        method: 'POST',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            name, email, phone: formData.phone, specialization,
+                            status: 'active',
+                            created_at: new Date().toISOString()
+                        })
+                    });
+                    if (response.ok) {
+                        showToast('✅ Tutor added successfully!');
+                        setFormData({ name: '', email: '', phone: '', specialization: '' });
+                        loadTutors();
+                    }
+                } catch (e) {
+                    showToast('❌ Failed to add tutor', 'error');
+                }
+            };
+
+            const openEditModal = (tutor) => {
+                setEditingTutor(tutor);
+                setEditFormData({
+                    name: tutor.name || '',
+                    email: tutor.email || '',
+                    phone: tutor.phone || '',
+                    specialization: tutor.specialization || '',
+                    status: tutor.status || 'active'
+                });
+                setShowEditModal(true);
+            };
+
+            const closeEditModal = () => {
+                setShowEditModal(false);
+                setEditingTutor(null);
+            };
+
+            const handleEditSave = async () => {
+                if (!editingTutor) return;
+                try {
+                    const response = await fetch(`${SUPABASE_URL}/rest/v1/tutors?id=eq.${editingTutor.id}`, {
+                        method: 'PATCH',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            name: editFormData.name,
+                            email: editFormData.email,
+                            phone: editFormData.phone,
+                            specialization: editFormData.specialization,
+                            status: editFormData.status
+                        })
+                    });
+                    if (response.ok) {
+                        showToast('✅ Tutor updated successfully!');
+                        closeEditModal();
+                        loadTutors();
+                    }
+                } catch (e) {
+                    showToast('❌ Update failed', 'error');
+                }
+            };
+
+            const toggleStatus = async (id, currentStatus) => {
+                const newStatus = currentStatus === 'active' ? 'suspended' : 'active';
+                try {
+                    const response = await fetch(`${SUPABASE_URL}/rest/v1/tutors?id=eq.${id}`, {
+                        method: 'PATCH',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ status: newStatus })
+                    });
+                    if (response.ok) {
+                        showToast(`✅ Tutor ${newStatus === 'active' ? 'activated' : 'suspended'}`);
+                        loadTutors();
+                    }
+                } catch (e) {
+                    showToast('❌ Status update failed', 'error');
+                }
+            };
+
+            const deleteTutor = async (id) => {
+                if (!confirm('Delete this tutor?')) return;
+                try {
+                    const response = await fetch(`${SUPABASE_URL}/rest/v1/tutors?id=eq.${id}`, {
+                        method: 'DELETE',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                        }
+                    });
+                    if (response.ok) {
+                        showToast('✅ Tutor deleted');
+                        loadTutors();
+                    }
+                } catch (e) {
+                    showToast('❌ Delete failed', 'error');
+                }
+            };
+
+            return (
+                <div className="space-y-6 fade-in">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">🧑‍🏫 Add New Tutor</h3>
+                        <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Full Name *</label>
+                                <input type="text" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" required />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email *</label>
+                                <input type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" required />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Phone</label>
+                                <input type="tel" value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Specialization *</label>
+                                <select value={formData.specialization} onChange={(e) => setFormData({...formData, specialization: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" required>
+                                    <option value="">Select</option>
+                                    <option value="mathematics">Mathematics</option>
+                                    <option value="english">English</option>
+                                    <option value="kiswahili">Kiswahili</option>
+                                    <option value="science">Science</option>
+                                    <option value="social-studies">Social Studies</option>
+                                    <option value="creative-arts">Creative Arts</option>
+                                    <option value="business">Business</option>
+                                    <option value="computer-studies">Computer Studies</option>
+                                    <option value="special-education">Special Education</option>
+                                    <option value="early-childhood">Early Childhood</option>
+                                    <option value="tvet">TVET</option>
+                                </select>
+                            </div>
+                            <div className="md:col-span-2">
+                                <button type="submit" className="btn-gold px-6 py-2 rounded-lg font-semibold">➕ Add Tutor</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">📋 Tutor Roster</h3>
+                            <button onClick={loadTutors} className="text-sm text-[#D4A017] hover:text-[#FCD34D] transition">🔄 Refresh</button>
+                        </div>
+                        {tutors.length === 0 ? (
+                            <div className="text-center py-8 text-gray-500 dark:text-gray-400">No tutors added yet</div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead className="bg-gray-50 dark:bg-gray-700/50">
+                                        <tr>
+                                            <th className="px-4 py-2 text-left">Name</th>
+                                            <th className="px-4 py-2 text-left">Email</th>
+                                            <th className="px-4 py-2 text-left">Specialization</th>
+                                            <th className="px-4 py-2 text-left">Status</th>
+                                            <th className="px-4 py-2 text-left">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {tutors.map(t => (
+                                            <tr key={t.id} className="border-t border-gray-100 dark:border-gray-700">
+                                                <td className="px-4 py-2 font-medium text-gray-800 dark:text-white">{t.name}</td>
+                                                <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{t.email}</td>
+                                                <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{t.specialization || '—'}</td>
+                                                <td className="px-4 py-2"><span className={`status-badge ${t.status === 'active' ? 'active' : 'suspended'}`}>{t.status || 'inactive'}</span></td>
+                                                <td className="px-4 py-2 flex gap-2 flex-wrap">
+                                                    <button onClick={() => openEditModal(t)} className="px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded hover:bg-blue-200 transition">✏️ Edit</button>
+                                                    <button onClick={() => toggleStatus(t.id, t.status)} className="px-2 py-1 text-xs bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded hover:bg-green-200 transition">
+                                                        {t.status === 'active' ? '⏸️ Suspend' : '▶️ Activate'}
+                                                    </button>
+                                                    <button onClick={() => deleteTutor(t.id)} className="px-2 py-1 text-xs bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded hover:bg-red-200 transition">🗑️</button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Edit Modal */}
+                    {showEditModal && (
+                        <div className="modal-overlay open" onClick={closeEditModal}>
+                            <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+                                <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">✏️ Edit Tutor</h3>
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Full Name *</label>
+                                        <input type="text" value={editFormData.name} onChange={(e) => setEditFormData({...editFormData, name: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email *</label>
+                                        <input type="email" value={editFormData.email} onChange={(e) => setEditFormData({...editFormData, email: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Phone</label>
+                                        <input type="tel" value={editFormData.phone} onChange={(e) => setEditFormData({...editFormData, phone: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Specialization *</label>
+                                        <select value={editFormData.specialization} onChange={(e) => setEditFormData({...editFormData, specialization: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
+                                            <option value="mathematics">Mathematics</option>
+                                            <option value="english">English</option>
+                                            <option value="kiswahili">Kiswahili</option>
+                                            <option value="science">Science</option>
+                                            <option value="social-studies">Social Studies</option>
+                                            <option value="creative-arts">Creative Arts</option>
+                                            <option value="business">Business</option>
+                                            <option value="computer-studies">Computer Studies</option>
+                                            <option value="special-education">Special Education</option>
+                                            <option value="early-childhood">Early Childhood</option>
+                                            <option value="tvet">TVET</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
+                                        <select value={editFormData.status} onChange={(e) => setEditFormData({...editFormData, status: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
+                                            <option value="active">Active</option>
+                                            <option value="suspended">Suspended</option>
+                                        </select>
+                                    </div>
+                                    <div className="flex gap-3">
+                                        <button onClick={handleEditSave} className="btn-gold px-4 py-2 rounded-lg font-semibold">💾 Save Changes</button>
+                                        <button onClick={closeEditModal} className="px-4 py-2 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg font-semibold hover:bg-gray-300 dark:hover:bg-gray-500 transition">Cancel</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
         }
 
         // ── CLASSES MODULE ──
         function ClassesModule() {
-            // ... (keep the existing ClassesModule code)
+            const { classes, setClasses, tutors, showToast } = useApp();
+            const [formData, setFormData] = useState({
+                title: '', level: '', tutor_id: '', price_per_learner: 0,
+                meeting_link: '', scheduled_time: '', is_live: false, description: ''
+            });
+
+            const loadClasses = async () => {
+                try {
+                    const response = await fetch(`${SUPABASE_URL}/rest/v1/classes?select=*&order=created_at.desc`, {
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+                    });
+                    if (response.ok) {
+                        const data = await response.json();
+                        setClasses(data || []);
+                    }
+                } catch (e) { console.error('Load classes error:', e); }
+            };
+
+            useEffect(() => { loadClasses(); }, []);
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                const { title, level, tutor_id, meeting_link, scheduled_time } = formData;
+                if (!title || !level || !tutor_id || !meeting_link || !scheduled_time) {
+                    showToast('⚠️ Please fill in all required fields', 'error');
+                    return;
+                }
+                try {
+                    const response = await fetch(`${SUPABASE_URL}/rest/v1/classes`, {
+                        method: 'POST',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ ...formData, created_at: new Date().toISOString() })
+                    });
+                    if (response.ok) {
+                        showToast('✅ Class created successfully!');
+                        setFormData({ title: '', level: '', tutor_id: '', price_per_learner: 0, meeting_link: '', scheduled_time: '', is_live: false, description: '' });
+                        loadClasses();
+                    }
+                } catch (e) {
+                    showToast('❌ Failed to create class', 'error');
+                }
+            };
+
+            const toggleStatus = async (id, currentStatus) => {
+                try {
+                    const response = await fetch(`${SUPABASE_URL}/rest/v1/classes?id=eq.${id}`, {
+                        method: 'PATCH',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ is_live: !currentStatus })
+                    });
+                    if (response.ok) {
+                        showToast(`✅ Class ${!currentStatus ? 'started' : 'ended'}`);
+                        loadClasses();
+                    }
+                } catch (e) {
+                    showToast('❌ Status update failed', 'error');
+                }
+            };
+
+            const deleteClass = async (id) => {
+                if (!confirm('Delete this class?')) return;
+                try {
+                    const response = await fetch(`${SUPABASE_URL}/rest/v1/classes?id=eq.${id}`, {
+                        method: 'DELETE',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                        }
+                    });
+                    if (response.ok) {
+                        showToast('✅ Class deleted');
+                        loadClasses();
+                    }
+                } catch (e) {
+                    showToast('❌ Delete failed', 'error');
+                }
+            };
+
+            return (
+                <div className="space-y-6 fade-in">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">📹 Create Live Class</h3>
+                        <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Class Title *</label>
+                                <input type="text" value={formData.title} onChange={(e) => setFormData({...formData, title: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" required />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Target Level *</label>
+                                <select value={formData.level} onChange={(e) => setFormData({...formData, level: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" required>
+                                    <option value="">Select</option>
+                                    <option value="grade-7">Grade 7</option>
+                                    <option value="grade-8">Grade 8</option>
+                                    <option value="grade-9">Grade 9 (KJSEA)</option>
+                                    <option value="grade-10">Grade 10</option>
+                                    <option value="grade-11">Grade 11</option>
+                                    <option value="grade-12">Grade 12</option>
+                                    <option value="form-1">Form 1</option>
+                                    <option value="form-2">Form 2</option>
+                                    <option value="form-3">Form 3</option>
+                                    <option value="form-4">Form 4</option>
+                                    <option value="college">College</option>
+                                    <option value="tvet">TVET</option>
+                                    <option value="university">University</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Assign Tutor *</label>
+                                <select value={formData.tutor_id} onChange={(e) => setFormData({...formData, tutor_id: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" required>
+                                    <option value="">Select Tutor</option>
+                                    {tutors.filter(t => t.status === 'active').map(t => (
+                                        <option key={t.id} value={t.id}>{t.name} ({t.specialization || 'General'})</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Price Per Learner (KES) *</label>
+                                <input type="number" value={formData.price_per_learner} onChange={(e) => setFormData({...formData, price_per_learner: parseFloat(e.target.value) || 0})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" min="0" required />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Meeting Link *</label>
+                                <input type="url" value={formData.meeting_link} onChange={(e) => setFormData({...formData, meeting_link: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" placeholder="https://meet.google.com/..." required />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Scheduled Time *</label>
+                                <input type="datetime-local" value={formData.scheduled_time} onChange={(e) => setFormData({...formData, scheduled_time: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" required />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
+                                <select value={formData.is_live} onChange={(e) => setFormData({...formData, is_live: e.target.value === 'true'})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
+                                    <option value="false">🔴 Scheduled</option>
+                                    <option value="true">🟢 Live Now</option>
+                                </select>
+                            </div>
+                            <div className="md:col-span-2">
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
+                                <textarea value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" rows="2"></textarea>
+                            </div>
+                            <div className="md:col-span-2">
+                                <button type="submit" className="btn-gold px-6 py-2 rounded-lg font-semibold">📹 Create Class</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">📋 Live Classes</h3>
+                            <button onClick={loadClasses} className="text-sm text-[#D4A017] hover:text-[#FCD34D] transition">🔄 Refresh</button>
+                        </div>
+                        {classes.length === 0 ? (
+                            <div className="text-center py-8 text-gray-500 dark:text-gray-400">No classes created yet</div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead className="bg-gray-50 dark:bg-gray-700/50">
+                                        <tr>
+                                            <th className="px-4 py-2 text-left">Title</th>
+                                            <th className="px-4 py-2 text-left">Tutor</th>
+                                            <th className="px-4 py-2 text-left">Level</th>
+                                            <th className="px-4 py-2 text-left">Price</th>
+                                            <th className="px-4 py-2 text-left">Status</th>
+                                            <th className="px-4 py-2 text-left">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {classes.map(c => {
+                                            const tutor = tutors.find(t => t.id === c.tutor_id);
+                                            return (
+                                                <tr key={c.id} className="border-t border-gray-100 dark:border-gray-700">
+                                                    <td className="px-4 py-2 font-medium text-gray-800 dark:text-white">{c.title}</td>
+                                                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{tutor ? tutor.name : '—'}</td>
+                                                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{c.level || '—'}</td>
+                                                    <td className="px-4 py-2 font-semibold text-[#D4A017]">{c.price_per_learner === 0 ? 'FREE' : 'KES ' + c.price_per_learner}</td>
+                                                    <td className="px-4 py-2"><span className={`status-badge ${c.is_live ? 'live' : 'draft'}`}>{c.is_live ? '🟢 Live' : '⏳ Scheduled'}</span></td>
+                                                    <td className="px-4 py-2 flex gap-2 flex-wrap">
+                                                        <button onClick={() => toggleStatus(c.id, c.is_live)} className="px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded hover:bg-blue-200 transition">
+                                                            {c.is_live ? '⏸️ End' : '▶️ Start'}
+                                                        </button>
+                                                        <button onClick={() => deleteClass(c.id)} className="px-2 py-1 text-xs bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded hover:bg-red-200 transition">🗑️</button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
         }
 
-        // ── FINANCE MODULE ──
-        function FinanceModule() {
-            // ... (keep the existing FinanceModule code)
-        }
-
-        // ── SETTINGS MODULE ──
-        function SettingsModule() {
-            // ... (keep the existing SettingsModule code)
-        }
-
-        // ── ORDERS MODULE (UPDATED WITH RESOURCE DETAILS) ──
+        // ── ORDERS MODULE ── (UPDATED WITH RESOURCE DETAILS)
         function OrdersModule() {
             const { orders, loadOrders, showNotification, newOrderIds, setNewOrderIds } = useApp();
             const [filter, setFilter] = useState('all');
@@ -1256,6 +2104,30 @@
                     showNotification('Error confirming order: ' + e.message, 'error');
                 }
                 setLoadingOrderId(null);
+            };
+
+            const handleRejectOrder = async (order) => {
+                const ref = order.payment_ref || order.id.slice(0, 8).toUpperCase();
+                if (!confirm(`Reject order #${ref}?`)) return;
+                
+                try {
+                    const updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${order.id}`, {
+                        method: 'PATCH',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ payment_status: 'cancelled' })
+                    });
+                    if (updateRes.ok) {
+                        showNotification('❌ Order rejected', 'success');
+                        await loadOrders();
+                        setNewOrderIds(prev => prev.filter(id => id !== order.id));
+                    }
+                } catch (e) {
+                    showNotification('Error rejecting order', 'error');
+                }
             };
 
             const handleResendWhatsApp = async (order) => {
@@ -1464,6 +2336,12 @@
                                                                     )}
                                                                 </button>
                                                                 <button 
+                                                                    onClick={() => handleRejectOrder(o)} 
+                                                                    className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg text-xs hover:bg-red-200 transition"
+                                                                >
+                                                                    ❌ Reject
+                                                                </button>
+                                                                <button 
                                                                     onClick={() => viewOrderDetails(o)} 
                                                                     className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg text-xs hover:bg-blue-200 transition"
                                                                 >
@@ -1505,7 +2383,7 @@
 
                     {/* Order Details Modal */}
                     {showOrderDetails && selectedOrder && (
-                        <div className={`modal-overlay open`} onClick={closeOrderDetails}>
+                        <div className="modal-overlay open" onClick={closeOrderDetails}>
                             <div className="modal-box" onClick={(e) => e.stopPropagation()}>
                                 <div className="flex justify-between items-center mb-4">
                                     <h3 className="text-lg font-bold text-gray-800 dark:text-white">📋 Order Details</h3>
@@ -1603,6 +2481,496 @@
                             </div>
                         </div>
                     )}
+                </div>
+            );
+        }
+
+        // ── FINANCE MODULE ──
+        function FinanceModule() {
+            const { orders, tutors, payments, setPayments, showNotification, TUTOR_PAYOUT_PERCENTAGE } = useApp();
+            const [selectedTutor, setSelectedTutor] = useState(null);
+            const [showPaymentModal, setShowPaymentModal] = useState(false);
+            const [paymentAmount, setPaymentAmount] = useState(0);
+
+            const loadPayments = async () => {
+                try {
+                    const response = await fetch(`${SUPABASE_URL}/rest/v1/tutor_payments?select=*&order=created_at.desc`, {
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+                    });
+                    if (response.ok) {
+                        const data = await response.json();
+                        setPayments(data || []);
+                    }
+                } catch (e) { console.error('Load payments error:', e); }
+            };
+
+            useEffect(() => { loadPayments(); }, []);
+
+            // Calculate tutor earnings
+            const calculateTutorEarnings = (tutorId) => {
+                // Find classes taught by this tutor
+                const tutorClasses = classes.filter(c => c.tutor_id === tutorId && c.is_live === true);
+                
+                // For each class, calculate revenue from orders
+                let totalRevenue = 0;
+                let totalEnrollments = 0;
+                
+                // For simplicity, we'll use the class price and assume each class has enrollments
+                // In a real system, you'd track enrollments in a separate table
+                tutorClasses.forEach(cls => {
+                    // Assume each class has 5 enrollments on average (for demo)
+                    const estimatedEnrollments = 5;
+                    totalRevenue += cls.price_per_learner * estimatedEnrollments;
+                    totalEnrollments += estimatedEnrollments;
+                });
+                
+                const tutorPayout = totalRevenue * (TUTOR_PAYOUT_PERCENTAGE / 100);
+                
+                return {
+                    totalRevenue,
+                    totalEnrollments,
+                    tutorPayout,
+                    classesCount: tutorClasses.length
+                };
+            };
+
+            const handleProcessPayment = async (tutor) => {
+                const earnings = calculateTutorEarnings(tutor.id);
+                setSelectedTutor(tutor);
+                setPaymentAmount(earnings.tutorPayout);
+                setShowPaymentModal(true);
+            };
+
+            const confirmPayment = async () => {
+                if (!selectedTutor) return;
+                
+                try {
+                    const paymentData = {
+                        tutor_id: selectedTutor.id,
+                        tutor_name: selectedTutor.name,
+                        amount: paymentAmount,
+                        status: 'paid',
+                        payment_date: new Date().toISOString(),
+                        created_at: new Date().toISOString()
+                    };
+                    
+                    const response = await fetch(`${SUPABASE_URL}/rest/v1/tutor_payments`, {
+                        method: 'POST',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(paymentData)
+                    });
+                    
+                    if (response.ok) {
+                        showNotification(`✅ Payment of KES ${paymentAmount} processed for ${selectedTutor.name}`, 'success');
+                        setShowPaymentModal(false);
+                        loadPayments();
+                    } else {
+                        throw new Error('Failed to process payment');
+                    }
+                } catch (e) {
+                    showNotification('❌ Failed to process payment', 'error');
+                }
+            };
+
+            const totalRevenue = orders.reduce((s, o) => s + (o.total_amount || 0), 0);
+            const confirmedOrders = orders.filter(o => o.payment_status === 'confirmed').length;
+            const paidOrders = orders.filter(o => o.payment_status === 'paid' || o.payment_status === 'completed').length;
+            
+            // Calculate total tutor payouts
+            const totalPayouts = payments
+                .filter(p => p.status === 'paid')
+                .reduce((s, p) => s + (p.amount || 0), 0);
+            
+            const pendingPayouts = payments
+                .filter(p => p.status === 'pending')
+                .reduce((s, p) => s + (p.amount || 0), 0);
+            
+            // Calculate platform revenue (80% to tutors, 20% to platform)
+            const platformRevenue = totalRevenue * 0.2;
+
+            return (
+                <div className="space-y-6 fade-in">
+                    {/* Stats */}
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Total Revenue</p>
+                            <p className="text-2xl font-bold text-[#D4A017]">KES {totalRevenue.toLocaleString()}</p>
+                        </div>
+                        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Platform Revenue (20%)</p>
+                            <p className="text-2xl font-bold text-blue-600">KES {platformRevenue.toLocaleString()}</p>
+                        </div>
+                        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Total Tutor Payouts</p>
+                            <p className="text-2xl font-bold text-green-600">KES {totalPayouts.toLocaleString()}</p>
+                        </div>
+                        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Pending Payouts</p>
+                            <p className="text-2xl font-bold text-amber-600">KES {pendingPayouts.toLocaleString()}</p>
+                        </div>
+                    </div>
+
+                    {/* Tutor Payouts */}
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">🧑‍🏫 Tutor Payouts ({TUTOR_PAYOUT_PERCENTAGE}% of Revenue)</h3>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">80% to tutors · 20% to platform</span>
+                        </div>
+                        
+                        {tutors.length === 0 ? (
+                            <div className="text-center py-8 text-gray-500 dark:text-gray-400">No tutors available</div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead className="bg-gray-50 dark:bg-gray-700/50">
+                                        <tr>
+                                            <th className="px-4 py-2 text-left">Tutor</th>
+                                            <th className="px-4 py-2 text-left">Classes</th>
+                                            <th className="px-4 py-2 text-left">Est. Revenue</th>
+                                            <th className="px-4 py-2 text-left">Payout (80%)</th>
+                                            <th className="px-4 py-2 text-left">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {tutors.filter(t => t.status === 'active').map(tutor => {
+                                            const earnings = calculateTutorEarnings(tutor.id);
+                                            const hasPendingPayment = payments.some(p => p.tutor_id === tutor.id && p.status === 'pending');
+                                            const hasPaidPayment = payments.some(p => p.tutor_id === tutor.id && p.status === 'paid');
+                                            
+                                            return (
+                                                <tr key={tutor.id} className="border-t border-gray-100 dark:border-gray-700">
+                                                    <td className="px-4 py-2 font-medium text-gray-800 dark:text-white">{tutor.name}</td>
+                                                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{earnings.classesCount}</td>
+                                                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">KES {earnings.totalRevenue.toLocaleString()}</td>
+                                                    <td className="px-4 py-2 font-semibold text-[#D4A017]">KES {earnings.tutorPayout.toLocaleString()}</td>
+                                                    <td className="px-4 py-2 flex gap-2 flex-wrap">
+                                                        {earnings.tutorPayout > 0 && !hasPendingPayment && !hasPaidPayment && (
+                                                            <button 
+                                                                onClick={() => handleProcessPayment(tutor)}
+                                                                className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg text-xs hover:bg-green-200 transition"
+                                                            >
+                                                                💰 Process Payment
+                                                            </button>
+                                                        )}
+                                                        {hasPendingPayment && (
+                                                            <span className="text-xs text-amber-600 dark:text-amber-400">⏳ Pending</span>
+                                                        )}
+                                                        {hasPaidPayment && (
+                                                            <span className="text-xs text-green-600 dark:text-green-400">✅ Paid</span>
+                                                        )}
+                                                        {earnings.tutorPayout === 0 && (
+                                                            <span className="text-xs text-gray-400">No revenue yet</span>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Payment History */}
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">📋 Payment History</h3>
+                            <button onClick={loadPayments} className="text-sm text-[#D4A017] hover:text-[#FCD34D] transition">🔄 Refresh</button>
+                        </div>
+                        
+                        {payments.length === 0 ? (
+                            <div className="text-center py-8 text-gray-500 dark:text-gray-400">No payments recorded yet</div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead className="bg-gray-50 dark:bg-gray-700/50">
+                                        <tr>
+                                            <th className="px-4 py-2 text-left">Tutor</th>
+                                            <th className="px-4 py-2 text-left">Amount</th>
+                                            <th className="px-4 py-2 text-left">Status</th>
+                                            <th className="px-4 py-2 text-left">Date</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {payments.map(p => (
+                                            <tr key={p.id} className="border-t border-gray-100 dark:border-gray-700">
+                                                <td className="px-4 py-2 font-medium text-gray-800 dark:text-white">{p.tutor_name || 'Unknown'}</td>
+                                                <td className="px-4 py-2 font-semibold text-[#D4A017]">KES {p.amount?.toLocaleString() || 0}</td>
+                                                <td className="px-4 py-2">
+                                                    <span className={`status-badge ${p.status === 'paid' ? 'paid-out' : 'pending-payment'}`}>
+                                                        {p.status === 'paid' ? '✅ Paid' : '⏳ Pending'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-2 text-gray-500 dark:text-gray-400">
+                                                    {p.payment_date ? new Date(p.payment_date).toLocaleDateString() : new Date(p.created_at).toLocaleDateString()}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Payment Modal */}
+                    {showPaymentModal && selectedTutor && (
+                        <div className="modal-overlay open" onClick={() => setShowPaymentModal(false)}>
+                            <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+                                <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-4">💳 Process Payment</h3>
+                                <div className="space-y-4">
+                                    <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-4">
+                                        <p className="text-sm text-gray-600 dark:text-gray-300">
+                                            <strong>Tutor:</strong> {selectedTutor.name}
+                                        </p>
+                                        <p className="text-sm text-gray-600 dark:text-gray-300">
+                                            <strong>Amount:</strong> KES {paymentAmount.toLocaleString()}
+                                        </p>
+                                        <p className="text-sm text-gray-600 dark:text-gray-300">
+                                            <strong>Payout Rate:</strong> {TUTOR_PAYOUT_PERCENTAGE}% of revenue
+                                        </p>
+                                    </div>
+                                    <div className="flex gap-3">
+                                        <button onClick={confirmPayment} className="btn-gold px-6 py-2 rounded-lg font-semibold flex-1">
+                                            ✅ Confirm Payment
+                                        </button>
+                                        <button onClick={() => setShowPaymentModal(false)} className="px-6 py-2 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg font-semibold hover:bg-gray-300 dark:hover:bg-gray-500 transition">
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        // ── SETTINGS MODULE ──
+        function SettingsModule() {
+            const { darkMode, toggleDarkMode, showNotification } = useApp();
+            const [settings, setSettings] = useState({
+                siteName: 'KenyaVault',
+                siteTagline: 'Complete Education Resources',
+                emailNotifications: true,
+                orderNotifications: true,
+                payoutPercentage: 80,
+                currency: 'KES',
+                timezone: 'Africa/Nairobi'
+            });
+
+            const [loading, setLoading] = useState(false);
+
+            const handleSaveSettings = async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                
+                try {
+                    // Save settings to localStorage for now (would be saved to Supabase in production)
+                    localStorage.setItem('kv-settings', JSON.stringify(settings));
+                    
+                    // Update payout percentage in context if needed
+                    // In a real app, you'd update the database
+                    
+                    showNotification('✅ Settings saved successfully!', 'success');
+                } catch (error) {
+                    showNotification('❌ Failed to save settings', 'error');
+                }
+                setLoading(false);
+            };
+
+            const handleInputChange = (e) => {
+                const { name, value, type, checked } = e.target;
+                setSettings(prev => ({
+                    ...prev,
+                    [name]: type === 'checkbox' ? checked : value
+                }));
+            };
+
+            // Load settings from localStorage on mount
+            useEffect(() => {
+                const savedSettings = localStorage.getItem('kv-settings');
+                if (savedSettings) {
+                    try {
+                        const parsed = JSON.parse(savedSettings);
+                        setSettings(prev => ({ ...prev, ...parsed }));
+                    } catch (e) {
+                        console.error('Error loading settings:', e);
+                    }
+                }
+            }, []);
+
+            return (
+                <div className="space-y-6 fade-in">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-6">⚙️ Settings</h3>
+                        
+                        <form onSubmit={handleSaveSettings}>
+                            {/* General Settings */}
+                            <div className="settings-section">
+                                <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">General</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Site Name</label>
+                                        <input 
+                                            type="text" 
+                                            name="siteName" 
+                                            value={settings.siteName} 
+                                            onChange={handleInputChange}
+                                            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tagline</label>
+                                        <input 
+                                            type="text" 
+                                            name="siteTagline" 
+                                            value={settings.siteTagline} 
+                                            onChange={handleInputChange}
+                                            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Payout Settings */}
+                            <div className="settings-section">
+                                <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Payout Settings</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tutor Payout Percentage</label>
+                                        <div className="flex items-center gap-2">
+                                            <input 
+                                                type="number" 
+                                                name="payoutPercentage" 
+                                                value={settings.payoutPercentage} 
+                                                onChange={handleInputChange}
+                                                min="0" 
+                                                max="100"
+                                                className="w-24 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                                            />
+                                            <span className="text-gray-500 dark:text-gray-400">%</span>
+                                        </div>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Percentage of revenue paid to tutors</p>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Currency</label>
+                                        <select 
+                                            name="currency" 
+                                            value={settings.currency} 
+                                            onChange={handleInputChange}
+                                            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                                        >
+                                            <option value="KES">KES - Kenyan Shilling</option>
+                                            <option value="USD">USD - US Dollar</option>
+                                            <option value="EUR">EUR - Euro</option>
+                                            <option value="GBP">GBP - British Pound</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Notification Settings */}
+                            <div className="settings-section">
+                                <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Notifications</h4>
+                                <div className="space-y-2">
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input 
+                                            type="checkbox" 
+                                            name="emailNotifications" 
+                                            checked={settings.emailNotifications} 
+                                            onChange={handleInputChange}
+                                            className="w-4 h-4 accent-[#D4A017]"
+                                        />
+                                        <span className="text-sm text-gray-700 dark:text-gray-300">Enable email notifications</span>
+                                    </label>
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input 
+                                            type="checkbox" 
+                                            name="orderNotifications" 
+                                            checked={settings.orderNotifications} 
+                                            onChange={handleInputChange}
+                                            className="w-4 h-4 accent-[#D4A017]"
+                                        />
+                                        <span className="text-sm text-gray-700 dark:text-gray-300">Enable order notifications</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            {/* Display Settings */}
+                            <div className="settings-section">
+                                <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Display</h4>
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Dark Mode</label>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">Toggle dark/light theme</p>
+                                    </div>
+                                    <button 
+                                        type="button" 
+                                        onClick={toggleDarkMode}
+                                        className="px-4 py-2 bg-gray-200 dark:bg-gray-600 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-500 transition"
+                                    >
+                                        {darkMode ? '☀️ Light Mode' : '🌙 Dark Mode'}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Timezone */}
+                            <div className="settings-section">
+                                <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Regional</h4>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Timezone</label>
+                                    <select 
+                                        name="timezone" 
+                                        value={settings.timezone} 
+                                        onChange={handleInputChange}
+                                        className="w-full md:w-64 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                                    >
+                                        <option value="Africa/Nairobi">Africa/Nairobi (EAT)</option>
+                                        <option value="Africa/Lagos">Africa/Lagos (WAT)</option>
+                                        <option value="Africa/Johannesburg">Africa/Johannesburg (SAST)</option>
+                                        <option value="UTC">UTC</option>
+                                        <option value="America/New_York">America/New_York (EST)</option>
+                                        <option value="Europe/London">Europe/London (GMT)</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="mt-6 flex gap-3">
+                                <button 
+                                    type="submit" 
+                                    disabled={loading}
+                                    className="btn-gold px-6 py-2 rounded-lg font-semibold disabled:opacity-50"
+                                >
+                                    {loading ? '⏳ Saving...' : '💾 Save Settings'}
+                                </button>
+                                <button 
+                                    type="button" 
+                                    onClick={() => {
+                                        if (confirm('Reset all settings to default?')) {
+                                            localStorage.removeItem('kv-settings');
+                                            setSettings({
+                                                siteName: 'KenyaVault',
+                                                siteTagline: 'Complete Education Resources',
+                                                emailNotifications: true,
+                                                orderNotifications: true,
+                                                payoutPercentage: 80,
+                                                currency: 'KES',
+                                                timezone: 'Africa/Nairobi'
+                                            });
+                                            showNotification('✅ Settings reset to default', 'success');
+                                        }
+                                    }}
+                                    className="px-6 py-2 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg font-semibold hover:bg-red-200 transition"
+                                >
+                                    🔄 Reset Defaults
+                                </button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
             );
         }
