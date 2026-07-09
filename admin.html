@@ -374,6 +374,7 @@
             const [newOrderIds, setNewOrderIds] = useState([]);
             const [chartRange, setChartRange] = useState('daily');
             const [orderBadgeCount, setOrderBadgeCount] = useState(0);
+            const [hasNotifiedOrders, setHasNotifiedOrders] = useState({});
 
             useEffect(() => {
                 localStorage.setItem('kv-dark-mode', darkMode);
@@ -436,21 +437,20 @@
                                 const newOrder = payload.new;
                                 if (newOrder) {
                                     console.log('🆕 New order received via realtime:', newOrder);
+                                    // Add to orders list
                                     setOrders(prev => [newOrder, ...prev]);
+                                    // Track new order ID
                                     setNewOrderIds(prev => {
                                         const updated = [newOrder.id, ...prev];
-                                        return updated.slice(0, 50);
+                                        return [...new Set(updated)].slice(0, 50);
                                     });
+                                    // Update badge
                                     setOrderBadgeCount(prev => prev + 1);
+                                    // Show toast notification
                                     showToast(
                                         '🆕 New Order!',
                                         `Order #${newOrder.payment_ref || newOrder.id.slice(0, 8).toUpperCase()} - ${newOrder.customer_name || 'Customer'}`
                                     );
-                                    try {
-                                        if (window.navigator && window.navigator.vibrate) {
-                                            window.navigator.vibrate(200);
-                                        }
-                                    } catch (e) {}
                                 }
                             }
                         )
@@ -495,7 +495,6 @@
             const checkNewOrders = async () => {
                 const client = getSupabaseClient();
                 if (!client) {
-                    console.warn('⚠️ Supabase client not available for polling');
                     return;
                 }
 
@@ -512,42 +511,59 @@
                     }
                     
                     if (data && data.length > 0) {
-                        const currentIds = data.map(o => o.id);
-                        const knownIds = newOrderIds;
-                        const newIds = currentIds.filter(id => !knownIds.includes(id));
+                        // Get all current order IDs from the orders list
+                        const currentOrderIds = orders.map(o => o.id);
                         
-                        if (newIds.length > 0) {
-                            console.log(`🆕 Found ${newIds.length} new orders via polling`);
-                            const newOrders = data.filter(o => newIds.includes(o.id));
-                            
+                        // Find new orders that are in the database but not in our current list
+                        const newOrders = data.filter(o => !currentOrderIds.includes(o.id));
+                        
+                        if (newOrders.length > 0) {
+                            // Update orders list with new orders at top
                             setOrders(prev => {
                                 const existingIds = prev.map(o => o.id);
                                 const filteredNew = newOrders.filter(o => !existingIds.includes(o.id));
                                 return [...filteredNew, ...prev];
                             });
                             
+                            // Update new order IDs for tracking (only if not already notified)
                             setNewOrderIds(prev => {
-                                const updated = [...newIds, ...prev];
-                                return updated.slice(0, 50);
+                                const newIds = newOrders.map(o => o.id);
+                                // Filter out IDs we've already notified about
+                                const uniqueNewIds = newIds.filter(id => !hasNotifiedOrders[id]);
+                                const updated = [...uniqueNewIds, ...prev];
+                                return [...new Set(updated)].slice(0, 50);
                             });
                             
-                            setOrderBadgeCount(prev => prev + newIds.length);
+                            // Update badge count with total pending orders
+                            const pending = data.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification').length;
+                            setOrderBadgeCount(pending);
                             
+                            // Show notifications for each new order (only once)
                             newOrders.forEach(order => {
-                                showToast(
-                                    '🆕 New Order!',
-                                    `Order #${order.payment_ref || order.id.slice(0, 8).toUpperCase()} - ${order.customer_name || 'Customer'}`
-                                );
-                                try {
-                                    if (window.navigator && window.navigator.vibrate) {
-                                        window.navigator.vibrate(200);
+                                // Check if we've already notified about this order
+                                if (!hasNotifiedOrders[order.id]) {
+                                    // Mark as notified
+                                    setHasNotifiedOrders(prev => ({ ...prev, [order.id]: true }));
+                                    
+                                    showToast(
+                                        '🆕 New Order!',
+                                        `Order #${order.payment_ref || order.id.slice(0, 8).toUpperCase()} - ${order.customer_name || 'Customer'}`
+                                    );
+                                }
+                            });
+                            
+                            // Clean up old notification tracking (keep last 100)
+                            const orderIds = data.map(o => o.id);
+                            setHasNotifiedOrders(prev => {
+                                const cleaned = {};
+                                Object.keys(prev).forEach(key => {
+                                    if (orderIds.includes(key)) {
+                                        cleaned[key] = prev[key];
                                     }
-                                } catch (e) {}
+                                });
+                                return cleaned;
                             });
                         }
-                        
-                        const pending = data.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification').length;
-                        setOrderBadgeCount(pending);
                     }
                 } catch (e) {
                     console.error('❌ Check new orders error:', e);
@@ -827,7 +843,8 @@
                     orderBadgeCount,
                     sendWhatsApp,
                     generateSignedUrl,
-                    getSupabaseClient
+                    getSupabaseClient,
+                    hasNotifiedOrders, setHasNotifiedOrders
                 }}>
                     {children}
                 </AppContext.Provider>
@@ -1926,7 +1943,7 @@
 
         // ── ORDERS MODULE ──
         function OrdersModule() {
-            const { orders, loadOrders, showToast, newOrderIds, sendWhatsApp } = useApp();
+            const { orders, loadOrders, showToast, newOrderIds, sendWhatsApp, orderBadgeCount } = useApp();
             const [filter, setFilter] = useState('all');
             const [loadingOrderId, setLoadingOrderId] = useState(null);
 
