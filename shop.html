@@ -383,7 +383,6 @@
         .slg-label.college-label { color: #BE185D; }
         .slg-label.tvet-label { color: #0D9488; }
         .slg-label.university-label { color: #4338CA; }
-        .slg-label.self-label { color: #BE185D; }
 
         .sidebar-subject {
             display: flex;
@@ -454,10 +453,10 @@
         }
         .filter-bar-inline .search-wrap {
             position: relative;
-            min-width: 180px;
+            min-width: 200px;
         }
         .filter-bar-inline .search-wrap input {
-            padding: 8px 12px 8px 32px;
+            padding: 8px 12px 8px 36px;
             border: 1.5px solid var(--border);
             border-radius: 8px;
             font-size: 0.82rem;
@@ -469,6 +468,7 @@
         .filter-bar-inline .search-wrap input:focus {
             border-color: var(--gold);
             background: var(--white);
+            box-shadow: 0 0 0 3px rgba(212,160,23,0.1);
         }
         .filter-bar-inline .search-wrap .search-icon {
             position: absolute;
@@ -476,8 +476,22 @@
             top: 50%;
             transform: translateY(-50%);
             color: var(--muted);
-            font-size: 0.8rem;
+            font-size: 0.85rem;
         }
+        .filter-bar-inline .search-wrap .clear-search {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--muted);
+            font-size: 0.75rem;
+            cursor: pointer;
+            display: none;
+        }
+        .filter-bar-inline .search-wrap .clear-search.visible {
+            display: block;
+        }
+        .filter-bar-inline .search-wrap .clear-search:hover { color: var(--gold); }
         .filter-bar-inline .sort-select {
             padding: 8px 12px;
             border-radius: 8px;
@@ -1488,7 +1502,8 @@
             <div class="filter-bar-inline">
                 <div class="search-wrap">
                     <i class="fas fa-search search-icon"></i>
-                    <input type="text" id="searchInput" placeholder="Search resources..." oninput="renderShop()" />
+                    <input type="text" id="searchInput" placeholder="Search resources by title, subject..." oninput="handleSearch()" />
+                    <span class="clear-search" id="clearSearch" onclick="clearSearch()">✕</span>
                 </div>
                 <select class="sort-select" id="sortSelect" onchange="renderShop()">
                     <option value="popular">Most Popular</option>
@@ -1696,6 +1711,7 @@
 
     // ── STATE ──
     let allResources = [];
+    let filteredResources = [];
     let currentPage = 1;
     const itemsPerPage = 20;
     let activeLevel = 'all';
@@ -1705,64 +1721,7 @@
     let currentOrderRef = null;
     let isProcessing = false;
     let megapayWindow = null;
-
-    // ── LEVEL DATA ──
-    const LEVEL_ORDER = [
-        'pp1', 'pp2',
-        'grade-1', 'grade-2', 'grade-3', 'grade-4', 'grade-5', 'grade-6',
-        'grade-7', 'grade-8', 'grade-9',
-        'grade-10', 'grade-11', 'grade-12',
-        'form-1', 'form-2', 'form-3', 'form-4',
-        'college', 'tvet', 'university'
-    ];
-
-    const LEVEL_DISPLAY = {
-        pp1: 'PP1',
-        pp2: 'PP2',
-        'grade-1': 'Grade 1',
-        'grade-2': 'Grade 2',
-        'grade-3': 'Grade 3',
-        'grade-4': 'Grade 4',
-        'grade-5': 'Grade 5',
-        'grade-6': 'Grade 6',
-        'grade-7': 'Grade 7',
-        'grade-8': 'Grade 8',
-        'grade-9': 'Grade 9',
-        'grade-10': 'Grade 10',
-        'grade-11': 'Grade 11',
-        'grade-12': 'Grade 12',
-        'form-1': 'Form 1',
-        'form-2': 'Form 2',
-        'form-3': 'Form 3',
-        'form-4': 'Form 4',
-        college: 'College',
-        tvet: 'TVET',
-        university: 'University'
-    };
-
-    const CURRICULUM_MAP = {
-        'pp1': 'cbc',
-        'pp2': 'cbc',
-        'grade-1': 'cbc',
-        'grade-2': 'cbc',
-        'grade-3': 'cbc',
-        'grade-4': 'cbc',
-        'grade-5': 'cbc',
-        'grade-6': 'cbc',
-        'grade-7': 'cbc',
-        'grade-8': 'cbc',
-        'grade-9': 'cbc',
-        'grade-10': 'cbc',
-        'grade-11': 'cbc',
-        'grade-12': 'cbc',
-        'form-1': '8-4-4',
-        'form-2': '8-4-4',
-        'form-3': '8-4-4',
-        'form-4': '8-4-4',
-        'college': 'tertiary',
-        'tvet': 'tertiary',
-        'university': 'tertiary'
-    };
+    let searchTimeout = null;
 
     // ── DOM REFS ──
     const productsGrid = document.getElementById('productsGrid');
@@ -1772,6 +1731,7 @@
     const prevPage = document.getElementById('prevPage');
     const nextPage = document.getElementById('nextPage');
     const searchInput = document.getElementById('searchInput');
+    const clearSearch = document.getElementById('clearSearch');
     const sortSelect = document.getElementById('sortSelect');
 
     // ── CHECKOUT MODAL DOM REFS ──
@@ -1813,6 +1773,16 @@
         }, 5000);
     }
 
+    // ── GENERATE ORDER REF ──
+    function generateOrderRef() {
+        const date = new Date();
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+        return `ORD-${year}${month}${day}-${random}`;
+    }
+
     // ── FETCH RESOURCES ──
     async function fetchResources() {
         try {
@@ -1834,85 +1804,510 @@
         }
     }
 
-    // ── INIT ──
-    async function init() {
-        renderLoading();
+    // ── CREATE ORDER ──
+    async function createOrder(product, customerName, phone) {
+        const orderRef = generateOrderRef();
+        const orderData = {
+            order_ref: orderRef,
+            customer_name: customerName,
+            phone: phone,
+            item_title: product.title,
+            item_price: product.price || 0,
+            status: 'pending',
+            total_amount: product.price || 0,
+            created_at: new Date().toISOString()
+        };
+
         try {
-            allResources = await fetchResources();
-            if (allResources.length > 0) {
-                console.log('📋 Sample resource:', allResources[0]);
+            console.log('📝 Creating order with ref:', orderRef);
+            
+            // Insert order
+            const response = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
+                method: 'POST',
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=representation'
+                },
+                body: JSON.stringify(orderData)
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`HTTP ${response.status}: ${errorText}`);
             }
-            updateCounts();
-            applyLevelFromURL();
-            renderShop();
-            
-            // Check for MegaPay callback on page load
-            checkPaymentCallback();
-            
-            // Also check for callback periodically
-            setInterval(checkPaymentCallback, 3000);
-            
-        } catch (e) {
-            console.error('Init error:', e);
-            renderError(e);
+
+            const result = await response.json();
+            const createdOrder = result[0] || result;
+            console.log('✅ Order created:', createdOrder);
+
+            // Now create order_item
+            const orderItemData = {
+                order_ref: orderRef,
+                order_id: createdOrder.id,
+                product_id: product.id,
+                resource_title: product.title,
+                price: product.price || 0,
+                quantity: 1,
+                created_at: new Date().toISOString()
+            };
+
+            const itemResponse = await fetch(`${SUPABASE_URL}/rest/v1/order_items`, {
+                method: 'POST',
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(orderItemData)
+            });
+
+            if (!itemResponse.ok) {
+                const errorText = await itemResponse.text();
+                console.warn('⚠️ Order item creation failed:', errorText);
+            } else {
+                console.log('✅ Order item created');
+            }
+
+            return { orderRef, orderId: createdOrder.id };
+
+        } catch (error) {
+            console.error('❌ Order creation failed:', error);
+            throw error;
         }
     }
 
-    function applyLevelFromURL() {
+    // ── UPDATE ORDER STATUS ──
+    async function updateOrderStatus(orderRef, status, mpesaCode = null) {
+        try {
+            const updates = { status };
+            if (mpesaCode) updates.mpesa_code = mpesaCode;
+
+            const response = await fetch(`${SUPABASE_URL}/rest/v1/orders?order_ref=eq.${orderRef}`, {
+                method: 'PATCH',
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=representation'
+                },
+                body: JSON.stringify(updates)
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to update order: ${response.status}`);
+            }
+
+            const result = await response.json();
+            console.log('✅ Order updated:', result);
+            return result[0] || result;
+        } catch (error) {
+            console.error('❌ Order update failed:', error);
+            throw error;
+        }
+    }
+
+    // ── INITIATE PAYMENT ──
+    async function initiatePayment() {
+        if (isProcessing) return;
+        
+        const phone = phoneInput.value.trim().replace(/\s/g, '');
+        const customerName = customerNameInput.value.trim();
+
+        // Validate
+        if (!customerName) {
+            customerNameInput.classList.add('error');
+            showToast('⚠️', 'Please enter your full name', 'error');
+            customerNameInput.focus();
+            return;
+        }
+        customerNameInput.classList.remove('error');
+
+        if (!phone || phone.length < 9) {
+            phoneInput.classList.add('error');
+            showToast('⚠️', 'Please enter a valid Safaricom phone number', 'error');
+            phoneInput.focus();
+            return;
+        }
+        phoneInput.classList.remove('error');
+
+        // Format phone number for MegaPay
+        let formattedPhone = phone;
+        if (phone.startsWith('0')) formattedPhone = '254' + phone.substring(1);
+        if (phone.startsWith('+')) formattedPhone = phone.substring(1);
+        if (phone.startsWith('254') && phone.length === 12) formattedPhone = phone;
+        if (phone.length === 10 && phone.startsWith('07')) formattedPhone = '254' + phone.substring(1);
+        if (phone.length === 9 && phone.startsWith('7')) formattedPhone = '254' + phone;
+
+        if (!/^254[0-9]{9}$/.test(formattedPhone)) {
+            phoneInput.classList.add('error');
+            showToast('⚠️', 'Invalid phone number. Use format: 07XX XXX XXX', 'error');
+            phoneInput.focus();
+            return;
+        }
+
+        if (!currentProduct) {
+            showToast('⚠️', 'No product selected', 'error');
+            return;
+        }
+
+        // If free, skip payment and just verify
+        if ((currentProduct.price || 0) === 0) {
+            const { orderRef } = await createOrder(currentProduct, customerName, formattedPhone);
+            currentOrderRef = orderRef;
+            mpesaVerificationBox.classList.add('visible');
+            payPrimaryBtn.style.display = 'none';
+            showToast('📱', 'Free resource! Enter your details to download.', 'success');
+            return;
+        }
+
+        isProcessing = true;
+        payPrimaryBtn.disabled = true;
+        payPrimaryBtn.classList.add('loading');
+
+        try {
+            const { orderRef, orderId } = await createOrder(currentProduct, customerName, formattedPhone);
+            currentOrderRef = orderRef;
+
+            localStorage.setItem('pendingOrderRef', orderRef);
+            localStorage.setItem('pendingOrderId', orderId);
+            localStorage.setItem('pendingProductId', currentProduct.id);
+            localStorage.setItem('pendingProductTitle', currentProduct.title);
+            localStorage.setItem('pendingCustomerPhone', formattedPhone);
+
+            const metadata = JSON.stringify({
+                order_ref: orderRef,
+                order_id: orderId,
+                product_id: currentProduct.id,
+                product_title: currentProduct.title,
+                customer_name: customerName,
+                customer_phone: formattedPhone,
+                amount: currentProduct.price || 0,
+                currency: 'KES'
+            });
+
+            const payUrl = `${MEGAPAY_PAYMENT_URL}?phone=${encodeURIComponent(formattedPhone)}&amount=${encodeURIComponent(currentProduct.price || 0)}&description=${encodeURIComponent(currentProduct.title || 'Educational Resource')}&metadata=${encodeURIComponent(metadata)}`;
+
+            console.log('🔗 Opening MegaPay:', payUrl);
+
+            megapayWindow = window.open(payUrl, '_blank', 'width=500,height=700,scrollbars=yes');
+
+            if (!megapayWindow) {
+                showToast('⚠️', 'Please allow popups to complete payment', 'error');
+                window.location.href = payUrl;
+            } else {
+                showToast('📱', 'MegaPay opened in new tab. Complete payment there.', 'success');
+            }
+
+            setTimeout(() => {
+                mpesaVerificationBox.classList.add('visible');
+                payPrimaryBtn.style.display = 'none';
+                showToast('📱', 'After payment, enter your M-PESA code to verify', 'success');
+            }, 3000);
+
+            startCallbackCheck();
+
+        } catch (error) {
+            console.error('❌ Payment initiation failed:', error);
+            showToast('❌', 'Payment initiation failed. Please try again.', 'error');
+            if (megapayWindow) {
+                megapayWindow.close();
+                megapayWindow = null;
+            }
+        } finally {
+            isProcessing = false;
+            payPrimaryBtn.disabled = false;
+            payPrimaryBtn.classList.remove('loading');
+        }
+    }
+
+    // ── VERIFY AND COMPLETE ORDER ──
+    async function verifyAndCompleteOrder() {
+        if (isProcessing) return;
+
+        const mpesaCode = mpesaCodeInput.value.trim().toUpperCase();
+
+        if (!mpesaCode || mpesaCode.length < 3) {
+            mpesaCodeInput.classList.add('error');
+            showToast('⚠️', 'Please enter the last 4 digits of your M-PESA code', 'error');
+            mpesaCodeInput.focus();
+            return;
+        }
+        mpesaCodeInput.classList.remove('error');
+
+        if (!currentOrderRef) {
+            showToast('⚠️', 'No pending order found. Please try again.', 'error');
+            return;
+        }
+
+        isProcessing = true;
+        verifyOrderBtn.disabled = true;
+        verifyOrderBtn.classList.add('loading');
+
+        try {
+            await updateOrderStatus(currentOrderRef, 'completed', mpesaCode);
+
+            localStorage.setItem('lastOrderRef', currentOrderRef);
+            localStorage.setItem('lastOrderStatus', 'completed');
+
+            if (megapayWindow) {
+                megapayWindow.close();
+                megapayWindow = null;
+            }
+
+            showSuccess(currentOrderRef, phoneInput.value);
+
+            setTimeout(() => {
+                closeCheckoutModal();
+            }, 500);
+
+            mpesaVerificationBox.classList.remove('visible');
+            mpesaCodeInput.value = '';
+
+            showToast('✅', 'Payment verified! Check your WhatsApp for download link.', 'success');
+
+        } catch (error) {
+            console.error('❌ Verification failed:', error);
+            showToast('❌', 'Verification failed. Please contact support.', 'error');
+        } finally {
+            isProcessing = false;
+            verifyOrderBtn.disabled = false;
+            verifyOrderBtn.classList.remove('loading');
+        }
+    }
+
+    // ── SHOW SUCCESS ──
+    function showSuccess(orderRef, phone) {
+        successOrderRef.textContent = orderRef;
+        successPhone.textContent = phone || 'your phone';
+        successModal.classList.add('open');
+        
+        localStorage.removeItem('pendingOrderRef');
+        localStorage.removeItem('pendingOrderId');
+        localStorage.removeItem('pendingProductId');
+        localStorage.removeItem('pendingProductTitle');
+        
+        currentOrderRef = null;
+        currentProduct = null;
+    }
+
+    // ── CHECK PAYMENT CALLBACK ──
+    function checkPaymentCallback() {
         const params = new URLSearchParams(window.location.search);
-        const level = params.get('level');
-        if (level && LEVEL_ORDER.indexOf(level) !== -1) {
-            activeLevel = level;
-            document.querySelectorAll('.level-tab').forEach(function(t) {
-                t.classList.toggle('active', t.dataset.level === level);
-            });
-            document.querySelectorAll('.sidebar-subject').forEach(function(s) {
-                s.classList.toggle('active', s.dataset.levelFilter === level);
-            });
+        const status = params.get('status');
+        const orderRef = params.get('order_ref') || localStorage.getItem('pendingOrderRef');
+        const transactionId = params.get('transaction_id');
+
+        if (status === 'success' && orderRef) {
+            console.log('✅ Payment callback received:', { status, orderRef, transactionId });
+            (async () => {
+                try {
+                    await updateOrderStatus(orderRef, 'completed', transactionId);
+                    showSuccess(orderRef, localStorage.getItem('pendingCustomerPhone') || phoneInput.value);
+                    showToast('✅', 'Payment successful! Check your WhatsApp.', 'success');
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                } catch (error) {
+                    console.error('❌ Callback processing failed:', error);
+                }
+            })();
+        } else if (status === 'failed') {
+            showToast('❌', 'Payment failed. Please try again.', 'error');
+            window.history.replaceState({}, document.title, window.location.pathname);
         }
     }
 
-    function updateCounts() {
-        const counts = {};
-        LEVEL_ORDER.forEach(function(l) { counts[l] = 0; });
-        allResources.forEach(function(r) {
-            if (counts.hasOwnProperty(r.level)) counts[r.level]++;
-        });
+    let callbackInterval = null;
 
-        document.getElementById('pp1Count').textContent = counts.pp1 || 0;
-        document.getElementById('pp2Count').textContent = counts.pp2 || 0;
-        document.getElementById('g1Count').textContent = counts['grade-1'] || 0;
-        document.getElementById('g2Count').textContent = counts['grade-2'] || 0;
-        document.getElementById('g3Count').textContent = counts['grade-3'] || 0;
-        document.getElementById('g4Count').textContent = counts['grade-4'] || 0;
-        document.getElementById('g5Count').textContent = counts['grade-5'] || 0;
-        document.getElementById('g6Count').textContent = counts['grade-6'] || 0;
-        document.getElementById('g7Count').textContent = counts['grade-7'] || 0;
-        document.getElementById('g8Count').textContent = counts['grade-8'] || 0;
-        document.getElementById('g9Count').textContent = counts['grade-9'] || 0;
-        document.getElementById('g10Count').textContent = counts['grade-10'] || 0;
-        document.getElementById('g11Count').textContent = counts['grade-11'] || 0;
-        document.getElementById('g12Count').textContent = counts['grade-12'] || 0;
-        document.getElementById('f1Count').textContent = counts['form-1'] || 0;
-        document.getElementById('f2Count').textContent = counts['form-2'] || 0;
-        document.getElementById('f3Count').textContent = counts['form-3'] || 0;
-        document.getElementById('f4Count').textContent = counts['form-4'] || 0;
-        document.getElementById('collegeCount').textContent = counts.college || 0;
-        document.getElementById('tvetCount').textContent = counts.tvet || 0;
-        document.getElementById('universityCount').textContent = counts.university || 0;
-        document.getElementById('totalCount').textContent = allResources.length;
+    function startCallbackCheck() {
+        if (callbackInterval) clearInterval(callbackInterval);
+        callbackInterval = setInterval(() => {
+            checkPaymentCallback();
+        }, 3000);
 
-        const catCounts = { 'lesson-plan': 0, 'scheme-work': 0, 'revision-paper': 0, 'cbc-portfolio': 0, 'exam-paper': 0 };
-        allResources.forEach(function(r) {
-            const type = r.resource_type || r.category || r.type || '';
-            const typeClean = type.toLowerCase().replace(/\s+/g, '-');
-            if (catCounts.hasOwnProperty(typeClean)) catCounts[typeClean]++;
+        setTimeout(() => {
+            if (callbackInterval) {
+                clearInterval(callbackInterval);
+                callbackInterval = null;
+            }
+        }, 300000);
+    }
+
+    // ── OPEN CHECKOUT ──
+    function openCheckout(productId) {
+        const product = allResources.find(r => r.id === productId);
+        if (!product) {
+            showToast('⚠️', 'Product not found. Please refresh.', 'error');
+            return;
+        }
+
+        currentProduct = product;
+        currentOrderRef = null;
+
+        customerNameInput.value = '';
+        customerNameInput.classList.remove('error');
+        phoneInput.value = '';
+        phoneInput.classList.remove('error');
+        mpesaCodeInput.value = '';
+        mpesaCodeInput.classList.remove('error');
+        mpesaVerificationBox.classList.remove('visible');
+        payPrimaryBtn.style.display = 'flex';
+        verifyOrderBtn.classList.remove('loading');
+        verifyOrderBtn.disabled = false;
+        payPrimaryBtn.classList.remove('loading');
+        payPrimaryBtn.disabled = false;
+
+        checkoutItemTitle.textContent = product.title || 'Resource';
+        checkoutTotal.textContent = (product.price || 0) === 0 ? 'FREE' : `KES ${product.price || 0}`;
+
+        if ((product.price || 0) === 0) {
+            mpesaVerificationBox.classList.add('visible');
+            payPrimaryBtn.style.display = 'none';
+            showToast('📱', 'This resource is free! Enter your details to download.', 'success');
+        } else {
+            mpesaVerificationBox.classList.remove('visible');
+            payPrimaryBtn.style.display = 'flex';
+        }
+
+        checkoutModal.classList.add('open');
+        document.body.style.overflow = 'hidden';
+
+        setTimeout(() => {
+            customerNameInput.focus();
+        }, 300);
+    }
+
+    // ── CLOSE CHECKOUT MODAL ──
+    function closeCheckoutModal() {
+        checkoutModal.classList.remove('open');
+        document.body.style.overflow = '';
+        
+        mpesaVerificationBox.classList.remove('visible');
+        mpesaCodeInput.value = '';
+        payPrimaryBtn.style.display = 'flex';
+        payPrimaryBtn.classList.remove('loading');
+        payPrimaryBtn.disabled = false;
+        verifyOrderBtn.classList.remove('loading');
+        verifyOrderBtn.disabled = false;
+        
+        if (megapayWindow) {
+            megapayWindow.close();
+            megapayWindow = null;
+        }
+        
+        if (callbackInterval) {
+            clearInterval(callbackInterval);
+            callbackInterval = null;
+        }
+    }
+
+    // ── CLOSE SUCCESS MODAL ──
+    function closeSuccessModal() {
+        successModal.classList.remove('open');
+        currentOrderRef = null;
+        currentProduct = null;
+    }
+
+    // ── OPEN PREVIEW ──
+    function openPreview(productId) {
+        const product = allResources.find(r => r.id === productId);
+        if (product) {
+            if (product.preview_url) {
+                window.open(product.preview_url, '_blank');
+            } else if (product.file_url) {
+                window.open(product.file_url, '_blank');
+            } else {
+                showToast('📄', 'Preview not available for this resource', 'error');
+            }
+        } else {
+            showToast('⚠️', 'Product not found', 'error');
+        }
+    }
+
+    // ── SEARCH FUNCTION ──
+    function handleSearch() {
+        if (searchTimeout) clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+            const query = searchInput.value.trim();
+            if (query.length > 0) {
+                clearSearch.classList.add('visible');
+            } else {
+                clearSearch.classList.remove('visible');
+            }
+            currentPage = 1;
+            renderShop();
+        }, 300);
+    }
+
+    function clearSearch() {
+        searchInput.value = '';
+        clearSearch.classList.remove('visible');
+        currentPage = 1;
+        renderShop();
+        searchInput.focus();
+    }
+
+    // ── FILTER FUNCTIONS ──
+    function resetFilters() {
+        activeLevel = 'all';
+        activeCurriculum = 'all';
+        activeCategories = ['lesson-plan', 'scheme-work', 'revision-paper', 'cbc-portfolio', 'exam-paper'];
+        document.querySelectorAll('.category-group input[type="checkbox"]').forEach(function(cb) {
+            cb.checked = true;
         });
-        document.getElementById('catLessonPlan').textContent = catCounts['lesson-plan'] || 0;
-        document.getElementById('catSchemeWork').textContent = catCounts['scheme-work'] || 0;
-        document.getElementById('catRevisionPaper').textContent = catCounts['revision-paper'] || 0;
-        document.getElementById('catCbcPortfolio').textContent = catCounts['cbc-portfolio'] || 0;
-        document.getElementById('catExamPaper').textContent = catCounts['exam-paper'] || 0;
+        searchInput.value = '';
+        clearSearch.classList.remove('visible');
+        sortSelect.value = 'popular';
+        currentPage = 1;
+
+        document.querySelectorAll('.level-tab').forEach(function(t) {
+            t.classList.toggle('active', t.dataset.level === 'all');
+        });
+        document.querySelectorAll('.sidebar-subject').forEach(function(s) {
+            s.classList.toggle('active', s.dataset.levelFilter === 'all');
+        });
+        document.querySelectorAll('.curriculum-toggle button').forEach(function(b) {
+            b.classList.toggle('active', b.dataset.curriculum === 'all');
+        });
+        renderShop();
+    }
+
+    function setCurriculum(curr) {
+        activeCurriculum = curr;
+        document.querySelectorAll('.curriculum-toggle button').forEach(function(b) {
+            b.classList.toggle('active', b.dataset.curriculum === curr);
+        });
+        currentPage = 1;
+        renderShop();
+    }
+
+    function setLevel(level) {
+        activeLevel = level;
+        document.querySelectorAll('.level-tab').forEach(function(t) {
+            t.classList.toggle('active', t.dataset.level === level);
+        });
+        document.querySelectorAll('.sidebar-subject').forEach(function(s) {
+            s.classList.toggle('active', s.dataset.levelFilter === level);
+        });
+        currentPage = 1;
+        renderShop();
+    }
+
+    function toggleCategory(cb) {
+        const cat = cb.dataset.category;
+        if (cb.checked) {
+            if (!activeCategories.includes(cat)) activeCategories.push(cat);
+        } else {
+            activeCategories = activeCategories.filter(c => c !== cat);
+        }
+        currentPage = 1;
+        renderShop();
+    }
+
+    function changePage(delta) {
+        currentPage += delta;
+        renderShop();
+        window.scrollTo({ top: productsGrid.offsetTop - 80, behavior: 'smooth' });
     }
 
     // ── RENDER SHOP ──
@@ -1926,7 +2321,7 @@
                 <div class="empty-state" style="grid-column:1/-1;">
                     <span class="empty-icon">📚</span>
                     <h3>No resources found</h3>
-                    <p style="font-size:0.85rem;color:#6B7280;">${allResources.length > 0 ? 'You have ' + allResources.length + ' resources, but none match your filters.' : 'No resources have been uploaded yet.'}</p>
+                    <p style="font-size:0.85rem;color:#6B7280;">${allResources.length > 0 ? 'Try adjusting your search or filters.' : 'No resources have been uploaded yet.'}</p>
                     ${allResources.length > 0 ? '<button onclick="resetFilters()" style="margin-top:12px;padding:8px 20px;background:var(--gold);color:var(--navy);border:none;border-radius:8px;cursor:pointer;font-weight:700;">Reset Filters</button>' : ''}
                 </div>
             `;
@@ -1988,7 +2383,8 @@
             filtered = filtered.filter(function(r) {
                 return (r.title || '').toLowerCase().includes(searchTerm) ||
                     (r.subject || '').toLowerCase().includes(searchTerm) ||
-                    (r.description || '').toLowerCase().includes(searchTerm);
+                    (r.description || '').toLowerCase().includes(searchTerm) ||
+                    (r.creator_name || '').toLowerCase().includes(searchTerm);
             });
         }
 
@@ -2133,6 +2529,140 @@
         return map[subject] || '#4B5563';
     }
 
+    // ── LEVEL ORDER AND DISPLAY ──
+    const LEVEL_ORDER = [
+        'pp1', 'pp2',
+        'grade-1', 'grade-2', 'grade-3', 'grade-4', 'grade-5', 'grade-6',
+        'grade-7', 'grade-8', 'grade-9',
+        'grade-10', 'grade-11', 'grade-12',
+        'form-1', 'form-2', 'form-3', 'form-4',
+        'college', 'tvet', 'university'
+    ];
+
+    const LEVEL_DISPLAY = {
+        pp1: 'PP1',
+        pp2: 'PP2',
+        'grade-1': 'Grade 1',
+        'grade-2': 'Grade 2',
+        'grade-3': 'Grade 3',
+        'grade-4': 'Grade 4',
+        'grade-5': 'Grade 5',
+        'grade-6': 'Grade 6',
+        'grade-7': 'Grade 7',
+        'grade-8': 'Grade 8',
+        'grade-9': 'Grade 9',
+        'grade-10': 'Grade 10',
+        'grade-11': 'Grade 11',
+        'grade-12': 'Grade 12',
+        'form-1': 'Form 1',
+        'form-2': 'Form 2',
+        'form-3': 'Form 3',
+        'form-4': 'Form 4',
+        college: 'College',
+        tvet: 'TVET',
+        university: 'University'
+    };
+
+    const CURRICULUM_MAP = {
+        'pp1': 'cbc',
+        'pp2': 'cbc',
+        'grade-1': 'cbc',
+        'grade-2': 'cbc',
+        'grade-3': 'cbc',
+        'grade-4': 'cbc',
+        'grade-5': 'cbc',
+        'grade-6': 'cbc',
+        'grade-7': 'cbc',
+        'grade-8': 'cbc',
+        'grade-9': 'cbc',
+        'grade-10': 'cbc',
+        'grade-11': 'cbc',
+        'grade-12': 'cbc',
+        'form-1': '8-4-4',
+        'form-2': '8-4-4',
+        'form-3': '8-4-4',
+        'form-4': '8-4-4',
+        'college': 'tertiary',
+        'tvet': 'tertiary',
+        'university': 'tertiary'
+    };
+
+    // ── INIT ──
+    async function init() {
+        renderLoading();
+        try {
+            allResources = await fetchResources();
+            if (allResources.length > 0) {
+                console.log('📋 Sample resource:', allResources[0]);
+            }
+            updateCounts();
+            applyLevelFromURL();
+            renderShop();
+            checkPaymentCallback();
+            setInterval(checkPaymentCallback, 3000);
+        } catch (e) {
+            console.error('Init error:', e);
+            renderError(e);
+        }
+    }
+
+    function applyLevelFromURL() {
+        const params = new URLSearchParams(window.location.search);
+        const level = params.get('level');
+        if (level && LEVEL_ORDER.indexOf(level) !== -1) {
+            activeLevel = level;
+            document.querySelectorAll('.level-tab').forEach(function(t) {
+                t.classList.toggle('active', t.dataset.level === level);
+            });
+            document.querySelectorAll('.sidebar-subject').forEach(function(s) {
+                s.classList.toggle('active', s.dataset.levelFilter === level);
+            });
+        }
+    }
+
+    function updateCounts() {
+        const counts = {};
+        LEVEL_ORDER.forEach(function(l) { counts[l] = 0; });
+        allResources.forEach(function(r) {
+            if (counts.hasOwnProperty(r.level)) counts[r.level]++;
+        });
+
+        document.getElementById('pp1Count').textContent = counts.pp1 || 0;
+        document.getElementById('pp2Count').textContent = counts.pp2 || 0;
+        document.getElementById('g1Count').textContent = counts['grade-1'] || 0;
+        document.getElementById('g2Count').textContent = counts['grade-2'] || 0;
+        document.getElementById('g3Count').textContent = counts['grade-3'] || 0;
+        document.getElementById('g4Count').textContent = counts['grade-4'] || 0;
+        document.getElementById('g5Count').textContent = counts['grade-5'] || 0;
+        document.getElementById('g6Count').textContent = counts['grade-6'] || 0;
+        document.getElementById('g7Count').textContent = counts['grade-7'] || 0;
+        document.getElementById('g8Count').textContent = counts['grade-8'] || 0;
+        document.getElementById('g9Count').textContent = counts['grade-9'] || 0;
+        document.getElementById('g10Count').textContent = counts['grade-10'] || 0;
+        document.getElementById('g11Count').textContent = counts['grade-11'] || 0;
+        document.getElementById('g12Count').textContent = counts['grade-12'] || 0;
+        document.getElementById('f1Count').textContent = counts['form-1'] || 0;
+        document.getElementById('f2Count').textContent = counts['form-2'] || 0;
+        document.getElementById('f3Count').textContent = counts['form-3'] || 0;
+        document.getElementById('f4Count').textContent = counts['form-4'] || 0;
+        document.getElementById('collegeCount').textContent = counts.college || 0;
+        document.getElementById('tvetCount').textContent = counts.tvet || 0;
+        document.getElementById('universityCount').textContent = counts.university || 0;
+        document.getElementById('totalCount').textContent = allResources.length;
+
+        const catCounts = { 'lesson-plan': 0, 'scheme-work': 0, 'revision-paper': 0, 'cbc-portfolio': 0, 'exam-paper': 0 };
+        allResources.forEach(function(r) {
+            const type = r.resource_type || r.category || r.type || '';
+            const typeClean = type.toLowerCase().replace(/\s+/g, '-');
+            if (catCounts.hasOwnProperty(typeClean)) catCounts[typeClean]++;
+        });
+        document.getElementById('catLessonPlan').textContent = catCounts['lesson-plan'] || 0;
+        document.getElementById('catSchemeWork').textContent = catCounts['scheme-work'] || 0;
+        document.getElementById('catRevisionPaper').textContent = catCounts['revision-paper'] || 0;
+        document.getElementById('catCbcPortfolio').textContent = catCounts['cbc-portfolio'] || 0;
+        document.getElementById('catExamPaper').textContent = catCounts['exam-paper'] || 0;
+    }
+
     function renderLoading() {
         productsGrid.innerHTML = `
             <div class="loading-spinner" style="grid-column:1/-1;">
@@ -2153,626 +2683,90 @@
         `;
     }
 
-    // ── FILTERS ──
-    function resetFilters() {
-        activeLevel = 'all';
-        activeCurriculum = 'all';
-        activeCategories = ['lesson-plan', 'scheme-work', 'revision-paper', 'cbc-portfolio', 'exam-paper'];
-        document.querySelectorAll('.category-group input[type="checkbox"]').forEach(function(cb) {
-            cb.checked = true;
-        });
-        searchInput.value = '';
-        sortSelect.value = 'popular';
-        currentPage = 1;
-
-        document.querySelectorAll('.level-tab').forEach(function(t) {
-            t.classList.toggle('active', t.dataset.level === 'all');
-        });
-        document.querySelectorAll('.sidebar-subject').forEach(function(s) {
-            s.classList.toggle('active', s.dataset.levelFilter === 'all');
-        });
-        document.querySelectorAll('.curriculum-toggle button').forEach(function(b) {
-            b.classList.toggle('active', b.dataset.curriculum === 'all');
-        });
-        renderShop();
-    }
-
-    function setCurriculum(curr) {
-        activeCurriculum = curr;
-        document.querySelectorAll('.curriculum-toggle button').forEach(function(b) {
-            b.classList.toggle('active', b.dataset.curriculum === curr);
-        });
-        currentPage = 1;
-        renderShop();
-    }
-
-    function setLevel(level) {
-        activeLevel = level;
-        document.querySelectorAll('.level-tab').forEach(function(t) {
-            t.classList.toggle('active', t.dataset.level === level);
-        });
-        document.querySelectorAll('.sidebar-subject').forEach(function(s) {
-            s.classList.toggle('active', s.dataset.levelFilter === level);
-        });
-        currentPage = 1;
-        renderShop();
-    }
-
-    function toggleCategory(cb) {
-        const category = cb.dataset.category;
-        if (cb.checked) {
-            if (!activeCategories.includes(category)) {
-                activeCategories.push(category);
-            }
-        } else {
-            activeCategories = activeCategories.filter(c => c !== category);
-        }
-        currentPage = 1;
-        renderShop();
-    }
-
-    function changePage(delta) {
-        currentPage += delta;
-        renderShop();
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-
-    // ── PREVIEW ──
-    function openPreview(productId) {
-        const product = allResources.find(r => r.id === productId);
-        if (!product) {
-            showToast('⚠️', 'Product not found', 'error');
-            return;
-        }
-        
-        if (product.preview_url) {
-            window.open(product.preview_url, '_blank');
-        } else if (product.file_url) {
-            window.open(product.file_url, '_blank');
-        } else {
-            showToast('📄', 'Preview not available for this resource', 'error');
-        }
-    }
-
-    // ── VALIDATE KENYAN PHONE NUMBER ──
-    function validateKenyanPhone(phone) {
-        const cleaned = phone.replace(/[^0-9]/g, '');
-        if (cleaned.length === 10 && cleaned.startsWith('07')) {
-            return { valid: true, formatted: '0' + cleaned.substring(1), international: '254' + cleaned.substring(1) };
-        }
-        if (cleaned.length === 12 && cleaned.startsWith('254')) {
-            return { valid: true, formatted: '0' + cleaned.substring(3), international: cleaned };
-        }
-        if (cleaned.length === 9 && cleaned.startsWith('7')) {
-            return { valid: true, formatted: '0' + cleaned, international: '254' + cleaned };
-        }
-        return { valid: false };
-    }
-
-    // ── CHECKOUT ──
-    function openCheckout(productId) {
-        const product = allResources.find(r => r.id === productId);
-        if (!product) {
-            showToast('⚠️', 'Product not found', 'error');
-            return;
-        }
-
-        currentProduct = product;
-        currentOrderRef = null;
-        isProcessing = false;
-
-        // Set checkout details
-        checkoutItemTitle.textContent = product.title || 'Resource';
-        checkoutTotal.textContent = 'KES ' + (product.price || 0);
-
-        // Reset form
-        customerNameInput.value = '';
-        phoneInput.value = '';
-        mpesaCodeInput.value = '';
-        
-        // Reset verification box - HIDDEN by default
-        mpesaVerificationBox.classList.remove('visible');
-        mpesaVerificationBox.style.display = 'none';
-        
-        // Reset button states
-        payPrimaryBtn.classList.remove('loading');
-        payPrimaryBtn.disabled = false;
-        payPrimaryBtn.querySelector('.btn-text').textContent = '📱 Buy Now';
-        
-        verifyOrderBtn.classList.remove('loading');
-        verifyOrderBtn.disabled = false;
-
-        checkoutModal.classList.add('open');
-        document.body.style.overflow = 'hidden';
-
-        setTimeout(function() {
-            customerNameInput.focus();
-        }, 350);
-    }
-
-    function closeCheckoutModal() {
-        if (isProcessing) return;
-        checkoutModal.classList.remove('open');
-        document.body.style.overflow = '';
-        mpesaVerificationBox.classList.remove('visible');
-        mpesaVerificationBox.style.display = 'none';
-        payPrimaryBtn.classList.remove('loading');
-        payPrimaryBtn.disabled = false;
-        payPrimaryBtn.querySelector('.btn-text').textContent = '📱 Buy Now';
-    }
-
-    function closeSuccessModal() {
-        successModal.classList.remove('open');
-        closeCheckoutModal();
-    }
-
-    // ── INITIATE PAYMENT ──
-    function initiatePayment() {
-        if (isProcessing) return;
-
-        const name = customerNameInput.value.trim();
-        const phone = phoneInput.value.trim();
-
-        if (!name) {
-            customerNameInput.classList.add('error');
-            showToast('⚠️', 'Please enter your full name', 'error');
-            return;
-        }
-        customerNameInput.classList.remove('error');
-
-        const validation = validateKenyanPhone(phone);
-        if (!validation.valid) {
-            phoneInput.classList.add('error');
-            showToast('⚠️', 'Please enter a valid Safaricom phone number (e.g., 0712 345 678)', 'error');
-            return;
-        }
-        phoneInput.classList.remove('error');
-
-        if (!currentProduct) {
-            showToast('⚠️', 'No product selected', 'error');
-            return;
-        }
-
-        // Set processing state
-        isProcessing = true;
-        payPrimaryBtn.classList.add('loading');
-        payPrimaryBtn.disabled = true;
-
-        // Generate order reference
-        currentOrderRef = 'KV-' + Date.now().toString().slice(-8) + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
-        
-        // Store customer info in sessionStorage
-        sessionStorage.setItem('checkout_name', name);
-        sessionStorage.setItem('checkout_phone', validation.international);
-        sessionStorage.setItem('checkout_phone_formatted', validation.formatted);
-        sessionStorage.setItem('checkout_order_ref', currentOrderRef);
-        sessionStorage.setItem('checkout_product_id', currentProduct.id);
-        sessionStorage.setItem('checkout_product_title', currentProduct.title);
-        sessionStorage.setItem('checkout_amount', currentProduct.price || 0);
-
-        // ── 1. Open MegaPay in NEW TAB ──
-        openMegaPayInNewTab(name, validation.international, currentProduct);
-
-        // ── 2. Change button text to show processing state ──
-        payPrimaryBtn.querySelector('.btn-text').textContent = '⚡ Opening MegaPay...';
-        payPrimaryBtn.classList.add('opacity-75');
-
-        // ── 3. Reveal the verification container after delay ──
-        setTimeout(() => {
-            mpesaVerificationBox.style.display = 'block';
-            // Force reflow for animation
-            void mpesaVerificationBox.offsetWidth;
-            mpesaVerificationBox.classList.add('visible');
-            
-            // Update button text
-            payPrimaryBtn.querySelector('.btn-text').textContent = '📱 Return after payment';
-            payPrimaryBtn.classList.remove('loading');
-            payPrimaryBtn.disabled = false;
-            
-            // Focus on code input
-            setTimeout(() => {
-                mpesaCodeInput.focus();
-            }, 300);
-            
-            showToast('💳', 'MegaPay opened in new tab. Complete payment and return here to verify.', 'success');
-            isProcessing = false;
-        }, 2000);
-    }
-
-    // ── OPEN MEGAPAY IN NEW TAB ──
-    function openMegaPayInNewTab(name, phone, product) {
-        console.log('🚀 Opening MegaPay in new tab...');
-        console.log('📦 Order Details:', {
-            name: name,
-            phone: phone,
-            product: product.title,
-            amount: product.price,
-            order_ref: currentOrderRef
-        });
-
-        // Build MegaPay URL with parameters
-        const paymentParams = new URLSearchParams({
-            name: name,
-            phone: phone,
-            email: 'customer@kenyavault.co.ke',
-            amount: product.price || 0,
-            reference: currentOrderRef,
-            description: product.title || 'Educational Resource',
-            callback: window.location.origin + window.location.pathname
-        });
-
-        const paymentUrl = `${MEGAPAY_PAYMENT_URL}?${paymentParams.toString()}`;
-        
-        console.log('🔗 MegaPay URL:', paymentUrl);
-        
-        // Open MegaPay in NEW TAB
-        megapayWindow = window.open(paymentUrl, '_blank');
-        
-        // If popup was blocked, show a message
-        if (!megapayWindow || megapayWindow.closed || typeof megapayWindow.closed === 'undefined') {
-            showToast('⚠️', 'Popup blocked! Please allow popups or click the link below.', 'error');
-            
-            // Show a fallback link
-            const fallbackLink = document.createElement('div');
-            fallbackLink.style.cssText = 'margin-top:10px;padding:10px;background:#fef2f2;border-radius:8px;border:1px solid #fca5a5;text-align:center;';
-            fallbackLink.innerHTML = `
-                <p style="font-size:0.8rem;color:#991b1b;margin-bottom:6px;">Click the link below to complete payment:</p>
-                <a href="${paymentUrl}" target="_blank" style="color:#D4A017;font-weight:600;text-decoration:underline;">${paymentUrl}</a>
-            `;
-            mpesaVerificationBox.appendChild(fallbackLink);
-        }
-    }
-
-    // ── CHECK PAYMENT CALLBACK ──
-    function checkPaymentCallback() {
-        const params = new URLSearchParams(window.location.search);
-        const status = params.get('status');
-        const reference = params.get('reference');
-        const transaction_id = params.get('transaction_id');
-        
-        if (status === 'success' && reference) {
-            console.log('✅ Payment successful:', reference, transaction_id);
-            
-            // Clear URL params
-            const url = new URL(window.location);
-            url.searchParams.delete('status');
-            url.searchParams.delete('reference');
-            url.searchParams.delete('transaction_id');
-            window.history.replaceState({}, '', url);
-            
-            // Get stored customer info
-            const phone = sessionStorage.getItem('checkout_phone_formatted') || '0700000000';
-            
-            showToast('✅', 'Payment successful! Please enter your verification code.', 'success');
-            
-            // Auto-fill the code if provided
-            if (transaction_id && transaction_id.length >= 4) {
-                const code = transaction_id.slice(-4).toUpperCase();
-                document.getElementById('mpesaCodeInput').value = code;
-                showToast('🔑', 'Transaction code auto-filled. Click verify to complete.', 'success');
-            }
-            
-            // Focus on code input
-            setTimeout(() => {
-                document.getElementById('mpesaCodeInput').focus();
-            }, 500);
-            
-            // Reset processing state
-            isProcessing = false;
-            payPrimaryBtn.classList.remove('loading', 'opacity-75');
-            payPrimaryBtn.disabled = false;
-            payPrimaryBtn.querySelector('.btn-text').textContent = '📱 Payment Completed';
-        }
-    }
-
-    // ── SEND ORDER TO ADMIN (Supabase) - FIXED UUID ISSUE ──
-async function sendOrderToAdmin(orderData) {
-    try {
-        console.log('📤 Sending order to admin:', orderData);
-        
-        // Generate a proper UUID for the order
-        // Use the browser's crypto API or a simple UUID generator
-        const generateUUID = () => {
-            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-                const r = Math.random() * 16 | 0;
-                const v = c === 'x' ? r : (r & 0x3 | 0x8);
-                return v.toString(16);
-            });
-        };
-        
-        const orderUuid = generateUUID();
-        
-        // Use column names that match your actual Supabase schema
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
-            method: 'POST',
-            headers: {
-                'apikey': SUPABASE_ANON_KEY,
-                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                'Content-Type': 'application/json',
-                'Prefer': 'return=representation'
-            },
-            body: JSON.stringify({
-                // Generate a proper UUID for the id field
-                id: orderUuid,
-                // Store the order reference in a separate column (if it exists)
-                order_ref: orderData.order_ref,
-                payment_ref: orderData.order_ref,
-                customer_name: orderData.customer_name,
-                customer_phone: orderData.customer_phone,
-                total_amount: orderData.amount,
-                payment_status: 'pending_verification',
-                mpesa_code: orderData.mpesa_code,
-                item_count: 1,
-                created_at: new Date().toISOString()
-            })
-        });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('❌ Supabase insert error:', errorText);
-            
-            // If the error is about missing columns, try without those columns
-            if (errorText.includes('column') && errorText.includes('does not exist')) {
-                console.log('⚠️ Trying to insert with minimal columns...');
-                const minimalResponse = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
-                    method: 'POST',
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                        'Content-Type': 'application/json',
-                        'Prefer': 'return=representation'
-                    },
-                    body: JSON.stringify({
-                        id: orderUuid,
-                        customer_name: orderData.customer_name,
-                        customer_phone: orderData.customer_phone,
-                        total_amount: orderData.amount,
-                        payment_status: 'pending_verification',
-                        mpesa_code: orderData.mpesa_code,
-                        created_at: new Date().toISOString()
-                    })
-                });
-                
-                if (!minimalResponse.ok) {
-                    const minimalError = await minimalResponse.text();
-                    console.error('❌ Minimal insert error:', minimalError);
-                    throw new Error(minimalError || 'Failed to create order');
-                }
-                
-                const minimalData = await minimalResponse.json();
-                console.log('✅ Order sent with minimal columns:', minimalData);
-                
-                // Try to create order item
-                if (minimalData && minimalData.length > 0) {
-                    const orderId = minimalData[0].id || orderUuid;
-                    await createOrderItem(orderId, orderData);
-                }
-                
-                return minimalData;
-            }
-            
-            throw new Error(errorText || 'Failed to create order');
-        }
-
-        const data = await response.json();
-        console.log('✅ Order sent to admin successfully:', data);
-        
-        if (data && data.length > 0) {
-            const orderId = data[0].id || orderUuid;
-            await createOrderItem(orderId, orderData);
-        }
-
-        return data;
-    } catch (error) {
-        console.error('❌ Error sending order:', error);
-        throw error;
-    }
-}
-
-// ── CREATE ORDER ITEM ──
-async function createOrderItem(orderId, orderData) {
-    try {
-        const itemResponse = await fetch(`${SUPABASE_URL}/rest/v1/order_items`, {
-            method: 'POST',
-            headers: {
-                'apikey': SUPABASE_ANON_KEY,
-                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                order_id: orderId,
-                resource_title: orderData.product_title,
-                resource_path: orderData.file_path || '',
-                quantity: 1,
-                price: orderData.amount
-            })
-        });
-
-        if (!itemResponse.ok) {
-            console.error('❌ Order item insert error:', await itemResponse.text());
-        } else {
-            console.log('✅ Order item created successfully');
-        }
-    } catch (error) {
-        console.error('❌ Error creating order item:', error);
-    }
-}
-
-    // ── VERIFY AND COMPLETE ORDER ──
-function verifyAndCompleteOrder() {
-    const code = mpesaCodeInput.value.trim().toUpperCase();
-    
-    if (!code || code.length < 4) {
-        mpesaCodeInput.classList.add('error');
-        showToast('⚠️', 'Please enter the last 4 digits of your M-PESA transaction code', 'error');
-        return;
-    }
-    mpesaCodeInput.classList.remove('error');
-
-    if (!currentProduct) {
-        showToast('⚠️', 'No product selected', 'error');
-        return;
-    }
-
-    // Show loading state
-    verifyOrderBtn.classList.add('loading');
-    verifyOrderBtn.disabled = true;
-
-    // Get customer info
-    const name = sessionStorage.getItem('checkout_name') || customerNameInput.value.trim();
-    const phone = sessionStorage.getItem('checkout_phone') || '254700000000';
-    const phoneFormatted = sessionStorage.getItem('checkout_phone_formatted') || '0700000000';
-    const orderRef = sessionStorage.getItem('checkout_order_ref') || currentOrderRef || 
-        'KV-' + Date.now().toString().slice(-8) + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
-
-    // Prepare order data with all required fields
-    const orderData = {
-        order_ref: orderRef,
-        product_id: currentProduct.id,
-        product_title: currentProduct.title,
-        customer_name: name,
-        customer_phone: phone,
-        amount: currentProduct.price || 0,
-        mpesa_code: code,
-        file_path: currentProduct.file_url || '',
-        payment_method: 'megapay',
-        verified_at: new Date().toISOString(),
-        created_at: new Date().toISOString()
-    };
-
-    console.log('📦 Verifying Order with data:', orderData);
-
-    // Send order to admin via Supabase
-    sendOrderToAdmin(orderData)
-        .then(() => {
-            verifyOrderBtn.classList.remove('loading');
-            verifyOrderBtn.disabled = false;
-            
-            // Close checkout modal
-            closeCheckoutModal();
-            
-            // Show success modal
-            successOrderRef.textContent = orderRef;
-            successPhone.textContent = phoneFormatted;
-            successModal.classList.add('open');
-            
-            showToast('✅', 'Order verified and sent to admin! Your download link will be sent shortly.', 'success');
-            
-            // Increment download count
-            if (currentProduct) {
-                currentProduct.download_count = (currentProduct.download_count || 0) + 1;
-            }
-            
-            // Clear session storage
-            sessionStorage.removeItem('checkout_name');
-            sessionStorage.removeItem('checkout_phone');
-            sessionStorage.removeItem('checkout_phone_formatted');
-            sessionStorage.removeItem('checkout_order_ref');
-            sessionStorage.removeItem('checkout_product_id');
-            sessionStorage.removeItem('checkout_product_title');
-            sessionStorage.removeItem('checkout_amount');
-            
-            currentProduct = null;
-            currentOrderRef = null;
-            isProcessing = false;
-            
-            // Reset button states
-            payPrimaryBtn.classList.remove('loading', 'opacity-75');
-            payPrimaryBtn.disabled = false;
-            payPrimaryBtn.querySelector('.btn-text').textContent = '📱 Buy Now';
-            mpesaVerificationBox.classList.remove('visible');
-            mpesaVerificationBox.style.display = 'none';
-        })
-        .catch((error) => {
-            console.error('❌ Verification error:', error);
-            showToast('❌', 'Failed to verify payment. Please try again.', 'error');
-            verifyOrderBtn.classList.remove('loading');
-            verifyOrderBtn.disabled = false;
-        });
-}
-
-    // ── MOBILE SIDEBAR ──
+    // ── TOGGLE MOBILE SIDEBAR ──
     function toggleMobileSidebar() {
         const sidebar = document.getElementById('sidebar');
         sidebar.classList.toggle('open-mobile');
     }
 
-    // ── KJSEA BANNER ──
-    document.getElementById('kjseaBannerBtn')?.addEventListener('click', function() {
-        setLevel('grade-9');
-        document.querySelector('.kjsea-banner').scrollIntoView({ behavior: 'smooth' });
-    });
-
-    // ── HAMBURGER MENU ──
-    document.getElementById('hamburger')?.addEventListener('click', function() {
-        document.getElementById('navLinks').classList.toggle('open');
-    });
-
-    // ── LEVEL TABS ──
-    document.querySelectorAll('.level-tab').forEach(function(tab) {
-        tab.addEventListener('click', function() {
-            const level = this.dataset.level;
-            setLevel(level);
-            const url = new URL(window.location);
-            if (level === 'all') {
-                url.searchParams.delete('level');
-            } else {
-                url.searchParams.set('level', level);
-            }
-            window.history.pushState({}, '', url);
-        });
+    // ── CLOSE MODAL ON ESCAPE ──
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            if (checkoutModal.classList.contains('open')) closeCheckoutModal();
+            if (successModal.classList.contains('open')) closeSuccessModal();
+        }
     });
 
     // ── CLOSE MODAL ON OVERLAY CLICK ──
-    document.getElementById('checkoutModal')?.addEventListener('click', function(e) {
-        if (e.target === this && !isProcessing) {
-            closeCheckoutModal();
+    checkoutModal.addEventListener('click', function(e) {
+        if (e.target === checkoutModal) closeCheckoutModal();
+    });
+
+    successModal.addEventListener('click', function(e) {
+        if (e.target === successModal) closeSuccessModal();
+    });
+
+    // ── HAMBURGER MENU ──
+    document.getElementById('hamburger').addEventListener('click', function() {
+        document.getElementById('navLinks').classList.toggle('open');
+    });
+
+    // ── KJSEA BANNER BUTTON ──
+    document.getElementById('kjseaBannerBtn').addEventListener('click', function() {
+        setLevel('grade-9');
+        document.querySelector('.shop-hero').scrollIntoView({ behavior: 'smooth' });
+    });
+
+    // ── MAKE FUNCTIONS GLOBAL ──
+    window.openCheckout = openCheckout;
+    window.closeCheckoutModal = closeCheckoutModal;
+    window.closeSuccessModal = closeSuccessModal;
+    window.initiatePayment = initiatePayment;
+    window.verifyAndCompleteOrder = verifyAndCompleteOrder;
+    window.openPreview = openPreview;
+    window.resetFilters = resetFilters;
+    window.setLevel = setLevel;
+    window.setCurriculum = setCurriculum;
+    window.toggleCategory = toggleCategory;
+    window.changePage = changePage;
+    window.toggleMobileSidebar = toggleMobileSidebar;
+    window.renderShop = renderShop;
+    window.handleSearch = handleSearch;
+    window.clearSearch = clearSearch;
+    window.init = init;
+
+    // ── START APP ──
+    document.addEventListener('DOMContentLoaded', init);
+
+    // ── PHONE INPUT FORMATTING ──
+    phoneInput.addEventListener('input', function() {
+        let val = this.value.replace(/\D/g, '');
+        if (val.length > 12) val = val.substring(0, 12);
+        if (val.length >= 10) {
+            if (val.startsWith('254')) {
+                this.value = val;
+            } else if (val.startsWith('0')) {
+                this.value = val;
+            } else if (val.length === 10 && !val.startsWith('0')) {
+                this.value = val;
+            }
+        } else {
+            this.value = val;
         }
+        this.classList.remove('error');
     });
 
-    document.getElementById('successModal')?.addEventListener('click', function(e) {
-        if (e.target === this) {
-            closeSuccessModal();
-        }
+    customerNameInput.addEventListener('input', function() {
+        this.classList.remove('error');
     });
 
-    // ── CODE INPUT AUTO-FORMAT ──
-    document.addEventListener('DOMContentLoaded', function() {
-        const codeInput = document.getElementById('mpesaCodeInput');
-        if (codeInput) {
-            codeInput.addEventListener('input', function() {
-                this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
-                if (this.value.length === 4) {
-                    // Optionally auto-submit
-                }
-            });
-            
-            // Auto-submit on Enter key
-            codeInput.addEventListener('keydown', function(e) {
-                if (e.key === 'Enter' && this.value.length === 4) {
-                    verifyAndCompleteOrder();
-                }
-            });
-        }
+    mpesaCodeInput.addEventListener('input', function() {
+        this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        this.classList.remove('error');
     });
 
-    // ── CHECK FOR PAYMENT CALLBACK ON LOAD ──
-    document.addEventListener('DOMContentLoaded', function() {
-        // Check immediately
-        checkPaymentCallback();
-        
-        // Check again after 1 second (for slower callbacks)
-        setTimeout(checkPaymentCallback, 1000);
-        
-        // And every 5 seconds after that
-        setInterval(checkPaymentCallback, 5000);
-    });
-
-    // ── INIT ──
-    document.addEventListener('DOMContentLoaded', function() {
-        init();
-    });
+    console.log('✅ KenyaVault Shop initialized');
+    console.log('📱 MegaPay Payment URL:', MEGAPAY_PAYMENT_URL);
 </script>
-
 </body>
 </html>
