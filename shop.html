@@ -8,8 +8,6 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700;800&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
-    <!-- Supabase JS - using the correct CDN URL -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.min.js"></script>
     <style>
         /* ── ROOT VARIABLES ── */
         :root {
@@ -1745,7 +1743,6 @@
     
     // If not ready, wait for it
     if (!clientReady) {
-        // Check if the script loaded with a delay
         let retryCount = 0;
         const maxRetries = 10;
         const retryInterval = setInterval(() => {
@@ -1754,7 +1751,6 @@
                 sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
                 console.log('✅ Supabase client initialized (delayed)');
                 clearInterval(retryInterval);
-                // If resources already loaded, reload them
                 if (allResources.length === 0) {
                     loadResources();
                 }
@@ -1888,15 +1884,15 @@
         }, 5000);
     }
 
-    // ── FETCH RESOURCES ──
+    // ── FETCH RESOURCES ── (UPDATED: Fetches ALL resources regardless of status)
     async function fetchResources() {
         try {
             if (!sbClient) {
                 throw new Error('Supabase client not initialized');
             }
-            console.log('🔍 Fetching all resources from Supabase...');
+            console.log('🔍 Fetching ALL resources from Supabase...');
             
-            // Fetch ALL resources without status filter
+            // Fetch ALL resources without any status filter
             const { data, error } = await sbClient
                 .from('resources')
                 .select('*')
@@ -1907,7 +1903,7 @@
                 throw error;
             }
             
-            console.log(`✅ Loaded ${data.length} resources`);
+            console.log(`✅ Loaded ${data.length} total resources`);
             
             // Log resource statuses for debugging
             const statusCounts = {};
@@ -1917,18 +1913,7 @@
             });
             console.log('📊 Resource status breakdown:', statusCounts);
             
-            // Show ALL resources regardless of status (for testing)
-            // In production, filter to only show live resources
-            const liveResources = data.filter(r => {
-                const status = (r.status || '').toLowerCase();
-                return status === 'live' || status === 'published' || status === 'active' || status === '' || status === null;
-            });
-            
-            // If no live resources, show all resources (fallback)
-            const resourcesToShow = liveResources.length > 0 ? liveResources : data;
-            
-            console.log(`✅ Showing ${resourcesToShow.length} resources (${liveResources.length} live, ${data.length - liveResources.length} filtered out)`);
-            return resourcesToShow;
+            return data || [];
         } catch (error) {
             console.error('❌ Fetch error:', error);
             throw error;
@@ -1941,7 +1926,6 @@
         if (!sbClient) {
             renderLoading();
             showToast('⏳', 'Loading Supabase client...', 'info');
-            // Wait for client to be available (handled by retry interval)
             return;
         }
         await loadResources();
@@ -2020,7 +2004,7 @@
         document.getElementById('catExamPaper').textContent = catCounts['exam-paper'] || 0;
     }
 
-    // ── RENDER SHOP ──
+    // ── RENDER SHOP ── (Rest of the code remains the same)
     function renderShop() {
         const filtered = getFilteredAndSortedResources();
 
@@ -2620,14 +2604,11 @@
 
     // ── INIT ──
     document.addEventListener('DOMContentLoaded', function() {
-        // If client is ready, load resources
         if (sbClient) {
             loadResources();
         }
-        // Otherwise, the retry interval will handle it
     });
 
-    // Also try to load if the script loads after DOM
     if (document.readyState === 'complete' || document.readyState === 'interactive') {
         if (sbClient) {
             setTimeout(loadResources, 500);
