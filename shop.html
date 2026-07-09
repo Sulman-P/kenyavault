@@ -1813,10 +1813,10 @@
         }, 5000);
     }
 
-    // ── FETCH RESOURCES ── (UPDATED: Fetches ALL resources without status filter)
+    // ── FETCH RESOURCES ──
     async function fetchResources() {
         try {
-            console.log('🔍 Fetching ALL resources from Supabase...');
+            console.log('🔍 Fetching resources from Supabase...');
             const response = await fetch(`${SUPABASE_URL}/rest/v1/resources?select=*&order=created_at.desc`, {
                 headers: {
                     'apikey': SUPABASE_ANON_KEY,
@@ -1826,16 +1826,7 @@
             });
             if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             const data = await response.json();
-            console.log(`✅ Loaded ${data.length} total resources`);
-            
-            // Log status breakdown for debugging
-            const statusCounts = {};
-            data.forEach(function(r) {
-                const status = r.status || 'null';
-                statusCounts[status] = (statusCounts[status] || 0) + 1;
-            });
-            console.log('📊 Resource status breakdown:', statusCounts);
-            
+            console.log(`✅ Loaded ${data.length} resources`);
             return data || [];
         } catch (error) {
             console.error('❌ Fetch error:', error);
@@ -2315,71 +2306,6 @@
         closeCheckoutModal();
     }
 
-    // ── SEND ORDER TO ADMIN (Supabase) ──
-    async function sendOrderToAdmin(orderData) {
-        try {
-            console.log('📤 Sending order to admin:', orderData);
-            
-            const response = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
-                method: 'POST',
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    order_ref: orderData.order_ref,
-                    payment_ref: orderData.order_ref,
-                    customer_name: orderData.customer_name,
-                    customer_phone: orderData.customer_phone,
-                    total_amount: orderData.amount,
-                    payment_status: 'pending_verification',
-                    mpesa_code: orderData.mpesa_code,
-                    item_count: 1,
-                    created_at: new Date().toISOString()
-                })
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error('❌ Supabase insert error:', errorText);
-                throw new Error(errorText || 'Failed to create order');
-            }
-
-            const data = await response.json();
-            console.log('✅ Order sent to admin successfully:', data);
-            
-            if (data && data.length > 0) {
-                const orderId = data[0].id;
-                // Create order item
-                const itemResponse = await fetch(`${SUPABASE_URL}/rest/v1/order_items`, {
-                    method: 'POST',
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        order_id: orderId,
-                        resource_title: orderData.product_title,
-                        resource_path: orderData.file_path || '',
-                        quantity: 1,
-                        price: orderData.amount
-                    })
-                });
-
-                if (!itemResponse.ok) {
-                    console.error('❌ Order item insert error:', await itemResponse.text());
-                }
-            }
-
-            return data;
-        } catch (error) {
-            console.error('❌ Error sending order:', error);
-            throw error;
-        }
-    }
-
     // ── INITIATE PAYMENT ──
     function initiatePayment() {
         if (isProcessing) return;
@@ -2539,7 +2465,75 @@
         }
     }
 
-    // ── VERIFY AND COMPLETE ORDER ── (UPDATED: Sends order to admin with all details)
+    // ── SEND ORDER TO ADMIN (Supabase) - FIXED COLUMN NAMES ──
+    async function sendOrderToAdmin(orderData) {
+        try {
+            console.log('📤 Sending order to admin:', orderData);
+            
+            // Use column names that match your actual Supabase schema
+            const response = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
+                method: 'POST',
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=representation'
+                },
+                body: JSON.stringify({
+                    // Use column names that exist in your orders table
+                    id: orderData.order_ref, // Use order_ref as id if that's the primary key
+                    payment_ref: orderData.order_ref,
+                    customer_name: orderData.customer_name,
+                    customer_phone: orderData.customer_phone,
+                    total_amount: orderData.amount,
+                    payment_status: 'pending_verification',
+                    mpesa_code: orderData.mpesa_code,
+                    item_count: 1,
+                    created_at: new Date().toISOString()
+                })
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('❌ Supabase insert error:', errorText);
+                throw new Error(errorText || 'Failed to create order');
+            }
+
+            const data = await response.json();
+            console.log('✅ Order sent to admin successfully:', data);
+            
+            if (data && data.length > 0) {
+                const orderId = data[0].id || data[0].order_ref || orderData.order_ref;
+                // Create order item
+                const itemResponse = await fetch(`${SUPABASE_URL}/rest/v1/order_items`, {
+                    method: 'POST',
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        order_id: orderId,
+                        resource_title: orderData.product_title,
+                        resource_path: orderData.file_path || '',
+                        quantity: 1,
+                        price: orderData.amount
+                    })
+                });
+
+                if (!itemResponse.ok) {
+                    console.error('❌ Order item insert error:', await itemResponse.text());
+                }
+            }
+
+            return data;
+        } catch (error) {
+            console.error('❌ Error sending order:', error);
+            throw error;
+        }
+    }
+
+    // ── VERIFY AND COMPLETE ORDER ──
     function verifyAndCompleteOrder() {
         const code = mpesaCodeInput.value.trim().toUpperCase();
         
