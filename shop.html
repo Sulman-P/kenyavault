@@ -1719,8 +1719,8 @@
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
     const STORAGE_BUCKET = 'academic-resources';
 
-    // ── SUPABASE CLIENT ──
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    // ── SUPABASE CLIENT (using the global supabase from CDN) ──
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     // ── STATE ──
     let allResources = [];
@@ -1848,7 +1848,7 @@
     async function fetchResources() {
         try {
             console.log('🔍 Fetching resources from Supabase...');
-            const { data, error } = await supabase
+            const { data, error } = await supabaseClient
                 .from('resources')
                 .select('*')
                 .eq('status', 'live')
@@ -2305,8 +2305,7 @@
         try {
             console.log('📤 Sending order to admin:', orderData);
             
-            // Insert order into Supabase
-            const { data, error } = await supabase
+            const { data, error } = await supabaseClient
                 .from('orders')
                 .insert([{
                     order_ref: orderData.order_ref,
@@ -2328,10 +2327,9 @@
 
             console.log('✅ Order sent to admin successfully:', data);
             
-            // Also insert order item
             if (data && data.length > 0) {
                 const orderId = data[0].id;
-                const { error: itemError } = await supabase
+                const { error: itemError } = await supabaseClient
                     .from('order_items')
                     .insert([{
                         order_id: orderId,
@@ -2384,10 +2382,8 @@
         payPrimaryBtn.classList.add('loading');
         payPrimaryBtn.disabled = true;
 
-        // Generate order reference
         currentOrderRef = 'KV-' + Date.now().toString().slice(-8) + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
         
-        // Store customer info
         sessionStorage.setItem('checkout_name', name);
         sessionStorage.setItem('checkout_phone', validation.international);
         sessionStorage.setItem('checkout_phone_formatted', validation.formatted);
@@ -2396,7 +2392,6 @@
         sessionStorage.setItem('checkout_product_title', currentProduct.title);
         sessionStorage.setItem('checkout_amount', currentProduct.price || 0);
 
-        // Simulate M-PESA STK Push
         payPrimaryBtn.querySelector('.btn-text').textContent = '⚡ Sending STK Push...';
 
         setTimeout(() => {
@@ -2404,7 +2399,6 @@
             payPrimaryBtn.disabled = false;
             payPrimaryBtn.querySelector('.btn-text').textContent = '📱 Check Your Phone';
             
-            // Reveal verification box
             mpesaVerificationBox.style.display = 'block';
             void mpesaVerificationBox.offsetWidth;
             mpesaVerificationBox.classList.add('visible');
@@ -2452,10 +2446,8 @@
         };
 
         try {
-            // Send order to admin via Supabase
             await sendOrderToAdmin(orderData);
             
-            // Show success
             verifyOrderBtn.classList.remove('loading');
             verifyOrderBtn.disabled = false;
             
@@ -2467,7 +2459,6 @@
             
             showToast('✅', 'Payment verified! Admin will send your download link shortly.', 'success');
             
-            // Clear session
             sessionStorage.removeItem('checkout_name');
             sessionStorage.removeItem('checkout_phone');
             sessionStorage.removeItem('checkout_phone_formatted');
@@ -2541,6 +2532,5 @@
     // ── INIT ──
     document.addEventListener('DOMContentLoaded', init);
 </script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </body>
 </html>
