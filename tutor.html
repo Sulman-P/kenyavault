@@ -1034,100 +1034,139 @@
             };
 
             const loadTutorData = async (tutorId) => {
-                setLoading(true);
-                try {
-                    // Load tutor data
-                    const tRes = await fetch(`${SUPABASE_URL}/rest/v1/tutors?id=eq.${tutorId}&select=*`, {
-                        headers: { 
-                            'apikey': SUPABASE_ANON_KEY, 
-                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                            'Content-Type': 'application/json'
-                        }
-                    });
-                    
-                    if (tRes.ok) {
-                        const data = await tRes.json();
-                        if (data.length > 0) {
-                            setTutor(data[0]);
-                            sessionStorage.setItem('tutor_name', data[0].name);
-                        }
-                    } else {
-                        addDebug('Failed to load tutor data: ' + tRes.status, 'error');
-                    }
+    setLoading(true);
+    try {
+        // Load tutor data
+        const tRes = await fetch(`${SUPABASE_URL}/rest/v1/tutors?id=eq.${tutorId}&select=*`, {
+            headers: { 
+                'apikey': SUPABASE_ANON_KEY, 
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (tRes.ok) {
+            const data = await tRes.json();
+            if (data.length > 0) {
+                setTutor(data[0]);
+                sessionStorage.setItem('tutor_name', data[0].name);
+                addDebug('Tutor data loaded successfully', 'success');
+            }
+        } else {
+            addDebug('Failed to load tutor data: ' + tRes.status, 'error');
+        }
 
-                    // Load resources (this table should exist)
-                    try {
-                        const rRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?tutor_id=eq.${tutorId}&select=*`, {
-                            headers: { 
-                                'apikey': SUPABASE_ANON_KEY, 
-                                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                                'Content-Type': 'application/json'
-                            }
-                        });
-                        if (rRes.ok) {
-                            const data = await rRes.json();
-                            setResources(data || []);
-                            addDebug(`Loaded ${data.length} resources`, 'success');
-                        } else if (rRes.status === 404) {
-                            addDebug('Resources table not found. Please create it in Supabase.', 'error');
-                        } else {
-                            addDebug('Failed to load resources: ' + rRes.status, 'error');
-                        }
-                    } catch (e) { 
-                        addDebug('Resources table may not exist: ' + e.message, 'error');
-                    }
-
-                    // Load orders - handle gracefully if table doesn't exist
-                    try {
-                        const oRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?tutor_id=eq.${tutorId}&select=*&order=created_at.desc`, {
-                            headers: { 
-                                'apikey': SUPABASE_ANON_KEY, 
-                                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                                'Content-Type': 'application/json'
-                            }
-                        });
-                        if (oRes.ok) {
-                            const data = await oRes.json();
-                            setOrders(data || []);
-                            addDebug(`Loaded ${data.length} orders`, 'success');
-                        } else if (oRes.status === 404) {
-                            addDebug('Orders table not found. Please create it in Supabase.', 'error');
-                        } else {
-                            addDebug('Failed to load orders: ' + oRes.status, 'error');
-                        }
-                    } catch (e) { 
-                        addDebug('Orders table may not exist: ' + e.message, 'error');
-                    }
-
-                    // Load classes - handle gracefully if table doesn't exist
-                    try {
-                        const cRes = await fetch(`${SUPABASE_URL}/rest/v1/classes?tutor_id=eq.${tutorId}&select=*&order=date.asc`, {
-                            headers: { 
-                                'apikey': SUPABASE_ANON_KEY, 
-                                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                                'Content-Type': 'application/json'
-                            }
-                        });
-                        if (cRes.ok) {
-                            const data = await cRes.json();
-                            setClasses(data || []);
-                            addDebug(`Loaded ${data.length} classes`, 'success');
-                        } else if (cRes.status === 404) {
-                            addDebug('Classes table not found. Please create it in Supabase.', 'error');
-                        } else {
-                            addDebug('Failed to load classes: ' + cRes.status, 'error');
-                        }
-                    } catch (e) { 
-                        addDebug('Classes table may not exist: ' + e.message, 'error');
-                    }
-
-                } catch (e) { 
-                    console.error('Load error:', e); 
-                    addDebug('Error loading data: ' + e.message, 'error');
+        // Load resources
+        try {
+            const rRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?tutor_id=eq.${tutorId}&select=*`, {
+                headers: { 
+                    'apikey': SUPABASE_ANON_KEY, 
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json'
                 }
-                setLoading(false);
-            };
+            });
+            if (rRes.ok) {
+                const data = await rRes.json();
+                setResources(data || []);
+                addDebug(`Loaded ${data.length} resources`, 'success');
+            } else {
+                addDebug('Failed to load resources: ' + rRes.status, 'error');
+            }
+        } catch (e) { 
+            addDebug('Error loading resources: ' + e.message, 'error');
+        }
 
+        // Load orders - using tutor_id filter
+        try {
+            // First, check if the table has tutor_id column by trying a query
+            const oRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?tutor_id=eq.${tutorId}&select=*&order=created_at.desc`, {
+                headers: { 
+                    'apikey': SUPABASE_ANON_KEY, 
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (oRes.ok) {
+                const data = await oRes.json();
+                setOrders(data || []);
+                addDebug(`Loaded ${data.length} orders`, 'success');
+            } else if (oRes.status === 400) {
+                // If 400, the column might not exist yet - try without tutor_id filter
+                addDebug('Orders table exists but tutor_id column may be missing. Trying without filter.', 'info');
+                
+                const fallbackRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?select=*&order=created_at.desc&limit=100`, {
+                    headers: { 
+                        'apikey': SUPABASE_ANON_KEY, 
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (fallbackRes.ok) {
+                    const data = await fallbackRes.json();
+                    // Filter by tutor_id manually if we have the data
+                    const filteredOrders = data.filter(o => o.tutor_id === tutorId);
+                    setOrders(filteredOrders || []);
+                    addDebug(`Loaded ${filteredOrders.length} orders (filtered manually)`, 'success');
+                } else {
+                    addDebug('Failed to load orders: ' + fallbackRes.status, 'error');
+                }
+            } else {
+                addDebug('Failed to load orders: ' + oRes.status, 'error');
+            }
+        } catch (e) { 
+            addDebug('Error loading orders: ' + e.message, 'error');
+        }
+
+        // Load classes - using tutor_id filter
+        try {
+            const cRes = await fetch(`${SUPABASE_URL}/rest/v1/classes?tutor_id=eq.${tutorId}&select=*&order=date.asc`, {
+                headers: { 
+                    'apikey': SUPABASE_ANON_KEY, 
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (cRes.ok) {
+                const data = await cRes.json();
+                setClasses(data || []);
+                addDebug(`Loaded ${data.length} classes`, 'success');
+            } else if (cRes.status === 400) {
+                // If 400, the column might not exist yet - try without tutor_id filter
+                addDebug('Classes table exists but tutor_id column may be missing. Trying without filter.', 'info');
+                
+                const fallbackRes = await fetch(`${SUPABASE_URL}/rest/v1/classes?select=*&order=date.asc&limit=100`, {
+                    headers: { 
+                        'apikey': SUPABASE_ANON_KEY, 
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (fallbackRes.ok) {
+                    const data = await fallbackRes.json();
+                    // Filter by tutor_id manually if we have the data
+                    const filteredClasses = data.filter(c => c.tutor_id === tutorId);
+                    setClasses(filteredClasses || []);
+                    addDebug(`Loaded ${filteredClasses.length} classes (filtered manually)`, 'success');
+                } else {
+                    addDebug('Failed to load classes: ' + fallbackRes.status, 'error');
+                }
+            } else {
+                addDebug('Failed to load classes: ' + cRes.status, 'error');
+            }
+        } catch (e) { 
+            addDebug('Error loading classes: ' + e.message, 'error');
+        }
+
+        } catch (e) { 
+        console.error('Load error:', e); 
+        addDebug('Error loading data: ' + e.message, 'error');
+    }
+    setLoading(false);
+};
             const showNotification = (msg, type = 'success') => {
                 setNotification({ msg, type });
                 setTimeout(() => setNotification(null), 4000);
