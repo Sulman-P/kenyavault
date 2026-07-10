@@ -2010,19 +2010,20 @@ async function downloadFreeResource(product) {
         let downloadUrl = null;
         let usedBucket = null;
 
-        // First, check if the product has a storage_bucket field
+        // Use the product's storage_bucket or default to 'kenyavault-resources'
         const productBucket = product.storage_bucket || 'kenyavault-resources';
-        console.log('📦 Product bucket:', productBucket);
+        console.log('📦 Product bucket from database:', productBucket);
 
         // Define buckets to try (in order of priority)
         const buckets = [
             productBucket,           // Use the product's bucket first
-            'kenyavault-resources',  // Most files are here
-            'kenyavault-pdfs'        // Some files might be here
+            'kenyavault-resources',  // Fallback to main bucket
+            'kenyavault-pdfs'        // Final fallback
         ];
 
         // Remove duplicates
         const uniqueBuckets = [...new Set(buckets)];
+        console.log('🔍 Trying buckets:', uniqueBuckets);
 
         // Try each bucket
         for (const bucket of uniqueBuckets) {
@@ -2047,6 +2048,11 @@ async function downloadFreeResource(product) {
                     break;
                 } else {
                     console.log(`⚠️ Signed URL failed for ${bucket}: ${signedRes.status}`);
+                    
+                    // If 400, the file might not exist in this bucket
+                    if (signedRes.status === 400) {
+                        console.log(`📁 File not found in bucket: ${bucket}`);
+                    }
                 }
             } catch (e) {
                 console.warn(`⚠️ Signed URL error for ${bucket}:`, e);
@@ -2068,9 +2074,11 @@ async function downloadFreeResource(product) {
                         usedBucket = bucket;
                         console.log(`✅ Public URL works for bucket: ${bucket}`);
                         break;
+                    } else {
+                        console.log(`⚠️ Public URL failed for ${bucket}: ${checkRes.status}`);
                     }
                 } catch (e) {
-                    // Continue to next bucket
+                    console.warn(`⚠️ Public URL error for ${bucket}:`, e);
                 }
             }
         }
@@ -2079,7 +2087,7 @@ async function downloadFreeResource(product) {
         if (!downloadUrl) {
             console.log('🔍 Trying path variations...');
             
-            // Try with and without resources/ prefix
+            // Try different path variations
             const pathVariations = [
                 cleanPath,
                 cleanPath.replace(/^resources\//, ''),
@@ -2094,7 +2102,13 @@ async function downloadFreeResource(product) {
                 for (const variant of pathVariations) {
                     try {
                         const testUrl = `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${encodeURIComponent(variant)}`;
-                        const checkRes = await fetch(testUrl, { method: 'HEAD' });
+                        const checkRes = await fetch(testUrl, { 
+                            method: 'HEAD',
+                            headers: {
+                                'apikey': SUPABASE_ANON_KEY,
+                                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                            }
+                        });
                         if (checkRes.ok) {
                             downloadUrl = testUrl;
                             usedBucket = bucket;
@@ -2110,10 +2124,11 @@ async function downloadFreeResource(product) {
 
         // If we have a download URL, open it
         if (downloadUrl) {
+            console.log('✅ Download URL found:', downloadUrl);
             window.open(downloadUrl, '_blank');
             showToast('📥', 'Download started!', 'success');
             
-            // Update the product with the correct bucket for future downloads
+            // Update the product with the correct bucket if different
             if (usedBucket && usedBucket !== productBucket) {
                 try {
                     await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${product.id}`, {
@@ -2138,13 +2153,14 @@ async function downloadFreeResource(product) {
             }, 2000);
         } else {
             showToast('⚠️', 'Resource file not found. Please contact support.', 'error');
-            console.error('❌ No download URL could be generated for:', cleanPath);
+            console.error('❌ No download URL could be generated');
             console.log('📋 Debug info:', {
                 product_id: product.id,
                 title: product.title,
                 file_path: product.file_path,
                 clean_path: cleanPath,
-                bucket_tried: uniqueBuckets
+                storage_bucket: productBucket,
+                buckets_tried: uniqueBuckets
             });
         }
 
@@ -2375,116 +2391,119 @@ async function downloadFreeResource(product) {
     }
 
     // ── OPEN CHECKOUT ──
-    async function openCheckout(productId) {
-        const product = allResources.find(r => r.id === productId);
-        if (!product) {
-            showToast('⚠️', 'Product not found. Please refresh.', 'error');
-            return;
+async function openCheckout(productId) {
+    const product = allResources.find(r => r.id === productId);
+    if (!product) {
+        showToast('⚠️', 'Product not found. Please refresh.', 'error');
+        return;
+    }
+
+    currentProduct = product;
+    currentOrderRef = null;
+
+    // Reset form
+    customerNameInput.value = '';
+    customerNameInput.classList.remove('error');
+    phoneInput.value = '';
+    phoneInput.classList.remove('error');
+    mpesaCodeInput.value = '';
+    mpesaCodeInput.classList.remove('error');
+    mpesaVerificationBox.classList.remove('visible');
+    payPrimaryBtn.style.display = 'flex';
+    verifyOrderBtn.classList.remove('loading');
+    verifyOrderBtn.disabled = false;
+    payPrimaryBtn.classList.remove('loading');
+    payPrimaryBtn.disabled = false;
+
+    checkoutItemTitle.textContent = product.title || 'Resource';
+    checkoutTotal.textContent = (product.price || 0) === 0 ? 'FREE' : `KES ${product.price || 0}`;
+
+    // Check if product is free - including KJSEA resources that might be free
+    const isFree = (product.price === 0 || product.price === null || product.price === undefined) || 
+                   product.resource_type === 'free' ||
+                   (product.level === 'grade-9' && product.title && product.title.includes('KJSEA'));
+
+    console.log('📦 Product:', product.title);
+    console.log('💰 Price:', product.price);
+    console.log('🏷️ Type:', product.resource_type);
+    console.log('📚 Level:', product.level);
+    console.log('✅ Is Free:', isFree);
+
+    if (isFree) {
+        // FREE: Show verification box with download button
+        mpesaVerificationBox.classList.add('visible');
+        payPrimaryBtn.style.display = 'none';
+        
+        // Update UI for free resource
+        const verifyLabel = document.querySelector('.verify-label');
+        const verifySub = document.querySelector('.verify-sub');
+        const verifyInput = document.querySelector('.verify-input');
+        const verifyBtn = document.querySelector('.btn-verify-order');
+        
+        if (verifyLabel) verifyLabel.textContent = '📥 Free Resource Download';
+        if (verifySub) {
+            verifySub.innerHTML = `
+                <strong>🎉 This resource is FREE!</strong><br>
+                Enter your name and phone number below, then click "Get Free Resource" to download instantly.
+                No payment required.
+            `;
         }
-
-        currentProduct = product;
-        currentOrderRef = null;
-
-        customerNameInput.value = '';
-        customerNameInput.classList.remove('error');
-        phoneInput.value = '';
-        phoneInput.classList.remove('error');
-        mpesaCodeInput.value = '';
-        mpesaCodeInput.classList.remove('error');
+        if (verifyInput) {
+            verifyInput.placeholder = 'Enter your name or email (optional)';
+            verifyInput.maxLength = 50;
+            verifyInput.style.display = 'none';
+        }
+        if (verifyBtn) {
+            verifyBtn.innerHTML = `
+                <span class="btn-text">📥 Get Free Resource</span>
+                <span class="btn-loading-text">⏳ Processing...</span>
+            `;
+            verifyBtn.onclick = function() {
+                downloadFreeResource(product);
+            };
+        }
+        
+        showToast('📱', 'This resource is free! Enter your details to download.', 'success');
+    } else {
+        // PREMIUM: Show payment flow
         mpesaVerificationBox.classList.remove('visible');
         payPrimaryBtn.style.display = 'flex';
-        verifyOrderBtn.classList.remove('loading');
-        verifyOrderBtn.disabled = false;
-        payPrimaryBtn.classList.remove('loading');
-        payPrimaryBtn.disabled = false;
-
-        checkoutItemTitle.textContent = product.title || 'Resource';
-        checkoutTotal.textContent = (product.price || 0) === 0 ? 'FREE' : `KES ${product.price || 0}`;
-
-        // Check if product is free
-        const isFree = (product.price === 0 || product.price === null || product.price === undefined) || 
-                       product.resource_type === 'free';
-
-        console.log('📦 Product:', product.title);
-        console.log('💰 Price:', product.price);
-        console.log('🏷️ Type:', product.resource_type);
-        console.log('✅ Is Free:', isFree);
-
-        if (isFree) {
-            // FREE: Show verification box with download button
-            mpesaVerificationBox.classList.add('visible');
-            payPrimaryBtn.style.display = 'none';
-            
-            // Update UI for free resource
-            const verifyLabel = document.querySelector('.verify-label');
-            const verifySub = document.querySelector('.verify-sub');
-            const verifyInput = document.querySelector('.verify-input');
-            const verifyBtn = document.querySelector('.btn-verify-order');
-            
-            if (verifyLabel) verifyLabel.textContent = '📥 Free Resource Download';
-            if (verifySub) {
-                verifySub.innerHTML = `
-                    <strong>🎉 This resource is FREE!</strong><br>
-                    Enter your name and phone number below, then click "Get Free Resource" to download instantly.
-                    No payment required.
-                `;
-            }
-            if (verifyInput) {
-                verifyInput.placeholder = 'Enter your name or email (optional)';
-                verifyInput.maxLength = 50;
-                verifyInput.style.display = 'none';
-            }
-            if (verifyBtn) {
-                verifyBtn.innerHTML = `
-                    <span class="btn-text">📥 Get Free Resource</span>
-                    <span class="btn-loading-text">⏳ Processing...</span>
-                `;
-                verifyBtn.onclick = function() {
-                    downloadFreeResource(product);
-                };
-            }
-            
-            showToast('📱', 'This resource is free! Enter your details to download.', 'success');
-        } else {
-            // PREMIUM: Show payment flow
-            mpesaVerificationBox.classList.remove('visible');
-            payPrimaryBtn.style.display = 'flex';
-            
-            // Reset UI for premium
-            const verifyLabel = document.querySelector('.verify-label');
-            const verifySub = document.querySelector('.verify-sub');
-            const verifyInput = document.querySelector('.verify-input');
-            const verifyBtn = document.querySelector('.btn-verify-order');
-            
-            if (verifyLabel) verifyLabel.textContent = '🔑 Verify Your Payment';
-            if (verifySub) {
-                verifySub.innerHTML = `
-                    Once you receive your M-PESA SMS confirmation, enter your transaction details below to unlock your downloads.
-                    <br><br>
-                    <strong>💡 Tip:</strong> After completing payment in the MegaPay tab, return here to verify.
-                `;
-            }
-            if (verifyInput) {
-                verifyInput.placeholder = 'Enter Last 4 Digits of M-PESA Code (e.g., 4K7X)';
-                verifyInput.maxLength = 4;
-                verifyInput.style.display = 'block';
-            }
-            if (verifyBtn) {
-                verifyBtn.innerHTML = `
-                    <span class="btn-text">🔓 Verify Code & Complete Order</span>
-                    <span class="btn-loading-text">⏳ Verifying...</span>
-                `;
-                verifyBtn.onclick = verifyAndCompleteOrder;
-            }
+        
+        // Reset UI for premium
+        const verifyLabel = document.querySelector('.verify-label');
+        const verifySub = document.querySelector('.verify-sub');
+        const verifyInput = document.querySelector('.verify-input');
+        const verifyBtn = document.querySelector('.btn-verify-order');
+        
+        if (verifyLabel) verifyLabel.textContent = '🔑 Verify Your Payment';
+        if (verifySub) {
+            verifySub.innerHTML = `
+                Once you receive your M-PESA SMS confirmation, enter your transaction details below to unlock your downloads.
+                <br><br>
+                <strong>💡 Tip:</strong> After completing payment in the MegaPay tab, return here to verify.
+            `;
         }
-
-        checkoutModal.classList.add('open');
-        document.body.style.overflow = 'hidden';
-
-        setTimeout(() => {
-            customerNameInput.focus();
-        }, 300);
+        if (verifyInput) {
+            verifyInput.placeholder = 'Enter Last 4 Digits of M-PESA Code (e.g., 4K7X)';
+            verifyInput.maxLength = 4;
+            verifyInput.style.display = 'block';
+        }
+        if (verifyBtn) {
+            verifyBtn.innerHTML = `
+                <span class="btn-text">🔓 Verify Code & Complete Order</span>
+                <span class="btn-loading-text">⏳ Verifying...</span>
+            `;
+            verifyBtn.onclick = verifyAndCompleteOrder;
+        }
     }
+
+    checkoutModal.classList.add('open');
+    document.body.style.overflow = 'hidden';
+
+    setTimeout(() => {
+        customerNameInput.focus();
+    }, 300);
+}
 
     // ── CLOSE CHECKOUT MODAL ──
     function closeCheckoutModal() {
