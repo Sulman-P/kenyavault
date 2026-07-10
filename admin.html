@@ -2028,6 +2028,7 @@ function ResourcesModule() {
         }
 
         // ── ORDERS MODULE ── (UPDATED WITH RESOURCE DETAILS AND DOWNLOAD LINKS)
+function // ── ORDERS MODULE ── (UPDATED WITH REVENUE)
 function OrdersModule() {
     const { orders, loadOrders, showNotification, newOrderIds, setNewOrderIds } = useApp();
     const [filter, setFilter] = useState('all');
@@ -2037,32 +2038,61 @@ function OrdersModule() {
     const [orderItems, setOrderItems] = useState([]);
     const [generatingLinks, setGeneratingLinks] = useState({});
     const [searchTerm, setSearchTerm] = useState('');
+    const [revenueStats, setRevenueStats] = useState({
+        totalRevenue: 0,
+        pendingRevenue: 0,
+        completedRevenue: 0,
+        totalOrders: 0,
+        pendingOrders: 0,
+        completedOrders: 0
+    });
+
+    // Calculate revenue stats whenever orders change
+    useEffect(() => {
+        calculateRevenueStats();
+    }, [orders]);
+
+    const calculateRevenueStats = () => {
+        const total = orders.reduce((sum, o) => sum + (o.total_amount || o.item_price || 0), 0);
+        const pending = orders
+            .filter(o => o.status === 'pending' || o.payment_status === 'pending')
+            .reduce((sum, o) => sum + (o.total_amount || o.item_price || 0), 0);
+        const completed = orders
+            .filter(o => o.status === 'completed' || o.payment_status === 'paid' || o.payment_status === 'completed' || o.payment_status === 'confirmed')
+            .reduce((sum, o) => sum + (o.total_amount || o.item_price || 0), 0);
+        
+        const pendingCount = orders.filter(o => o.status === 'pending' || o.payment_status === 'pending' || o.payment_status === 'pending_verification').length;
+        const completedCount = orders.filter(o => o.status === 'completed' || o.payment_status === 'paid' || o.payment_status === 'completed' || o.payment_status === 'confirmed').length;
+        
+        setRevenueStats({
+            totalRevenue: total,
+            pendingRevenue: pending,
+            completedRevenue: completed,
+            totalOrders: orders.length,
+            pendingOrders: pendingCount,
+            completedOrders: completedCount
+        });
+    };
 
     useEffect(() => {
         const interval = setInterval(() => loadOrders(), 10000);
         return () => clearInterval(interval);
     }, []);
 
-    // ── GENERATE SIGNED URL ──
     const generateSignedUrl = async (filePath) => {
         try {
             if (!filePath) return null;
             
-            // Clean the path
             let cleanPath = filePath;
             cleanPath = cleanPath.replace(/^kenyavault-pdfs\//, '');
             cleanPath = cleanPath.replace(/^academic-resources\//, '');
             cleanPath = cleanPath.replace(/^resources\//, '');
-            cleanPath = cleanPath.replace(/^kenyavault-resources\//, '');
             cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
             cleanPath = cleanPath.replace(/^\/+/, '');
             cleanPath = decodeURIComponent(cleanPath);
             
             if (!cleanPath) return null;
             
-            console.log('📁 Generating signed URL for:', cleanPath);
-            
-            // Try signed URL first
             const signedRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${STORAGE_BUCKET}/${encodeURIComponent(cleanPath)}?expiresIn=10800`, {
                 headers: {
                     'apikey': SUPABASE_ANON_KEY,
@@ -2075,7 +2105,6 @@ function OrdersModule() {
                 return signedData.signedURL || signedData.url || null;
             }
             
-            // Fallback to public URL
             const publicUrl = `${STORAGE_URL}/${encodeURIComponent(cleanPath)}`;
             const checkRes = await fetch(publicUrl, { method: 'HEAD' });
             if (checkRes.ok) {
@@ -2089,13 +2118,10 @@ function OrdersModule() {
         }
     };
 
-    // ── FETCH ORDER ITEMS WITH RESOURCE DETAILS ──
     const fetchOrderItemsWithDetails = async (order) => {
         try {
-            // First, try to get items from order_items table
             let items = [];
             
-            // Try fetching by order_ref first (new schema)
             if (order.order_ref) {
                 const itemsRes = await fetch(`${SUPABASE_URL}/rest/v1/order_items?order_ref=eq.${order.order_ref}`, {
                     headers: {
@@ -2109,7 +2135,6 @@ function OrdersModule() {
                 }
             }
             
-            // If no items found by order_ref, try by order_id
             if (items.length === 0 && order.id) {
                 const itemsRes = await fetch(`${SUPABASE_URL}/rest/v1/order_items?order_id=eq.${order.id}`, {
                     headers: {
@@ -2123,7 +2148,6 @@ function OrdersModule() {
                 }
             }
             
-            // If still no items, create one from the order data
             if (items.length === 0) {
                 items = [{
                     id: 'order-item-1',
@@ -2139,13 +2163,11 @@ function OrdersModule() {
                 }];
             }
             
-            // Enrich each item with download URLs
             const itemsWithDetails = await Promise.all(items.map(async (item) => {
                 let filePath = item.resource_file_path || item.file_path || '';
                 let downloadUrl = null;
                 let resourceDetails = null;
                 
-                // If we have a product_id, try to fetch the full resource
                 if (item.product_id) {
                     try {
                         const resourceRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${item.product_id}`, {
@@ -2159,7 +2181,6 @@ function OrdersModule() {
                             const resources = await resourceRes.json();
                             if (resources.length > 0) {
                                 resourceDetails = resources[0];
-                                // Use the resource's file path if available
                                 if (resourceDetails.file_path || resourceDetails.file_url) {
                                     filePath = resourceDetails.file_path || resourceDetails.file_url;
                                 }
@@ -2170,12 +2191,10 @@ function OrdersModule() {
                     }
                 }
                 
-                // Generate download URL if we have a file path
                 if (filePath) {
                     downloadUrl = await generateSignedUrl(filePath);
                 }
                 
-                // If no file path but we have a title, try to find the resource by title
                 if (!filePath && item.resource_title) {
                     try {
                         const searchRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?title=ilike.%25${encodeURIComponent(item.resource_title)}%25&limit=1`, {
@@ -2201,7 +2220,6 @@ function OrdersModule() {
                     }
                 }
                 
-                // Extract filename from path
                 const fileName = filePath ? filePath.split('/').pop() : item.resource_file_name || 'resource.pdf';
                 
                 return {
@@ -2249,7 +2267,6 @@ function OrdersModule() {
                 confirmed_at: new Date().toISOString()
             };
             
-            // Try updating by id first
             let updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${order.id}`, {
                 method: 'PATCH',
                 headers: {
@@ -2260,7 +2277,6 @@ function OrdersModule() {
                 body: JSON.stringify(updateData)
             });
 
-            // If that fails, try by order_ref
             if (!updateRes.ok && order.order_ref) {
                 updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?order_ref=eq.${order.order_ref}`, {
                     method: 'PATCH',
@@ -2359,7 +2375,6 @@ function OrdersModule() {
             });
             
             if (!hasLinks) {
-                // Try to find the resource by title
                 try {
                     const searchRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?title=ilike.%25${encodeURIComponent(order.item_title || order.resource_title || '')}%25&limit=1`, {
                         headers: {
@@ -2488,7 +2503,6 @@ function OrdersModule() {
     };
 
     const filteredOrders = orders.filter(o => {
-        // Search filter
         if (searchTerm) {
             const search = searchTerm.toLowerCase();
             const match = 
@@ -2496,30 +2510,52 @@ function OrdersModule() {
                 (o.payment_ref || '').toLowerCase().includes(search) ||
                 (o.customer_name || '').toLowerCase().includes(search) ||
                 (o.customer_phone || '').includes(search) ||
+                (o.phone || '').includes(search) ||
                 (o.item_title || '').toLowerCase().includes(search) ||
                 (o.resource_title || '').toLowerCase().includes(search);
             if (!match) return false;
         }
         
-        // Status filter
-        if (filter === 'pending') return o.payment_status === 'pending' || o.payment_status === 'pending_verification';
-        if (filter === 'confirmed') return o.payment_status === 'confirmed';
-        if (filter === 'paid') return o.payment_status === 'paid' || o.payment_status === 'completed';
-        if (filter === 'cancelled') return o.payment_status === 'cancelled' || o.payment_status === 'rejected';
+        if (filter === 'pending') return o.payment_status === 'pending' || o.payment_status === 'pending_verification' || o.status === 'pending';
+        if (filter === 'confirmed') return o.payment_status === 'confirmed' || o.status === 'confirmed';
+        if (filter === 'paid') return o.payment_status === 'paid' || o.payment_status === 'completed' || o.status === 'completed' || o.status === 'paid';
+        if (filter === 'cancelled') return o.payment_status === 'cancelled' || o.payment_status === 'rejected' || o.status === 'cancelled';
         return true;
     });
 
-    const pendingCount = orders.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification').length;
-
     return (
         <div className="fade-in">
+            {/* Revenue Stats Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Total Revenue</p>
+                    <p className="text-2xl font-bold text-[#D4A017]">KES {revenueStats.totalRevenue.toLocaleString()}</p>
+                    <p className="text-xs text-gray-400">{revenueStats.totalOrders} total orders</p>
+                </div>
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Pending Revenue</p>
+                    <p className="text-2xl font-bold text-amber-600">KES {revenueStats.pendingRevenue.toLocaleString()}</p>
+                    <p className="text-xs text-gray-400">{revenueStats.pendingOrders} pending orders</p>
+                </div>
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Completed Revenue</p>
+                    <p className="text-2xl font-bold text-green-600">KES {revenueStats.completedRevenue.toLocaleString()}</p>
+                    <p className="text-xs text-gray-400">{revenueStats.completedOrders} completed orders</p>
+                </div>
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Platform Fee (20%)</p>
+                    <p className="text-2xl font-bold text-purple-600">KES {Math.round(revenueStats.completedRevenue * 0.2).toLocaleString()}</p>
+                    <p className="text-xs text-gray-400">80% goes to tutors</p>
+                </div>
+            </div>
+
             <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
                 <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
                     <h2 className="text-xl font-bold text-gray-800 dark:text-white">
                         📦 Orders ({orders.length})
-                        {pendingCount > 0 && (
+                        {revenueStats.pendingOrders > 0 && (
                             <span className="ml-2 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-full animate-pulse">
-                                {pendingCount} pending
+                                {revenueStats.pendingOrders} pending
                             </span>
                         )}
                     </h2>
@@ -2547,7 +2583,9 @@ function OrdersModule() {
                 </div>
 
                 {filteredOrders.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">No orders found</div>
+                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                        {orders.length === 0 ? 'No orders found. Orders will appear here when customers make purchases.' : 'No orders match your filters.'}
+                    </div>
                 ) : (
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm">
@@ -2565,7 +2603,7 @@ function OrdersModule() {
                             <tbody>
                                 {filteredOrders.map(o => {
                                     const isNew = newOrderIds.includes(o.id);
-                                    const isPending = o.payment_status === 'pending' || o.payment_status === 'pending_verification';
+                                    const isPending = o.payment_status === 'pending' || o.payment_status === 'pending_verification' || o.status === 'pending';
                                     const ref = o.order_ref || o.payment_ref || o.id.slice(0, 8).toUpperCase();
                                     return (
                                         <tr key={o.id} className={`border-t border-gray-100 dark:border-gray-700 ${isPending ? 'bg-amber-50 dark:bg-amber-900/10' : ''} ${isNew ? 'new-order-flash' : ''}`}>
@@ -2616,7 +2654,7 @@ function OrdersModule() {
                                                         </button>
                                                     </>
                                                 )}
-                                                {(o.payment_status === 'confirmed' || o.payment_status === 'paid' || o.payment_status === 'completed') && (
+                                                {(o.payment_status === 'confirmed' || o.payment_status === 'paid' || o.payment_status === 'completed' || o.status === 'confirmed' || o.status === 'completed' || o.status === 'paid') && (
                                                     <>
                                                         <button 
                                                             onClick={() => handleResendWhatsApp(o)} 
