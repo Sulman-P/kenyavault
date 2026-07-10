@@ -1166,33 +1166,57 @@ function ResourcesModule() {
     };
 
     const handleUpload = async (e) => {
-        e.preventDefault();
-        const { title, subject, level, resource_type } = formData;
-        if (!title || !subject || !level || !resource_type || !selectedFile) {
-            showToast('⚠️ Please fill in all required fields and select a file', 'error');
-            return;
-        }
+    e.preventDefault();
+    const { title, subject, level, resource_type } = formData;
+    if (!title || !subject || !level || !resource_type || !selectedFile) {
+        showToast('⚠️ Please fill in all required fields and select a file', 'error');
+        return;
+    }
 
-        setUploading(true);
-        setUploadError('');
-        setProgress(10);
+    setUploading(true);
+    setUploadError('');
+    setProgress(10);
 
-        try {
-            const fileToUpload = compressedFile || selectedFile;
-            
-            // Use the correct bucket name - try 'kenyavault-pdfs' first
-            const bucketName = 'kenyavault-pdfs';
-            const fileExt = fileToUpload.name.split('.').pop();
-            const filePath = `resources/${Date.now()}-${title.replace(/\s+/g, '_')}.${fileExt}`;
-            
-            console.log('📤 Uploading to bucket:', bucketName);
-            console.log('📁 File path:', filePath);
-            
-            // Step 1: Upload file to storage
-            const formData2 = new FormData();
-            formData2.append('file', fileToUpload);
+    try {
+        const fileToUpload = compressedFile || selectedFile;
+        
+        // Use the correct bucket name
+        const bucketName = 'kenyavault-pdfs';
+        const fileExt = fileToUpload.name.split('.').pop();
+        const fileName = `${Date.now()}-${title.replace(/\s+/g, '_')}.${fileExt}`;
+        const filePath = `resources/${fileName}`;
+        
+        console.log('📤 Uploading to bucket:', bucketName);
+        console.log('📁 File path:', filePath);
+        console.log('📄 File name:', fileName);
+        
+        // Step 1: Upload file to storage
+        const formData2 = new FormData();
+        formData2.append('file', fileToUpload);
 
-            const uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/${bucketName}/${filePath}`, {
+        // Try primary bucket
+        let uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/${bucketName}/${filePath}`, {
+            method: 'POST',
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            },
+            body: formData2
+        });
+
+        let usedBucket = bucketName;
+        let fileUrl = '';
+
+        // If primary bucket fails, try alternative
+        if (!uploadRes.ok) {
+            const errorText = await uploadRes.text();
+            console.warn('⚠️ Primary bucket upload failed:', errorText);
+            
+            // Try alternative bucket
+            const altBucket = 'kenyavault-resources';
+            console.log('🔄 Trying alternative bucket:', altBucket);
+            
+            const altUploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/${altBucket}/${filePath}`, {
                 method: 'POST',
                 headers: {
                     'apikey': SUPABASE_ANON_KEY,
@@ -1200,16 +1224,16 @@ function ResourcesModule() {
                 },
                 body: formData2
             });
-
-            if (!uploadRes.ok) {
-                const errorText = await uploadRes.text();
-                console.error('❌ Upload error:', errorText);
+            
+            if (!altUploadRes.ok) {
+                const altError = await altUploadRes.text();
+                console.error('❌ Alternative upload error:', altError);
                 
-                // Try alternative bucket name
-                const altBucket = 'kenyavault-resources';
-                console.log('🔄 Trying alternative bucket:', altBucket);
+                // Try one more bucket
+                const thirdBucket = 'academic-resources';
+                console.log('🔄 Trying third bucket:', thirdBucket);
                 
-                const altUploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/${altBucket}/${filePath}`, {
+                const thirdRes = await fetch(`${SUPABASE_URL}/storage/v1/object/${thirdBucket}/${filePath}`, {
                     method: 'POST',
                     headers: {
                         'apikey': SUPABASE_ANON_KEY,
@@ -1218,52 +1242,42 @@ function ResourcesModule() {
                     body: formData2
                 });
                 
-                if (!altUploadRes.ok) {
-                    const altError = await altUploadRes.text();
-                    console.error('❌ Alternative upload error:', altError);
-                    throw new Error(`Upload failed: ${errorText}. Alternative: ${altError}`);
+                if (!thirdRes.ok) {
+                    const thirdError = await thirdRes.text();
+                    throw new Error(`Upload failed in all buckets. Primary: ${errorText}. Alternative: ${altError}. Third: ${thirdError}`);
                 }
                 
-                // Use the alternative bucket
-                const fileUrl = `${SUPABASE_URL}/storage/v1/object/public/${altBucket}/${filePath}`;
-                await saveResource(fileUrl, altBucket);
-                return;
+                usedBucket = thirdBucket;
+                fileUrl = `${SUPABASE_URL}/storage/v1/object/public/${thirdBucket}/${filePath}`;
+            } else {
+                usedBucket = altBucket;
+                fileUrl = `${SUPABASE_URL}/storage/v1/object/public/${altBucket}/${filePath}`;
             }
-
-            setProgress(60);
-            
-            // Get the public URL
-            const fileUrl = `${SUPABASE_URL}/storage/v1/object/public/${bucketName}/${filePath}`;
-            await saveResource(fileUrl, bucketName);
-
-        } catch (err) {
-            console.error('❌ Upload failed:', err);
-            setUploadError(err.message);
-            showToast('❌ Upload failed: ' + err.message, 'error');
+        } else {
+            fileUrl = `${SUPABASE_URL}/storage/v1/object/public/${bucketName}/${filePath}`;
         }
-        setUploading(false);
-        setProgress(0);
-    };
 
-    const saveResource = async (fileUrl, bucket) => {
-        const { title, subject, level, resource_type } = formData;
-        
+        console.log('✅ File uploaded to:', fileUrl);
+        setProgress(60);
+
+        // Step 2: Save to database - WITHOUT the storage_bucket column
         const resourceData = {
-            title,
-            subject,
-            level,
-            curriculum: formData.curriculum,
+            title: title,
+            subject: subject,
+            level: level,
+            curriculum: formData.curriculum || 'cbc',
             resource_type: formData.resource_type,
             price: parseFloat(formData.price) || 0,
-            description: formData.description,
+            description: formData.description || '',
             file_url: fileUrl,
-            file_path: fileUrl,
-            storage_bucket: bucket,
+            file_path: filePath,
+            // Don't include storage_bucket if column doesn't exist
             status: 'draft',
             created_at: new Date().toISOString(),
             download_count: 0
         };
 
+        console.log('💾 Saving resource data:', resourceData);
         setProgress(80);
 
         const createRes = await fetch(`${SUPABASE_URL}/rest/v1/resources`, {
@@ -1280,59 +1294,58 @@ function ResourcesModule() {
         if (!createRes.ok) {
             const errorText = await createRes.text();
             console.error('❌ Database save error:', errorText);
-            throw new Error('Failed to save resource record: ' + errorText);
+            
+            // Try without file_path if that's the issue
+            if (errorText.includes('file_path')) {
+                console.log('🔄 Retrying without file_path...');
+                delete resourceData.file_path;
+                const retryRes = await fetch(`${SUPABASE_URL}/rest/v1/resources`, {
+                    method: 'POST',
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                        'Content-Type': 'application/json',
+                        'Prefer': 'return=representation'
+                    },
+                    body: JSON.stringify(resourceData)
+                });
+                if (!retryRes.ok) {
+                    const retryError = await retryRes.text();
+                    throw new Error('Failed to save resource: ' + retryError);
+                }
+            } else {
+                throw new Error('Failed to save resource: ' + errorText);
+            }
         }
 
         setProgress(100);
         showToast('✅ Resource uploaded successfully!');
-        setFormData({ title: '', subject: '', level: '', curriculum: 'cbc', resource_type: 'lesson-plan', price: 0, description: '' });
+        
+        // Reset form
+        setFormData({ 
+            title: '', 
+            subject: '', 
+            level: '', 
+            curriculum: 'cbc', 
+            resource_type: 'lesson-plan', 
+            price: 0, 
+            description: '' 
+        });
         setSelectedFile(null);
         setCompressedFile(null);
         setProgress(0);
+        setUploadError('');
+        
+        // Reload resources
         loadResources();
-    };
 
-            const openEditModal = (resource) => {
-                setEditingResource(resource);
-                setEditFormData({
-                    title: resource.title || '',
-                    price: resource.price || 0,
-                    status: resource.status || 'draft'
-                });
-                setShowEditModal(true);
-            };
-
-            const closeEditModal = () => {
-                setShowEditModal(false);
-                setEditingResource(null);
-            };
-
-            const handleEditSave = async () => {
-                if (!editingResource) return;
-                try {
-                    const response = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${editingResource.id}`, {
-                        method: 'PATCH',
-                        headers: {
-                            'apikey': SUPABASE_ANON_KEY,
-                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            title: editFormData.title,
-                            price: parseFloat(editFormData.price) || 0,
-                            status: editFormData.status
-                        })
-                    });
-                    if (response.ok) {
-                        showToast('✅ Resource updated successfully!');
-                        closeEditModal();
-                        loadResources();
-                    }
-                } catch (e) {
-                    showToast('❌ Update failed', 'error');
-                }
-            };
-
+       } catch (err) {
+          console.error('❌ Upload failed:', err);
+          setUploadError(err.message);
+           showToast('❌ Upload failed: ' + err.message, 'error');
+       }
+         setUploading(false);
+       };
             const toggleStatus = async (id, currentStatus) => {
                 const newStatus = currentStatus === 'live' ? 'draft' : 'live';
                 try {
