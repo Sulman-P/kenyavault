@@ -999,190 +999,196 @@
         ];
 
         // ────────────────────────────────────────────────
-        // CONTEXT
-        // ────────────────────────────────────────────────
-        const TutorContext = createContext(null);
+// CONTEXT
+// ────────────────────────────────────────────────
+const TutorContext = createContext(null);
 
-        function TutorProvider({ children }) {
-            const [darkMode, setDarkMode] = useState(() => localStorage.getItem('tutor-dark-mode') === 'true');
-            const [isLoggedIn, setIsLoggedIn] = useState(() => sessionStorage.getItem('tutor_id') !== null);
-            const [tutor, setTutor] = useState(null);
-            const [resources, setResources] = useState([]);
-            const [orders, setOrders] = useState([]);
-            const [classes, setClasses] = useState([]);
-            const [loading, setLoading] = useState(true);
-            const [notification, setNotification] = useState(null);
-            const [activeTab, setActiveTab] = useState('dashboard');
-            const [sidebarOpen, setSidebarOpen] = useState(false);
-            const [debugInfo, setDebugInfo] = useState([]);
+function TutorProvider({ children }) {
+    const [darkMode, setDarkMode] = useState(() => localStorage.getItem('tutor-dark-mode') === 'true');
+    const [isLoggedIn, setIsLoggedIn] = useState(() => sessionStorage.getItem('tutor_id') !== null);
+    const [tutor, setTutor] = useState(null);
+    const [resources, setResources] = useState([]);
+    const [orders, setOrders] = useState([]);
+    const [classes, setClasses] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [notification, setNotification] = useState(null);
+    const [activeTab, setActiveTab] = useState('dashboard');
+    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [debugInfo, setDebugInfo] = useState([]);
 
-            useEffect(() => {
-                localStorage.setItem('tutor-dark-mode', darkMode);
-                if (darkMode) document.documentElement.classList.add('dark');
-                else document.documentElement.classList.remove('dark');
-            }, [darkMode]);
+    useEffect(() => {
+        localStorage.setItem('tutor-dark-mode', darkMode);
+        if (darkMode) document.documentElement.classList.add('dark');
+        else document.documentElement.classList.remove('dark');
+    }, [darkMode]);
 
-            useEffect(() => {
-                const tutorId = sessionStorage.getItem('tutor_id');
-                if (tutorId) loadTutorData(tutorId);
-                else setLoading(false);
-            }, []);
+    useEffect(() => {
+        const tutorId = sessionStorage.getItem('tutor_id');
+        if (tutorId) loadTutorData(tutorId);
+        else setLoading(false);
+    }, []);
 
-            const addDebug = (message, type = 'info') => {
-                setDebugInfo(prev => [...prev, { message, type, timestamp: new Date().toLocaleTimeString() }]);
-                console.log(message);
-            };
+    const addDebug = (message, type = 'info') => {
+        setDebugInfo(prev => [...prev, { message, type, timestamp: new Date().toLocaleTimeString() }]);
+        console.log(message);
+    };
 
-            const loadTutorData = async (tutorId) => {
-                setLoading(true);
-                try {
-                    // Load tutor data
-                    const tRes = await fetch(`${SUPABASE_URL}/rest/v1/tutors?id=eq.${tutorId}&select=*`, {
+    const loadTutorData = async (tutorId) => {
+        setLoading(true);
+        try {
+            // Load tutor data
+            const tRes = await fetch(`${SUPABASE_URL}/rest/v1/tutors?id=eq.${tutorId}&select=*`, {
+                headers: { 
+                    'apikey': SUPABASE_ANON_KEY, 
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (tRes.ok) {
+                const data = await tRes.json();
+                if (data.length > 0) {
+                    setTutor(data[0]);
+                    sessionStorage.setItem('tutor_name', data[0].name);
+                    addDebug('✅ Tutor data loaded', 'success');
+                }
+            } else {
+                addDebug('❌ Failed to load tutor: ' + tRes.status, 'error');
+            }
+
+            // Load resources
+            try {
+                const rRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?tutor_id=eq.${tutorId}&select=*`, {
+                    headers: { 
+                        'apikey': SUPABASE_ANON_KEY, 
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                if (rRes.ok) {
+                    const data = await rRes.json();
+                    setResources(data || []);
+                    addDebug(`✅ Loaded ${data.length} resources`, 'success');
+                } else {
+                    addDebug('❌ Failed to load resources: ' + rRes.status, 'error');
+                }
+            } catch (e) { 
+                addDebug('❌ Error loading resources: ' + e.message, 'error');
+            }
+
+            // Load orders
+            try {
+                const oRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?tutor_id=eq.${tutorId}&select=*&order=created_at.desc`, {
+                    headers: { 
+                        'apikey': SUPABASE_ANON_KEY, 
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                if (oRes.ok) {
+                    const data = await oRes.json();
+                    setOrders(data || []);
+                    addDebug(`✅ Loaded ${data.length} orders`, 'success');
+                } else {
+                    addDebug('❌ Failed to load orders: ' + oRes.status, 'error');
+                }
+            } catch (e) { 
+                addDebug('❌ Error loading orders: ' + e.message, 'error');
+            }
+
+            // Load classes
+            try {
+                const cRes = await fetch(`${SUPABASE_URL}/rest/v1/classes?tutor_id=eq.${tutorId}&select=*&order=class_date.asc`, {
+                    headers: { 
+                        'apikey': SUPABASE_ANON_KEY, 
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                if (cRes.ok) {
+                    const data = await cRes.json();
+                    setClasses(data || []);
+                    addDebug(`✅ Loaded ${data.length} classes`, 'success');
+                } else if (cRes.status === 400) {
+                    // If 400, try without order by
+                    addDebug('⚠️ Order by class_date failed, trying without order', 'info');
+                    const cRes2 = await fetch(`${SUPABASE_URL}/rest/v1/classes?tutor_id=eq.${tutorId}&select=*`, {
                         headers: { 
                             'apikey': SUPABASE_ANON_KEY, 
                             'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
                             'Content-Type': 'application/json'
                         }
                     });
-                    
-                    if (tRes.ok) {
-                        const data = await tRes.json();
-                        if (data.length > 0) {
-                            setTutor(data[0]);
-                            sessionStorage.setItem('tutor_name', data[0].name);
-                            addDebug('✅ Tutor data loaded', 'success');
-                        }
+                    if (cRes2.ok) {
+                        const data = await cRes2.json();
+                        setClasses(data || []);
+                        addDebug(`✅ Loaded ${data.length} classes (no order)`, 'success');
                     } else {
-                        addDebug('❌ Failed to load tutor: ' + tRes.status, 'error');
+                        addDebug('❌ Failed to load classes: ' + cRes2.status, 'error');
                     }
-
-                    // Load resources
-                    try {
-                        const rRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?tutor_id=eq.${tutorId}&select=*`, {
-                            headers: { 
-                                'apikey': SUPABASE_ANON_KEY, 
-                                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                                'Content-Type': 'application/json'
-                            }
-                        });
-                        if (rRes.ok) {
-                            const data = await rRes.json();
-                            setResources(data || []);
-                            addDebug(`✅ Loaded ${data.length} resources`, 'success');
-                        } else {
-                            addDebug('❌ Failed to load resources: ' + rRes.status, 'error');
-                        }
-                    } catch (e) { 
-                        addDebug('❌ Error loading resources: ' + e.message, 'error');
-                    }
-
-                    // Load orders
-                    try {
-                        const oRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?tutor_id=eq.${tutorId}&select=*&order=created_at.desc`, {
-                            headers: { 
-                                'apikey': SUPABASE_ANON_KEY, 
-                                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                                'Content-Type': 'application/json'
-                            }
-                        });
-                        if (oRes.ok) {
-                            const data = await oRes.json();
-                            setOrders(data || []);
-                            addDebug(`✅ Loaded ${data.length} orders`, 'success');
-                        } else {
-                            addDebug('❌ Failed to load orders: ' + oRes.status, 'error');
-                        }
-                    } catch (e) { 
-                        addDebug('❌ Error loading orders: ' + e.message, 'error');
-                    }
-
-                    // Load classes - using class_date for ordering
-                    try {
-                        const cRes = await fetch(`${SUPABASE_URL}/rest/v1/classes?tutor_id=eq.${tutorId}&select=*&order=class_date.asc`, {
-                            headers: { 
-                                'apikey': SUPABASE_ANON_KEY, 
-                                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                                'Content-Type': 'application/json'
-                            }
-                        });
-                        if (cRes.ok) {
-                            const data = await cRes.json();
-                            setClasses(data || []);
-                            addDebug(`✅ Loaded ${data.length} classes`, 'success');
-                        } else if (cRes.status === 400) {
-                            // If 400, try without order by
-                            addDebug('⚠️ Order by class_date failed, trying without order', 'info');
-                            const cRes2 = await fetch(`${SUPABASE_URL}/rest/v1/classes?tutor_id=eq.${tutorId}&select=*`, {
-                                headers: { 
-                                    'apikey': SUPABASE_ANON_KEY, 
-                                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                                    'Content-Type': 'application/json'
-                                }
-                            });
-                            if (cRes2.ok) {
-                                const data = await cRes2.json();
-                                setClasses(data || []);
-                                addDebug(`✅ Loaded ${data.length} classes (no order)`, 'success');
-                            } else {
-                                addDebug('❌ Failed to load classes: ' + cRes2.status, 'error');
-                            }
-                        } else {
-                            addDebug('❌ Failed to load classes: ' + cRes.status, 'error');
-                        }
-                    } catch (e) { 
-                        addDebug('❌ Error loading classes: ' + e.message, 'error');
-                    }
-
-                } catch (e) { 
-                    console.error('Load error:', e); 
-                    addDebug('❌ Error loading data: ' + e.message, 'error');
+                } else {
+                    addDebug('❌ Failed to load classes: ' + cRes.status, 'error');
                 }
-                setLoading(false);
-            };
+            } catch (e) { 
+                addDebug('❌ Error loading classes: ' + e.message, 'error');
+            }
 
-            const showNotification = (msg, type = 'success') => {
-                setNotification({ msg, type });
-                setTimeout(() => setNotification(null), 4000);
-            };
-
-            const logout = () => {
-                sessionStorage.removeItem('tutor_id');
-                sessionStorage.removeItem('tutor_email');
-                sessionStorage.removeItem('tutor_name');
-                setIsLoggedIn(false);
-                setTutor(null);
-                setResources([]);
-                setOrders([]);
-                setClasses([]);
-                setActiveTab('dashboard');
-                setDebugInfo([]);
-                showNotification('Logged out successfully', 'success');
-            };
-
-            const toggleDarkMode = () => setDarkMode(!darkMode);
-            const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
-            const closeSidebar = () => setSidebarOpen(false);
-
-            return (
-                <TutorContext.Provider value={{
-                    darkMode, toggleDarkMode,
-                    isLoggedIn, setIsLoggedIn,
-                    tutor, setTutor,
-                    resources, setResources,
-                    orders, setOrders,
-                    classes, setClasses,
-                    loading, setLoading,
-                    notification, showNotification,
-                    activeTab, setActiveTab,
-                    logout,
-                    loadTutorData,
-                    sidebarOpen, toggleSidebar, closeSidebar,
-                    debugInfo, addDebug
-                }}>
-                    {children}
-                </TutorContext.Provider>
-            );
+        } catch (e) { 
+            console.error('Load error:', e); 
+            addDebug('❌ Error loading data: ' + e.message, 'error');
         }
+        setLoading(false);
+    };
+
+    const showNotification = (msg, type = 'success') => {
+        setNotification({ msg, type });
+        setTimeout(() => setNotification(null), 4000);
+    };
+
+    // UPDATED: Logout with redirect to homepage
+    const logout = () => {
+        sessionStorage.removeItem('tutor_id');
+        sessionStorage.removeItem('tutor_email');
+        sessionStorage.removeItem('tutor_name');
+        setIsLoggedIn(false);
+        setTutor(null);
+        setResources([]);
+        setOrders([]);
+        setClasses([]);
+        setActiveTab('dashboard');
+        setDebugInfo([]);
+        showNotification('Logged out successfully', 'success');
+        
+        // Redirect to homepage after a short delay
+        setTimeout(() => {
+            window.location.href = '/';
+        }, 500);
+    };
+
+    const toggleDarkMode = () => setDarkMode(!darkMode);
+    const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
+    const closeSidebar = () => setSidebarOpen(false);
+
+    return (
+        <TutorContext.Provider value={{
+            darkMode, toggleDarkMode,
+            isLoggedIn, setIsLoggedIn,
+            tutor, setTutor,
+            resources, setResources,
+            orders, setOrders,
+            classes, setClasses,
+            loading, setLoading,
+            notification, showNotification,
+            activeTab, setActiveTab,
+            logout,
+            loadTutorData,
+            sidebarOpen, toggleSidebar, closeSidebar,
+            debugInfo, addDebug
+        }}>
+            {children}
+        </TutorContext.Provider>
+    );
+}
 
         function useTutor() {
             const context = useContext(TutorContext);
