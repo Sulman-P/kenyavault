@@ -1828,79 +1828,90 @@
     }
 
     // ── CREATE ORDER ──
-    async function createOrder(product, customerName, phone) {
-        const orderRef = generateOrderRef();
-        const orderData = {
+async function createOrder(product, customerName, phone) {
+    const orderRef = generateOrderRef();
+    
+    // Get the actual file path from the resource
+    const filePath = product.file_path || product.file_url || '';
+    const fileName = filePath.split('/').pop() || product.title || 'resource';
+    
+    const orderData = {
+        order_ref: orderRef,
+        customer_name: customerName,
+        phone: phone,
+        item_title: product.title,
+        item_price: product.price || 0,
+        status: 'pending',
+        total_amount: product.price || 0,
+        // Store resource details for download
+        resource_id: product.id,
+        resource_file_path: filePath,
+        resource_file_name: fileName,
+        created_at: new Date().toISOString()
+    };
+
+    try {
+        console.log('📝 Creating order with ref:', orderRef);
+        console.log('📎 Resource file path:', filePath);
+        
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
+            method: 'POST',
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=representation'
+            },
+            body: JSON.stringify(orderData)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ Order creation error:', errorText);
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+
+        const result = await response.json();
+        const createdOrder = result[0] || result;
+        console.log('✅ Order created:', createdOrder);
+
+        // Create order item with full resource details
+        const orderItemData = {
             order_ref: orderRef,
-            customer_name: customerName,
-            phone: phone,
-            item_title: product.title,
-            item_price: product.price || 0,
-            status: 'pending',
-            total_amount: product.price || 0,
+            order_id: createdOrder.id,
+            product_id: product.id,
+            resource_title: product.title,
+            resource_file_path: filePath,
+            resource_file_name: fileName,
+            price: product.price || 0,
+            quantity: 1,
             created_at: new Date().toISOString()
         };
 
-        try {
-            console.log('📝 Creating order with ref:', orderRef);
-            
-            const response = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
-                method: 'POST',
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                    'Content-Type': 'application/json',
-                    'Prefer': 'return=representation'
-                },
-                body: JSON.stringify(orderData)
-            });
+        const itemResponse = await fetch(`${SUPABASE_URL}/rest/v1/order_items`, {
+            method: 'POST',
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(orderItemData)
+        });
 
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error('❌ Order creation error:', errorText);
-                throw new Error(`HTTP ${response.status}: ${errorText}`);
-            }
-
-            const result = await response.json();
-            const createdOrder = result[0] || result;
-            console.log('✅ Order created:', createdOrder);
-
-            // Create order item
-            const orderItemData = {
-                order_ref: orderRef,
-                order_id: createdOrder.id,
-                product_id: product.id,
-                resource_title: product.title,
-                price: product.price || 0,
-                quantity: 1,
-                created_at: new Date().toISOString()
-            };
-
-            const itemResponse = await fetch(`${SUPABASE_URL}/rest/v1/order_items`, {
-                method: 'POST',
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(orderItemData)
-            });
-
-            if (!itemResponse.ok) {
-                const errorText = await itemResponse.text();
-                console.warn('⚠️ Order item creation warning:', errorText);
-            } else {
-                console.log('✅ Order item created');
-            }
-
-            return { orderRef, orderId: createdOrder.id };
-
-        } catch (error) {
-            console.error('❌ Order creation failed:', error);
-            throw error;
+        if (!itemResponse.ok) {
+            const errorText = await itemResponse.text();
+            console.warn('⚠️ Order item creation warning:', errorText);
+        } else {
+            console.log('✅ Order item created');
         }
-    }
 
+        return { orderRef, orderId: createdOrder.id };
+
+    } catch (error) {
+        console.error('❌ Order creation failed:', error);
+        throw error;
+    }
+}
     // ── UPDATE ORDER STATUS ──
     async function updateOrderStatus(orderRef, status, mpesaCode = null) {
         try {
