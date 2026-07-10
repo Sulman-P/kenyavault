@@ -1942,7 +1942,7 @@
         }
     }
 
-  // ── DOWNLOAD FREE RESOURCE ──
+ // ── DOWNLOAD FREE RESOURCE ──
 async function downloadFreeResource(product) {
     const phone = phoneInput.value.trim().replace(/\s/g, '');
     const customerName = customerNameInput.value.trim();
@@ -1987,9 +1987,9 @@ async function downloadFreeResource(product) {
             return;
         }
 
-        // Clean the file path - keep the resources/ prefix if it exists
+        // DO NOT remove resources/ prefix - keep the full path
         let cleanPath = filePath;
-        // Only remove bucket name prefixes, not the resources/ folder
+        // Only remove bucket name prefixes
         cleanPath = cleanPath.replace(/^kenyavault-pdfs\//, '');
         cleanPath = cleanPath.replace(/^kenyavault-resources\//, '');
         cleanPath = cleanPath.replace(/^academic-resources\//, '');
@@ -2000,7 +2000,7 @@ async function downloadFreeResource(product) {
         // Decode URL encoding
         cleanPath = decodeURIComponent(cleanPath);
 
-        console.log('📁 Cleaned file path:', cleanPath);
+        console.log('📁 Cleaned file path (keeping structure):', cleanPath);
 
         if (!cleanPath) {
             showToast('⚠️', 'Invalid file path. Please contact support.', 'error');
@@ -2035,34 +2035,23 @@ async function downloadFreeResource(product) {
 
         // If signed URL failed, try public URL
         if (!downloadUrl) {
-            // Try the path as-is
-            let publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${encodeURIComponent(cleanPath)}`;
+            // Try with the full path including resources/
+            const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${encodeURIComponent(cleanPath)}`;
             
-            // Try with and without resources/ prefix
-            const pathVariations = [
-                cleanPath,
-                cleanPath.replace(/^resources\//, ''),
-                `resources/${cleanPath}`,
-            ];
-
-            for (const variant of pathVariations) {
-                try {
-                    const testUrl = `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${encodeURIComponent(variant)}`;
-                    const checkRes = await fetch(testUrl, { 
-                        method: 'HEAD',
-                        headers: {
-                            'apikey': SUPABASE_ANON_KEY,
-                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                        }
-                    });
-                    if (checkRes.ok) {
-                        downloadUrl = testUrl;
-                        console.log('✅ Found file with variant:', variant);
-                        break;
+            try {
+                const checkRes = await fetch(publicUrl, { 
+                    method: 'HEAD',
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
                     }
-                } catch (e) {
-                    // Continue to next variant
+                });
+                if (checkRes.ok) {
+                    downloadUrl = publicUrl;
+                    console.log('✅ Public URL works');
                 }
+            } catch (e) {
+                console.warn('⚠️ Public URL error:', e);
             }
         }
 
@@ -2082,17 +2071,29 @@ async function downloadFreeResource(product) {
                 
                 if (listRes.ok) {
                     const files = await listRes.json();
-                    const matchingFiles = files.filter(f => {
-                        const fName = f.name.split('/').pop();
-                        return fName.includes(fileName.replace(/_/g, '')) || 
-                               fileName.includes(fName.replace(/_/g, ''));
-                    });
+                    console.log(`📁 Found ${files.length} files in bucket`);
                     
-                    if (matchingFiles.length > 0) {
-                        const foundPath = matchingFiles[0].name;
-                        const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${encodeURIComponent(foundPath)}`;
+                    // Search by exact filename match
+                    const exactMatch = files.find(f => f.name === cleanPath);
+                    if (exactMatch) {
+                        const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${encodeURIComponent(exactMatch.name)}`;
                         downloadUrl = publicUrl;
-                        console.log('📁 Found file:', publicUrl);
+                        console.log('✅ Found exact match:', publicUrl);
+                    } else {
+                        // Search by filename
+                        const matchingFiles = files.filter(f => {
+                            const fName = f.name.split('/').pop();
+                            return fName === fileName || 
+                                   fName.includes(fileName.replace(/_/g, '')) || 
+                                   fileName.includes(fName.replace(/_/g, ''));
+                        });
+                        
+                        if (matchingFiles.length > 0) {
+                            const foundPath = matchingFiles[0].name;
+                            const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${encodeURIComponent(foundPath)}`;
+                            downloadUrl = publicUrl;
+                            console.log('📁 Found matching file:', publicUrl);
+                        }
                     }
                 }
             } catch (e) {
@@ -2111,6 +2112,15 @@ async function downloadFreeResource(product) {
         } else {
             showToast('⚠️', 'Resource file not found. Please contact support.', 'error');
             console.error('❌ No download URL could be generated for:', cleanPath);
+            
+            // Log helpful info for debugging
+            console.log('📋 Debug info:', {
+                product_id: product.id,
+                title: product.title,
+                file_path: product.file_path,
+                clean_path: cleanPath,
+                bucket: STORAGE_BUCKET
+            });
         }
 
     } catch (error) {
