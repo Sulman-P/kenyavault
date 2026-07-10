@@ -1706,6 +1706,10 @@
     const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
     
+    // ── STORAGE CONFIG ──
+    const STORAGE_BUCKET = 'kenyavault-pdfs';
+    const STORAGE_URL = `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}`;
+
     // ── MEGAPAY CONFIG ──
     const MEGAPAY_BASE_URL = 'https://megapay.co.ke';
     const MEGAPAY_TAG = 'S1Zzyjs';
@@ -1784,6 +1788,141 @@
         return `ORD-${year}${month}${day}-${random}`;
     }
 
+    // ── CREATE ORDER ── (FIXED)
+    async function createOrder(product, customerName, phone) {
+        const orderRef = generateOrderRef();
+        
+        // Extract file path and name from product
+        const filePath = product.file_path || product.file_url || '';
+        const fileName = filePath ? filePath.split('/').pop() : `${product.title || 'resource'}.pdf`;
+        const productId = product.id || null;
+        
+        // Clean the file path for storage
+        let cleanFilePath = filePath;
+        if (cleanFilePath) {
+            cleanFilePath = cleanFilePath.replace(/^kenyavault-pdfs\//, '');
+            cleanFilePath = cleanFilePath.replace(/^academic-resources\//, '');
+            cleanFilePath = cleanFilePath.replace(/^resources\//, '');
+            cleanFilePath = cleanFilePath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
+            cleanFilePath = cleanFilePath.replace(/^\/+/, '');
+        }
+
+        const orderData = {
+            order_ref: orderRef,
+            customer_name: customerName,
+            phone: phone,
+            item_title: product.title || 'Resource',
+            item_price: product.price || 0,
+            total_amount: product.price || 0,
+            status: 'pending',
+            payment_status: 'pending',
+            resource_id: productId,
+            resource_file_path: cleanFilePath,
+            resource_file_name: fileName,
+            created_at: new Date().toISOString()
+        };
+
+        console.log('📝 Creating order with data:', orderData);
+
+        try {
+            const response = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
+                method: 'POST',
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=representation'
+                },
+                body: JSON.stringify(orderData)
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('❌ Order creation error:', errorText);
+                throw new Error(`HTTP ${response.status}: ${errorText}`);
+            }
+
+            const result = await response.json();
+            const createdOrder = result[0] || result;
+            console.log('✅ Order created:', createdOrder);
+
+            // Create order item
+            const orderItemData = {
+                order_ref: orderRef,
+                order_id: createdOrder.id,
+                product_id: productId,
+                resource_title: product.title || 'Resource',
+                resource_file_path: cleanFilePath,
+                resource_file_name: fileName,
+                price: product.price || 0,
+                quantity: 1,
+                created_at: new Date().toISOString()
+            };
+
+            console.log('📝 Creating order item:', orderItemData);
+
+            const itemResponse = await fetch(`${SUPABASE_URL}/rest/v1/order_items`, {
+                method: 'POST',
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=representation'
+                },
+                body: JSON.stringify(orderItemData)
+            });
+
+            if (!itemResponse.ok) {
+                const errorText = await itemResponse.text();
+                console.warn('⚠️ Order item creation warning:', errorText);
+            } else {
+                const itemResult = await itemResponse.json();
+                console.log('✅ Order item created:', itemResult);
+            }
+
+            return { orderRef, orderId: createdOrder.id };
+
+        } catch (error) {
+            console.error('❌ Order creation failed:', error);
+            throw error;
+        }
+    }
+
+    // ── UPDATE ORDER STATUS ──
+    async function updateOrderStatus(orderRef, status, mpesaCode = null) {
+        try {
+            const updates = { 
+                status: status,
+                payment_status: status === 'completed' ? 'paid' : status
+            };
+            if (mpesaCode) updates.mpesa_code = mpesaCode;
+
+            console.log('📝 Updating order:', orderRef, updates);
+
+            const response = await fetch(`${SUPABASE_URL}/rest/v1/orders?order_ref=eq.${orderRef}`, {
+                method: 'PATCH',
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=representation'
+                },
+                body: JSON.stringify(updates)
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to update order: ${response.status}`);
+            }
+
+            const result = await response.json();
+            console.log('✅ Order updated:', result);
+            return result[0] || result;
+        } catch (error) {
+            console.error('❌ Order update failed:', error);
+            throw error;
+        }
+    }
+
     // ── FETCH RESOURCES ──
     async function fetchResources() {
         try {
@@ -1818,126 +1957,6 @@
             return data || [];
         } catch (error) {
             console.error('❌ Fetch error:', error);
-            console.error('❌ Error details:', {
-                message: error.message,
-                stack: error.stack,
-                name: error.name
-            });
-            throw error;
-        }
-    }
-
-    // ── CREATE ORDER ──
-async function createOrder(product, customerName, phone) {
-    const orderRef = generateOrderRef();
-    
-    // Get the actual file path from the resource
-    const filePath = product.file_path || product.file_url || '';
-    const fileName = filePath.split('/').pop() || product.title || 'resource';
-    
-    const orderData = {
-        order_ref: orderRef,
-        customer_name: customerName,
-        phone: phone,
-        item_title: product.title,
-        item_price: product.price || 0,
-        status: 'pending',
-        total_amount: product.price || 0,
-        // Store resource details for download
-        resource_id: product.id,
-        resource_file_path: filePath,
-        resource_file_name: fileName,
-        created_at: new Date().toISOString()
-    };
-
-    try {
-        console.log('📝 Creating order with ref:', orderRef);
-        console.log('📎 Resource file path:', filePath);
-        
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
-            method: 'POST',
-            headers: {
-                'apikey': SUPABASE_ANON_KEY,
-                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                'Content-Type': 'application/json',
-                'Prefer': 'return=representation'
-            },
-            body: JSON.stringify(orderData)
-        });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('❌ Order creation error:', errorText);
-            throw new Error(`HTTP ${response.status}: ${errorText}`);
-        }
-
-        const result = await response.json();
-        const createdOrder = result[0] || result;
-        console.log('✅ Order created:', createdOrder);
-
-        // Create order item with full resource details
-        const orderItemData = {
-            order_ref: orderRef,
-            order_id: createdOrder.id,
-            product_id: product.id,
-            resource_title: product.title,
-            resource_file_path: filePath,
-            resource_file_name: fileName,
-            price: product.price || 0,
-            quantity: 1,
-            created_at: new Date().toISOString()
-        };
-
-        const itemResponse = await fetch(`${SUPABASE_URL}/rest/v1/order_items`, {
-            method: 'POST',
-            headers: {
-                'apikey': SUPABASE_ANON_KEY,
-                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(orderItemData)
-        });
-
-        if (!itemResponse.ok) {
-            const errorText = await itemResponse.text();
-            console.warn('⚠️ Order item creation warning:', errorText);
-        } else {
-            console.log('✅ Order item created');
-        }
-
-        return { orderRef, orderId: createdOrder.id };
-
-    } catch (error) {
-        console.error('❌ Order creation failed:', error);
-        throw error;
-    }
-}
-    // ── UPDATE ORDER STATUS ──
-    async function updateOrderStatus(orderRef, status, mpesaCode = null) {
-        try {
-            const updates = { status };
-            if (mpesaCode) updates.mpesa_code = mpesaCode;
-
-            const response = await fetch(`${SUPABASE_URL}/rest/v1/orders?order_ref=eq.${orderRef}`, {
-                method: 'PATCH',
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                    'Content-Type': 'application/json',
-                    'Prefer': 'return=representation'
-                },
-                body: JSON.stringify(updates)
-            });
-
-            if (!response.ok) {
-                throw new Error(`Failed to update order: ${response.status}`);
-            }
-
-            const result = await response.json();
-            console.log('✅ Order updated:', result);
-            return result[0] || result;
-        } catch (error) {
-            console.error('❌ Order update failed:', error);
             throw error;
         }
     }
@@ -1984,12 +2003,18 @@ async function createOrder(product, customerName, phone) {
             return;
         }
 
+        // If free, skip payment and just verify
         if ((currentProduct.price || 0) === 0) {
-            const { orderRef } = await createOrder(currentProduct, customerName, formattedPhone);
-            currentOrderRef = orderRef;
-            mpesaVerificationBox.classList.add('visible');
-            payPrimaryBtn.style.display = 'none';
-            showToast('📱', 'Free resource! Enter your details to download.', 'success');
+            try {
+                const { orderRef } = await createOrder(currentProduct, customerName, formattedPhone);
+                currentOrderRef = orderRef;
+                mpesaVerificationBox.classList.add('visible');
+                payPrimaryBtn.style.display = 'none';
+                showToast('📱', 'Free resource! Enter your details to download.', 'success');
+            } catch (error) {
+                console.error('❌ Free order creation failed:', error);
+                showToast('❌', 'Failed to create order. Please try again.', 'error');
+            }
             return;
         }
 
@@ -2816,6 +2841,7 @@ async function createOrder(product, customerName, phone) {
     console.log('✅ KenyaVault Shop initialized');
     console.log('📱 MegaPay Payment URL:', MEGAPAY_PAYMENT_URL);
     console.log('🔗 Supabase URL:', SUPABASE_URL);
+    console.log('📦 Storage Bucket:', STORAGE_BUCKET);
 </script>
 </body>
 </html>
