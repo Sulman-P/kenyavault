@@ -459,6 +459,7 @@
         }
         .sidebar-footer .tutor-status.approved { color: #34d399; }
         .sidebar-footer .tutor-status.pending { color: #fbbf24; }
+        .sidebar-footer .tutor-status.rejected { color: #f87171; }
 
         /* ── MAIN CONTENT ── */
         .main-content {
@@ -596,6 +597,7 @@
         .stat-card .stat-number.green { color: #16a34a; }
         .stat-card .stat-number.purple { color: #8b5cf6; }
         .stat-card .stat-number.blue { color: #3b82f6; }
+        .stat-card .stat-number.red { color: #dc2626; }
         .stat-card .stat-label {
             font-size: 0.85rem;
             color: #6b7280;
@@ -687,6 +689,8 @@
         .status-badge.upcoming { background: #dbeafe; color: #2563eb; }
         .status-badge.ongoing { background: #fef3c7; color: #d97706; }
         .status-badge.paid { background: #dcfce7; color: #16a34a; }
+        .status-badge.live { background: #dcfce7; color: #16a34a; }
+        .status-badge.draft { background: #f3f4f6; color: #6b7280; }
 
         /* ── ITEM CARDS ── */
         .item-card {
@@ -768,6 +772,15 @@
         .btn-sm:hover {
             background: #FCD34D;
         }
+        .btn-sm.outline {
+            background: transparent;
+            border: 2px solid #D4A017;
+            color: #D4A017;
+        }
+        .btn-sm.outline:hover {
+            background: #D4A017;
+            color: #0a1a3a;
+        }
 
         .drop-zone {
             border: 2px dashed #d1d5db;
@@ -802,26 +815,6 @@
             transition: width 0.3s ease;
             border-radius: 99px;
         }
-
-        .debug-info {
-            background: #f8f9fa;
-            border: 1px solid #dee2e6;
-            border-radius: 8px;
-            padding: 12px;
-            margin: 10px 0;
-            font-size: 12px;
-            font-family: monospace;
-            color: #495057;
-            max-height: 150px;
-            overflow-y: auto;
-        }
-        .dark .debug-info {
-            background: #2d3748;
-            border-color: #4a5568;
-            color: #e2e8f0;
-        }
-        .debug-info .error { color: #dc2626; }
-        .debug-info .success { color: #16a34a; }
 
         .toast-notification {
             position: fixed;
@@ -914,6 +907,39 @@
             font-weight: 700;
             color: #0a1a3a;
         }
+
+        /* ── HIDDEN ── */
+        .hidden { display: none; }
+
+        /* ── GRID ── */
+        .grid { display: grid; }
+        .grid-cols-1 { grid-template-columns: 1fr; }
+        .grid-cols-2 { grid-template-columns: 1fr 1fr; }
+        .gap-4 { gap: 16px; }
+        .gap-2 { gap: 8px; }
+        .mt-4 { margin-top: 16px; }
+        .mb-4 { margin-bottom: 16px; }
+        .mb-2 { margin-bottom: 8px; }
+        .flex { display: flex; }
+        .flex-wrap { flex-wrap: wrap; }
+        .items-center { align-items: center; }
+        .justify-between { justify-content: space-between; }
+        .text-center { text-align: center; }
+        .text-sm { font-size: 0.875rem; }
+        .text-xs { font-size: 0.75rem; }
+        .text-gray-400 { color: #9ca3af; }
+        .text-gray-500 { color: #6b7280; }
+        .text-gray-600 { color: #4b5563; }
+        .text-gray-700 { color: #374151; }
+        .dark .text-gray-400 { color: #6b7280; }
+        .dark .text-gray-500 { color: #6b7280; }
+        .dark .text-gray-600 { color: #9ca3af; }
+        .dark .text-gray-700 { color: #d1d5db; }
+
+        @media (min-width: 768px) {
+            .md\:grid-cols-2 { grid-template-columns: 1fr 1fr; }
+            .md\:grid-cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+        }
     </style>
 </head>
 <body>
@@ -968,6 +994,7 @@
             const [notification, setNotification] = useState(null);
             const [activeTab, setActiveTab] = useState('dashboard');
             const [sidebarOpen, setSidebarOpen] = useState(false);
+            const [debugInfo, setDebugInfo] = useState([]);
 
             useEffect(() => {
                 localStorage.setItem('tutor-dark-mode', darkMode);
@@ -980,6 +1007,11 @@
                 if (tutorId) loadTutorData(tutorId);
                 else setLoading(false);
             }, []);
+
+            const addDebug = (message, type = 'info') => {
+                setDebugInfo(prev => [...prev, { message, type, timestamp: new Date().toLocaleTimeString() }]);
+                console.log(message);
+            };
 
             const loadTutorData = async (tutorId) => {
                 setLoading(true);
@@ -1000,6 +1032,7 @@
                         }
                     }
 
+                    // Load resources
                     try {
                         const rRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?tutor_id=eq.${tutorId}&select=*`, {
                             headers: { 
@@ -1008,9 +1041,13 @@
                                 'Content-Type': 'application/json'
                             }
                         });
-                        if (rRes.ok) setResources(await rRes.json());
+                        if (rRes.ok) {
+                            const data = await rRes.json();
+                            setResources(data || []);
+                        }
                     } catch (e) { console.log('Resources not available yet'); }
 
+                    // Load orders
                     try {
                         const oRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?tutor_id=eq.${tutorId}&select=*&order=created_at.desc`, {
                             headers: { 
@@ -1019,9 +1056,13 @@
                                 'Content-Type': 'application/json'
                             }
                         });
-                        if (oRes.ok) setOrders(await oRes.json());
+                        if (oRes.ok) {
+                            const data = await oRes.json();
+                            setOrders(data || []);
+                        }
                     } catch (e) { console.log('Orders not available yet'); }
 
+                    // Load classes
                     try {
                         const cRes = await fetch(`${SUPABASE_URL}/rest/v1/classes?tutor_id=eq.${tutorId}&select=*&order=date.asc`, {
                             headers: { 
@@ -1030,11 +1071,15 @@
                                 'Content-Type': 'application/json'
                             }
                         });
-                        if (cRes.ok) setClasses(await cRes.json());
+                        if (cRes.ok) {
+                            const data = await cRes.json();
+                            setClasses(data || []);
+                        }
                     } catch (e) { console.log('Classes not available yet'); }
 
                 } catch (e) { 
                     console.error('Load error:', e); 
+                    addDebug('Error loading data: ' + e.message, 'error');
                 }
                 setLoading(false);
             };
@@ -1054,6 +1099,8 @@
                 setOrders([]);
                 setClasses([]);
                 setActiveTab('dashboard');
+                setDebugInfo([]);
+                showNotification('Logged out successfully', 'success');
             };
 
             const toggleDarkMode = () => setDarkMode(!darkMode);
@@ -1073,7 +1120,8 @@
                     activeTab, setActiveTab,
                     logout,
                     loadTutorData,
-                    sidebarOpen, toggleSidebar, closeSidebar
+                    sidebarOpen, toggleSidebar, closeSidebar,
+                    debugInfo, addDebug
                 }}>
                     {children}
                 </TutorContext.Provider>
@@ -1090,7 +1138,7 @@
         // LOGIN PAGE
         // ────────────────────────────────────────────────
         function LoginPage() {
-            const { setIsLoggedIn, setTutor, showNotification, loadTutorData, darkMode, toggleDarkMode } = useTutor();
+            const { setIsLoggedIn, setTutor, showNotification, loadTutorData, darkMode, toggleDarkMode, addDebug } = useTutor();
             const [activeAuth, setActiveAuth] = useState('login');
             const [loginPhone, setLoginPhone] = useState('');
             const [loginPassword, setLoginPassword] = useState('');
@@ -1109,11 +1157,6 @@
             const [signupLoading, setSignupLoading] = useState(false);
             const [signupError, setSignupError] = useState('');
             const [passwordStrength, setPasswordStrength] = useState(0);
-
-            const addDebug = (message, type = 'info') => {
-                setDebugInfo(prev => [...prev, { message, type, timestamp: new Date().toLocaleTimeString() }]);
-                console.log(message);
-            };
 
             const handleLogin = async (e) => {
                 e.preventDefault();
@@ -1361,10 +1404,12 @@
                                         </button>
                                     </div>
                                     {debugInfo.length > 0 && (
-                                        <div className="debug-info mt-4">
+                                        <div className="debug-info mt-4 p-3 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm">
                                             <strong>🔍 Debug:</strong>
                                             {debugInfo.map((d, i) => (
-                                                <div key={i} className={d.type}>[{d.timestamp}] {d.message}</div>
+                                                <div key={i} className={d.type === 'error' ? 'text-red-600 dark:text-red-400' : d.type === 'success' ? 'text-green-600 dark:text-green-400' : 'text-gray-600 dark:text-gray-400'}>
+                                                    [{d.timestamp}] {d.message}
+                                                </div>
                                             ))}
                                         </div>
                                     )}
@@ -1434,10 +1479,12 @@
                                         {signupLoading ? '⏳ Submitting...' : '📤 Submit Application'}
                                     </button>
                                     {debugInfo.length > 0 && (
-                                        <div className="debug-info mt-4">
+                                        <div className="debug-info mt-4 p-3 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm">
                                             <strong>🔍 Debug:</strong>
                                             {debugInfo.map((d, i) => (
-                                                <div key={i} className={d.type}>[{d.timestamp}] {d.message}</div>
+                                                <div key={i} className={d.type === 'error' ? 'text-red-600 dark:text-red-400' : d.type === 'success' ? 'text-green-600 dark:text-green-400' : 'text-gray-600 dark:text-gray-400'}>
+                                                    [{d.timestamp}] {d.message}
+                                                </div>
                                             ))}
                                         </div>
                                     )}
@@ -1481,10 +1528,10 @@
                 sidebarOpen, toggleSidebar, closeSidebar
             } = useTutor();
 
-            const totalEarnings = orders.reduce((sum, o) => sum + (o.tutor_share || 0), 0);
-            const pendingEarnings = orders.filter(o => o.status === 'pending' || o.status === 'pending_verification').reduce((sum, o) => sum + (o.tutor_share || 0), 0);
-            const totalDownloads = orders.reduce((sum, o) => sum + (o.downloads || 0), 0);
-            const completedOrders = orders.filter(o => o.status === 'completed' || o.status === 'paid').length;
+            const totalEarnings = orders.reduce((sum, o) => sum + (o.tutor_share || Math.round((o.total_amount || 0) * 0.8)), 0);
+            const pendingEarnings = orders.filter(o => o.status === 'pending' || o.payment_status === 'pending').reduce((sum, o) => sum + (o.tutor_share || Math.round((o.total_amount || 0) * 0.8)), 0);
+            const totalDownloads = resources.reduce((sum, r) => sum + (r.download_count || 0), 0);
+            const completedOrders = orders.filter(o => o.status === 'completed' || o.payment_status === 'paid' || o.payment_status === 'completed').length;
 
             const menuItems = [
                 { id: 'dashboard', icon: 'fa-chart-pie', label: 'Dashboard' },
@@ -1551,7 +1598,9 @@
                                 <div>
                                     <div className="tutor-name">{tutor?.name || 'Tutor'}</div>
                                     <div className={`tutor-status ${tutor?.status || 'pending'}`}>
-                                        {tutor?.status === 'approved' ? '✅ Approved' : '⏳ Pending'}
+                                        {tutor?.status === 'approved' ? '✅ Approved' : 
+                                         tutor?.status === 'rejected' ? '❌ Rejected' : 
+                                         '⏳ Pending Approval'}
                                     </div>
                                 </div>
                             </div>
@@ -1589,17 +1638,17 @@
 
         // ── DASHBOARD CONTENT ──
         function DashboardContent() {
-            const { tutor, resources, orders, classes } = useTutor();
+            const { tutor, resources, orders, classes, setActiveTab } = useTutor();
 
-            const totalEarnings = orders.reduce((sum, o) => sum + (o.tutor_share || 0), 0);
-            const pendingEarnings = orders.filter(o => o.status === 'pending' || o.status === 'pending_verification').reduce((sum, o) => sum + (o.tutor_share || 0), 0);
-            const totalDownloads = orders.reduce((sum, o) => sum + (o.downloads || 0), 0);
+            const totalEarnings = orders.reduce((sum, o) => sum + (o.tutor_share || Math.round((o.total_amount || 0) * 0.8)), 0);
+            const pendingEarnings = orders.filter(o => o.status === 'pending' || o.payment_status === 'pending').reduce((sum, o) => sum + (o.tutor_share || Math.round((o.total_amount || 0) * 0.8)), 0);
+            const totalDownloads = resources.reduce((sum, r) => sum + (r.download_count || 0), 0);
 
             return (
                 <>
                     {/* Welcome Section */}
                     <div className="content-card">
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
                             <div className="profile-avatar">
                                 {tutor?.name ? tutor.name.charAt(0).toUpperCase() : 'T'}
                             </div>
@@ -1608,7 +1657,9 @@
                                     Welcome back, {tutor?.name || 'Tutor'}! 👋
                                 </h2>
                                 <p style={{ color: '#6b7280' }}>
-                                    {tutor?.status === 'approved' ? '✅ Your account is approved and active' : '⏳ Your account is pending approval'}
+                                    {tutor?.status === 'approved' ? '✅ Your account is approved and active' : 
+                                     tutor?.status === 'rejected' ? '❌ Your application was rejected' : 
+                                     '⏳ Your account is pending approval'}
                                 </p>
                             </div>
                         </div>
@@ -1646,14 +1697,14 @@
                             </div>
                             <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                                 <button 
-                                    onClick={() => { const { setActiveTab } = useTutor(); setActiveTab('upload'); }}
+                                    onClick={() => setActiveTab('upload')}
                                     className="btn-gold" 
                                     style={{ width: 'auto', padding: '10px 24px' }}
                                 >
                                     <i className="fas fa-upload"></i> Upload Resource
                                 </button>
                                 <button 
-                                    onClick={() => { const { setActiveTab } = useTutor(); setActiveTab('classes'); }}
+                                    onClick={() => setActiveTab('classes')}
                                     className="btn-gold" 
                                     style={{ width: 'auto', padding: '10px 24px', background: '#1a2a5a', color: '#fff' }}
                                 >
@@ -1677,11 +1728,13 @@
                                 {orders.slice(0, 5).map(o => (
                                     <div key={o.id} className="item-card">
                                         <div className="info">
-                                            <div className="title">Order #{o.ref || (o.id || '').slice(0, 8).toUpperCase()}</div>
+                                            <div className="title">Order #{o.order_ref || o.payment_ref || (o.id || '').slice(0, 8).toUpperCase()}</div>
                                             <div className="meta">
-                                                <span>{o.product_title || 'Resource'}</span>
-                                                <span>KES {o.tutor_share || Math.round((o.product_price || 0) * 0.8)}</span>
-                                                <span className={`status-badge ${o.status || 'pending'}`}>{o.status || 'pending'}</span>
+                                                <span>{o.item_title || o.resource_title || 'Resource'}</span>
+                                                <span>KES {o.tutor_share || Math.round((o.total_amount || 0) * 0.8)}</span>
+                                                <span className={`status-badge ${o.status || o.payment_status || 'pending'}`}>
+                                                    {o.status || o.payment_status || 'pending'}
+                                                </span>
                                             </div>
                                         </div>
                                         <span style={{ fontSize: '0.8rem', color: '#6b7280' }}>
@@ -1743,8 +1796,8 @@
                                         <span>📖 {r.subject}</span>
                                         <span>💰 KES {r.price}</span>
                                         <span>📥 {r.download_count || 0} downloads</span>
-                                        <span className={`status-badge ${r.published !== false ? 'approved' : 'pending'}`}>
-                                            {r.published !== false ? 'Published' : 'Draft'}
+                                        <span className={`status-badge ${r.status === 'live' || r.published !== false ? 'approved' : 'pending'}`}>
+                                            {r.status === 'live' || r.published !== false ? 'Published' : 'Draft'}
                                         </span>
                                     </div>
                                 </div>
@@ -1799,14 +1852,16 @@
                             <tbody>
                                 {orders.map(o => (
                                     <tr key={o.id}>
-                                        <td>#{o.ref || (o.id || '').slice(0, 8).toUpperCase()}</td>
+                                        <td>#{o.order_ref || o.payment_ref || (o.id || '').slice(0, 8).toUpperCase()}</td>
                                         <td>{o.customer_phone || o.phone || 'N/A'}</td>
-                                        <td>{o.product_title || o.resource || 'Resource'}</td>
-                                        <td>KES {o.product_price || o.amount || 0}</td>
+                                        <td>{o.item_title || o.resource_title || 'Resource'}</td>
+                                        <td>KES {o.total_amount || o.item_price || 0}</td>
                                         <td style={{ fontWeight: 600, color: '#D4A017' }}>
-                                            KES {o.tutor_share || Math.round((o.product_price || o.amount || 0) * 0.8)}
+                                            KES {o.tutor_share || Math.round((o.total_amount || 0) * 0.8)}
                                         </td>
-                                        <td><span className={`status-badge ${o.status || 'pending'}`}>{o.status || 'pending'}</span></td>
+                                        <td><span className={`status-badge ${o.status || o.payment_status || 'pending'}`}>
+                                            {o.status || o.payment_status || 'pending'}
+                                        </span></td>
                                         <td style={{ fontSize: '0.8rem', color: '#6b7280' }}>{new Date(o.created_at).toLocaleDateString()}</td>
                                     </tr>
                                 ))}
@@ -1959,10 +2014,10 @@
         function EarningsTab() {
             const { orders, tutor } = useTutor();
 
-            const totalEarnings = orders.reduce((sum, o) => sum + (o.tutor_share || 0), 0);
-            const pendingEarnings = orders.filter(o => o.status === 'pending' || o.status === 'pending_verification').reduce((sum, o) => sum + (o.tutor_share || 0), 0);
+            const totalEarnings = orders.reduce((sum, o) => sum + (o.tutor_share || Math.round((o.total_amount || 0) * 0.8)), 0);
+            const pendingEarnings = orders.filter(o => o.status === 'pending' || o.payment_status === 'pending').reduce((sum, o) => sum + (o.tutor_share || Math.round((o.total_amount || 0) * 0.8)), 0);
             const paidOut = tutor?.total_paid_out || 0;
-            const completedOrders = orders.filter(o => o.status === 'completed' || o.status === 'paid').length;
+            const completedOrders = orders.filter(o => o.status === 'completed' || o.payment_status === 'paid' || o.payment_status === 'completed').length;
 
             return (
                 <div className="content-card">
@@ -1995,6 +2050,39 @@
                             Payouts are processed when your pending earnings reach <strong style={{ color: '#D4A017' }}>KES 500</strong> or more.
                         </p>
                     </div>
+
+                    {/* Order History for Earnings */}
+                    {orders.length > 0 && (
+                        <div style={{ marginTop: '20px' }}>
+                            <h4 style={{ fontFamily: 'Sora, sans-serif', fontWeight: 600, fontSize: '0.9rem', marginBottom: '12px' }}>📋 Order History</h4>
+                            <div className="table-wrapper">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Order</th>
+                                            <th>Resource</th>
+                                            <th>Amount</th>
+                                            <th>Your Share</th>
+                                            <th>Status</th>
+                                            <th>Date</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {orders.map(o => (
+                                            <tr key={o.id}>
+                                                <td>#{o.order_ref || o.payment_ref || (o.id || '').slice(0, 8).toUpperCase()}</td>
+                                                <td>{o.item_title || o.resource_title || 'Resource'}</td>
+                                                <td>KES {o.total_amount || o.item_price || 0}</td>
+                                                <td style={{ fontWeight: 600, color: '#D4A017' }}>KES {o.tutor_share || Math.round((o.total_amount || 0) * 0.8)}</td>
+                                                <td><span className={`status-badge ${o.status || o.payment_status || 'pending'}`}>{o.status || o.payment_status || 'pending'}</span></td>
+                                                <td style={{ fontSize: '0.8rem', color: '#6b7280' }}>{new Date(o.created_at).toLocaleDateString()}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         }
@@ -2053,7 +2141,7 @@
                             <div className="profile-avatar" style={{ margin: '0 auto' }}>
                                 {tutor.name ? tutor.name.charAt(0).toUpperCase() : 'T'}
                             </div>
-                            <span className={`status-badge ${tutor.status === 'approved' ? 'approved' : tutor.status === 'pending' ? 'pending' : 'rejected'}`} style={{ marginTop: '8px' }}>
+                            <span className={`status-badge ${tutor.status === 'approved' ? 'approved' : tutor.status === 'pending' ? 'pending' : 'rejected'}`} style={{ marginTop: '8px', display: 'inline-block' }}>
                                 {tutor.status === 'approved' ? '✅ Approved' : tutor.status === 'pending' ? '⏳ Pending' : '❌ Rejected'}
                             </span>
                         </div>
@@ -2082,7 +2170,7 @@
                                 <label className="form-label">📚 Subjects</label>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                                     {tutor.subjects?.map(s => (
-                                        <span key={s} className="status-badge approved">{s}</span>
+                                        <span key={s} className="status-badge approved" style={{ background: '#dbeafe', color: '#1e40af' }}>{s}</span>
                                     ))}
                                 </div>
                             </div>
@@ -2090,9 +2178,12 @@
                             <div style={{ marginTop: '12px' }}>
                                 <label className="form-label">🎓 Levels</label>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                                    {tutor.levels?.map(l => (
-                                        <span key={l} className="status-badge pending">{l}</span>
-                                    ))}
+                                    {tutor.levels?.map(l => {
+                                        const levelLabel = LEVELS.find(lev => lev.value === l)?.label || l;
+                                        return (
+                                            <span key={l} className="status-badge pending" style={{ background: '#fef3c7', color: '#92400e' }}>{levelLabel}</span>
+                                        );
+                                    })}
                                 </div>
                             </div>
 
@@ -2231,7 +2322,7 @@
                         teacher_reviewed: teacherReviewed,
                         tutor_id: tutorId,
                         tutor_name: sessionStorage.getItem('tutor_name') || 'Tutor',
-                        status: 'pending',
+                        status: 'draft',
                         download_count: 0,
                         created_at: new Date().toISOString()
                     };
