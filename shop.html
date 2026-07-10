@@ -2029,37 +2029,17 @@ async function initiatePayment() {
         return;
     }
 
-    const isFree = (currentProduct.price || 0) === 0 || currentProduct.resource_type === 'free';
+    // Check if product is free
+    const isFree = (currentProduct.price === 0 || currentProduct.price === null || currentProduct.price === undefined) || 
+                   currentProduct.resource_type === 'free';
 
-    // If free, create order and download directly
+    // If free, redirect to the free download flow
     if (isFree) {
-        try {
-            const { orderRef } = await createOrder(currentProduct, customerName, formattedPhone);
-            currentOrderRef = orderRef;
-            
-            // Get signed URL for free resource
-            const filePath = currentProduct.file_path || currentProduct.file_url;
-            if (filePath) {
-                const cleanPath = filePath.replace(/^kenyavault-pdfs\//, '').replace(/^\/+/, '');
-                const signedRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${STORAGE_BUCKET}/${encodeURIComponent(cleanPath)}?expiresIn=300`, {
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                    }
-                });
-                if (signedRes.ok) {
-                    const signedData = await signedRes.json();
-                    window.open(signedData.signedURL, '_blank');
-                    showToast('📥', 'Download started!', 'success');
-                    closeCheckoutModal();
-                    return;
-                }
-            }
-            showToast('📱', 'Free resource! Check your downloads.', 'success');
-            closeCheckoutModal();
-        } catch (error) {
-            console.error('❌ Free order creation failed:', error);
-            showToast('❌', 'Failed to create order. Please try again.', 'error');
+        // The openCheckout function handles free resources now
+        // But if initiatePayment is called directly, handle it here too
+        const verifyBtn = document.querySelector('.btn-verify-order');
+        if (verifyBtn) {
+            verifyBtn.click();
         }
         return;
     }
@@ -2069,6 +2049,62 @@ async function initiatePayment() {
     payPrimaryBtn.disabled = true;
     payPrimaryBtn.classList.add('loading');
 
+    try {
+        const { orderRef, orderId } = await createOrder(currentProduct, customerName, formattedPhone);
+        currentOrderRef = orderRef;
+
+        localStorage.setItem('pendingOrderRef', orderRef);
+        localStorage.setItem('pendingOrderId', orderId);
+        localStorage.setItem('pendingProductId', currentProduct.id);
+        localStorage.setItem('pendingProductTitle', currentProduct.title);
+        localStorage.setItem('pendingCustomerPhone', formattedPhone);
+
+        const metadata = JSON.stringify({
+            order_ref: orderRef,
+            order_id: orderId,
+            product_id: currentProduct.id,
+            product_title: currentProduct.title,
+            customer_name: customerName,
+            customer_phone: formattedPhone,
+            amount: currentProduct.price || 0,
+            currency: 'KES'
+        });
+
+        const payUrl = `${MEGAPAY_PAYMENT_URL}?phone=${encodeURIComponent(formattedPhone)}&amount=${encodeURIComponent(currentProduct.price || 0)}&description=${encodeURIComponent(currentProduct.title || 'Educational Resource')}&metadata=${encodeURIComponent(metadata)}`;
+
+        console.log('🔗 Opening MegaPay:', payUrl);
+
+        megapayWindow = window.open(payUrl, '_blank', 'width=500,height=700,scrollbars=yes');
+
+        if (!megapayWindow) {
+            showToast('⚠️', 'Please allow popups to complete payment', 'error');
+            window.location.href = payUrl;
+        } else {
+            showToast('📱', 'MegaPay opened in new tab. Complete payment there.', 'success');
+        }
+
+        setTimeout(() => {
+            mpesaVerificationBox.classList.add('visible');
+            payPrimaryBtn.style.display = 'none';
+            showToast('📱', 'After payment, enter your M-PESA code to verify', 'success');
+        }, 3000);
+
+        // Subscribe to realtime order updates
+        subscribeToOrderUpdates(orderId);
+
+    } catch (error) {
+        console.error('❌ Payment initiation failed:', error);
+        showToast('❌', 'Payment initiation failed. Please try again.', 'error');
+        if (megapayWindow) {
+            megapayWindow.close();
+            megapayWindow = null;
+        }
+    } finally {
+        isProcessing = false;
+        payPrimaryBtn.disabled = false;
+        payPrimaryBtn.classList.remove('loading');
+    }
+}
     try {
         const { orderRef, orderId } = await createOrder(currentProduct, customerName, formattedPhone);
         currentOrderRef = orderRef;
@@ -2419,6 +2455,7 @@ async function openCheckout(productId) {
     currentProduct = product;
     currentOrderRef = null;
 
+    // Reset form
     customerNameInput.value = '';
     customerNameInput.classList.remove('error');
     phoneInput.value = '';
@@ -2435,16 +2472,80 @@ async function openCheckout(productId) {
     checkoutItemTitle.textContent = product.title || 'Resource';
     checkoutTotal.textContent = (product.price || 0) === 0 ? 'FREE' : `KES ${product.price || 0}`;
 
-    // Check if product is free
-    const isFree = (product.price || 0) === 0 || product.resource_type === 'free';
-    
+    // Check if product is free - using both price and resource_type
+    const isFree = (product.price === 0 || product.price === null || product.price === undefined) || 
+                   product.resource_type === 'free';
+
+    console.log('📦 Product:', product.title);
+    console.log('💰 Price:', product.price);
+    console.log('🏷️ Type:', product.resource_type);
+    console.log('✅ Is Free:', isFree);
+
     if (isFree) {
+        // FREE: Hide payment button, show verification box with special message
         mpesaVerificationBox.classList.add('visible');
         payPrimaryBtn.style.display = 'none';
-        showToast('📱', 'Free resource! Enter your name and phone to download.', 'success');
+        
+        // Change the verification box text for free resources
+        const verifyLabel = document.querySelector('.verify-label');
+        const verifySub = document.querySelector('.verify-sub');
+        const verifyInput = document.querySelector('.verify-input');
+        const verifyBtn = document.querySelector('.btn-verify-order');
+        
+        if (verifyLabel) verifyLabel.textContent = '📥 Free Resource Download';
+        if (verifySub) {
+            verifySub.innerHTML = `
+                <strong>🎉 This resource is FREE!</strong><br>
+                Enter your name and phone number below, then click "Get Free Resource" to download instantly.
+                No payment required.
+            `;
+        }
+        if (verifyInput) {
+            verifyInput.placeholder = 'Enter your email or name (optional)';
+            verifyInput.maxLength = 50;
+        }
+        if (verifyBtn) {
+            verifyBtn.innerHTML = `
+                <span class="btn-text">📥 Get Free Resource</span>
+                <span class="btn-loading-text">⏳ Processing...</span>
+            `;
+            // Change the button to handle free downloads
+            verifyBtn.onclick = async function() {
+                await downloadFreeResource(product);
+            };
+        }
+        
+        showToast('📱', 'This resource is free! Enter your details to download.', 'success');
     } else {
+        // PREMIUM: Show payment flow
         mpesaVerificationBox.classList.remove('visible');
         payPrimaryBtn.style.display = 'flex';
+        
+        // Reset verification box text for premium
+        const verifyLabel = document.querySelector('.verify-label');
+        const verifySub = document.querySelector('.verify-sub');
+        const verifyInput = document.querySelector('.verify-input');
+        const verifyBtn = document.querySelector('.btn-verify-order');
+        
+        if (verifyLabel) verifyLabel.textContent = '🔑 Verify Your Payment';
+        if (verifySub) {
+            verifySub.innerHTML = `
+                Once you receive your M-PESA SMS confirmation, enter your transaction details below to unlock your downloads.
+                <br><br>
+                <strong>💡 Tip:</strong> After completing payment in the MegaPay tab, return here to verify.
+            `;
+        }
+        if (verifyInput) {
+            verifyInput.placeholder = 'Enter Last 4 Digits of M-PESA Code (e.g., 4K7X)';
+            verifyInput.maxLength = 4;
+        }
+        if (verifyBtn) {
+            verifyBtn.innerHTML = `
+                <span class="btn-text">🔓 Verify Code & Complete Order</span>
+                <span class="btn-loading-text">⏳ Verifying...</span>
+            `;
+            verifyBtn.onclick = verifyAndCompleteOrder;
+        }
     }
 
     checkoutModal.classList.add('open');
@@ -2490,7 +2591,124 @@ function closeSuccessModal() {
     currentOrderRef = null;
     currentProduct = null;
 }
+// ── DOWNLOAD FREE RESOURCE ──
+async function downloadFreeResource(product) {
+    const phone = phoneInput.value.trim().replace(/\s/g, '');
+    const customerName = customerNameInput.value.trim();
 
+    if (!customerName) {
+        customerNameInput.classList.add('error');
+        showToast('⚠️', 'Please enter your full name', 'error');
+        customerNameInput.focus();
+        return;
+    }
+    customerNameInput.classList.remove('error');
+
+    if (!phone || phone.length < 9) {
+        phoneInput.classList.add('error');
+        showToast('⚠️', 'Please enter a valid phone number', 'error');
+        phoneInput.focus();
+        return;
+    }
+    phoneInput.classList.remove('error');
+
+    // Disable button while processing
+    const verifyBtn = document.querySelector('.btn-verify-order');
+    verifyBtn.disabled = true;
+    verifyBtn.classList.add('loading');
+
+    try {
+        const sessionId = getOrCreateSessionId();
+        const orderData = {
+            resource_id: product.id,
+            session_id: sessionId,
+            payment_status: 'completed',
+            customer_name: customerName,
+            phone: phone,
+            item_title: product.title,
+            item_price: 0,
+            total_amount: 0,
+            ip_address: await getClientIP(),
+            user_agent: navigator.userAgent,
+            created_at: new Date().toISOString()
+        };
+
+        console.log('📝 Creating free order:', orderData);
+
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
+            method: 'POST',
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=representation'
+            },
+            body: JSON.stringify(orderData)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Order creation failed: ${errorText}`);
+        }
+
+        const result = await response.json();
+        const order = result[0] || result;
+        console.log('✅ Free order created:', order);
+
+        // Get signed URL for free resource
+        const filePath = product.file_path || product.file_url;
+        if (filePath) {
+            // Clean the file path
+            let cleanPath = filePath;
+            cleanPath = cleanPath.replace(/^kenyavault-pdfs\//, '');
+            cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
+            cleanPath = cleanPath.replace(/^\/+/, '');
+            cleanPath = decodeURIComponent(cleanPath);
+
+            console.log('📁 Downloading free resource:', cleanPath);
+
+            const signedRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${STORAGE_BUCKET}/${encodeURIComponent(cleanPath)}?expiresIn=300`, {
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                }
+            });
+
+            if (signedRes.ok) {
+                const signedData = await signedRes.json();
+                const downloadUrl = signedData.signedURL;
+                
+                // Open download in new tab
+                window.open(downloadUrl, '_blank');
+                showToast('📥', 'Download started!', 'success');
+            } else {
+                // Try public URL as fallback
+                const publicUrl = `${STORAGE_URL}/${encodeURIComponent(cleanPath)}`;
+                window.open(publicUrl, '_blank');
+                showToast('📥', 'Download started!', 'success');
+            }
+            
+            // Close modal after successful download
+            setTimeout(() => {
+                closeCheckoutModal();
+            }, 2000);
+        } else {
+            showToast('⚠️', 'Resource file not found', 'error');
+        }
+
+    } catch (error) {
+        console.error('❌ Free download error:', error);
+        showToast('❌', 'Failed to download: ' + error.message, 'error');
+        verifyBtn.disabled = false;
+        verifyBtn.classList.remove('loading');
+    }
+
+    // Re-enable button
+    setTimeout(() => {
+        verifyBtn.disabled = false;
+        verifyBtn.classList.remove('loading');
+    }, 3000);
+}
 // ── OPEN PREVIEW ──
 function openPreview(productId) {
     const product = allResources.find(r => r.id === productId);
@@ -2705,12 +2923,16 @@ function buildCardHTML(r) {
         r.badge === 'exam' ? 'Exam Prep' :
         r.badge === 'kjsea' ? 'KJSEA' : 'New';
 
-    const isFree = (r.price || 0) === 0 || r.resource_type === 'free';
+    // Check if resource is free
+    const isFree = (r.price === 0 || r.price === null || r.price === undefined) || 
+                   r.resource_type === 'free';
     const priceDisplay = isFree ? 'FREE' : getPricingDisplay(r);
     const productId = r.id || 'unknown';
     const safeTitle = (r.title || '').replace(/"/g, '&quot;').replace(/'/g, "\\'");
     const rating = r.rating || Math.floor(Math.random() * 2) + 3;
 
+    // ... rest of the function stays the same, but use the isFree variable
+}
     let coverHTML;
     if (r.cover_image_url) {
         coverHTML = `
