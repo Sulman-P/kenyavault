@@ -1942,97 +1942,113 @@
         }
     }
 
-    // ── DOWNLOAD FREE RESOURCE ──
-    async function downloadFreeResource(product) {
-        const phone = phoneInput.value.trim().replace(/\s/g, '');
-        const customerName = customerNameInput.value.trim();
+  // ── DOWNLOAD FREE RESOURCE ──
+async function downloadFreeResource(product) {
+    const phone = phoneInput.value.trim().replace(/\s/g, '');
+    const customerName = customerNameInput.value.trim();
 
-        if (!customerName) {
-            customerNameInput.classList.add('error');
-            showToast('⚠️', 'Please enter your full name', 'error');
-            customerNameInput.focus();
+    if (!customerName) {
+        customerNameInput.classList.add('error');
+        showToast('⚠️', 'Please enter your full name', 'error');
+        customerNameInput.focus();
+        return;
+    }
+    customerNameInput.classList.remove('error');
+
+    if (!phone || phone.length < 9) {
+        phoneInput.classList.add('error');
+        showToast('⚠️', 'Please enter a valid phone number', 'error');
+        phoneInput.focus();
+        return;
+    }
+    phoneInput.classList.remove('error');
+
+    const verifyBtn = document.querySelector('.btn-verify-order');
+    if (verifyBtn) {
+        verifyBtn.disabled = true;
+        verifyBtn.classList.add('loading');
+    }
+
+    try {
+        // Create order for tracking
+        const { orderRef } = await createOrder(product, customerName, phone);
+        currentOrderRef = orderRef;
+
+        // Get the file path from product
+        let filePath = product.file_path || product.file_url || '';
+        console.log('📁 Original file path:', filePath);
+
+        if (!filePath) {
+            showToast('⚠️', 'Resource file not found. Please contact support.', 'error');
+            if (verifyBtn) {
+                verifyBtn.disabled = false;
+                verifyBtn.classList.remove('loading');
+            }
             return;
         }
-        customerNameInput.classList.remove('error');
 
-        if (!phone || phone.length < 9) {
-            phoneInput.classList.add('error');
-            showToast('⚠️', 'Please enter a valid phone number', 'error');
-            phoneInput.focus();
+        // Clean the file path - keep the resources/ prefix if it exists
+        let cleanPath = filePath;
+        // Only remove bucket name prefixes, not the resources/ folder
+        cleanPath = cleanPath.replace(/^kenyavault-pdfs\//, '');
+        cleanPath = cleanPath.replace(/^kenyavault-resources\//, '');
+        cleanPath = cleanPath.replace(/^academic-resources\//, '');
+        // Remove full URLs
+        cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
+        // Only remove leading slashes
+        cleanPath = cleanPath.replace(/^\/+/, '');
+        // Decode URL encoding
+        cleanPath = decodeURIComponent(cleanPath);
+
+        console.log('📁 Cleaned file path:', cleanPath);
+
+        if (!cleanPath) {
+            showToast('⚠️', 'Invalid file path. Please contact support.', 'error');
+            if (verifyBtn) {
+                verifyBtn.disabled = false;
+                verifyBtn.classList.remove('loading');
+            }
             return;
         }
-        phoneInput.classList.remove('error');
 
-        const verifyBtn = document.querySelector('.btn-verify-order');
-        if (verifyBtn) {
-            verifyBtn.disabled = true;
-            verifyBtn.classList.add('loading');
-        }
+        let downloadUrl = null;
 
+        // Try signed URL with the full path
         try {
-            // Create order for tracking
-            const { orderRef } = await createOrder(product, customerName, phone);
-            currentOrderRef = orderRef;
-
-            // Get the file path
-            let filePath = product.file_path || product.file_url || '';
-            console.log('📁 Original file path:', filePath);
-
-            if (!filePath) {
-                showToast('⚠️', 'Resource file not found. Please contact support.', 'error');
-                if (verifyBtn) {
-                    verifyBtn.disabled = false;
-                    verifyBtn.classList.remove('loading');
+            const signedRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${STORAGE_BUCKET}/${encodeURIComponent(cleanPath)}?expiresIn=300`, {
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
                 }
-                return;
+            });
+
+            if (signedRes.ok) {
+                const signedData = await signedRes.json();
+                downloadUrl = signedData.signedURL;
+                console.log('✅ Signed URL generated');
+            } else {
+                console.log('⚠️ Signed URL failed with status:', signedRes.status);
             }
+        } catch (e) {
+            console.warn('⚠️ Signed URL error:', e);
+        }
 
-            // Clean the file path
-            let cleanPath = filePath;
-            cleanPath = cleanPath.replace(/^kenyavault-pdfs\//, '');
-            cleanPath = cleanPath.replace(/^kenyavault-resources\//, '');
-            cleanPath = cleanPath.replace(/^academic-resources\//, '');
-            cleanPath = cleanPath.replace(/^resources\//, '');
-            cleanPath = cleanPath.replace(/^covers\//, '');
-            cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
-            cleanPath = cleanPath.replace(/^\/+/, '');
-            cleanPath = decodeURIComponent(cleanPath);
+        // If signed URL failed, try public URL
+        if (!downloadUrl) {
+            // Try the path as-is
+            let publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${encodeURIComponent(cleanPath)}`;
+            
+            // Try with and without resources/ prefix
+            const pathVariations = [
+                cleanPath,
+                cleanPath.replace(/^resources\//, ''),
+                `resources/${cleanPath}`,
+            ];
 
-            console.log('📁 Cleaned file path:', cleanPath);
-
-            if (!cleanPath) {
-                showToast('⚠️', 'Invalid file path. Please contact support.', 'error');
-                if (verifyBtn) {
-                    verifyBtn.disabled = false;
-                    verifyBtn.classList.remove('loading');
-                }
-                return;
-            }
-
-            // Try to get a signed URL
-            let downloadUrl = null;
-            try {
-                const signedRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${STORAGE_BUCKET}/${encodeURIComponent(cleanPath)}?expiresIn=300`, {
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                    }
-                });
-
-                if (signedRes.ok) {
-                    const signedData = await signedRes.json();
-                    downloadUrl = signedData.signedURL;
-                    console.log('✅ Signed URL generated');
-                }
-            } catch (e) {
-                console.warn('⚠️ Signed URL error:', e);
-            }
-
-            // Try public URL
-            if (!downloadUrl) {
-                const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${encodeURIComponent(cleanPath)}`;
+            for (const variant of pathVariations) {
                 try {
-                    const checkRes = await fetch(publicUrl, { 
+                    const testUrl = `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${encodeURIComponent(variant)}`;
+                    const checkRes = await fetch(testUrl, { 
                         method: 'HEAD',
                         headers: {
                             'apikey': SUPABASE_ANON_KEY,
@@ -2040,39 +2056,75 @@
                         }
                     });
                     if (checkRes.ok) {
-                        downloadUrl = publicUrl;
-                        console.log('✅ Public URL works');
+                        downloadUrl = testUrl;
+                        console.log('✅ Found file with variant:', variant);
+                        break;
                     }
                 } catch (e) {
-                    console.warn('⚠️ Public URL error:', e);
+                    // Continue to next variant
                 }
             }
+        }
 
-            // If we have a download URL, open it
-            if (downloadUrl) {
-                window.open(downloadUrl, '_blank');
-                showToast('📥', 'Download started!', 'success');
+        // If still no download URL, try listing bucket contents
+        if (!downloadUrl) {
+            try {
+                console.log('🔍 Searching for file in bucket...');
+                const fileName = cleanPath.split('/').pop();
+                console.log('🔍 Searching for:', fileName);
                 
-                setTimeout(() => {
-                    closeCheckoutModal();
-                }, 2000);
-            } else {
-                showToast('⚠️', 'Resource file not found. Please contact support.', 'error');
-                console.error('❌ No download URL could be generated for:', cleanPath);
+                const listRes = await fetch(`${SUPABASE_URL}/storage/v1/object/list/${STORAGE_BUCKET}`, {
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                    }
+                });
+                
+                if (listRes.ok) {
+                    const files = await listRes.json();
+                    const matchingFiles = files.filter(f => {
+                        const fName = f.name.split('/').pop();
+                        return fName.includes(fileName.replace(/_/g, '')) || 
+                               fileName.includes(fName.replace(/_/g, ''));
+                    });
+                    
+                    if (matchingFiles.length > 0) {
+                        const foundPath = matchingFiles[0].name;
+                        const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${encodeURIComponent(foundPath)}`;
+                        downloadUrl = publicUrl;
+                        console.log('📁 Found file:', publicUrl);
+                    }
+                }
+            } catch (e) {
+                console.warn('⚠️ List files error:', e);
             }
-
-        } catch (error) {
-            console.error('❌ Free download error:', error);
-            showToast('❌', 'Failed to download: ' + error.message, 'error');
         }
 
-        if (verifyBtn) {
+        // If we have a download URL, open it
+        if (downloadUrl) {
+            window.open(downloadUrl, '_blank');
+            showToast('📥', 'Download started!', 'success');
+            
             setTimeout(() => {
-                verifyBtn.disabled = false;
-                verifyBtn.classList.remove('loading');
-            }, 3000);
+                closeCheckoutModal();
+            }, 2000);
+        } else {
+            showToast('⚠️', 'Resource file not found. Please contact support.', 'error');
+            console.error('❌ No download URL could be generated for:', cleanPath);
         }
+
+    } catch (error) {
+        console.error('❌ Free download error:', error);
+        showToast('❌', 'Failed to download: ' + error.message, 'error');
     }
+
+    if (verifyBtn) {
+        setTimeout(() => {
+            verifyBtn.disabled = false;
+            verifyBtn.classList.remove('loading');
+        }, 3000);
+    }
+}
 
     // ── INITIATE PAYMENT (PREMIUM) ──
     async function initiatePayment() {
