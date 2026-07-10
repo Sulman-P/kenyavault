@@ -1069,8 +1069,6 @@
                             const data = await rRes.json();
                             setResources(data || []);
                             addDebug(`✅ Loaded ${data.length} resources`, 'success');
-                        } else if (rRes.status === 404) {
-                            addDebug('⚠️ Resources table not found', 'info');
                         } else {
                             addDebug('❌ Failed to load resources: ' + rRes.status, 'error');
                         }
@@ -1078,7 +1076,7 @@
                         addDebug('❌ Error loading resources: ' + e.message, 'error');
                     }
 
-                    // Load orders - using tutor_id filter
+                    // Load orders
                     try {
                         const oRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?tutor_id=eq.${tutorId}&select=*&order=created_at.desc`, {
                             headers: { 
@@ -1091,16 +1089,14 @@
                             const data = await oRes.json();
                             setOrders(data || []);
                             addDebug(`✅ Loaded ${data.length} orders`, 'success');
-                        } else if (oRes.status === 404) {
-                            addDebug('⚠️ Orders table not found', 'info');
                         } else {
                             addDebug('❌ Failed to load orders: ' + oRes.status, 'error');
                         }
                     } catch (e) { 
-                        addDebug('⚠️ Orders table not available: ' + e.message, 'info');
+                        addDebug('❌ Error loading orders: ' + e.message, 'error');
                     }
 
-                    // Load classes - using class_date
+                    // Load classes - using class_date for ordering
                     try {
                         const cRes = await fetch(`${SUPABASE_URL}/rest/v1/classes?tutor_id=eq.${tutorId}&select=*&order=class_date.asc`, {
                             headers: { 
@@ -1113,13 +1109,28 @@
                             const data = await cRes.json();
                             setClasses(data || []);
                             addDebug(`✅ Loaded ${data.length} classes`, 'success');
-                        } else if (cRes.status === 404) {
-                            addDebug('⚠️ Classes table not found', 'info');
+                        } else if (cRes.status === 400) {
+                            // If 400, try without order by
+                            addDebug('⚠️ Order by class_date failed, trying without order', 'info');
+                            const cRes2 = await fetch(`${SUPABASE_URL}/rest/v1/classes?tutor_id=eq.${tutorId}&select=*`, {
+                                headers: { 
+                                    'apikey': SUPABASE_ANON_KEY, 
+                                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                                    'Content-Type': 'application/json'
+                                }
+                            });
+                            if (cRes2.ok) {
+                                const data = await cRes2.json();
+                                setClasses(data || []);
+                                addDebug(`✅ Loaded ${data.length} classes (no order)`, 'success');
+                            } else {
+                                addDebug('❌ Failed to load classes: ' + cRes2.status, 'error');
+                            }
                         } else {
                             addDebug('❌ Failed to load classes: ' + cRes.status, 'error');
                         }
                     } catch (e) { 
-                        addDebug('⚠️ Classes table not available: ' + e.message, 'info');
+                        addDebug('❌ Error loading classes: ' + e.message, 'error');
                     }
 
                 } catch (e) { 
@@ -1771,9 +1782,7 @@
                         </div>
                         {orders.length === 0 && resources.length === 0 ? (
                             <p style={{ color: '#6b7280', textAlign: 'center', padding: '20px 0' }}>
-                                {debugInfo.some(d => d.message.includes('not found')) ? 
-                                    '⚠️ Some tables may not exist. Please run the SQL to create them.' : 
-                                    'No activity yet. Start by uploading your first resource!'}
+                                No activity yet. Start by uploading your first resource!
                             </p>
                         ) : (
                             <div>
@@ -1868,7 +1877,7 @@
 
         // ── ORDERS TAB ──
         function OrdersTab() {
-            const { orders, debugInfo } = useTutor();
+            const { orders } = useTutor();
 
             if (orders.length === 0) {
                 return (
@@ -1877,9 +1886,7 @@
                             <div style={{ fontSize: '3rem', marginBottom: '16px' }}>📦</div>
                             <p style={{ color: '#6b7280' }}>No orders yet.</p>
                             <p style={{ color: '#9ca3af', fontSize: '0.9rem' }}>
-                                {debugInfo.some(d => d.message.includes('Orders table not found')) ? 
-                                    '⚠️ Orders table not found. Please run the SQL to create it.' : 
-                                    'Orders will appear when students purchase your resources.'}
+                                Orders will appear when students purchase your resources.
                             </p>
                         </div>
                     </div>
@@ -1930,7 +1937,7 @@
 
         // ── CLASSES TAB ──
         function ClassesTab() {
-            const { classes, showNotification, loadTutorData, debugInfo } = useTutor();
+            const { classes, showNotification, loadTutorData } = useTutor();
             const tutorId = sessionStorage.getItem('tutor_id');
             const [showCreateForm, setShowCreateForm] = useState(false);
             const [classData, setClassData] = useState({
@@ -1999,63 +2006,6 @@
                 }
                 setSubmitting(false);
             };
-
-            if (classes.length === 0 && !debugInfo.some(d => d.message.includes('Classes table not found'))) {
-                return (
-                    <div className="content-card">
-                        <div className="card-header">
-                            <h3>📅 Classes</h3>
-                            <button onClick={() => setShowCreateForm(!showCreateForm)} className="btn-sm">
-                                {showCreateForm ? '✕ Cancel' : '+ Create Class'}
-                            </button>
-                        </div>
-                        {showCreateForm && (
-                            <form onSubmit={createClass} style={{ marginBottom: '20px', padding: '16px', background: 'rgba(212,160,23,0.05)', borderRadius: '8px' }}>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="form-label">Class Title <span className="req">*</span></label>
-                                        <input type="text" value={classData.title} onChange={(e) => setClassData({...classData, title: e.target.value})} className="form-input" required />
-                                    </div>
-                                    <div>
-                                        <label className="form-label">Description</label>
-                                        <input type="text" value={classData.description} onChange={(e) => setClassData({...classData, description: e.target.value})} className="form-input" />
-                                    </div>
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-                                    <div>
-                                        <label className="form-label">Date <span className="req">*</span></label>
-                                        <input type="date" value={classData.class_date} onChange={(e) => setClassData({...classData, class_date: e.target.value})} className="form-input" required />
-                                    </div>
-                                    <div>
-                                        <label className="form-label">Time <span className="req">*</span></label>
-                                        <input type="time" value={classData.class_time} onChange={(e) => setClassData({...classData, class_time: e.target.value})} className="form-input" required />
-                                    </div>
-                                    <div>
-                                        <label className="form-label">Duration (min)</label>
-                                        <input type="number" value={classData.duration} onChange={(e) => setClassData({...classData, duration: e.target.value})} className="form-input" min="15" step="15" />
-                                    </div>
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                                    <div>
-                                        <label className="form-label">Price (KES) <span className="req">*</span></label>
-                                        <input type="number" value={classData.price} onChange={(e) => setClassData({...classData, price: parseInt(e.target.value) || 0})} className="form-input" min="0" required />
-                                    </div>
-                                    <div>
-                                        <label className="form-label">Max Students</label>
-                                        <input type="number" value={classData.max_students} onChange={(e) => setClassData({...classData, max_students: parseInt(e.target.value) || 20})} className="form-input" min="1" />
-                                    </div>
-                                </div>
-                                <button type="submit" disabled={submitting} className="btn-gold mt-4" style={{ width: 'auto' }}>
-                                    {submitting ? '⏳ Creating...' : '✅ Create Class'}
-                                </button>
-                            </form>
-                        )}
-                        <div style={{ textAlign: 'center', padding: '20px 0', color: '#6b7280' }}>
-                            No classes scheduled yet.
-                        </div>
-                    </div>
-                );
-            }
 
             return (
                 <div className="content-card">
