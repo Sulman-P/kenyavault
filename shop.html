@@ -1939,81 +1939,222 @@
         }
     }
 
-    // ── DOWNLOAD FREE RESOURCE ──
-    async function downloadFreeResource(product) {
-        const phone = phoneInput.value.trim().replace(/\s/g, '');
-        const customerName = customerNameInput.value.trim();
+   // ── DOWNLOAD FREE RESOURCE ──
+async function downloadFreeResource(product) {
+    const phone = phoneInput.value.trim().replace(/\s/g, '');
+    const customerName = customerNameInput.value.trim();
 
-        if (!customerName) {
-            customerNameInput.classList.add('error');
-            showToast('⚠️', 'Please enter your full name', 'error');
-            customerNameInput.focus();
+    if (!customerName) {
+        customerNameInput.classList.add('error');
+        showToast('⚠️', 'Please enter your full name', 'error');
+        customerNameInput.focus();
+        return;
+    }
+    customerNameInput.classList.remove('error');
+
+    if (!phone || phone.length < 9) {
+        phoneInput.classList.add('error');
+        showToast('⚠️', 'Please enter a valid phone number', 'error');
+        phoneInput.focus();
+        return;
+    }
+    phoneInput.classList.remove('error');
+
+    const verifyBtn = document.querySelector('.btn-verify-order');
+    if (verifyBtn) {
+        verifyBtn.disabled = true;
+        verifyBtn.classList.add('loading');
+    }
+
+    try {
+        // Create order for tracking
+        const sessionId = getOrCreateSessionId();
+        const orderData = {
+            resource_id: product.id,
+            session_id: sessionId,
+            payment_status: 'completed',
+            customer_name: customerName,
+            phone: phone,
+            item_title: product.title,
+            item_price: 0,
+            total_amount: 0,
+            ip_address: await getClientIP(),
+            user_agent: navigator.userAgent,
+            created_at: new Date().toISOString()
+        };
+
+        console.log('📝 Creating free order:', orderData);
+
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
+            method: 'POST',
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=representation'
+            },
+            body: JSON.stringify(orderData)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.warn('⚠️ Order creation warning:', errorText);
+            // Continue with download even if order fails
+        }
+
+        // Get the file path from the product
+        let filePath = product.file_path || product.file_url || '';
+        console.log('📁 Original file path:', filePath);
+
+        if (!filePath) {
+            showToast('⚠️', 'Resource file not found. Please contact support.', 'error');
+            if (verifyBtn) {
+                verifyBtn.disabled = false;
+                verifyBtn.classList.remove('loading');
+            }
             return;
         }
-        customerNameInput.classList.remove('error');
 
-        if (!phone || phone.length < 9) {
-            phoneInput.classList.add('error');
-            showToast('⚠️', 'Please enter a valid phone number', 'error');
-            phoneInput.focus();
+        // Clean the file path - remove any bucket prefixes
+        let cleanPath = filePath;
+        // Remove bucket names and prefixes
+        cleanPath = cleanPath.replace(/^kenyavault-pdfs\//, '');
+        cleanPath = cleanPath.replace(/^kenyavault-resources\//, '');
+        cleanPath = cleanPath.replace(/^academic-resources\//, '');
+        cleanPath = cleanPath.replace(/^resources\//, '');
+        cleanPath = cleanPath.replace(/^covers\//, '');
+        // Remove full URLs
+        cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
+        // Remove leading slashes
+        cleanPath = cleanPath.replace(/^\/+/, '');
+        // Decode URL encoding
+        cleanPath = decodeURIComponent(cleanPath);
+
+        console.log('📁 Cleaned file path:', cleanPath);
+
+        if (!cleanPath) {
+            showToast('⚠️', 'Invalid file path. Please contact support.', 'error');
+            if (verifyBtn) {
+                verifyBtn.disabled = false;
+                verifyBtn.classList.remove('loading');
+            }
             return;
         }
-        phoneInput.classList.remove('error');
 
-        const verifyBtn = document.querySelector('.btn-verify-order');
-        if (verifyBtn) {
-            verifyBtn.disabled = true;
-            verifyBtn.classList.add('loading');
-        }
-
+        // Try to get a signed URL first
+        let downloadUrl = null;
         try {
-            const { orderRef } = await createOrder(product, customerName, phone);
-            currentOrderRef = orderRef;
+            const signedRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${STORAGE_BUCKET}/${encodeURIComponent(cleanPath)}?expiresIn=300`, {
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                }
+            });
 
-            const filePath = product.file_path || product.file_url;
-            if (filePath) {
-                let cleanPath = filePath;
-                cleanPath = cleanPath.replace(/^kenyavault-pdfs\//, '');
-                cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
-                cleanPath = cleanPath.replace(/^\/+/, '');
-                cleanPath = decodeURIComponent(cleanPath);
+            if (signedRes.ok) {
+                const signedData = await signedRes.json();
+                downloadUrl = signedData.signedURL;
+                console.log('✅ Signed URL generated:', downloadUrl);
+            } else {
+                console.warn('⚠️ Signed URL failed, trying public URL');
+            }
+        } catch (e) {
+            console.warn('⚠️ Signed URL error:', e);
+        }
 
-                const signedRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${STORAGE_BUCKET}/${encodeURIComponent(cleanPath)}?expiresIn=300`, {
+        // If signed URL failed, try public URL
+        if (!downloadUrl) {
+            // Try with the full path
+            const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${encodeURIComponent(cleanPath)}`;
+            console.log('📁 Trying public URL:', publicUrl);
+            
+            // Check if file exists
+            try {
+                const checkRes = await fetch(publicUrl, { 
+                    method: 'HEAD',
                     headers: {
                         'apikey': SUPABASE_ANON_KEY,
                         'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
                     }
                 });
-
-                if (signedRes.ok) {
-                    const signedData = await signedRes.json();
-                    window.open(signedData.signedURL, '_blank');
-                    showToast('📥', 'Download started!', 'success');
+                if (checkRes.ok) {
+                    downloadUrl = publicUrl;
+                    console.log('✅ Public URL works');
                 } else {
-                    const publicUrl = `${STORAGE_URL}/${encodeURIComponent(cleanPath)}`;
-                    window.open(publicUrl, '_blank');
-                    showToast('📥', 'Download started!', 'success');
+                    console.warn('⚠️ Public URL failed with status:', checkRes.status);
                 }
-                
-                setTimeout(() => {
-                    closeCheckoutModal();
-                }, 2000);
-            } else {
-                showToast('⚠️', 'Resource file not found', 'error');
+            } catch (e) {
+                console.warn('⚠️ Public URL check error:', e);
             }
-
-        } catch (error) {
-            console.error('❌ Free download error:', error);
-            showToast('❌', 'Failed to download: ' + error.message, 'error');
         }
 
-        if (verifyBtn) {
+        // If still no download URL, try listing files in the bucket
+        if (!downloadUrl) {
+            try {
+                console.log('🔍 Searching for file in bucket...');
+                const listRes = await fetch(`${SUPABASE_URL}/storage/v1/object/list/${STORAGE_BUCKET}`, {
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                    }
+                });
+                if (listRes.ok) {
+                    const files = await listRes.json();
+                    console.log(`📁 Found ${files.length} files in bucket`);
+                    
+                    // Search for file by name
+                    const fileName = cleanPath.split('/').pop();
+                    console.log('🔍 Searching for:', fileName);
+                    
+                    const matchingFiles = files.filter(f => f.name.includes(fileName) || fileName.includes(f.name));
+                    if (matchingFiles.length > 0) {
+                        console.log('✅ Found matching files:', matchingFiles);
+                        const foundPath = matchingFiles[0].name;
+                        const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${encodeURIComponent(foundPath)}`;
+                        downloadUrl = publicUrl;
+                        console.log('📁 Using found file:', publicUrl);
+                    } else {
+                        // Try searching by title
+                        const searchTitle = product.title.toLowerCase().replace(/\s+/g, '_');
+                        const titleMatch = files.filter(f => f.name.toLowerCase().includes(searchTitle));
+                        if (titleMatch.length > 0) {
+                            const foundPath = titleMatch[0].name;
+                            const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${encodeURIComponent(foundPath)}`;
+                            downloadUrl = publicUrl;
+                            console.log('📁 Found by title:', publicUrl);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn('⚠️ List files error:', e);
+            }
+        }
+
+        // If we have a download URL, open it
+        if (downloadUrl) {
+            window.open(downloadUrl, '_blank');
+            showToast('📥', 'Download started!', 'success');
+            
             setTimeout(() => {
-                verifyBtn.disabled = false;
-                verifyBtn.classList.remove('loading');
-            }, 3000);
+                closeCheckoutModal();
+            }, 2000);
+        } else {
+            showToast('⚠️', 'Resource file not found. Please contact support.', 'error');
+            console.error('❌ No download URL could be generated for:', cleanPath);
         }
+
+    } catch (error) {
+        console.error('❌ Free download error:', error);
+        showToast('❌', 'Failed to download: ' + error.message, 'error');
     }
+
+    if (verifyBtn) {
+        setTimeout(() => {
+            verifyBtn.disabled = false;
+            verifyBtn.classList.remove('loading');
+        }, 3000);
+    }
+}
 
     // ── INITIATE PAYMENT (PREMIUM) ──
     async function initiatePayment() {
@@ -2581,41 +2722,47 @@
     }
 
     function buildCardHTML(r) {
-        const badgeClass = r.badge === 'popular' ? 'badge-popular' :
-            r.badge === 'hot' ? 'badge-hot' :
-            r.badge === 'exam' ? 'badge-exam' :
-            r.badge === 'kjsea' ? 'badge-kjsea' : 'badge-new';
-        const badgeText = r.badge === 'popular' ? 'Popular' :
-            r.badge === 'hot' ? 'Hot 🔥' :
-            r.badge === 'exam' ? 'Exam Prep' :
-            r.badge === 'kjsea' ? 'KJSEA' : 'New';
+    const badgeClass = r.badge === 'popular' ? 'badge-popular' :
+        r.badge === 'hot' ? 'badge-hot' :
+        r.badge === 'exam' ? 'badge-exam' :
+        r.badge === 'kjsea' ? 'badge-kjsea' : 'badge-new';
+    const badgeText = r.badge === 'popular' ? 'Popular' :
+        r.badge === 'hot' ? 'Hot 🔥' :
+        r.badge === 'exam' ? 'Exam Prep' :
+        r.badge === 'kjsea' ? 'KJSEA' : 'New';
 
-        const isFree = (r.price === 0 || r.price === null || r.price === undefined) || 
-                       r.resource_type === 'free';
-        const priceDisplay = isFree ? 'FREE' : getPricingDisplay(r);
-        const productId = r.id || 'unknown';
-        const safeTitle = (r.title || '').replace(/"/g, '&quot;').replace(/'/g, "\\'");
-        const rating = r.rating || Math.floor(Math.random() * 2) + 3;
+    const isFree = (r.price === 0 || r.price === null || r.price === undefined) || 
+                   r.resource_type === 'free';
+    const priceDisplay = isFree ? 'FREE' : getPricingDisplay(r);
+    const productId = r.id || 'unknown';
+    const safeTitle = (r.title || '').replace(/"/g, '&quot;').replace(/'/g, "\\'");
+    const rating = r.rating || Math.floor(Math.random() * 2) + 3;
 
-        let coverHTML;
-        if (r.cover_image_url) {
-            coverHTML = `
-                <div class="pc-cover">
-                    <img src="${r.cover_image_url}" alt="${safeTitle}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" />
-                    <div class="cover-fallback" style="display:none;">${getSubjectEmoji(r.subject) || '📄'}</div>
-                    <span class="cover-badge">${badgeText}</span>
-                    <span class="cover-level">${getLevelDisplay(r.level)}</span>
-                </div>
-            `;
-        } else {
-            coverHTML = `
-                <div class="pc-cover">
-                    <div class="cover-fallback">${getSubjectEmoji(r.subject) || '📄'}</div>
-                    <span class="cover-badge">${badgeText}</span>
-                    <span class="cover-level">${getLevelDisplay(r.level)}</span>
-                </div>
-            `;
-        }
+    // Add FREE badge to cover
+    const freeBadge = isFree ? `<span class="cover-badge" style="background:#16a34a;color:white;">FREE</span>` : `<span class="cover-badge">${badgeText}</span>`;
+
+    let coverHTML;
+    if (r.cover_image_url) {
+        coverHTML = `
+            <div class="pc-cover">
+                <img src="${r.cover_image_url}" alt="${safeTitle}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" />
+                <div class="cover-fallback" style="display:none;">${getSubjectEmoji(r.subject) || '📄'}</div>
+                ${freeBadge}
+                <span class="cover-level">${getLevelDisplay(r.level)}</span>
+            </div>
+        `;
+    } else {
+        coverHTML = `
+            <div class="pc-cover">
+                <div class="cover-fallback">${getSubjectEmoji(r.subject) || '📄'}</div>
+                ${freeBadge}
+                <span class="cover-level">${getLevelDisplay(r.level)}</span>
+            </div>
+        `;
+    }
+
+    // ... rest of the function
+}
 
         const badges = [];
         if (r.kicd_aligned !== false) badges.push('<span class="badge badge-kicd">KICD</span>');
