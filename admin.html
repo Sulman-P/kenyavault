@@ -2185,9 +2185,9 @@ function ResourcesModule() {
             );
         }
 
-        // ── ORDERS MODULE ── (UPDATED WITH REVENUE & PROPER STATUS)
+        // ── ORDERS MODULE ── (UPDATED WITH DEBUGGING)
 function OrdersModule() {
-    const { orders, loadOrders, showNotification, newOrderIds, setNewOrderIds } = useApp();
+    const { orders, loadOrders, showNotification, newOrderIds, setNewOrderIds, pendingOrderCount, setPendingOrderCount } = useApp();
     const [filter, setFilter] = useState('all');
     const [loadingOrderId, setLoadingOrderId] = useState(null);
     const [selectedOrder, setSelectedOrder] = useState(null);
@@ -2195,6 +2195,8 @@ function OrdersModule() {
     const [orderItems, setOrderItems] = useState([]);
     const [generatingLinks, setGeneratingLinks] = useState({});
     const [searchTerm, setSearchTerm] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
     const [revenueStats, setRevenueStats] = useState({
         totalRevenue: 0,
         pendingRevenue: 0,
@@ -2204,26 +2206,27 @@ function OrdersModule() {
         completedOrders: 0
     });
 
-    // Calculate revenue stats whenever orders change
+    // Debug: Log orders when they change
     useEffect(() => {
+        console.log('📊 Orders updated:', orders);
+        console.log('📊 Orders count:', orders.length);
+        if (orders.length > 0) {
+            console.log('📊 First order:', orders[0]);
+        }
         calculateRevenueStats();
     }, [orders]);
 
     const calculateRevenueStats = () => {
-        // Total revenue from all orders
         const total = orders.reduce((sum, o) => sum + (o.total_amount || o.item_price || 0), 0);
         
-        // Pending revenue (orders that are pending or pending_verification)
         const pending = orders
             .filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification' || o.status === 'pending')
             .reduce((sum, o) => sum + (o.total_amount || o.item_price || 0), 0);
         
-        // Completed revenue (confirmed, paid, or completed)
         const completed = orders
             .filter(o => o.payment_status === 'confirmed' || o.payment_status === 'paid' || o.payment_status === 'completed' || o.status === 'completed' || o.status === 'confirmed' || o.status === 'paid')
             .reduce((sum, o) => sum + (o.total_amount || o.item_price || 0), 0);
         
-        // Counts
         const pendingCount = orders.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification' || o.status === 'pending').length;
         const completedCount = orders.filter(o => o.payment_status === 'confirmed' || o.payment_status === 'paid' || o.payment_status === 'completed' || o.status === 'completed' || o.status === 'confirmed' || o.status === 'paid').length;
         
@@ -2235,10 +2238,27 @@ function OrdersModule() {
             pendingOrders: pendingCount,
             completedOrders: completedCount
         });
+
+        // Update global pending count
+        setPendingOrderCount(pendingCount);
     };
 
+    // Force load orders on mount
     useEffect(() => {
-        const interval = setInterval(() => loadOrders(), 10000);
+        console.log('🔄 Loading orders on mount...');
+        setLoading(true);
+        loadOrders().then(() => {
+            setLoading(false);
+        }).catch((err) => {
+            console.error('❌ Error loading orders:', err);
+            setError(err.message);
+            setLoading(false);
+        });
+        
+        const interval = setInterval(() => {
+            console.log('🔄 Auto-refreshing orders...');
+            loadOrders();
+        }, 30000);
         return () => clearInterval(interval);
     }, []);
 
@@ -2431,9 +2451,11 @@ function OrdersModule() {
         try {
             const updateData = {
                 payment_status: 'confirmed',
-                status: 'confirmed',
-                confirmed_at: new Date().toISOString()
+                status: 'confirmed'
             };
+            
+            console.log('📝 Confirming order:', order.id, order.order_ref);
+            console.log('📝 Update data:', updateData);
             
             let updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${order.id}`, {
                 method: 'PATCH',
@@ -2446,6 +2468,7 @@ function OrdersModule() {
             });
 
             if (!updateRes.ok && order.order_ref) {
+                console.log('🔄 Trying update by order_ref:', order.order_ref);
                 updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?order_ref=eq.${order.order_ref}`, {
                     method: 'PATCH',
                     headers: {
@@ -2457,7 +2480,14 @@ function OrdersModule() {
                 });
             }
 
-            if (!updateRes.ok) throw new Error('Failed to update order');
+            if (!updateRes.ok) {
+                const errorText = await updateRes.text();
+                console.error('❌ Update failed:', errorText);
+                throw new Error(`Failed to update order: ${updateRes.status} - ${errorText}`);
+            }
+
+            const result = await updateRes.json();
+            console.log('✅ Order updated:', result);
 
             showNotification('✅ Order confirmed!', 'success');
             await loadOrders();
@@ -2475,7 +2505,12 @@ function OrdersModule() {
         if (!confirm(`Reject order #${ref}?`)) return;
         
         try {
-            const updateData = { payment_status: 'rejected', status: 'rejected' };
+            const updateData = { 
+                payment_status: 'rejected', 
+                status: 'rejected'
+            };
+            
+            console.log('📝 Rejecting order:', order.id, order.order_ref);
             
             let updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${order.id}`, {
                 method: 'PATCH',
@@ -2499,13 +2534,19 @@ function OrdersModule() {
                 });
             }
 
-            if (updateRes.ok) {
-                showNotification('❌ Order rejected', 'success');
-                await loadOrders();
-                setNewOrderIds(prev => prev.filter(id => id !== order.id));
+            if (!updateRes.ok) {
+                const errorText = await updateRes.text();
+                console.error('❌ Reject failed:', errorText);
+                throw new Error(`Failed to reject order: ${updateRes.status}`);
             }
+
+            showNotification('❌ Order rejected', 'success');
+            await loadOrders();
+            setNewOrderIds(prev => prev.filter(id => id !== order.id));
+            
         } catch (e) {
-            showNotification('Error rejecting order', 'error');
+            console.error('Reject error:', e);
+            showNotification('Error rejecting order: ' + e.message, 'error');
         }
     };
 
@@ -2685,7 +2726,11 @@ function OrdersModule() {
                order.status === 'paid';
     };
 
+    // Filter orders with better debugging
     const filteredOrders = orders.filter(o => {
+        // Debug each order
+        console.log('🔍 Processing order:', o.order_ref, 'Status:', o.status, 'Payment:', o.payment_status);
+        
         if (searchTerm) {
             const search = searchTerm.toLowerCase();
             const match = 
@@ -2705,6 +2750,39 @@ function OrdersModule() {
         if (filter === 'cancelled') return o.payment_status === 'cancelled' || o.payment_status === 'rejected' || o.status === 'cancelled' || o.status === 'rejected';
         return true;
     });
+
+    console.log('📊 Filtered orders count:', filteredOrders.length);
+
+    // Show loading state
+    if (loading) {
+        return (
+            <div className="flex justify-center items-center h-64">
+                <div className="text-center">
+                    <div className="spinner"></div>
+                    <p className="mt-4 text-gray-500 dark:text-gray-400">Loading orders...</p>
+                </div>
+            </div>
+        );
+    }
+
+    // Show error state
+    if (error) {
+        return (
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                <div className="text-center py-8">
+                    <span className="text-4xl block mb-4">⚠️</span>
+                    <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Error loading orders</h3>
+                    <p className="text-gray-500 dark:text-gray-400 mt-2">{error}</p>
+                    <button 
+                        onClick={() => { setError(null); setLoading(true); loadOrders().then(() => setLoading(false)).catch((err) => setError(err.message)); }} 
+                        className="mt-4 px-4 py-2 bg-[#D4A017] text-white rounded-lg hover:bg-[#FCD34D] transition"
+                    >
+                        🔄 Retry
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="fade-in">
@@ -2742,7 +2820,7 @@ function OrdersModule() {
                             </span>
                         )}
                     </h2>
-                    <button onClick={() => loadOrders()} className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg text-xs hover:bg-blue-200 transition">
+                    <button onClick={() => { setLoading(true); loadOrders().then(() => setLoading(false)); }} className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg text-xs hover:bg-blue-200 transition">
                         🔄 Refresh
                     </button>
                 </div>
@@ -2767,7 +2845,28 @@ function OrdersModule() {
 
                 {filteredOrders.length === 0 ? (
                     <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                        {orders.length === 0 ? 'No orders found. Orders will appear here when customers make purchases.' : 'No orders match your filters.'}
+                        {orders.length === 0 ? (
+                            <>
+                                <span className="text-4xl block mb-4">📭</span>
+                                <h3 className="text-lg font-semibold text-gray-800 dark:text-white">No orders found</h3>
+                                <p className="mt-2">Orders will appear here when customers make purchases.</p>
+                                <button 
+                                    onClick={() => { setLoading(true); loadOrders().then(() => setLoading(false)); }} 
+                                    className="mt-4 px-4 py-2 bg-[#D4A017] text-white rounded-lg hover:bg-[#FCD34D] transition"
+                                >
+                                    🔄 Refresh
+                                </button>
+                            </>
+                        ) : (
+                            <>
+                                <span className="text-4xl block mb-4">🔍</span>
+                                <h3 className="text-lg font-semibold text-gray-800 dark:text-white">No orders match your filters</h3>
+                                <p className="mt-2">Try adjusting your search or filter criteria.</p>
+                                <button onClick={() => { setSearchTerm(''); setFilter('all'); }} className="mt-4 px-4 py-2 bg-[#D4A017] text-white rounded-lg hover:bg-[#FCD34D] transition">
+                                    Reset Filters
+                                </button>
+                            </>
+                        )}
                     </div>
                 ) : (
                     <div className="overflow-x-auto">
@@ -2978,14 +3077,14 @@ function OrdersModule() {
                                 >
                                     Close
                                 </button>
-                              </div>
-                          </div>
-                      </div>
-                   </div>
-                 )}
-            </div>
-          );
-       }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
         // ── FINANCE MODULE ──
         function FinanceModule() {
             const { orders, tutors, payments, setPayments, showNotification, TUTOR_PAYOUT_PERCENTAGE } = useApp();
