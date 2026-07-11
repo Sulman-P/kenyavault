@@ -542,6 +542,7 @@
             const [toast, setToast] = useState(null);
             const [newOrderIds, setNewOrderIds] = useState([]);
             const [payments, setPayments] = useState([]);
+            const [pendingOrderCount, setPendingOrderCount] = useState(0);
 
             useEffect(() => {
                 localStorage.setItem('kv-dark-mode', darkMode);
@@ -585,7 +586,7 @@
                     });
                     if (response.ok) {
                         const data = await response.json();
-                        const pendingOrders = data.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification');
+                        const pendingOrders = data.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification' || o.status === 'pending');
                         
                         const currentIds = pendingOrders.map(o => o.id);
                         const newIds = currentIds.filter(id => !newOrderIds.includes(id));
@@ -594,9 +595,11 @@
                             setNewOrderIds(prev => [...prev, ...newIds]);
                             const newOrders = pendingOrders.filter(o => newIds.includes(o.id));
                             newOrders.forEach(order => {
+                                const ref = order.order_ref || order.payment_ref || order.id.slice(0, 8).toUpperCase();
                                 showToast(
-                                    '🆕 New Order!',
-                                    `Order #${order.payment_ref || order.id.slice(0, 8).toUpperCase()} - ${order.customer_name || 'Customer'}`
+                                    '🆕 New Pending Order!',
+                                    `Order #${ref} - ${order.customer_name || 'Customer'} needs approval (KES ${order.total_amount || order.item_price || 0})`,
+                                    'warning'
                                 );
                             });
                             await loadOrders();
@@ -607,8 +610,8 @@
                 }
             };
 
-            const showToast = (title, message) => {
-                setToast({ title, message, id: Date.now() });
+            const showToast = (title, message, type = 'success') => {
+                setToast({ title, message, type, id: Date.now() });
                 setTimeout(() => setToast(null), 6000);
             };
 
@@ -624,9 +627,14 @@
                     if (response.ok) {
                         const data = await response.json();
                         setOrders(data || []);
+                        // Update pending count
+                        const pending = data.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification' || o.status === 'pending');
+                        setPendingOrderCount(pending.length);
+                        return data;
                     }
                 } catch (e) {
                     console.error('Load orders error:', e);
+                    throw e;
                 }
             };
 
@@ -707,7 +715,7 @@
             };
 
             const showNotification = (msg, type = 'success') => {
-                setToast({ title: type === 'success' ? '✅ Success' : '❌ Error', message: msg, id: Date.now() });
+                setToast({ title: type === 'success' ? '✅ Success' : '❌ Error', message: msg, type: type, id: Date.now() });
                 setTimeout(() => setToast(null), 4000);
             };
 
@@ -733,7 +741,9 @@
                     newOrderIds,
                     setNewOrderIds,
                     showNotification,
-                    TUTOR_PAYOUT_PERCENTAGE
+                    TUTOR_PAYOUT_PERCENTAGE,
+                    pendingOrderCount,
+                    setPendingOrderCount
                 }}>
                     {children}
                 </AppContext.Provider>
@@ -746,18 +756,79 @@
             return context;
         }
 
-        // ── TOAST ──
+        // ── TOAST CONTAINER ──
         function ToastContainer() {
-            const { toast } = useApp();
+            const { toast, setToast } = useApp();
+            const [hiding, setHiding] = useState(false);
+
+            useEffect(() => {
+                if (toast) {
+                    setHiding(false);
+                    const timer = setTimeout(() => {
+                        setHiding(true);
+                        setTimeout(() => {
+                            setToast(null);
+                        }, 300);
+                    }, 5500);
+                    return () => clearTimeout(timer);
+                }
+            }, [toast, setToast]);
+
             if (!toast) return null;
+
+            const icons = {
+                success: '✅',
+                error: '❌',
+                warning: '⚠️',
+                info: 'ℹ️'
+            };
 
             return (
                 <div className="toast-container">
-                    <div className="toast-item">
-                        <div className="toast-title">{toast.title}</div>
-                        <div className="toast-msg">{toast.message}</div>
+                    <div className={`toast-item ${toast.type || 'info'} ${hiding ? 'hiding' : ''}`}>
+                        <span className="toast-icon">{icons[toast.type] || 'ℹ️'}</span>
+                        <div className="toast-content">
+                            <div className="toast-title">{toast.title}</div>
+                            <div className="toast-message">{toast.message}</div>
+                        </div>
+                        <button className="toast-close" onClick={() => {
+                            setHiding(true);
+                            setTimeout(() => setToast(null), 300);
+                        }}>✕</button>
                     </div>
                 </div>
+            );
+        }
+
+        // ── PENDING ALERT ──
+        function PendingAlert() {
+            const { pendingOrderCount, setCurrentModule } = useApp();
+            const [visible, setVisible] = useState(true);
+
+            useEffect(() => {
+                if (pendingOrderCount > 0) {
+                    setVisible(true);
+                    const timer = setTimeout(() => {
+                        setVisible(false);
+                    }, 10000);
+                    return () => clearTimeout(timer);
+                }
+            }, [pendingOrderCount]);
+
+            if (pendingOrderCount === 0 || !visible) return null;
+
+            return (
+                <button 
+                    className="pending-alert"
+                    onClick={() => {
+                        setCurrentModule('orders');
+                        setVisible(false);
+                    }}
+                >
+                    <span className="alert-icon">🔔</span>
+                    <span className="alert-text">{pendingOrderCount} order{pendingOrderCount > 1 ? 's' : ''} pending approval</span>
+                    <span className="alert-count">View</span>
+                </button>
             );
         }
 
@@ -812,7 +883,7 @@
 
         // ── SIDEBAR ──
         function Sidebar() {
-            const { darkMode, sidebarOpen, mobileSidebarOpen, currentModule, setCurrentModule, toggleSidebar, logout } = useApp();
+            const { darkMode, sidebarOpen, mobileSidebarOpen, currentModule, setCurrentModule, toggleSidebar, logout, pendingOrderCount } = useApp();
             const isVisible = sidebarOpen || mobileSidebarOpen;
 
             return (
@@ -825,13 +896,22 @@
                             <span className={`text-[10px] font-bold text-[#D4A017] bg-[#D4A017]/20 px-2 py-0.5 rounded-full transition-opacity duration-300 ${!sidebarOpen ? 'lg:opacity-0 lg:group-hover:opacity-100' : 'opacity-100'}`}>Admin</span>
                         </div>
                         <nav className="flex-1 overflow-y-auto py-4 px-3">
-                            {adminModules.map((mod) => (
-                                <button key={mod.id} onClick={() => { setCurrentModule(mod.id); if (mobileSidebarOpen) toggleSidebar(); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all group/item relative ${currentModule === mod.id ? 'bg-[#D4A017]/20 text-[#FCD34D]' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}>
-                                    <span className="text-xl flex-shrink-0">{mod.icon}</span>
-                                    <span className={`text-sm font-medium whitespace-nowrap transition-opacity duration-300 ${!sidebarOpen ? 'lg:opacity-0 lg:group-hover:opacity-100' : 'opacity-100'}`}>{mod.label}</span>
-                                    <span className={`absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-xs rounded-md opacity-0 pointer-events-none transition-opacity duration-200 ${!sidebarOpen ? 'lg:group-hover/item:opacity-100' : 'opacity-0'}`}>{mod.label}</span>
-                                </button>
-                            ))}
+                            {adminModules.map((mod) => {
+                                const isOrders = mod.id === 'orders';
+                                return (
+                                    <button key={mod.id} onClick={() => { setCurrentModule(mod.id); if (mobileSidebarOpen) toggleSidebar(); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all group/item relative ${currentModule === mod.id ? 'bg-[#D4A017]/20 text-[#FCD34D]' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}>
+                                        <span className="text-xl flex-shrink-0">{mod.icon}</span>
+                                        <span className={`text-sm font-medium whitespace-nowrap transition-opacity duration-300 ${!sidebarOpen ? 'lg:opacity-0 lg:group-hover:opacity-100' : 'opacity-100'}`}>{mod.label}</span>
+                                        {isOrders && pendingOrderCount > 0 && (
+                                            <span className="badge pending-badge" style={{ marginLeft: 'auto' }}>
+                                                {pendingOrderCount}
+                                                <span className="badge-count">{pendingOrderCount}</span>
+                                            </span>
+                                        )}
+                                        <span className={`absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-xs rounded-md opacity-0 pointer-events-none transition-opacity duration-200 ${!sidebarOpen ? 'lg:group-hover/item:opacity-100' : 'opacity-0'}`}>{mod.label}</span>
+                                    </button>
+                                );
+                            })}
                         </nav>
                         <div className="border-t border-[#D4A017]/20 p-4 flex-shrink-0">
                             <button onClick={logout} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-red-400 hover:bg-red-500/10 transition">
@@ -1029,7 +1109,7 @@
 
         // ── DASHBOARD MODULE ──
         function DashboardModule() {
-            const { orders, resources, tutors, classes, showNotification } = useApp();
+            const { orders, resources, tutors, classes, showNotification, pendingOrderCount } = useApp();
             const chartRef = useRef(null);
             const [timeframe, setTimeframe] = useState('daily');
             const [chartData, setChartData] = useState({ labels: [], values: [] });
@@ -1206,7 +1286,7 @@
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                         {[
                             { label: 'Total Revenue', value: 'KES ' + totalRevenue.toLocaleString(), change: '+15%', icon: '💰' },
-                            { label: 'Pending Orders', value: pendingOrders, change: '', icon: '⏳' },
+                            { label: 'Pending Orders', value: pendingOrderCount, change: '', icon: '⏳' },
                             { label: 'Active Tutors', value: activeTutors, change: '', icon: '🧑‍🏫' },
                             { label: 'Live Classes', value: liveClasses, change: '', icon: '📹' },
                         ].map((stat, i) => (
@@ -1265,245 +1345,298 @@
             );
         }
 
-        // ── RESOURCES MODULE ── (FIXED UPLOAD)
-function ResourcesModule() {
-    const { resources, setResources, showToast } = useApp();
-    const [uploading, setUploading] = useState(false);
-    const [selectedFile, setSelectedFile] = useState(null);
-    const [compressedFile, setCompressedFile] = useState(null);
-    const [progress, setProgress] = useState(0);
-    const [formData, setFormData] = useState({
-        title: '', subject: '', level: '', curriculum: 'cbc',
-        resource_type: 'lesson-plan', price: 0, description: ''
-    });
-    const [editingResource, setEditingResource] = useState(null);
-    const [showEditModal, setShowEditModal] = useState(false);
-    const [editFormData, setEditFormData] = useState({ title: '', price: 0, status: 'draft' });
-    const [uploadError, setUploadError] = useState('');
-
-    const loadResources = async () => {
-        try {
-            const response = await fetch(`${SUPABASE_URL}/rest/v1/resources?select=*&order=created_at.desc`, {
-                headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+        // ── RESOURCES MODULE ── (FIXED UPLOAD + EDIT)
+        function ResourcesModule() {
+            const { resources, setResources, showToast } = useApp();
+            const [uploading, setUploading] = useState(false);
+            const [selectedFile, setSelectedFile] = useState(null);
+            const [compressedFile, setCompressedFile] = useState(null);
+            const [progress, setProgress] = useState(0);
+            const [formData, setFormData] = useState({
+                title: '', subject: '', level: '', curriculum: 'cbc',
+                resource_type: 'lesson-plan', price: 0, description: ''
             });
-            if (response.ok) {
-                const data = await response.json();
-                setResources(data || []);
-            }
-        } catch (e) { console.error('Load resources error:', e); }
-    };
+            const [editingResource, setEditingResource] = useState(null);
+            const [showEditModal, setShowEditModal] = useState(false);
+            const [editFormData, setEditFormData] = useState({ title: '', price: 0, status: 'draft', subject: '', level: '', description: '' });
+            const [uploadError, setUploadError] = useState('');
 
-    useEffect(() => { loadResources(); }, []);
+            const loadResources = async () => {
+                try {
+                    const response = await fetch(`${SUPABASE_URL}/rest/v1/resources?select=*&order=created_at.desc`, {
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+                    });
+                    if (response.ok) {
+                        const data = await response.json();
+                        setResources(data || []);
+                    }
+                } catch (e) { console.error('Load resources error:', e); }
+            };
 
-    const handleFileSelect = async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        setSelectedFile(file);
-        setCompressedFile(null);
-        setProgress(0);
-        setUploadError('');
+            useEffect(() => { loadResources(); }, []);
 
-        if (file.type === 'application/pdf' && file.size > 1024 * 1024) {
-            showToast('🔄 Compressing PDF...', 'Compressing file to reduce size');
-            try {
-                const compressed = await compressPDF(file, (pct) => {
-                    setProgress(pct);
-                });
-                setCompressedFile(compressed);
-                setProgress(100);
-                showToast('✅ Compression complete!', `Saved ${((1 - compressed.size / file.size) * 100).toFixed(0)}% space`);
-            } catch (err) {
-                showToast('⚠️ Compression failed', 'Using original file');
-                setCompressedFile(file);
-                setProgress(100);
-            }
-        } else {
-            setCompressedFile(file);
-            setProgress(100);
-        }
-    };
+            const handleFileSelect = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                setSelectedFile(file);
+                setCompressedFile(null);
+                setProgress(0);
+                setUploadError('');
 
-    const handleUpload = async (e) => {
-    e.preventDefault();
-    const { title, subject, level, resource_type } = formData;
-    if (!title || !subject || !level || !resource_type || !selectedFile) {
-        showToast('⚠️ Please fill in all required fields and select a file', 'error');
-        return;
-    }
-
-    setUploading(true);
-    setUploadError('');
-    setProgress(10);
-
-    try {
-        const fileToUpload = compressedFile || selectedFile;
-        
-        // Use the correct bucket name
-        const bucketName = 'kenyavault-pdfs';
-        const fileExt = fileToUpload.name.split('.').pop();
-        const fileName = `${Date.now()}-${title.replace(/\s+/g, '_')}.${fileExt}`;
-        const filePath = `resources/${fileName}`;
-        
-        console.log('📤 Uploading to bucket:', bucketName);
-        console.log('📁 File path:', filePath);
-        console.log('📄 File name:', fileName);
-        
-        // Step 1: Upload file to storage
-        const formData2 = new FormData();
-        formData2.append('file', fileToUpload);
-
-        // Try primary bucket
-        let uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/${bucketName}/${filePath}`, {
-            method: 'POST',
-            headers: {
-                'apikey': SUPABASE_ANON_KEY,
-                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-            },
-            body: formData2
-        });
-
-        let usedBucket = bucketName;
-        let fileUrl = '';
-
-        // If primary bucket fails, try alternative
-        if (!uploadRes.ok) {
-            const errorText = await uploadRes.text();
-            console.warn('⚠️ Primary bucket upload failed:', errorText);
-            
-            // Try alternative bucket
-            const altBucket = 'kenyavault-resources';
-            console.log('🔄 Trying alternative bucket:', altBucket);
-            
-            const altUploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/${altBucket}/${filePath}`, {
-                method: 'POST',
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                },
-                body: formData2
-            });
-            
-            if (!altUploadRes.ok) {
-                const altError = await altUploadRes.text();
-                console.error('❌ Alternative upload error:', altError);
-                
-                // Try one more bucket
-                const thirdBucket = 'academic-resources';
-                console.log('🔄 Trying third bucket:', thirdBucket);
-                
-                const thirdRes = await fetch(`${SUPABASE_URL}/storage/v1/object/${thirdBucket}/${filePath}`, {
-                    method: 'POST',
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                    },
-                    body: formData2
-                });
-                
-                if (!thirdRes.ok) {
-                    const thirdError = await thirdRes.text();
-                    throw new Error(`Upload failed in all buckets. Primary: ${errorText}. Alternative: ${altError}. Third: ${thirdError}`);
+                if (file.type === 'application/pdf' && file.size > 1024 * 1024) {
+                    showToast('🔄 Compressing PDF...', 'Compressing file to reduce size');
+                    try {
+                        const compressed = await compressPDF(file, (pct) => {
+                            setProgress(pct);
+                        });
+                        setCompressedFile(compressed);
+                        setProgress(100);
+                        showToast('✅ Compression complete!', `Saved ${((1 - compressed.size / file.size) * 100).toFixed(0)}% space`);
+                    } catch (err) {
+                        showToast('⚠️ Compression failed', 'Using original file');
+                        setCompressedFile(file);
+                        setProgress(100);
+                    }
+                } else {
+                    setCompressedFile(file);
+                    setProgress(100);
                 }
-                
-                usedBucket = thirdBucket;
-                fileUrl = `${SUPABASE_URL}/storage/v1/object/public/${thirdBucket}/${filePath}`;
-            } else {
-                usedBucket = altBucket;
-                fileUrl = `${SUPABASE_URL}/storage/v1/object/public/${altBucket}/${filePath}`;
-            }
-        } else {
-            fileUrl = `${SUPABASE_URL}/storage/v1/object/public/${bucketName}/${filePath}`;
-        }
+            };
 
-        console.log('✅ File uploaded to:', fileUrl);
-        setProgress(60);
-
-        // Step 2: Save to database - WITHOUT the storage_bucket column
-        const resourceData = {
-            title: title,
-            subject: subject,
-            level: level,
-            curriculum: formData.curriculum || 'cbc',
-            resource_type: formData.resource_type,
-            price: parseFloat(formData.price) || 0,
-            description: formData.description || '',
-            file_url: fileUrl,
-            file_path: filePath,
-            // Don't include storage_bucket if column doesn't exist
-            status: 'draft',
-            created_at: new Date().toISOString(),
-            download_count: 0
-        };
-
-        console.log('💾 Saving resource data:', resourceData);
-        setProgress(80);
-
-        const createRes = await fetch(`${SUPABASE_URL}/rest/v1/resources`, {
-            method: 'POST',
-            headers: {
-                'apikey': SUPABASE_ANON_KEY,
-                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                'Content-Type': 'application/json',
-                'Prefer': 'return=representation'
-            },
-            body: JSON.stringify(resourceData)
-        });
-
-        if (!createRes.ok) {
-            const errorText = await createRes.text();
-            console.error('❌ Database save error:', errorText);
-            
-            // Try without file_path if that's the issue
-            if (errorText.includes('file_path')) {
-                console.log('🔄 Retrying without file_path...');
-                delete resourceData.file_path;
-                const retryRes = await fetch(`${SUPABASE_URL}/rest/v1/resources`, {
-                    method: 'POST',
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                        'Content-Type': 'application/json',
-                        'Prefer': 'return=representation'
-                    },
-                    body: JSON.stringify(resourceData)
+            // ── OPEN EDIT MODAL ──
+            const openEditModal = (resource) => {
+                setEditingResource(resource);
+                setEditFormData({
+                    title: resource.title || '',
+                    price: resource.price || 0,
+                    status: resource.status || 'draft',
+                    subject: resource.subject || '',
+                    level: resource.level || '',
+                    description: resource.description || ''
                 });
-                if (!retryRes.ok) {
-                    const retryError = await retryRes.text();
-                    throw new Error('Failed to save resource: ' + retryError);
+                setShowEditModal(true);
+            };
+
+            const closeEditModal = () => {
+                setShowEditModal(false);
+                setEditingResource(null);
+            };
+
+            // ── HANDLE EDIT SAVE ──
+            const handleEditSave = async () => {
+                if (!editingResource) return;
+                
+                if (!editFormData.title || !editFormData.subject || !editFormData.level) {
+                    showToast('⚠️ Please fill in all required fields', 'error');
+                    return;
                 }
-            } else {
-                throw new Error('Failed to save resource: ' + errorText);
-            }
-        }
 
-        setProgress(100);
-        showToast('✅ Resource uploaded successfully!');
-        
-        // Reset form
-        setFormData({ 
-            title: '', 
-            subject: '', 
-            level: '', 
-            curriculum: 'cbc', 
-            resource_type: 'lesson-plan', 
-            price: 0, 
-            description: '' 
-        });
-        setSelectedFile(null);
-        setCompressedFile(null);
-        setProgress(0);
-        setUploadError('');
-        
-        // Reload resources
-        loadResources();
+                try {
+                    const updateData = {
+                        title: editFormData.title,
+                        price: parseFloat(editFormData.price) || 0,
+                        status: editFormData.status,
+                        subject: editFormData.subject,
+                        level: editFormData.level,
+                        description: editFormData.description || ''
+                    };
 
-       } catch (err) {
-          console.error('❌ Upload failed:', err);
-          setUploadError(err.message);
-           showToast('❌ Upload failed: ' + err.message, 'error');
-       }
-         setUploading(false);
-       };
+                    const response = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${editingResource.id}`, {
+                        method: 'PATCH',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json',
+                            'Prefer': 'return=representation'
+                        },
+                        body: JSON.stringify(updateData)
+                    });
+
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        console.error('❌ Edit error:', errorText);
+                        throw new Error('Failed to update resource: ' + errorText);
+                    }
+
+                    showToast('✅ Resource updated successfully!');
+                    closeEditModal();
+                    loadResources();
+                } catch (e) {
+                    console.error('Edit error:', e);
+                    showToast('❌ Update failed: ' + e.message, 'error');
+                }
+            };
+
+            const handleUpload = async (e) => {
+                e.preventDefault();
+                const { title, subject, level, resource_type } = formData;
+                if (!title || !subject || !level || !resource_type || !selectedFile) {
+                    showToast('⚠️ Please fill in all required fields and select a file', 'error');
+                    return;
+                }
+
+                setUploading(true);
+                setUploadError('');
+                setProgress(10);
+
+                try {
+                    const fileToUpload = compressedFile || selectedFile;
+                    
+                    const bucketName = 'kenyavault-pdfs';
+                    const fileExt = fileToUpload.name.split('.').pop();
+                    const fileName = `${Date.now()}-${title.replace(/\s+/g, '_')}.${fileExt}`;
+                    const filePath = `resources/${fileName}`;
+                    
+                    console.log('📤 Uploading to bucket:', bucketName);
+                    console.log('📁 File path:', filePath);
+                    
+                    const formData2 = new FormData();
+                    formData2.append('file', fileToUpload);
+
+                    let uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/${bucketName}/${filePath}`, {
+                        method: 'POST',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                        },
+                        body: formData2
+                    });
+
+                    let usedBucket = bucketName;
+                    let fileUrl = '';
+
+                    if (!uploadRes.ok) {
+                        const errorText = await uploadRes.text();
+                        console.warn('⚠️ Primary bucket upload failed:', errorText);
+                        
+                        const altBucket = 'kenyavault-resources';
+                        console.log('🔄 Trying alternative bucket:', altBucket);
+                        
+                        const altUploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/${altBucket}/${filePath}`, {
+                            method: 'POST',
+                            headers: {
+                                'apikey': SUPABASE_ANON_KEY,
+                                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                            },
+                            body: formData2
+                        });
+                        
+                        if (!altUploadRes.ok) {
+                            const altError = await altUploadRes.text();
+                            console.error('❌ Alternative upload error:', altError);
+                            
+                            const thirdBucket = 'academic-resources';
+                            console.log('🔄 Trying third bucket:', thirdBucket);
+                            
+                            const thirdRes = await fetch(`${SUPABASE_URL}/storage/v1/object/${thirdBucket}/${filePath}`, {
+                                method: 'POST',
+                                headers: {
+                                    'apikey': SUPABASE_ANON_KEY,
+                                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                                },
+                                body: formData2
+                            });
+                            
+                            if (!thirdRes.ok) {
+                                const thirdError = await thirdRes.text();
+                                throw new Error(`Upload failed in all buckets. Primary: ${errorText}. Alternative: ${altError}. Third: ${thirdError}`);
+                            }
+                            
+                            usedBucket = thirdBucket;
+                            fileUrl = `${SUPABASE_URL}/storage/v1/object/public/${thirdBucket}/${filePath}`;
+                        } else {
+                            usedBucket = altBucket;
+                            fileUrl = `${SUPABASE_URL}/storage/v1/object/public/${altBucket}/${filePath}`;
+                        }
+                    } else {
+                        fileUrl = `${SUPABASE_URL}/storage/v1/object/public/${bucketName}/${filePath}`;
+                    }
+
+                    console.log('✅ File uploaded to:', fileUrl);
+                    setProgress(60);
+
+                    const resourceData = {
+                        title: title,
+                        subject: subject,
+                        level: level,
+                        curriculum: formData.curriculum || 'cbc',
+                        resource_type: formData.resource_type,
+                        price: parseFloat(formData.price) || 0,
+                        description: formData.description || '',
+                        file_url: fileUrl,
+                        file_path: filePath,
+                        status: 'draft',
+                        created_at: new Date().toISOString(),
+                        download_count: 0
+                    };
+
+                    console.log('💾 Saving resource data:', resourceData);
+                    setProgress(80);
+
+                    const createRes = await fetch(`${SUPABASE_URL}/rest/v1/resources`, {
+                        method: 'POST',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json',
+                            'Prefer': 'return=representation'
+                        },
+                        body: JSON.stringify(resourceData)
+                    });
+
+                    if (!createRes.ok) {
+                        const errorText = await createRes.text();
+                        console.error('❌ Database save error:', errorText);
+                        
+                        if (errorText.includes('file_path')) {
+                            console.log('🔄 Retrying without file_path...');
+                            delete resourceData.file_path;
+                            const retryRes = await fetch(`${SUPABASE_URL}/rest/v1/resources`, {
+                                method: 'POST',
+                                headers: {
+                                    'apikey': SUPABASE_ANON_KEY,
+                                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                                    'Content-Type': 'application/json',
+                                    'Prefer': 'return=representation'
+                                },
+                                body: JSON.stringify(resourceData)
+                            });
+                            if (!retryRes.ok) {
+                                const retryError = await retryRes.text();
+                                throw new Error('Failed to save resource: ' + retryError);
+                            }
+                        } else {
+                            throw new Error('Failed to save resource: ' + errorText);
+                        }
+                    }
+
+                    setProgress(100);
+                    showToast('✅ Resource uploaded successfully!');
+                    
+                    setFormData({ 
+                        title: '', 
+                        subject: '', 
+                        level: '', 
+                        curriculum: 'cbc', 
+                        resource_type: 'lesson-plan', 
+                        price: 0, 
+                        description: '' 
+                    });
+                    setSelectedFile(null);
+                    setCompressedFile(null);
+                    setProgress(0);
+                    setUploadError('');
+                    
+                    loadResources();
+
+                } catch (err) {
+                    console.error('❌ Upload failed:', err);
+                    setUploadError(err.message);
+                    showToast('❌ Upload failed: ' + err.message, 'error');
+                }
+                setUploading(false);
+            };
+
             const toggleStatus = async (id, currentStatus) => {
                 const newStatus = currentStatus === 'live' ? 'draft' : 'live';
                 try {
@@ -1557,17 +1690,29 @@ function ResourcesModule() {
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Subject *</label>
                                     <select value={formData.subject} onChange={(e) => setFormData({...formData, subject: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" required>
-                                        <option value="">Select</option>
                                         <option value="mathematics">Mathematics</option>
-                                        <option value="english">English</option>
-                                        <option value="kiswahili">Kiswahili</option>
-                                        <option value="integrated-science">Integrated Science</option>
-                                        <option value="social-studies">Social Studies</option>
-                                        <option value="biology">Biology</option>
-                                        <option value="chemistry">Chemistry</option>
-                                        <option value="physics">Physics</option>
-                                        <option value="business">Business</option>
-                                        <option value="computer-studies">Computer Studies</option>
+                                            <option value="english">English</option>
+                                            <option value="kiswahili">Kiswahili</option>
+                                            <option value="science">Integrated Science</option>
+                                            <option value="social-studies">Social Studies</option>
+                                            <option value="creative-arts">Creative Arts</option>
+                                            <option value="business-studies">Business Studies</option>
+                                            <option value="religious-education">Religious Education</option>
+                                            <option value="computer-studies">Computer Studies</option>
+                                            <option value="special-education">Special Education</option>
+                                            <option value="early-childhood">Early Childhood</option>
+                                            <option value="chemistry">Chemistry</option>
+                                            <option value="physics">Physics</option>
+                                            <option value="Biology">Biology</option>
+                                            <option value="geography">Geography</option>
+                                            <option value="History-citizenship">History & Citizenship</option>
+                                            <option value="pretechnical-studies">Pretechnical Studies</option>
+                                            <option value="early-childhood">Early Childhood</option>
+                                            <option value="tvet">TVET</option>
+                                            <option value="college">College</option>
+                                            <option value="university">University</option>
+                                            <option value="financial-education">Finacial Education</option>
+                                            <option value="personal-growth">Personal Growth</option>
                                     </select>
                                 </div>
                                 <div>
@@ -1585,6 +1730,7 @@ function ResourcesModule() {
                                         <option value="form-3">Form 3</option><option value="form-4">Form 4</option>
                                         <option value="college">College</option><option value="tvet">TVET</option>
                                         <option value="university">University</option>
+                                        <option value="life-education">Life EDucation</option>
                                     </select>
                                 </div>
                                 <div>
@@ -1685,11 +1831,62 @@ function ResourcesModule() {
                                 <div className="space-y-4">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Title *</label>
-                                        <input type="text" value={editFormData.title} onChange={(e) => setEditFormData({...editFormData, title: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" />
+                                        <input type="text" value={editFormData.title} onChange={(e) => setEditFormData({...editFormData, title: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" required />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Subject *</label>
+                                        <select value={editFormData.subject} onChange={(e) => setEditFormData({...editFormData, subject: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
+                                            <option value="">Select</option>
+                                            <option value="mathematics">Mathematics</option>
+                                            <option value="english">English</option>
+                                            <option value="kiswahili">Kiswahili</option>
+                                            <option value="science">Integrated Science</option>
+                                            <option value="social-studies">Social Studies</option>
+                                            <option value="creative-arts">Creative Arts</option>
+                                            <option value="business-studies">Business Studies</option>
+                                            <option value="religious-education">Religious Education</option>
+                                            <option value="computer-studies">Computer Studies</option>
+                                            <option value="special-education">Special Education</option>
+                                            <option value="early-childhood">Early Childhood</option>
+                                            <option value="chemistry">Chemistry</option>
+                                            <option value="physics">Physics</option>
+                                            <option value="Biology">Biology</option>
+                                            <option value="geography">Geography</option>
+                                            <option value="History-citizenship">History & Citizenship</option>
+                                            <option value="pretechnical-studies">Pretechnical Studies</option>
+                                            <option value="early-childhood">Early Childhood</option>
+                                            <option value="tvet">TVET</option>
+                                            <option value="college">College</option>
+                                            <option value="university">University</option>
+                                            <option value="financial-education">Finacial Education</option>
+                                            <option value="personal-growth">Personal Growth</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Level *</label>
+                                        <select value={editFormData.level} onChange={(e) => setEditFormData({...editFormData, level: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
+                                            <option value="">Select</option>
+                                            <option value="pp1">PP1</option><option value="pp2">PP2</option>
+                                            <option value="grade-1">Grade 1</option><option value="grade-2">Grade 2</option>
+                                            <option value="grade-3">Grade 3</option><option value="grade-4">Grade 4</option>
+                                            <option value="grade-5">Grade 5</option><option value="grade-6">Grade 6</option>
+                                            <option value="grade-7">Grade 7</option><option value="grade-8">Grade 8</option>
+                                            <option value="grade-9">Grade 9</option><option value="grade-10">Grade 10</option>
+                                            <option value="grade-11">Grade 11</option><option value="grade-12">Grade 12</option>
+                                            <option value="form-1">Form 1</option><option value="form-2">Form 2</option>
+                                            <option value="form-3">Form 3</option><option value="form-4">Form 4</option>
+                                            <option value="college">College</option><option value="tvet">TVET</option>
+                                            <option value="university">University</option>
+                                            <option value="life-education">Life Education</option>
+                                        </select>
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Price (KES)</label>
                                         <input type="number" value={editFormData.price} onChange={(e) => setEditFormData({...editFormData, price: parseFloat(e.target.value) || 0})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" min="0" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
+                                        <textarea value={editFormData.description} onChange={(e) => setEditFormData({...editFormData, description: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" rows="2"></textarea>
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
@@ -1871,16 +2068,28 @@ function ResourcesModule() {
                                 <select value={formData.specialization} onChange={(e) => setFormData({...formData, specialization: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" required>
                                     <option value="">Select</option>
                                     <option value="mathematics">Mathematics</option>
-                                    <option value="english">English</option>
-                                    <option value="kiswahili">Kiswahili</option>
-                                    <option value="science">Science</option>
-                                    <option value="social-studies">Social Studies</option>
-                                    <option value="creative-arts">Creative Arts</option>
-                                    <option value="business">Business</option>
-                                    <option value="computer-studies">Computer Studies</option>
-                                    <option value="special-education">Special Education</option>
-                                    <option value="early-childhood">Early Childhood</option>
-                                    <option value="tvet">TVET</option>
+                                            <option value="english">English</option>
+                                            <option value="kiswahili">Kiswahili</option>
+                                            <option value="science">Integrated Science</option>
+                                            <option value="social-studies">Social Studies</option>
+                                            <option value="creative-arts">Creative Arts</option>
+                                            <option value="business-studies">Business Studies</option>
+                                            <option value="religious-education">Religious Education</option>
+                                            <option value="computer-studies">Computer Studies</option>
+                                            <option value="special-education">Special Education</option>
+                                            <option value="early-childhood">Early Childhood</option>
+                                            <option value="chemistry">Chemistry</option>
+                                            <option value="physics">Physics</option>
+                                            <option value="Biology">Biology</option>
+                                            <option value="geography">Geography</option>
+                                            <option value="History-citizenship">History & Citizenship</option>
+                                            <option value="pretechnical-studies">Pretechnical Studies</option>
+                                            <option value="early-childhood">Early Childhood</option>
+                                            <option value="tvet">TVET</option>
+                                            <option value="college">College</option>
+                                            <option value="university">University</option>
+                                            <option value="financial-education">Finacial Education</option>
+                                            <option value="personal-growth">Personal Growth</option>
                                 </select>
                             </div>
                             <div className="md:col-span-2">
@@ -1954,14 +2163,27 @@ function ResourcesModule() {
                                             <option value="mathematics">Mathematics</option>
                                             <option value="english">English</option>
                                             <option value="kiswahili">Kiswahili</option>
-                                            <option value="science">Science</option>
+                                            <option value="science">Integrated Science</option>
                                             <option value="social-studies">Social Studies</option>
                                             <option value="creative-arts">Creative Arts</option>
-                                            <option value="business">Business</option>
+                                            <option value="business-studies">Business Studies</option>
+                                            <option value="religious-education">Religious Education</option>
                                             <option value="computer-studies">Computer Studies</option>
                                             <option value="special-education">Special Education</option>
                                             <option value="early-childhood">Early Childhood</option>
+                                            <option value="chemistry">Chemistry</option>
+                                            <option value="physics">Physics</option>
+                                            <option value="Biology">Biology</option>
+                                            <option value="geography">Geography</option>
+                                            <option value="History-citizenship">History & Citizenship</option>
+                                            <option value="pretechnical-studies">Pretechnical Studies</option>
+                                            <option value="early-childhood">Early Childhood</option>
                                             <option value="tvet">TVET</option>
+                                            <option value="college">College</option>
+                                            <option value="university">University</option>
+                                            <option value="financial-education">Finacial Education</option>
+                                            <option value="personal-growth">Personal Growth</option>
+                                            
                                         </select>
                                     </div>
                                     <div>
@@ -2084,19 +2306,18 @@ function ResourcesModule() {
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Target Level *</label>
                                 <select value={formData.level} onChange={(e) => setFormData({...formData, level: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" required>
                                     <option value="">Select</option>
-                                    <option value="grade-7">Grade 7</option>
-                                    <option value="grade-8">Grade 8</option>
-                                    <option value="grade-9">Grade 9 (KJSEA)</option>
-                                    <option value="grade-10">Grade 10</option>
-                                    <option value="grade-11">Grade 11</option>
-                                    <option value="grade-12">Grade 12</option>
-                                    <option value="form-1">Form 1</option>
-                                    <option value="form-2">Form 2</option>
-                                    <option value="form-3">Form 3</option>
-                                    <option value="form-4">Form 4</option>
+                                    <option value="grade-1">Grade 1</option><option value="grade-2">Grade 2</option>
+                                    <option value="grade-3">Grade 3</option><option value="grade-4">Grade 4</option>
+                                    <option value="grade-5">Grade 5</option><option value="grade-6">Grade 6</option>
+                                    <option value="grade-7">Grade 7</option><option value="grade-8">Grade 8</option>
+                                     <option value="grade-9">Grade 9</option><option value="grade-10">Grade 10</option>
+                                     <option value="grade-11">Grade 11</option><option value="grade-12">Grade 12</option>
+                                     <option value="form-1">Form 1</option><option value="form-2">Form 2</option>
+                                     <option value="form-3">Form 3</option><option value="form-4">Form 4</option>
                                     <option value="college">College</option>
                                     <option value="tvet">TVET</option>
                                     <option value="university">University</option>
+                                    <option value="Life-education">LIfe Education</option>
                                 </select>
                             </div>
                             <div>
@@ -2185,906 +2406,831 @@ function ResourcesModule() {
             );
         }
 
-        // ── ORDERS MODULE ── (UPDATED WITH DEBUGGING)
-function OrdersModule() {
-    const { orders, loadOrders, showNotification, newOrderIds, setNewOrderIds, pendingOrderCount, setPendingOrderCount } = useApp();
-    const [filter, setFilter] = useState('all');
-    const [loadingOrderId, setLoadingOrderId] = useState(null);
-    const [selectedOrder, setSelectedOrder] = useState(null);
-    const [showOrderDetails, setShowOrderDetails] = useState(false);
-    const [orderItems, setOrderItems] = useState([]);
-    const [generatingLinks, setGeneratingLinks] = useState({});
-    const [searchTerm, setSearchTerm] = useState('');
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState(null);
-    const [revenueStats, setRevenueStats] = useState({
-        totalRevenue: 0,
-        pendingRevenue: 0,
-        completedRevenue: 0,
-        totalOrders: 0,
-        pendingOrders: 0,
-        completedOrders: 0
-    });
-
-    // Debug: Log orders when they change
-    useEffect(() => {
-        console.log('📊 Orders updated:', orders);
-        console.log('📊 Orders count:', orders.length);
-        if (orders.length > 0) {
-            console.log('📊 First order:', orders[0]);
-        }
-        calculateRevenueStats();
-    }, [orders]);
-
-    const calculateRevenueStats = () => {
-        const total = orders.reduce((sum, o) => sum + (o.total_amount || o.item_price || 0), 0);
-        
-        const pending = orders
-            .filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification' || o.status === 'pending')
-            .reduce((sum, o) => sum + (o.total_amount || o.item_price || 0), 0);
-        
-        const completed = orders
-            .filter(o => o.payment_status === 'confirmed' || o.payment_status === 'paid' || o.payment_status === 'completed' || o.status === 'completed' || o.status === 'confirmed' || o.status === 'paid')
-            .reduce((sum, o) => sum + (o.total_amount || o.item_price || 0), 0);
-        
-        const pendingCount = orders.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification' || o.status === 'pending').length;
-        const completedCount = orders.filter(o => o.payment_status === 'confirmed' || o.payment_status === 'paid' || o.payment_status === 'completed' || o.status === 'completed' || o.status === 'confirmed' || o.status === 'paid').length;
-        
-        setRevenueStats({
-            totalRevenue: total,
-            pendingRevenue: pending,
-            completedRevenue: completed,
-            totalOrders: orders.length,
-            pendingOrders: pendingCount,
-            completedOrders: completedCount
-        });
-
-        // Update global pending count
-        setPendingOrderCount(pendingCount);
-    };
-
-    // Force load orders on mount
-    useEffect(() => {
-        console.log('🔄 Loading orders on mount...');
-        setLoading(true);
-        loadOrders().then(() => {
-            setLoading(false);
-        }).catch((err) => {
-            console.error('❌ Error loading orders:', err);
-            setError(err.message);
-            setLoading(false);
-        });
-        
-        const interval = setInterval(() => {
-            console.log('🔄 Auto-refreshing orders...');
-            loadOrders();
-        }, 30000);
-        return () => clearInterval(interval);
-    }, []);
-
-    // ── GENERATE SIGNED URL ──
-    const generateSignedUrl = async (filePath) => {
-        try {
-            if (!filePath) return null;
-            
-            let cleanPath = filePath;
-            cleanPath = cleanPath.replace(/^kenyavault-pdfs\//, '');
-            cleanPath = cleanPath.replace(/^academic-resources\//, '');
-            cleanPath = cleanPath.replace(/^resources\//, '');
-            cleanPath = cleanPath.replace(/^kenyavault-resources\//, '');
-            cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
-            cleanPath = cleanPath.replace(/^\/+/, '');
-            cleanPath = decodeURIComponent(cleanPath);
-            
-            if (!cleanPath) return null;
-            
-            console.log('📁 Generating signed URL for:', cleanPath);
-            
-            const signedRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${STORAGE_BUCKET}/${encodeURIComponent(cleanPath)}?expiresIn=10800`, {
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                }
+        // ── ORDERS MODULE ── (FIXED CONFIRM/REJECT)
+        function OrdersModule() {
+            const { orders, loadOrders, showNotification, newOrderIds, setNewOrderIds, pendingOrderCount, setPendingOrderCount } = useApp();
+            const [filter, setFilter] = useState('all');
+            const [loadingOrderId, setLoadingOrderId] = useState(null);
+            const [selectedOrder, setSelectedOrder] = useState(null);
+            const [showOrderDetails, setShowOrderDetails] = useState(false);
+            const [orderItems, setOrderItems] = useState([]);
+            const [generatingLinks, setGeneratingLinks] = useState({});
+            const [searchTerm, setSearchTerm] = useState('');
+            const [revenueStats, setRevenueStats] = useState({
+                totalRevenue: 0,
+                pendingRevenue: 0,
+                completedRevenue: 0,
+                totalOrders: 0,
+                pendingOrders: 0,
+                completedOrders: 0
             });
-            
-            if (signedRes.ok) {
-                const signedData = await signedRes.json();
-                return signedData.signedURL || signedData.url || null;
-            }
-            
-            const publicUrl = `${STORAGE_URL}/${encodeURIComponent(cleanPath)}`;
-            const checkRes = await fetch(publicUrl, { method: 'HEAD' });
-            if (checkRes.ok) {
-                return publicUrl;
-            }
-            
-            return null;
-        } catch (e) {
-            console.error('Error generating signed URL:', e);
-            return null;
-        }
-    };
 
-    // ── FETCH ORDER ITEMS WITH RESOURCE DETAILS ──
-    const fetchOrderItemsWithDetails = async (order) => {
-        try {
-            let items = [];
-            
-            if (order.order_ref) {
-                const itemsRes = await fetch(`${SUPABASE_URL}/rest/v1/order_items?order_ref=eq.${order.order_ref}`, {
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                        'Content-Type': 'application/json'
-                    }
+            // Calculate revenue stats whenever orders change
+            useEffect(() => {
+                calculateRevenueStats();
+            }, [orders]);
+
+            const calculateRevenueStats = () => {
+                const total = orders.reduce((sum, o) => sum + (o.total_amount || o.item_price || 0), 0);
+                
+                const pending = orders
+                    .filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification' || o.status === 'pending')
+                    .reduce((sum, o) => sum + (o.total_amount || o.item_price || 0), 0);
+                
+                const completed = orders
+                    .filter(o => o.payment_status === 'confirmed' || o.payment_status === 'paid' || o.payment_status === 'completed' || o.status === 'completed' || o.status === 'confirmed' || o.status === 'paid')
+                    .reduce((sum, o) => sum + (o.total_amount || o.item_price || 0), 0);
+                
+                const pendingCount = orders.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification' || o.status === 'pending').length;
+                const completedCount = orders.filter(o => o.payment_status === 'confirmed' || o.payment_status === 'paid' || o.payment_status === 'completed' || o.status === 'completed' || o.status === 'confirmed' || o.status === 'paid').length;
+                
+                setRevenueStats({
+                    totalRevenue: total,
+                    pendingRevenue: pending,
+                    completedRevenue: completed,
+                    totalOrders: orders.length,
+                    pendingOrders: pendingCount,
+                    completedOrders: completedCount
                 });
-                if (itemsRes.ok) {
-                    items = await itemsRes.json();
-                }
-            }
-            
-            if (items.length === 0 && order.id) {
-                const itemsRes = await fetch(`${SUPABASE_URL}/rest/v1/order_items?order_id=eq.${order.id}`, {
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
-                if (itemsRes.ok) {
-                    items = await itemsRes.json();
-                }
-            }
-            
-            if (items.length === 0) {
-                items = [{
-                    id: 'order-item-1',
-                    order_ref: order.order_ref,
-                    order_id: order.id,
-                    product_id: order.resource_id || order.product_id,
-                    resource_title: order.item_title || order.resource_title || 'Resource',
-                    resource_file_path: order.resource_file_path || order.file_path || '',
-                    resource_file_name: order.resource_file_name || '',
-                    price: order.item_price || order.total_amount || 0,
-                    quantity: 1,
-                    created_at: order.created_at
-                }];
-            }
-            
-            const itemsWithDetails = await Promise.all(items.map(async (item) => {
-                let filePath = item.resource_file_path || item.file_path || '';
-                let downloadUrl = null;
-                let resourceDetails = null;
-                
-                if (item.product_id) {
-                    try {
-                        const resourceRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${item.product_id}`, {
-                            headers: {
-                                'apikey': SUPABASE_ANON_KEY,
-                                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                                'Content-Type': 'application/json'
-                            }
-                        });
-                        if (resourceRes.ok) {
-                            const resources = await resourceRes.json();
-                            if (resources.length > 0) {
-                                resourceDetails = resources[0];
-                                if (resourceDetails.file_path || resourceDetails.file_url) {
-                                    filePath = resourceDetails.file_path || resourceDetails.file_url;
-                                }
-                            }
-                        }
-                    } catch (e) {
-                        console.error('Error fetching resource:', e);
-                    }
-                }
-                
-                if (filePath) {
-                    downloadUrl = await generateSignedUrl(filePath);
-                }
-                
-                if (!filePath && item.resource_title) {
-                    try {
-                        const searchRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?title=ilike.%25${encodeURIComponent(item.resource_title)}%25&limit=1`, {
-                            headers: {
-                                'apikey': SUPABASE_ANON_KEY,
-                                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                                'Content-Type': 'application/json'
-                            }
-                        });
-                        if (searchRes.ok) {
-                            const results = await searchRes.json();
-                            if (results.length > 0) {
-                                const found = results[0];
-                                if (found.file_path || found.file_url) {
-                                    filePath = found.file_path || found.file_url;
-                                    resourceDetails = found;
-                                    downloadUrl = await generateSignedUrl(filePath);
-                                }
-                            }
-                        }
-                    } catch (e) {
-                        console.error('Error searching for resource:', e);
-                    }
-                }
-                
-                const fileName = filePath ? filePath.split('/').pop() : item.resource_file_name || 'resource.pdf';
-                
-                return {
-                    ...item,
-                    resource: resourceDetails,
-                    file_path: filePath,
-                    file_name: fileName,
-                    download_url: downloadUrl,
-                    has_download: !!downloadUrl,
-                    resource_title: item.resource_title || resourceDetails?.title || 'Resource'
-                };
-            }));
-            
-            setOrderItems(itemsWithDetails);
-            return itemsWithDetails;
-        } catch (e) {
-            console.error('Error fetching order items:', e);
-            showNotification('Error loading order details', 'error');
-            return [];
-        }
-    };
 
-    const viewOrderDetails = async (order) => {
-        setSelectedOrder(order);
-        setShowOrderDetails(true);
-        setOrderItems([]);
-        await fetchOrderItemsWithDetails(order);
-    };
-
-    const closeOrderDetails = () => {
-        setShowOrderDetails(false);
-        setSelectedOrder(null);
-        setOrderItems([]);
-    };
-
-    const handleConfirmOrder = async (order) => {
-        const ref = order.payment_ref || order.order_ref || order.id.slice(0, 8).toUpperCase();
-        if (!confirm(`Confirm order #${ref}?`)) return;
-        
-        setLoadingOrderId(order.id);
-        try {
-            const updateData = {
-                payment_status: 'confirmed',
-                status: 'confirmed'
+                // Update global pending count
+                setPendingOrderCount(pendingCount);
             };
-            
-            console.log('📝 Confirming order:', order.id, order.order_ref);
-            console.log('📝 Update data:', updateData);
-            
-            let updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${order.id}`, {
-                method: 'PATCH',
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(updateData)
-            });
 
-            if (!updateRes.ok && order.order_ref) {
-                console.log('🔄 Trying update by order_ref:', order.order_ref);
-                updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?order_ref=eq.${order.order_ref}`, {
-                    method: 'PATCH',
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(updateData)
-                });
-            }
+            useEffect(() => {
+                const interval = setInterval(() => loadOrders(), 10000);
+                return () => clearInterval(interval);
+            }, []);
 
-            if (!updateRes.ok) {
-                const errorText = await updateRes.text();
-                console.error('❌ Update failed:', errorText);
-                throw new Error(`Failed to update order: ${updateRes.status} - ${errorText}`);
-            }
-
-            const result = await updateRes.json();
-            console.log('✅ Order updated:', result);
-
-            showNotification('✅ Order confirmed!', 'success');
-            await loadOrders();
-            setNewOrderIds(prev => prev.filter(id => id !== order.id));
-            
-        } catch (e) {
-            console.error('Confirm error:', e);
-            showNotification('Error confirming order: ' + e.message, 'error');
-        }
-        setLoadingOrderId(null);
-    };
-
-    const handleRejectOrder = async (order) => {
-        const ref = order.payment_ref || order.order_ref || order.id.slice(0, 8).toUpperCase();
-        if (!confirm(`Reject order #${ref}?`)) return;
-        
-        try {
-            const updateData = { 
-                payment_status: 'rejected', 
-                status: 'rejected'
-            };
-            
-            console.log('📝 Rejecting order:', order.id, order.order_ref);
-            
-            let updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${order.id}`, {
-                method: 'PATCH',
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(updateData)
-            });
-
-            if (!updateRes.ok && order.order_ref) {
-                updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?order_ref=eq.${order.order_ref}`, {
-                    method: 'PATCH',
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(updateData)
-                });
-            }
-
-            if (!updateRes.ok) {
-                const errorText = await updateRes.text();
-                console.error('❌ Reject failed:', errorText);
-                throw new Error(`Failed to reject order: ${updateRes.status}`);
-            }
-
-            showNotification('❌ Order rejected', 'success');
-            await loadOrders();
-            setNewOrderIds(prev => prev.filter(id => id !== order.id));
-            
-        } catch (e) {
-            console.error('Reject error:', e);
-            showNotification('Error rejecting order: ' + e.message, 'error');
-        }
-    };
-
-    const handleResendWhatsApp = async (order) => {
-        setGeneratingLinks(prev => ({ ...prev, [order.id]: true }));
-        try {
-            const items = await fetchOrderItemsWithDetails(order);
-            const ref = order.payment_ref || order.order_ref || order.id.slice(0, 8).toUpperCase();
-            
-            let message = `✅ *Your KenyaVault Order is Ready!*\n\n`;
-            message += `Order #: *${ref}*\n\n`;
-            
-            if (items.length > 0) {
-                items.forEach((item, idx) => {
-                    message += `Resource ${idx + 1}: *${item.resource_title}* (x${item.quantity || 1})\n`;
-                });
-                message += `\n`;
-            } else {
-                message += `Resource: *${order.item_title || order.resource_title || 'Resource'}*\n\n`;
-            }
-            
-            message += `Amount: *KES ${order.total_amount || order.item_price || 0}*\n\n`;
-            message += `📥 *Download Links:*\n`;
-            
-            let hasLinks = false;
-            items.forEach((item, idx) => {
-                if (item.download_url) {
-                    message += `\n${idx + 1}. ${item.resource_title}:\n${item.download_url}\n`;
-                    hasLinks = true;
-                } else if (item.file_path) {
-                    const publicUrl = `${STORAGE_URL}/${encodeURIComponent(item.file_path)}`;
-                    message += `\n${idx + 1}. ${item.resource_title}:\n${publicUrl}\n`;
-                    hasLinks = true;
-                }
-            });
-            
-            if (!hasLinks) {
+            // ── GENERATE SIGNED URL ──
+            const generateSignedUrl = async (filePath) => {
                 try {
-                    const searchRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?title=ilike.%25${encodeURIComponent(order.item_title || order.resource_title || '')}%25&limit=1`, {
+                    if (!filePath) return null;
+                    
+                    let cleanPath = filePath;
+                    cleanPath = cleanPath.replace(/^kenyavault-pdfs\//, '');
+                    cleanPath = cleanPath.replace(/^academic-resources\//, '');
+                    cleanPath = cleanPath.replace(/^resources\//, '');
+                    cleanPath = cleanPath.replace(/^kenyavault-resources\//, '');
+                    cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
+                    cleanPath = cleanPath.replace(/^\/+/, '');
+                    cleanPath = decodeURIComponent(cleanPath);
+                    
+                    if (!cleanPath) return null;
+                    
+                    console.log('📁 Generating signed URL for:', cleanPath);
+                    
+                    const signedRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${STORAGE_BUCKET}/${encodeURIComponent(cleanPath)}?expiresIn=10800`, {
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                        }
+                    });
+                    
+                    if (signedRes.ok) {
+                        const signedData = await signedRes.json();
+                        return signedData.signedURL || signedData.url || null;
+                    }
+                    
+                    const publicUrl = `${STORAGE_URL}/${encodeURIComponent(cleanPath)}`;
+                    const checkRes = await fetch(publicUrl, { method: 'HEAD' });
+                    if (checkRes.ok) {
+                        return publicUrl;
+                    }
+                    
+                    return null;
+                } catch (e) {
+                    console.error('Error generating signed URL:', e);
+                    return null;
+                }
+            };
+
+            // ── FETCH ORDER ITEMS WITH RESOURCE DETAILS ──
+            const fetchOrderItemsWithDetails = async (order) => {
+                try {
+                    let items = [];
+                    
+                    if (order.order_ref) {
+                        const itemsRes = await fetch(`${SUPABASE_URL}/rest/v1/order_items?order_ref=eq.${order.order_ref}`, {
+                            headers: {
+                                'apikey': SUPABASE_ANON_KEY,
+                                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                                'Content-Type': 'application/json'
+                            }
+                        });
+                        if (itemsRes.ok) {
+                            items = await itemsRes.json();
+                        }
+                    }
+                    
+                    if (items.length === 0 && order.id) {
+                        const itemsRes = await fetch(`${SUPABASE_URL}/rest/v1/order_items?order_id=eq.${order.id}`, {
+                            headers: {
+                                'apikey': SUPABASE_ANON_KEY,
+                                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                                'Content-Type': 'application/json'
+                            }
+                        });
+                        if (itemsRes.ok) {
+                            items = await itemsRes.json();
+                        }
+                    }
+                    
+                    if (items.length === 0) {
+                        items = [{
+                            id: 'order-item-1',
+                            order_ref: order.order_ref,
+                            order_id: order.id,
+                            product_id: order.resource_id || order.product_id,
+                            resource_title: order.item_title || order.resource_title || 'Resource',
+                            resource_file_path: order.resource_file_path || order.file_path || '',
+                            resource_file_name: order.resource_file_name || '',
+                            price: order.item_price || order.total_amount || 0,
+                            quantity: 1,
+                            created_at: order.created_at
+                        }];
+                    }
+                    
+                    const itemsWithDetails = await Promise.all(items.map(async (item) => {
+                        let filePath = item.resource_file_path || item.file_path || '';
+                        let downloadUrl = null;
+                        let resourceDetails = null;
+                        
+                        if (item.product_id) {
+                            try {
+                                const resourceRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${item.product_id}`, {
+                                    headers: {
+                                        'apikey': SUPABASE_ANON_KEY,
+                                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                                        'Content-Type': 'application/json'
+                                    }
+                                });
+                                if (resourceRes.ok) {
+                                    const resources = await resourceRes.json();
+                                    if (resources.length > 0) {
+                                        resourceDetails = resources[0];
+                                        if (resourceDetails.file_path || resourceDetails.file_url) {
+                                            filePath = resourceDetails.file_path || resourceDetails.file_url;
+                                        }
+                                    }
+                                }
+                            } catch (e) {
+                                console.error('Error fetching resource:', e);
+                            }
+                        }
+                        
+                        if (filePath) {
+                            downloadUrl = await generateSignedUrl(filePath);
+                        }
+                        
+                        if (!filePath && item.resource_title) {
+                            try {
+                                const searchRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?title=ilike.%25${encodeURIComponent(item.resource_title)}%25&limit=1`, {
+                                    headers: {
+                                        'apikey': SUPABASE_ANON_KEY,
+                                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                                        'Content-Type': 'application/json'
+                                    }
+                                });
+                                if (searchRes.ok) {
+                                    const results = await searchRes.json();
+                                    if (results.length > 0) {
+                                        const found = results[0];
+                                        if (found.file_path || found.file_url) {
+                                            filePath = found.file_path || found.file_url;
+                                            resourceDetails = found;
+                                            downloadUrl = await generateSignedUrl(filePath);
+                                        }
+                                    }
+                                }
+                            } catch (e) {
+                                console.error('Error searching for resource:', e);
+                            }
+                        }
+                        
+                        const fileName = filePath ? filePath.split('/').pop() : item.resource_file_name || 'resource.pdf';
+                        
+                        return {
+                            ...item,
+                            resource: resourceDetails,
+                            file_path: filePath,
+                            file_name: fileName,
+                            download_url: downloadUrl,
+                            has_download: !!downloadUrl,
+                            resource_title: item.resource_title || resourceDetails?.title || 'Resource'
+                        };
+                    }));
+                    
+                    setOrderItems(itemsWithDetails);
+                    return itemsWithDetails;
+                } catch (e) {
+                    console.error('Error fetching order items:', e);
+                    showNotification('Error loading order details', 'error');
+                    return [];
+                }
+            };
+
+            const viewOrderDetails = async (order) => {
+                setSelectedOrder(order);
+                setShowOrderDetails(true);
+                setOrderItems([]);
+                await fetchOrderItemsWithDetails(order);
+            };
+
+            const closeOrderDetails = () => {
+                setShowOrderDetails(false);
+                setSelectedOrder(null);
+                setOrderItems([]);
+            };
+
+            // ── FIXED: HANDLE CONFIRM ORDER ──
+            const handleConfirmOrder = async (order) => {
+                const ref = order.payment_ref || order.order_ref || order.id.slice(0, 8).toUpperCase();
+                if (!confirm(`Confirm order #${ref}?`)) return;
+                
+                setLoadingOrderId(order.id);
+                try {
+                    // Remove confirmed_at - column doesn't exist
+                    const updateData = {
+                        payment_status: 'confirmed',
+                        status: 'confirmed'
+                    };
+                    
+                    console.log('📝 Confirming order:', order.id, order.order_ref);
+                    console.log('📝 Update data:', updateData);
+                    
+                    let updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${order.id}`, {
+                        method: 'PATCH',
                         headers: {
                             'apikey': SUPABASE_ANON_KEY,
                             'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
                             'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(updateData)
+                    });
+
+                    if (!updateRes.ok && order.order_ref) {
+                        console.log('🔄 Trying update by order_ref:', order.order_ref);
+                        updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?order_ref=eq.${order.order_ref}`, {
+                            method: 'PATCH',
+                            headers: {
+                                'apikey': SUPABASE_ANON_KEY,
+                                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify(updateData)
+                        });
+                    }
+
+                    if (!updateRes.ok) {
+                        const errorText = await updateRes.text();
+                        console.error('❌ Update failed:', errorText);
+                        throw new Error(`Failed to update order: ${updateRes.status} - ${errorText}`);
+                    }
+
+                    const result = await updateRes.json();
+                    console.log('✅ Order updated:', result);
+
+                    showNotification('✅ Order confirmed!', 'success');
+                    await loadOrders();
+                    setNewOrderIds(prev => prev.filter(id => id !== order.id));
+                    
+                } catch (e) {
+                    console.error('Confirm error:', e);
+                    showNotification('Error confirming order: ' + e.message, 'error');
+                }
+                setLoadingOrderId(null);
+            };
+
+            // ── FIXED: HANDLE REJECT ORDER ──
+            const handleRejectOrder = async (order) => {
+                const ref = order.payment_ref || order.order_ref || order.id.slice(0, 8).toUpperCase();
+                if (!confirm(`Reject order #${ref}?`)) return;
+                
+                try {
+                    const updateData = { 
+                        payment_status: 'rejected', 
+                        status: 'rejected'
+                    };
+                    
+                    console.log('📝 Rejecting order:', order.id, order.order_ref);
+                    
+                    let updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${order.id}`, {
+                        method: 'PATCH',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(updateData)
+                    });
+
+                    if (!updateRes.ok && order.order_ref) {
+                        updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?order_ref=eq.${order.order_ref}`, {
+                            method: 'PATCH',
+                            headers: {
+                                'apikey': SUPABASE_ANON_KEY,
+                                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify(updateData)
+                        });
+                    }
+
+                    if (!updateRes.ok) {
+                        const errorText = await updateRes.text();
+                        console.error('❌ Reject failed:', errorText);
+                        throw new Error(`Failed to reject order: ${updateRes.status} - ${errorText}`);
+                    }
+
+                    showNotification('❌ Order rejected', 'success');
+                    await loadOrders();
+                    setNewOrderIds(prev => prev.filter(id => id !== order.id));
+                    
+                } catch (e) {
+                    console.error('Reject error:', e);
+                    showNotification('Error rejecting order: ' + e.message, 'error');
+                }
+            };
+
+            const handleResendWhatsApp = async (order) => {
+                setGeneratingLinks(prev => ({ ...prev, [order.id]: true }));
+                try {
+                    const items = await fetchOrderItemsWithDetails(order);
+                    const ref = order.payment_ref || order.order_ref || order.id.slice(0, 8).toUpperCase();
+                    
+                    let message = `✅ *Your KenyaVault Order is Ready!*\n\n`;
+                    message += `Order #: *${ref}*\n\n`;
+                    
+                    if (items.length > 0) {
+                        items.forEach((item, idx) => {
+                            message += `Resource ${idx + 1}: *${item.resource_title}* (x${item.quantity || 1})\n`;
+                        });
+                        message += `\n`;
+                    } else {
+                        message += `Resource: *${order.item_title || order.resource_title || 'Resource'}*\n\n`;
+                    }
+                    
+                    message += `Amount: *KES ${order.total_amount || order.item_price || 0}*\n\n`;
+                    message += `📥 *Download Links:*\n`;
+                    
+                    let hasLinks = false;
+                    items.forEach((item, idx) => {
+                        if (item.download_url) {
+                            message += `\n${idx + 1}. ${item.resource_title}:\n${item.download_url}\n`;
+                            hasLinks = true;
+                        } else if (item.file_path) {
+                            const publicUrl = `${STORAGE_URL}/${encodeURIComponent(item.file_path)}`;
+                            message += `\n${idx + 1}. ${item.resource_title}:\n${publicUrl}\n`;
+                            hasLinks = true;
                         }
                     });
-                    if (searchRes.ok) {
-                        const results = await searchRes.json();
-                        if (results.length > 0) {
-                            const found = results[0];
-                            const filePath = found.file_path || found.file_url;
-                            if (filePath) {
-                                const url = `${STORAGE_URL}/${encodeURIComponent(filePath)}`;
-                                message += `\n1. ${found.title}:\n${url}\n`;
-                                hasLinks = true;
+                    
+                    if (!hasLinks) {
+                        try {
+                            const searchRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?title=ilike.%25${encodeURIComponent(order.item_title || order.resource_title || '')}%25&limit=1`, {
+                                headers: {
+                                    'apikey': SUPABASE_ANON_KEY,
+                                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                                    'Content-Type': 'application/json'
+                                }
+                            });
+                            if (searchRes.ok) {
+                                const results = await searchRes.json();
+                                if (results.length > 0) {
+                                    const found = results[0];
+                                    const filePath = found.file_path || found.file_url;
+                                    if (filePath) {
+                                        const url = `${STORAGE_URL}/${encodeURIComponent(filePath)}`;
+                                        message += `\n1. ${found.title}:\n${url}\n`;
+                                        hasLinks = true;
+                                    }
+                                }
                             }
+                        } catch (e) {
+                            console.error('Error searching for resource:', e);
                         }
                     }
+                    
+                    if (!hasLinks) {
+                        message += `\n⚠️ Please contact support to get your download links.\n`;
+                    }
+                    
+                    message += `\n🔒 *Valid for 3 hours.*\n\n`;
+                    message += `Thank you for choosing KenyaVault! 📚\n`;
+                    message += `Need help? WhatsApp: +254 768 515 494`;
+
+                    const phone = order.customer_phone || order.phone || '254700000000';
+                    const formattedPhone = phone.replace(/^0/, '254').replace(/^\+/, '');
+                    const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`;
+                    
+                    window.open(whatsappUrl, '_blank', 'width=400,height=600');
+                    showNotification('📱 WhatsApp opened!', 'success');
+                    
                 } catch (e) {
-                    console.error('Error searching for resource:', e);
+                    console.error('Resend error:', e);
+                    showNotification('Error: ' + e.message, 'error');
                 }
-            }
-            
-            if (!hasLinks) {
-                message += `\n⚠️ Please contact support to get your download links.\n`;
-            }
-            
-            message += `\n🔒 *Valid for 3 hours.*\n\n`;
-            message += `Thank you for choosing KenyaVault! 📚\n`;
-            message += `Need help? WhatsApp: +254 768 515 494`;
+                setGeneratingLinks(prev => ({ ...prev, [order.id]: false }));
+            };
 
-            const phone = order.customer_phone || order.phone || '254700000000';
-            const formattedPhone = phone.replace(/^0/, '254').replace(/^\+/, '');
-            const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`;
-            
-            window.open(whatsappUrl, '_blank', 'width=400,height=600');
-            showNotification('📱 WhatsApp opened!', 'success');
-            
-        } catch (e) {
-            console.error('Resend error:', e);
-            showNotification('Error: ' + e.message, 'error');
-        }
-        setGeneratingLinks(prev => ({ ...prev, [order.id]: false }));
-    };
+            const copyToClipboard = (text) => {
+                navigator.clipboard.writeText(text).then(() => {
+                    showNotification('📋 Copied to clipboard!', 'success');
+                }).catch(() => {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = text;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                    showNotification('📋 Copied to clipboard!', 'success');
+                });
+            };
 
-    const copyToClipboard = (text) => {
-        navigator.clipboard.writeText(text).then(() => {
-            showNotification('📋 Copied to clipboard!', 'success');
-        }).catch(() => {
-            const textarea = document.createElement('textarea');
-            textarea.value = text;
-            document.body.appendChild(textarea);
-            textarea.select();
-            document.execCommand('copy');
-            document.body.removeChild(textarea);
-            showNotification('📋 Copied to clipboard!', 'success');
-        });
-    };
+            const generateDownloadMessage = (order, items) => {
+                const ref = order.payment_ref || order.order_ref || order.id.slice(0, 8).toUpperCase();
+                let message = `✅ *Your KenyaVault Order is Ready!*\n\n`;
+                message += `Order #: *${ref}*\n\n`;
+                
+                if (items.length > 0) {
+                    items.forEach((item, idx) => {
+                        message += `Resource ${idx + 1}: *${item.resource_title}* (x${item.quantity || 1})\n`;
+                    });
+                    message += `\n`;
+                } else {
+                    message += `Resource: *${order.item_title || order.resource_title || 'Resource'}*\n\n`;
+                }
+                
+                message += `Amount: *KES ${order.total_amount || order.item_price || 0}*\n\n`;
+                message += `📥 *Download Links:*\n`;
+                
+                let hasLinks = false;
+                items.forEach((item, idx) => {
+                    if (item.download_url) {
+                        message += `\n${idx + 1}. ${item.resource_title}:\n${item.download_url}\n`;
+                        hasLinks = true;
+                    } else if (item.file_path) {
+                        const publicUrl = `${STORAGE_URL}/${encodeURIComponent(item.file_path)}`;
+                        message += `\n${idx + 1}. ${item.resource_title}:\n${publicUrl}\n`;
+                        hasLinks = true;
+                    }
+                });
+                
+                if (!hasLinks) {
+                    message += `\n⚠️ Please contact support to get your download links.\n`;
+                }
+                
+                message += `\n🔒 *Valid for 3 hours.*\n\n`;
+                message += `Thank you for choosing KenyaVault! 📚\n`;
+                message += `Need help? WhatsApp: +254 768 515 494`;
+                
+                return message;
+            };
 
-    const generateDownloadMessage = (order, items) => {
-        const ref = order.payment_ref || order.order_ref || order.id.slice(0, 8).toUpperCase();
-        let message = `✅ *Your KenyaVault Order is Ready!*\n\n`;
-        message += `Order #: *${ref}*\n\n`;
-        
-        if (items.length > 0) {
-            items.forEach((item, idx) => {
-                message += `Resource ${idx + 1}: *${item.resource_title}* (x${item.quantity || 1})\n`;
+            const getStatusBadge = (status) => {
+                const map = {
+                    'pending': 'pending',
+                    'pending_verification': 'pending_verification',
+                    'confirmed': 'confirmed',
+                    'paid': 'paid',
+                    'completed': 'paid',
+                    'cancelled': 'rejected',
+                    'rejected': 'rejected'
+                };
+                return map[status] || 'pending';
+            };
+
+            const getStatusLabel = (status) => {
+                const map = {
+                    'pending': '⏳ Pending',
+                    'pending_verification': '⏳ Pending Approval',
+                    'confirmed': '✅ Confirmed',
+                    'paid': '✅ Paid',
+                    'completed': '✅ Paid',
+                    'cancelled': '❌ Cancelled',
+                    'rejected': '❌ Rejected'
+                };
+                return map[status] || '⏳ Pending';
+            };
+
+            const isPending = (order) => {
+                return order.payment_status === 'pending' || 
+                       order.payment_status === 'pending_verification' || 
+                       order.status === 'pending';
+            };
+
+            const isCompleted = (order) => {
+                return order.payment_status === 'confirmed' || 
+                       order.payment_status === 'paid' || 
+                       order.payment_status === 'completed' || 
+                       order.status === 'completed' || 
+                       order.status === 'confirmed' || 
+                       order.status === 'paid';
+            };
+
+            const filteredOrders = orders.filter(o => {
+                if (searchTerm) {
+                    const search = searchTerm.toLowerCase();
+                    const match = 
+                        (o.order_ref || '').toLowerCase().includes(search) ||
+                        (o.payment_ref || '').toLowerCase().includes(search) ||
+                        (o.customer_name || '').toLowerCase().includes(search) ||
+                        (o.customer_phone || '').includes(search) ||
+                        (o.phone || '').includes(search) ||
+                        (o.item_title || '').toLowerCase().includes(search) ||
+                        (o.resource_title || '').toLowerCase().includes(search);
+                    if (!match) return false;
+                }
+                
+                if (filter === 'pending') return isPending(o);
+                if (filter === 'confirmed') return o.payment_status === 'confirmed' || o.status === 'confirmed';
+                if (filter === 'paid') return o.payment_status === 'paid' || o.payment_status === 'completed' || o.status === 'completed' || o.status === 'paid';
+                if (filter === 'cancelled') return o.payment_status === 'cancelled' || o.payment_status === 'rejected' || o.status === 'cancelled' || o.status === 'rejected';
+                return true;
             });
-            message += `\n`;
-        } else {
-            message += `Resource: *${order.item_title || order.resource_title || 'Resource'}*\n\n`;
-        }
-        
-        message += `Amount: *KES ${order.total_amount || order.item_price || 0}*\n\n`;
-        message += `📥 *Download Links:*\n`;
-        
-        let hasLinks = false;
-        items.forEach((item, idx) => {
-            if (item.download_url) {
-                message += `\n${idx + 1}. ${item.resource_title}:\n${item.download_url}\n`;
-                hasLinks = true;
-            } else if (item.file_path) {
-                const publicUrl = `${STORAGE_URL}/${encodeURIComponent(item.file_path)}`;
-                message += `\n${idx + 1}. ${item.resource_title}:\n${publicUrl}\n`;
-                hasLinks = true;
-            }
-        });
-        
-        if (!hasLinks) {
-            message += `\n⚠️ Please contact support to get your download links.\n`;
-        }
-        
-        message += `\n🔒 *Valid for 3 hours.*\n\n`;
-        message += `Thank you for choosing KenyaVault! 📚\n`;
-        message += `Need help? WhatsApp: +254 768 515 494`;
-        
-        return message;
-    };
 
-    const getStatusBadge = (status) => {
-        const map = {
-            'pending': 'pending',
-            'pending_verification': 'pending_verification',
-            'confirmed': 'confirmed',
-            'paid': 'paid',
-            'completed': 'paid',
-            'cancelled': 'rejected',
-            'rejected': 'rejected'
-        };
-        return map[status] || 'pending';
-    };
-
-    const getStatusLabel = (status) => {
-        const map = {
-            'pending': '⏳ Pending',
-            'pending_verification': '⏳ Pending Approval',
-            'confirmed': '✅ Confirmed',
-            'paid': '✅ Paid',
-            'completed': '✅ Paid',
-            'cancelled': '❌ Cancelled',
-            'rejected': '❌ Rejected'
-        };
-        return map[status] || '⏳ Pending';
-    };
-
-    const isPending = (order) => {
-        return order.payment_status === 'pending' || 
-               order.payment_status === 'pending_verification' || 
-               order.status === 'pending';
-    };
-
-    const isCompleted = (order) => {
-        return order.payment_status === 'confirmed' || 
-               order.payment_status === 'paid' || 
-               order.payment_status === 'completed' || 
-               order.status === 'completed' || 
-               order.status === 'confirmed' || 
-               order.status === 'paid';
-    };
-
-    // Filter orders with better debugging
-    const filteredOrders = orders.filter(o => {
-        // Debug each order
-        console.log('🔍 Processing order:', o.order_ref, 'Status:', o.status, 'Payment:', o.payment_status);
-        
-        if (searchTerm) {
-            const search = searchTerm.toLowerCase();
-            const match = 
-                (o.order_ref || '').toLowerCase().includes(search) ||
-                (o.payment_ref || '').toLowerCase().includes(search) ||
-                (o.customer_name || '').toLowerCase().includes(search) ||
-                (o.customer_phone || '').includes(search) ||
-                (o.phone || '').includes(search) ||
-                (o.item_title || '').toLowerCase().includes(search) ||
-                (o.resource_title || '').toLowerCase().includes(search);
-            if (!match) return false;
-        }
-        
-        if (filter === 'pending') return isPending(o);
-        if (filter === 'confirmed') return o.payment_status === 'confirmed' || o.status === 'confirmed';
-        if (filter === 'paid') return o.payment_status === 'paid' || o.payment_status === 'completed' || o.status === 'completed' || o.status === 'paid';
-        if (filter === 'cancelled') return o.payment_status === 'cancelled' || o.payment_status === 'rejected' || o.status === 'cancelled' || o.status === 'rejected';
-        return true;
-    });
-
-    console.log('📊 Filtered orders count:', filteredOrders.length);
-
-    // Show loading state
-    if (loading) {
-        return (
-            <div className="flex justify-center items-center h-64">
-                <div className="text-center">
-                    <div className="spinner"></div>
-                    <p className="mt-4 text-gray-500 dark:text-gray-400">Loading orders...</p>
-                </div>
-            </div>
-        );
-    }
-
-    // Show error state
-    if (error) {
-        return (
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
-                <div className="text-center py-8">
-                    <span className="text-4xl block mb-4">⚠️</span>
-                    <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Error loading orders</h3>
-                    <p className="text-gray-500 dark:text-gray-400 mt-2">{error}</p>
-                    <button 
-                        onClick={() => { setError(null); setLoading(true); loadOrders().then(() => setLoading(false)).catch((err) => setError(err.message)); }} 
-                        className="mt-4 px-4 py-2 bg-[#D4A017] text-white rounded-lg hover:bg-[#FCD34D] transition"
-                    >
-                        🔄 Retry
-                    </button>
-                </div>
-            </div>
-        );
-    }
-
-    return (
-        <div className="fade-in">
-            {/* Revenue Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Total Revenue</p>
-                    <p className="text-2xl font-bold text-[#D4A017]">KES {revenueStats.totalRevenue.toLocaleString()}</p>
-                    <p className="text-xs text-gray-400">{revenueStats.totalOrders} total orders</p>
-                </div>
-                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Pending Revenue</p>
-                    <p className="text-2xl font-bold text-amber-600">KES {revenueStats.pendingRevenue.toLocaleString()}</p>
-                    <p className="text-xs text-gray-400">{revenueStats.pendingOrders} pending orders</p>
-                </div>
-                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Completed Revenue</p>
-                    <p className="text-2xl font-bold text-green-600">KES {revenueStats.completedRevenue.toLocaleString()}</p>
-                    <p className="text-xs text-gray-400">{revenueStats.completedOrders} completed orders</p>
-                </div>
-                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Platform Fee (20%)</p>
-                    <p className="text-2xl font-bold text-purple-600">KES {Math.round(revenueStats.completedRevenue * 0.2).toLocaleString()}</p>
-                    <p className="text-xs text-gray-400">80% goes to tutors</p>
-                </div>
-            </div>
-
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
-                <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
-                    <h2 className="text-xl font-bold text-gray-800 dark:text-white">
-                        📦 Orders ({orders.length})
-                        {revenueStats.pendingOrders > 0 && (
-                            <span className="ml-2 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-full animate-pulse">
-                                {revenueStats.pendingOrders} pending approval
-                            </span>
-                        )}
-                    </h2>
-                    <button onClick={() => { setLoading(true); loadOrders().then(() => setLoading(false)); }} className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg text-xs hover:bg-blue-200 transition">
-                        🔄 Refresh
-                    </button>
-                </div>
-
-                <div className="flex gap-2 flex-wrap mb-4">
-                    <button onClick={() => setFilter('all')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'all' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>All</button>
-                    <button onClick={() => setFilter('pending')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'pending' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>⏳ Pending</button>
-                    <button onClick={() => setFilter('confirmed')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'confirmed' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>✅ Confirmed</button>
-                    <button onClick={() => setFilter('paid')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'paid' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>💳 Paid</button>
-                    <button onClick={() => setFilter('cancelled')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'cancelled' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>❌ Cancelled/Rejected</button>
-                </div>
-
-                <div className="mb-4">
-                    <input 
-                        type="text" 
-                        placeholder="🔍 Search by order ref, customer, phone, or resource..." 
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#D4A017]"
-                    />
-                </div>
-
-                {filteredOrders.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                        {orders.length === 0 ? (
-                            <>
-                                <span className="text-4xl block mb-4">📭</span>
-                                <h3 className="text-lg font-semibold text-gray-800 dark:text-white">No orders found</h3>
-                                <p className="mt-2">Orders will appear here when customers make purchases.</p>
-                                <button 
-                                    onClick={() => { setLoading(true); loadOrders().then(() => setLoading(false)); }} 
-                                    className="mt-4 px-4 py-2 bg-[#D4A017] text-white rounded-lg hover:bg-[#FCD34D] transition"
-                                >
-                                    🔄 Refresh
-                                </button>
-                            </>
-                        ) : (
-                            <>
-                                <span className="text-4xl block mb-4">🔍</span>
-                                <h3 className="text-lg font-semibold text-gray-800 dark:text-white">No orders match your filters</h3>
-                                <p className="mt-2">Try adjusting your search or filter criteria.</p>
-                                <button onClick={() => { setSearchTerm(''); setFilter('all'); }} className="mt-4 px-4 py-2 bg-[#D4A017] text-white rounded-lg hover:bg-[#FCD34D] transition">
-                                    Reset Filters
-                                </button>
-                            </>
-                        )}
-                    </div>
-                ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead className="bg-gray-50 dark:bg-gray-700/50">
-                                <tr>
-                                    <th className="px-4 py-2 text-left">Reference</th>
-                                    <th className="px-4 py-2 text-left">Customer</th>
-                                    <th className="px-4 py-2 text-left">Phone</th>
-                                    <th className="px-4 py-2 text-left">Items</th>
-                                    <th className="px-4 py-2 text-left">Total</th>
-                                    <th className="px-4 py-2 text-left">Status</th>
-                                    <th className="px-4 py-2 text-left">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {filteredOrders.map(o => {
-                                    const isNew = newOrderIds.includes(o.id);
-                                    const pending = isPending(o);
-                                    const ref = o.order_ref || o.payment_ref || o.id.slice(0, 8).toUpperCase();
-                                    return (
-                                        <tr key={o.id} className={`border-t border-gray-100 dark:border-gray-700 ${pending ? 'bg-amber-50 dark:bg-amber-900/10' : ''} ${isNew ? 'new-order-flash' : ''}`}>
-                                            <td className="px-4 py-2 font-medium text-gray-800 dark:text-white">#{ref}</td>
-                                            <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{o.customer_name || 'N/A'}</td>
-                                            <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{o.customer_phone || o.phone || 'N/A'}</td>
-                                            <td className="px-4 py-2 text-gray-600 dark:text-gray-400">
-                                                <button 
-                                                    onClick={() => viewOrderDetails(o)} 
-                                                    className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-1 rounded-full hover:bg-blue-200 transition"
-                                                >
-                                                    📋 View Items
-                                                </button>
-                                            </td>
-                                            <td className="px-4 py-2 font-semibold text-[#D4A017]">KES {o.total_amount || o.item_price || 0}</td>
-                                            <td className="px-4 py-2">
-                                                <span className={`status-badge ${getStatusBadge(o.payment_status || o.status)}`}>
-                                                    {getStatusLabel(o.payment_status || o.status)}
-                                                </span>
-                                                {isNew && <span className="ml-1 text-xs text-green-500 font-bold">NEW!</span>}
-                                                {o.mpesa_code && <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">M-PESA: {o.mpesa_code}</div>}
-                                            </td>
-                                            <td className="px-4 py-2 flex gap-2 flex-wrap">
-                                                {pending && (
-                                                    <>
-                                                        <button 
-                                                            onClick={() => handleConfirmOrder(o)} 
-                                                            disabled={loadingOrderId === o.id}
-                                                            className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg text-xs hover:bg-green-200 transition disabled:opacity-50 flex items-center gap-1"
-                                                        >
-                                                            {loadingOrderId === o.id ? (
-                                                                <><span className="spinner"></span> Processing</>
-                                                            ) : (
-                                                                '✅ Confirm'
-                                                            )}
-                                                        </button>
-                                                        <button 
-                                                            onClick={() => handleRejectOrder(o)} 
-                                                            className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg text-xs hover:bg-red-200 transition"
-                                                        >
-                                                            ❌ Reject
-                                                        </button>
-                                                        <button 
-                                                            onClick={() => viewOrderDetails(o)} 
-                                                            className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg text-xs hover:bg-blue-200 transition"
-                                                        >
-                                                            📋 Details
-                                                        </button>
-                                                    </>
-                                                )}
-                                                {isCompleted(o) && (
-                                                    <>
-                                                        <button 
-                                                            onClick={() => handleResendWhatsApp(o)} 
-                                                            disabled={generatingLinks[o.id]}
-                                                            className="px-3 py-1 bg-[#25D366] text-white rounded-lg text-xs hover:bg-[#1da85a] transition flex items-center gap-1"
-                                                        >
-                                                            {generatingLinks[o.id] ? (
-                                                                <><span className="spinner"></span> Sending</>
-                                                            ) : (
-                                                                '📱 Resend WhatsApp'
-                                                            )}
-                                                        </button>
-                                                        <button 
-                                                            onClick={() => viewOrderDetails(o)} 
-                                                            className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg text-xs hover:bg-blue-200 transition"
-                                                        >
-                                                            📋 Details
-                                                        </button>
-                                                    </>
-                                                )}
-                                                {(o.payment_status === 'cancelled' || o.payment_status === 'rejected' || o.status === 'cancelled' || o.status === 'rejected') && (
-                                                    <span className="text-xs text-red-600 dark:text-red-400">✗ Cancelled</span>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
-                )}
-            </div>
-
-            {/* Order Details Modal */}
-            {showOrderDetails && selectedOrder && (
-                <div className="modal-overlay open" onClick={closeOrderDetails}>
-                    <div className="modal-box max-w-3xl" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-lg font-bold text-gray-800 dark:text-white">📋 Order Details</h3>
-                            <button onClick={closeOrderDetails} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-xl">✕</button>
+            return (
+                <div className="fade-in">
+                    {/* Revenue Stats Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Total Revenue</p>
+                            <p className="text-2xl font-bold text-[#D4A017]">KES {revenueStats.totalRevenue.toLocaleString()}</p>
+                            <p className="text-xs text-gray-400">{revenueStats.totalOrders} total orders</p>
                         </div>
-                        
-                        <div className="space-y-4">
-                            <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-4">
-                                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
-                                    <div><span className="text-gray-500 dark:text-gray-400">Reference:</span> <span className="font-semibold">#{selectedOrder.order_ref || selectedOrder.payment_ref || selectedOrder.id.slice(0, 8).toUpperCase()}</span></div>
-                                    <div><span className="text-gray-500 dark:text-gray-400">Customer:</span> <span className="font-semibold">{selectedOrder.customer_name || 'N/A'}</span></div>
-                                    <div><span className="text-gray-500 dark:text-gray-400">Phone:</span> <span className="font-semibold">{selectedOrder.customer_phone || selectedOrder.phone || 'N/A'}</span></div>
-                                    <div><span className="text-gray-500 dark:text-gray-400">Total:</span> <span className="font-semibold text-[#D4A017]">KES {selectedOrder.total_amount || selectedOrder.item_price || 0}</span></div>
-                                    <div><span className="text-gray-500 dark:text-gray-400">Status:</span> <span className={`status-badge ${getStatusBadge(selectedOrder.payment_status || selectedOrder.status)}`}>{getStatusLabel(selectedOrder.payment_status || selectedOrder.status)}</span></div>
-                                    <div><span className="text-gray-500 dark:text-gray-400">Date:</span> <span className="font-semibold">{new Date(selectedOrder.created_at).toLocaleString()}</span></div>
-                                    {selectedOrder.mpesa_code && (
-                                        <div className="col-span-2"><span className="text-gray-500 dark:text-gray-400">M-PESA Code:</span> <span className="font-semibold font-mono">{selectedOrder.mpesa_code}</span></div>
-                                    )}
+                        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Pending Revenue</p>
+                            <p className="text-2xl font-bold text-amber-600">KES {revenueStats.pendingRevenue.toLocaleString()}</p>
+                            <p className="text-xs text-gray-400">{revenueStats.pendingOrders} pending orders</p>
+                        </div>
+                        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Completed Revenue</p>
+                            <p className="text-2xl font-bold text-green-600">KES {revenueStats.completedRevenue.toLocaleString()}</p>
+                            <p className="text-xs text-gray-400">{revenueStats.completedOrders} completed orders</p>
+                        </div>
+                        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Platform Fee (20%)</p>
+                            <p className="text-2xl font-bold text-purple-600">KES {Math.round(revenueStats.completedRevenue * 0.2).toLocaleString()}</p>
+                            <p className="text-xs text-gray-400">80% goes to tutors</p>
+                        </div>
+                    </div>
+
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+                            <h2 className="text-xl font-bold text-gray-800 dark:text-white">
+                                📦 Orders ({orders.length})
+                                {revenueStats.pendingOrders > 0 && (
+                                    <span className="ml-2 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-full animate-pulse">
+                                        {revenueStats.pendingOrders} pending approval
+                                    </span>
+                                )}
+                            </h2>
+                            <button onClick={() => loadOrders()} className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg text-xs hover:bg-blue-200 transition">
+                                🔄 Refresh
+                            </button>
+                        </div>
+
+                        <div className="flex gap-2 flex-wrap mb-4">
+                            <button onClick={() => setFilter('all')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'all' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>All</button>
+                            <button onClick={() => setFilter('pending')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'pending' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>⏳ Pending</button>
+                            <button onClick={() => setFilter('confirmed')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'confirmed' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>✅ Confirmed</button>
+                            <button onClick={() => setFilter('paid')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'paid' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>💳 Paid</button>
+                            <button onClick={() => setFilter('cancelled')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'cancelled' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>❌ Cancelled/Rejected</button>
+                        </div>
+
+                        <div className="mb-4">
+                            <input 
+                                type="text" 
+                                placeholder="🔍 Search by order ref, customer, phone, or resource..." 
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#D4A017]"
+                            />
+                        </div>
+
+                        {filteredOrders.length === 0 ? (
+                            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                                {orders.length === 0 ? 'No orders found. Orders will appear here when customers make purchases.' : 'No orders match your filters.'}
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead className="bg-gray-50 dark:bg-gray-700/50">
+                                        <tr>
+                                            <th className="px-4 py-2 text-left">Reference</th>
+                                            <th className="px-4 py-2 text-left">Customer</th>
+                                            <th className="px-4 py-2 text-left">Phone</th>
+                                            <th className="px-4 py-2 text-left">Items</th>
+                                            <th className="px-4 py-2 text-left">Total</th>
+                                            <th className="px-4 py-2 text-left">Status</th>
+                                            <th className="px-4 py-2 text-left">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {filteredOrders.map(o => {
+                                            const isNew = newOrderIds.includes(o.id);
+                                            const pending = isPending(o);
+                                            const ref = o.order_ref || o.payment_ref || o.id.slice(0, 8).toUpperCase();
+                                            return (
+                                                <tr key={o.id} className={`border-t border-gray-100 dark:border-gray-700 ${pending ? 'bg-amber-50 dark:bg-amber-900/10' : ''} ${isNew ? 'new-order-flash' : ''}`}>
+                                                    <td className="px-4 py-2 font-medium text-gray-800 dark:text-white">#{ref}</td>
+                                                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{o.customer_name || 'N/A'}</td>
+                                                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{o.customer_phone || o.phone || 'N/A'}</td>
+                                                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">
+                                                        <button 
+                                                            onClick={() => viewOrderDetails(o)} 
+                                                            className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-1 rounded-full hover:bg-blue-200 transition"
+                                                        >
+                                                            📋 View Items
+                                                        </button>
+                                                    </td>
+                                                    <td className="px-4 py-2 font-semibold text-[#D4A017]">KES {o.total_amount || o.item_price || 0}</td>
+                                                    <td className="px-4 py-2">
+                                                        <span className={`status-badge ${getStatusBadge(o.payment_status || o.status)}`}>
+                                                            {getStatusLabel(o.payment_status || o.status)}
+                                                        </span>
+                                                        {isNew && <span className="ml-1 text-xs text-green-500 font-bold">NEW!</span>}
+                                                        {o.mpesa_code && <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">M-PESA: {o.mpesa_code}</div>}
+                                                    </td>
+                                                    <td className="px-4 py-2 flex gap-2 flex-wrap">
+                                                        {pending && (
+                                                            <>
+                                                                <button 
+                                                                    onClick={() => handleConfirmOrder(o)} 
+                                                                    disabled={loadingOrderId === o.id}
+                                                                    className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg text-xs hover:bg-green-200 transition disabled:opacity-50 flex items-center gap-1"
+                                                                >
+                                                                    {loadingOrderId === o.id ? (
+                                                                        <><span className="spinner"></span> Processing</>
+                                                                    ) : (
+                                                                        '✅ Confirm'
+                                                                    )}
+                                                                </button>
+                                                                <button 
+                                                                    onClick={() => handleRejectOrder(o)} 
+                                                                    className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg text-xs hover:bg-red-200 transition"
+                                                                >
+                                                                    ❌ Reject
+                                                                </button>
+                                                                <button 
+                                                                    onClick={() => viewOrderDetails(o)} 
+                                                                    className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg text-xs hover:bg-blue-200 transition"
+                                                                >
+                                                                    📋 Details
+                                                                </button>
+                                                            </>
+                                                        )}
+                                                        {isCompleted(o) && (
+                                                            <>
+                                                                <button 
+                                                                    onClick={() => handleResendWhatsApp(o)} 
+                                                                    disabled={generatingLinks[o.id]}
+                                                                    className="px-3 py-1 bg-[#25D366] text-white rounded-lg text-xs hover:bg-[#1da85a] transition flex items-center gap-1"
+                                                                >
+                                                                    {generatingLinks[o.id] ? (
+                                                                        <><span className="spinner"></span> Sending</>
+                                                                    ) : (
+                                                                        '📱 Resend WhatsApp'
+                                                                    )}
+                                                                </button>
+                                                                <button 
+                                                                    onClick={() => viewOrderDetails(o)} 
+                                                                    className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg text-xs hover:bg-blue-200 transition"
+                                                                >
+                                                                    📋 Details
+                                                                </button>
+                                                            </>
+                                                        )}
+                                                        {(o.payment_status === 'cancelled' || o.payment_status === 'rejected' || o.status === 'cancelled' || o.status === 'rejected') && (
+                                                            <span className="text-xs text-red-600 dark:text-red-400">✗ Cancelled</span>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Order Details Modal */}
+                    {showOrderDetails && selectedOrder && (
+                        <div className="modal-overlay open" onClick={closeOrderDetails}>
+                            <div className="modal-box max-w-3xl" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="text-lg font-bold text-gray-800 dark:text-white">📋 Order Details</h3>
+                                    <button onClick={closeOrderDetails} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-xl">✕</button>
+                                </div>
+                                
+                                <div className="space-y-4">
+                                    <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-4">
+                                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
+                                            <div><span className="text-gray-500 dark:text-gray-400">Reference:</span> <span className="font-semibold">#{selectedOrder.order_ref || selectedOrder.payment_ref || selectedOrder.id.slice(0, 8).toUpperCase()}</span></div>
+                                            <div><span className="text-gray-500 dark:text-gray-400">Customer:</span> <span className="font-semibold">{selectedOrder.customer_name || 'N/A'}</span></div>
+                                            <div><span className="text-gray-500 dark:text-gray-400">Phone:</span> <span className="font-semibold">{selectedOrder.customer_phone || selectedOrder.phone || 'N/A'}</span></div>
+                                            <div><span className="text-gray-500 dark:text-gray-400">Total:</span> <span className="font-semibold text-[#D4A017]">KES {selectedOrder.total_amount || selectedOrder.item_price || 0}</span></div>
+                                            <div><span className="text-gray-500 dark:text-gray-400">Status:</span> <span className={`status-badge ${getStatusBadge(selectedOrder.payment_status || selectedOrder.status)}`}>{getStatusLabel(selectedOrder.payment_status || selectedOrder.status)}</span></div>
+                                            <div><span className="text-gray-500 dark:text-gray-400">Date:</span> <span className="font-semibold">{new Date(selectedOrder.created_at).toLocaleString()}</span></div>
+                                            {selectedOrder.mpesa_code && (
+                                                <div className="col-span-2"><span className="text-gray-500 dark:text-gray-400">M-PESA Code:</span> <span className="font-semibold font-mono">{selectedOrder.mpesa_code}</span></div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <h4 className="font-semibold text-gray-800 dark:text-white mb-2">📦 Resources Ordered</h4>
+                                        {orderItems.length === 0 ? (
+                                            <p className="text-gray-500 dark:text-gray-400 text-sm">Loading items...</p>
+                                        ) : (
+                                            <div className="space-y-2 max-h-80 overflow-y-auto">
+                                                {orderItems.map((item, idx) => (
+                                                    <div key={item.id || idx} className="order-detail-item p-3 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
+                                                        <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-2">
+                                                            <div className="flex-1">
+                                                                <div className="font-medium text-gray-800 dark:text-white">{item.resource_title}</div>
+                                                                <div className="text-xs text-gray-500 dark:text-gray-400">
+                                                                    Qty: {item.quantity || 1} | Price: KES {item.price || 0}
+                                                                </div>
+                                                                {item.file_path && (
+                                                                    <div className="text-xs mt-1">
+                                                                        <span className="text-gray-500 dark:text-gray-400">File: </span>
+                                                                        <code className="bg-gray-200 dark:bg-gray-600 px-1 rounded text-xs break-all">{item.file_name || item.file_path.split('/').pop()}</code>
+                                                                    </div>
+                                                                )}
+                                                                {item.download_url && (
+                                                                    <div className="text-xs mt-1">
+                                                                        <span className="text-green-600 dark:text-green-400">✅ Download link available</span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            <div className="flex gap-1 flex-shrink-0 flex-wrap">
+                                                                {item.download_url && (
+                                                                    <button 
+                                                                        onClick={() => copyToClipboard(item.download_url)} 
+                                                                        className="copy-btn px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded hover:bg-blue-200 transition"
+                                                                        title="Copy download link"
+                                                                    >
+                                                                        📋 Copy Link
+                                                                    </button>
+                                                                )}
+                                                                {item.file_path && (
+                                                                    <button 
+                                                                        onClick={() => {
+                                                                            const publicUrl = `${STORAGE_URL}/${encodeURIComponent(item.file_path)}`;
+                                                                            copyToClipboard(publicUrl);
+                                                                        }} 
+                                                                        className="copy-btn px-2 py-1 text-xs bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-300 rounded hover:bg-gray-200 transition"
+                                                                        title="Copy file URL"
+                                                                    >
+                                                                        📋 Copy URL
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="border-t border-gray-200 dark:border-gray-600 pt-4 flex flex-wrap gap-2">
+                                        <button 
+                                            onClick={() => {
+                                                const message = generateDownloadMessage(selectedOrder, orderItems);
+                                                copyToClipboard(message);
+                                            }} 
+                                            className="btn-gold px-4 py-2 rounded-lg font-semibold text-sm flex-1 min-w-[120px]"
+                                        >
+                                            📋 Copy All Links
+                                        </button>
+                                        <button 
+                                            onClick={() => handleResendWhatsApp(selectedOrder)} 
+                                            disabled={generatingLinks[selectedOrder.id]}
+                                            className="bg-[#25D366] text-white px-4 py-2 rounded-lg font-semibold text-sm flex-1 min-w-[120px] hover:bg-[#1da85a] transition flex items-center justify-center gap-1"
+                                        >
+                                            {generatingLinks[selectedOrder.id] ? (
+                                                <><span className="spinner"></span> Sending</>
+                                            ) : (
+                                                '📱 Send WhatsApp'
+                                            )}
+                                        </button>
+                                        <button 
+                                            onClick={closeOrderDetails}
+                                            className="px-4 py-2 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg font-semibold text-sm hover:bg-gray-300 dark:hover:bg-gray-500 transition"
+                                        >
+                                            Close
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
-
-                            <div>
-                                <h4 className="font-semibold text-gray-800 dark:text-white mb-2">📦 Resources Ordered</h4>
-                                {orderItems.length === 0 ? (
-                                    <p className="text-gray-500 dark:text-gray-400 text-sm">Loading items...</p>
-                                ) : (
-                                    <div className="space-y-2 max-h-80 overflow-y-auto">
-                                        {orderItems.map((item, idx) => (
-                                            <div key={item.id || idx} className="order-detail-item p-3 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
-                                                <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-2">
-                                                    <div className="flex-1">
-                                                        <div className="font-medium text-gray-800 dark:text-white">{item.resource_title}</div>
-                                                        <div className="text-xs text-gray-500 dark:text-gray-400">
-                                                            Qty: {item.quantity || 1} | Price: KES {item.price || 0}
-                                                        </div>
-                                                        {item.file_path && (
-                                                            <div className="text-xs mt-1">
-                                                                <span className="text-gray-500 dark:text-gray-400">File: </span>
-                                                                <code className="bg-gray-200 dark:bg-gray-600 px-1 rounded text-xs break-all">{item.file_name || item.file_path.split('/').pop()}</code>
-                                                            </div>
-                                                        )}
-                                                        {item.download_url && (
-                                                            <div className="text-xs mt-1">
-                                                                <span className="text-green-600 dark:text-green-400">✅ Download link available</span>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    <div className="flex gap-1 flex-shrink-0 flex-wrap">
-                                                        {item.download_url && (
-                                                            <button 
-                                                                onClick={() => copyToClipboard(item.download_url)} 
-                                                                className="copy-btn px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded hover:bg-blue-200 transition"
-                                                                title="Copy download link"
-                                                            >
-                                                                📋 Copy Link
-                                                            </button>
-                                                        )}
-                                                        {item.file_path && (
-                                                            <button 
-                                                                onClick={() => {
-                                                                    const publicUrl = `${STORAGE_URL}/${encodeURIComponent(item.file_path)}`;
-                                                                    copyToClipboard(publicUrl);
-                                                                }} 
-                                                                className="copy-btn px-2 py-1 text-xs bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-300 rounded hover:bg-gray-200 transition"
-                                                                title="Copy file URL"
-                                                            >
-                                                                📋 Copy URL
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="border-t border-gray-200 dark:border-gray-600 pt-4 flex flex-wrap gap-2">
-                                <button 
-                                    onClick={() => {
-                                        const message = generateDownloadMessage(selectedOrder, orderItems);
-                                        copyToClipboard(message);
-                                    }} 
-                                    className="btn-gold px-4 py-2 rounded-lg font-semibold text-sm flex-1 min-w-[120px]"
-                                >
-                                    📋 Copy All Links
-                                </button>
-                                <button 
-                                    onClick={() => handleResendWhatsApp(selectedOrder)} 
-                                    disabled={generatingLinks[selectedOrder.id]}
-                                    className="bg-[#25D366] text-white px-4 py-2 rounded-lg font-semibold text-sm flex-1 min-w-[120px] hover:bg-[#1da85a] transition flex items-center justify-center gap-1"
-                                >
-                                    {generatingLinks[selectedOrder.id] ? (
-                                        <><span className="spinner"></span> Sending</>
-                                    ) : (
-                                        '📱 Send WhatsApp'
-                                    )}
-                                </button>
-                                <button 
-                                    onClick={closeOrderDetails}
-                                    className="px-4 py-2 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg font-semibold text-sm hover:bg-gray-300 dark:hover:bg-gray-500 transition"
-                                >
-                                    Close
-                                </button>
-                            </div>
                         </div>
-                    </div>
+                    )}
                 </div>
-            )}
-        </div>
-    );
-}
+            );
+        }
+
         // ── FINANCE MODULE ──
         function FinanceModule() {
             const { orders, tutors, payments, setPayments, showNotification, TUTOR_PAYOUT_PERCENTAGE } = useApp();
@@ -3108,17 +3254,12 @@ function OrdersModule() {
 
             // Calculate tutor earnings
             const calculateTutorEarnings = (tutorId) => {
-                // Find classes taught by this tutor
                 const tutorClasses = classes.filter(c => c.tutor_id === tutorId && c.is_live === true);
                 
-                // For each class, calculate revenue from orders
                 let totalRevenue = 0;
                 let totalEnrollments = 0;
                 
-                // For simplicity, we'll use the class price and assume each class has enrollments
-                // In a real system, you'd track enrollments in a separate table
                 tutorClasses.forEach(cls => {
-                    // Assume each class has 5 enrollments on average (for demo)
                     const estimatedEnrollments = 5;
                     totalRevenue += cls.price_per_learner * estimatedEnrollments;
                     totalEnrollments += estimatedEnrollments;
@@ -3180,7 +3321,6 @@ function OrdersModule() {
             const confirmedOrders = orders.filter(o => o.payment_status === 'confirmed').length;
             const paidOrders = orders.filter(o => o.payment_status === 'paid' || o.payment_status === 'completed').length;
             
-            // Calculate total tutor payouts
             const totalPayouts = payments
                 .filter(p => p.status === 'paid')
                 .reduce((s, p) => s + (p.amount || 0), 0);
@@ -3189,7 +3329,6 @@ function OrdersModule() {
                 .filter(p => p.status === 'pending')
                 .reduce((s, p) => s + (p.amount || 0), 0);
             
-            // Calculate platform revenue (80% to tutors, 20% to platform)
             const platformRevenue = totalRevenue * 0.2;
 
             return (
@@ -3369,12 +3508,7 @@ function OrdersModule() {
                 setLoading(true);
                 
                 try {
-                    // Save settings to localStorage for now (would be saved to Supabase in production)
                     localStorage.setItem('kv-settings', JSON.stringify(settings));
-                    
-                    // Update payout percentage in context if needed
-                    // In a real app, you'd update the database
-                    
                     showNotification('✅ Settings saved successfully!', 'success');
                 } catch (error) {
                     showNotification('❌ Failed to save settings', 'error');
@@ -3390,7 +3524,6 @@ function OrdersModule() {
                 }));
             };
 
-            // Load settings from localStorage on mount
             useEffect(() => {
                 const savedSettings = localStorage.getItem('kv-settings');
                 if (savedSettings) {
@@ -3608,6 +3741,7 @@ function OrdersModule() {
                         </main>
                     </div>
                     <ToastContainer />
+                    <PendingAlert />
                 </div>
             );
         }
