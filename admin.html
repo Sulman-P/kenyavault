@@ -709,6 +709,7 @@
                 sessionStorage.removeItem('kv-user');
                 setIsAuthenticated(false);
                 setCurrentModule('dashboard');
+                // Redirect to homepage
                 window.location.href = '/';
             };
 
@@ -732,7 +733,8 @@
                     resources, setResources,
                     classes, setClasses,
                     payments, setPayments,
-                    toast, showToast,
+                    toast, setToast,
+                    showToast,
                     toggleSidebar,
                     loadData,
                     loadOrders,
@@ -770,7 +772,7 @@
                     }, 5500);
                     return () => clearTimeout(timer);
                 }
-            }, [toast]);
+            }, [toast, setToast]);
 
             if (!toast) return null;
 
@@ -2542,6 +2544,9 @@
                         confirmed_at: new Date().toISOString()
                     };
                     
+                    // Log the update attempt
+                    console.log('📝 Confirming order:', order.id, order.order_ref);
+                    
                     let updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${order.id}`, {
                         method: 'PATCH',
                         headers: {
@@ -2552,7 +2557,9 @@
                         body: JSON.stringify(updateData)
                     });
 
+                    // If that fails, try by order_ref
                     if (!updateRes.ok && order.order_ref) {
+                        console.log('🔄 Trying update by order_ref:', order.order_ref);
                         updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?order_ref=eq.${order.order_ref}`, {
                             method: 'PATCH',
                             headers: {
@@ -2564,7 +2571,14 @@
                         });
                     }
 
-                    if (!updateRes.ok) throw new Error('Failed to update order');
+                    if (!updateRes.ok) {
+                        const errorText = await updateRes.text();
+                        console.error('❌ Update failed:', errorText);
+                        throw new Error(`Failed to update order: ${updateRes.status} - ${errorText}`);
+                    }
+
+                    const result = await updateRes.json();
+                    console.log('✅ Order updated:', result);
 
                     showNotification('✅ Order confirmed!', 'success');
                     await loadOrders();
@@ -2584,6 +2598,8 @@
                 try {
                     const updateData = { payment_status: 'rejected', status: 'rejected' };
                     
+                    console.log('📝 Rejecting order:', order.id, order.order_ref);
+                    
                     let updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${order.id}`, {
                         method: 'PATCH',
                         headers: {
@@ -2606,13 +2622,19 @@
                         });
                     }
 
-                    if (updateRes.ok) {
-                        showNotification('❌ Order rejected', 'success');
-                        await loadOrders();
-                        setNewOrderIds(prev => prev.filter(id => id !== order.id));
+                    if (!updateRes.ok) {
+                        const errorText = await updateRes.text();
+                        console.error('❌ Reject failed:', errorText);
+                        throw new Error(`Failed to reject order: ${updateRes.status}`);
                     }
+
+                    showNotification('❌ Order rejected', 'success');
+                    await loadOrders();
+                    setNewOrderIds(prev => prev.filter(id => id !== order.id));
+                    
                 } catch (e) {
-                    showNotification('Error rejecting order', 'error');
+                    console.error('Reject error:', e);
+                    showNotification('Error rejecting order: ' + e.message, 'error');
                 }
             };
 
