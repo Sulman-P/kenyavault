@@ -2034,8 +2034,98 @@ function generatePathVariations(filePath) {
         cleaned.add(`kenyavault-pdfs/${spaced}`);
     }
     
-    console.log(`📁 Generated ${cleaned.size} path variations`);
     return Array.from(cleaned);
+}
+
+// ── GENERATE SIGNED URL WITH MULTIPLE PATH FALLBACKS (PURE FETCH) ──
+async function generateSignedUrlWithFallback(filePath, bucketNames = AVAILABLE_BUCKETS) {
+    if (!filePath) {
+        console.error('❌ No file path provided');
+        return null;
+    }
+
+    console.log('🔍 Generating signed URL for:', filePath);
+    
+    // Generate multiple path variations
+    const pathVariations = generatePathVariations(filePath);
+    console.log('📁 Path variations to try:', pathVariations);
+
+    // Try each bucket with each path variation
+    for (const bucket of bucketNames) {
+        for (const path of pathVariations) {
+            try {
+                // Clean the path - remove any double slashes
+                const cleanPath = path.replace(/\/+/g, '/').replace(/^\/+/, '');
+                
+                // URL encode the path - but keep the slashes
+                const pathSegments = cleanPath.split('/').map(s => encodeURIComponent(s));
+                const encodedPath = pathSegments.join('/');
+                
+                // Build the signed URL endpoint
+                const url = `${SUPABASE_URL}/storage/v1/object/sign/${bucket}/${encodedPath}?expiresIn=300`;
+                
+                console.log(`🔍 Trying: bucket=${bucket}, path=${cleanPath}`);
+                
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.signedURL) {
+                        console.log(`✅ Signed URL generated: bucket=${bucket}, path=${cleanPath}`);
+                        return data.signedURL;
+                    }
+                } else {
+                    // Try without encoding (sometimes Supabase handles it)
+                    const url2 = `${SUPABASE_URL}/storage/v1/object/sign/${bucket}/${cleanPath}?expiresIn=300`;
+                    const response2 = await fetch(url2, {
+                        method: 'GET',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                        }
+                    });
+                    
+                    if (response2.ok) {
+                        const data = await response2.json();
+                        if (data.signedURL) {
+                            console.log(`✅ Signed URL generated (no encode): bucket=${bucket}, path=${cleanPath}`);
+                            return data.signedURL;
+                        }
+                    }
+                }
+            } catch (e) {
+                // Silently continue to next variation
+                console.log(`⚠️ Error with bucket=${bucket}, path=${path}:`, e.message);
+            }
+        }
+    }
+
+    console.error('❌ No signed URL could be generated for:', filePath);
+    
+    // Last resort: Try to generate a public URL (if bucket is public)
+    try {
+        for (const bucket of bucketNames) {
+            const cleanPath = filePath.replace(/\/+/g, '/').replace(/^\/+/, '');
+            const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${cleanPath}`;
+            console.log(`🔍 Trying public URL: ${publicUrl}`);
+            
+            const response = await fetch(publicUrl, { method: 'HEAD' });
+            if (response.ok) {
+                console.log(`✅ Public URL works: ${publicUrl}`);
+                return publicUrl;
+            }
+        }
+    } catch (e) {
+        console.log('⚠️ Public URL check failed:', e.message);
+    }
+    
+    return null;
 }
 
 // ── DOWNLOAD PREMIUM RESOURCE ──
@@ -2118,7 +2208,7 @@ async function downloadPremiumResource(orderId) {
         
         console.log('📁 Cleaned file path:', cleanPath);
 
-        // Generate signed URL with fallback using Supabase client
+        // Generate signed URL with fallback
         const downloadUrl = await generateSignedUrlWithFallback(cleanPath);
 
         if (downloadUrl) {
@@ -2141,6 +2231,7 @@ async function downloadPremiumResource(orderId) {
                 console.warn('⚠️ Could not update download count:', e.message);
             }
 
+            // Open the download in a new tab
             window.open(downloadUrl, '_blank');
             showToast('📥', 'Your file is downloading!', 'success');
             return downloadUrl;
