@@ -1925,187 +1925,207 @@
         }
     }
 
-    // ── GENERATE SIGNED URL WITH MULTIPLE PATH FALLBACKS ──
-    async function generateSignedUrlWithFallback(filePath, bucketNames = AVAILABLE_BUCKETS) {
-        if (!filePath) {
-            console.error('❌ No file path provided');
-            return null;
-        }
-
-        console.log('🔍 Generating signed URL for:', filePath);
-        
-        // Generate multiple path variations
-        const pathVariations = generatePathVariations(filePath);
-        console.log('📁 Path variations to try:', pathVariations);
-
-        // Try each bucket with each path variation
-        for (const bucket of bucketNames) {
-            for (const path of pathVariations) {
-                try {
-                    const encodedPath = encodeURIComponent(path);
-                    const signedRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${bucket}/${encodedPath}?expiresIn=300`, {
-                        headers: {
-                            'apikey': SUPABASE_ANON_KEY,
-                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                        }
-                    });
-
-                    if (signedRes.ok) {
-                        const signedData = await signedRes.json();
-                        console.log(`✅ Signed URL generated: bucket=${bucket}, path=${path}`);
-                        return signedData.signedURL;
-                    }
-                } catch (e) {
-                    // Silently continue to next variation
-                }
-            }
-        }
-
-        console.error('❌ No signed URL could be generated for:', filePath);
+// ── GENERATE SIGNED URL WITH MULTIPLE PATH FALLBACKS ──
+async function generateSignedUrlWithFallback(filePath, bucketNames = AVAILABLE_BUCKETS) {
+    if (!filePath) {
+        console.error('❌ No file path provided');
         return null;
     }
 
-    // ── GENERATE PATH VARIATIONS ──
-    function generatePathVariations(filePath) {
-        if (!filePath) return [];
-        
-        const variations = new Set();
-        const decoded = decodeURIComponent(filePath);
-        const fileName = decoded.split('/').pop();
-        
-        // Original path (as-is)
-        variations.add(decoded);
-        
-        // With resources/ prefix
-        if (!decoded.startsWith('resources/')) {
-            variations.add(`resources/${decoded}`);
+    console.log('🔍 Generating signed URL for:', filePath);
+    
+    // Generate multiple path variations (without URL encoding the slashes)
+    const pathVariations = generatePathVariations(filePath);
+    console.log('📁 Path variations to try:', pathVariations);
+
+    // Try each bucket with each path variation
+    for (const bucket of bucketNames) {
+        for (const path of pathVariations) {
+            try {
+                // IMPORTANT: Don't encode the full path - Supabase expects slashes
+                // Only encode special characters in the filename
+                const pathParts = path.split('/');
+                const encodedParts = pathParts.map(part => encodeURIComponent(part));
+                const encodedPath = encodedParts.join('/');
+                
+                console.log(`🔍 Trying: bucket=${bucket}, path=${encodedPath}`);
+                
+                const signedRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${bucket}/${encodedPath}?expiresIn=300`, {
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                    }
+                });
+
+                if (signedRes.ok) {
+                    const signedData = await signedRes.json();
+                    console.log(`✅ Signed URL generated: bucket=${bucket}, path=${path}`);
+                    return signedData.signedURL;
+                } else {
+                    const errorText = await signedRes.text();
+                    console.log(`❌ Failed for bucket=${bucket}, path=${path}: ${signedRes.status} - ${errorText}`);
+                }
+            } catch (e) {
+                console.log(`⚠️ Error with bucket=${bucket}, path=${path}:`, e.message);
+            }
         }
-        
-        // Without resources/ prefix
-        if (decoded.startsWith('resources/')) {
-            variations.add(decoded.replace(/^resources\//, ''));
-        }
-        
-        // With kenyavault-pdfs/ prefix
-        if (!decoded.startsWith('kenyavault-pdfs/')) {
-            variations.add(`kenyavault-pdfs/${decoded}`);
-        }
-        
-        // With kenyavault-resources/ prefix
-        if (!decoded.startsWith('kenyavault-resources/')) {
-            variations.add(`kenyavault-resources/${decoded}`);
-        }
-        
-        // Just the filename (no folder)
-        if (fileName && fileName !== decoded) {
-            variations.add(fileName);
-        }
-        
-        // URL encoded version
-        variations.add(encodeURIComponent(decoded));
-        
-        // With spaces replaced (if any)
-        if (decoded.includes(' ')) {
-            variations.add(decoded.replace(/ /g, '_'));
-            variations.add(decoded.replace(/ /g, '%20'));
-        }
-        
-        return Array.from(variations);
     }
 
-    // ── DOWNLOAD PREMIUM RESOURCE ──
-    async function downloadPremiumResource(orderId) {
-        try {
-            console.log('📥 Starting premium download for order:', orderId);
+    console.error('❌ No signed URL could be generated for:', filePath);
+    return null;
+}
 
-            // Fetch order with resource details
-            const orderRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}&select=id,order_ref,payment_status,resource_id,resource_file_path,resource_file_name,delivery_token`, {
+// ── GENERATE PATH VARIATIONS ──
+function generatePathVariations(filePath) {
+    if (!filePath) return [];
+    
+    const variations = new Set();
+    const decoded = decodeURIComponent(filePath);
+    const fileName = decoded.split('/').pop();
+    
+    // Original path (as-is)
+    variations.add(decoded);
+    
+    // With resources/ prefix
+    if (!decoded.startsWith('resources/')) {
+        variations.add(`resources/${decoded}`);
+    }
+    
+    // Without resources/ prefix
+    if (decoded.startsWith('resources/')) {
+        variations.add(decoded.replace(/^resources\//, ''));
+    }
+    
+    // With kenyavault-pdfs/ prefix
+    if (!decoded.startsWith('kenyavault-pdfs/')) {
+        variations.add(`kenyavault-pdfs/${decoded}`);
+    }
+    
+    // With kenyavault-resources/ prefix
+    if (!decoded.startsWith('kenyavault-resources/')) {
+        variations.add(`kenyavault-resources/${decoded}`);
+    }
+    
+    // Just the filename (no folder)
+    if (fileName && fileName !== decoded) {
+        variations.add(fileName);
+    }
+    
+    // With spaces replaced (if any)
+    if (decoded.includes(' ')) {
+        variations.add(decoded.replace(/ /g, '_'));
+        variations.add(decoded.replace(/ /g, '%20'));
+    }
+    
+    // Remove any leading slashes
+    const cleanedVariations = Array.from(variations).map(v => v.replace(/^\/+/, ''));
+    
+    return cleanedVariations;
+}
+
+// ── DOWNLOAD PREMIUM RESOURCE ──
+async function downloadPremiumResource(orderId) {
+    try {
+        console.log('📥 Starting premium download for order:', orderId);
+
+        // Fetch order with resource details
+        const orderRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}&select=id,order_ref,payment_status,resource_id,resource_file_path,resource_file_name,delivery_token`, {
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            }
+        });
+        
+        if (!orderRes.ok) {
+            throw new Error('Failed to fetch order details');
+        }
+        
+        const orders = await orderRes.json();
+        if (orders.length === 0) {
+            showToast('⚠️', 'Order not found', 'error');
+            return;
+        }
+
+        const order = orders[0];
+        console.log('📦 Order found:', order.order_ref);
+        
+        // Check payment status
+        if (order.payment_status !== 'paid' && order.payment_status !== 'completed') {
+            showToast('⚠️', 'Payment not completed yet', 'error');
+            return;
+        }
+
+        // Get file path from order or resource
+        let filePath = order.resource_file_path || order.resource_file_name;
+        
+        if (!filePath) {
+            // Try to fetch from resources table
+            const resourceRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${order.resource_id}&select=file_path,file_url`, {
                 headers: {
                     'apikey': SUPABASE_ANON_KEY,
                     'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
                 }
             });
             
-            if (!orderRes.ok) {
-                throw new Error('Failed to fetch order details');
-            }
-            
-            const orders = await orderRes.json();
-            if (orders.length === 0) {
-                showToast('⚠️', 'Order not found', 'error');
-                return;
-            }
-
-            const order = orders[0];
-            console.log('📦 Order found:', order.order_ref);
-            
-            // Check payment status
-            if (order.payment_status !== 'paid' && order.payment_status !== 'completed') {
-                showToast('⚠️', 'Payment not completed yet', 'error');
-                return;
-            }
-
-            // Get file path from order or resource
-            let filePath = order.resource_file_path || order.resource_file_name;
-            
-            if (!filePath) {
-                // Try to fetch from resources table
-                const resourceRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${order.resource_id}&select=file_path,file_url`, {
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                    }
-                });
-                
-                if (resourceRes.ok) {
-                    const resources = await resourceRes.json();
-                    if (resources.length > 0) {
-                        filePath = resources[0].file_path || resources[0].file_url;
-                    }
+            if (resourceRes.ok) {
+                const resources = await resourceRes.json();
+                if (resources.length > 0) {
+                    filePath = resources[0].file_path || resources[0].file_url;
                 }
             }
+        }
 
-            if (!filePath) {
-                showToast('⚠️', 'Resource file not found in database', 'error');
-                return;
-            }
+        if (!filePath) {
+            showToast('⚠️', 'Resource file not found in database', 'error');
+            return;
+        }
 
-            console.log('📁 File path from database:', filePath);
+        console.log('📁 File path from database:', filePath);
 
-            // Generate signed URL with fallback
-            const downloadUrl = await generateSignedUrlWithFallback(filePath);
+        // Clean the file path - remove bucket prefixes but keep folder structure
+        let cleanPath = filePath;
+        for (const bucket of AVAILABLE_BUCKETS) {
+            cleanPath = cleanPath.replace(new RegExp(`^${bucket}\\/`), '');
+        }
+        cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
+        cleanPath = cleanPath.replace(/^\/+/, '');
+        
+        console.log('📁 Cleaned file path:', cleanPath);
 
-            if (downloadUrl) {
-                // Update download tracking
-                await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}`, {
-                    method: 'PATCH',
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        download_count: 1,
-                        file_delivered: true,
-                        last_download_at: new Date().toISOString()
-                    })
-                });
+        // Generate signed URL with fallback
+        const downloadUrl = await generateSignedUrlWithFallback(cleanPath);
 
-                window.open(downloadUrl, '_blank');
-                showToast('📥', 'Your file is downloading!', 'success');
-                return downloadUrl;
-            } else {
-                console.error('❌ No download URL could be generated');
-                showToast('⚠️', 'Could not generate download link. Please contact support.', 'error');
-                return null;
-            }
+        if (downloadUrl) {
+            // Update download tracking
+            await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}`, {
+                method: 'PATCH',
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    download_count: 1,
+                    file_delivered: true,
+                    last_download_at: new Date().toISOString()
+                })
+            });
 
-        } catch (error) {
-            console.error('❌ Download error:', error);
-            showToast('❌', 'Failed to download: ' + error.message, 'error');
+            window.open(downloadUrl, '_blank');
+            showToast('📥', 'Your file is downloading!', 'success');
+            return downloadUrl;
+        } else {
+            console.error('❌ No download URL could be generated for:', cleanPath);
+            showToast('⚠️', 'Could not generate download link. Please contact support.', 'error');
             return null;
         }
+
+    } catch (error) {
+        console.error('❌ Download error:', error);
+        showToast('❌', 'Failed to download: ' + error.message, 'error');
+        return null;
     }
+}
 
     // ── DOWNLOAD FREE RESOURCE ──
     async function downloadFreeResource(product) {
