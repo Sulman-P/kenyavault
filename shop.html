@@ -2157,79 +2157,92 @@ async function downloadPremiumResource(orderId) {
 }
 
     // ── DOWNLOAD FREE RESOURCE ──
-    async function downloadFreeResource(product) {
-        const phone = phoneInput.value.trim().replace(/\s/g, '');
-        const customerName = customerNameInput.value.trim();
+async function downloadFreeResource(product) {
+    const phone = phoneInput.value.trim().replace(/\s/g, '');
+    const customerName = customerNameInput.value.trim();
 
-        if (!customerName) {
-            customerNameInput.classList.add('error');
-            showToast('⚠️', 'Please enter your full name', 'error');
-            customerNameInput.focus();
-            return;
-        }
-        customerNameInput.classList.remove('error');
-
-        if (!phone || phone.length < 9) {
-            phoneInput.classList.add('error');
-            showToast('⚠️', 'Please enter a valid phone number', 'error');
-            phoneInput.focus();
-            return;
-        }
-        phoneInput.classList.remove('error');
-
-        const verifyBtn = document.querySelector('.btn-verify-order');
-        if (verifyBtn) {
-            verifyBtn.disabled = true;
-            verifyBtn.classList.add('loading');
-        }
-
-        try {
-            const { orderRef, orderId } = await createOrder(product, customerName, phone);
-            currentOrderRef = orderRef;
-            currentOrderId = orderId;
-
-            let filePath = product.file_path || product.file_url || '';
-            
-            console.log('📁 Free download file path:', filePath);
-
-            // Generate signed URL with fallback
-            const downloadUrl = await generateSignedUrlWithFallback(filePath);
-
-            if (downloadUrl) {
-                window.open(downloadUrl, '_blank');
-                showToast('📥', 'Download started!', 'success');
-                
-                await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}`, {
-                    method: 'PATCH',
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        download_count: 1,
-                        file_delivered: true,
-                        last_download_at: new Date().toISOString()
-                    })
-                });
-                
-                setTimeout(() => closeCheckoutModal(), 2000);
-            } else {
-                showToast('⚠️', 'Resource file not found. Please contact support.', 'error');
-            }
-
-        } catch (error) {
-            console.error('❌ Free download error:', error);
-            showToast('❌', 'Failed to download: ' + error.message, 'error');
-        }
-
-        if (verifyBtn) {
-            setTimeout(() => {
-                verifyBtn.disabled = false;
-                verifyBtn.classList.remove('loading');
-            }, 3000);
-        }
+    if (!customerName) {
+        customerNameInput.classList.add('error');
+        showToast('⚠️', 'Please enter your full name', 'error');
+        customerNameInput.focus();
+        return;
     }
+    customerNameInput.classList.remove('error');
+
+    if (!phone || phone.length < 9) {
+        phoneInput.classList.add('error');
+        showToast('⚠️', 'Please enter a valid phone number', 'error');
+        phoneInput.focus();
+        return;
+    }
+    phoneInput.classList.remove('error');
+
+    const verifyBtn = document.querySelector('.btn-verify-order');
+    if (verifyBtn) {
+        verifyBtn.disabled = true;
+        verifyBtn.classList.add('loading');
+    }
+
+    try {
+        const { orderRef, orderId } = await createOrder(product, customerName, phone);
+        currentOrderRef = orderRef;
+        currentOrderId = orderId;
+
+        let filePath = product.file_path || product.file_url || '';
+        
+        console.log('📁 Free download file path:', filePath);
+
+        // Clean the path
+        let cleanPath = filePath;
+        for (const bucket of AVAILABLE_BUCKETS) {
+            if (cleanPath.startsWith(`${bucket}/`)) {
+                cleanPath = cleanPath.replace(`${bucket}/`, '');
+                break;
+            }
+        }
+        cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
+        cleanPath = cleanPath.replace(/^\/+/, '');
+        
+        console.log('📁 Cleaned free download path:', cleanPath);
+
+        // Generate signed URL with fallback
+        const downloadUrl = await generateSignedUrlWithFallback(cleanPath);
+
+        if (downloadUrl) {
+            window.open(downloadUrl, '_blank');
+            showToast('📥', 'Download started!', 'success');
+            
+            await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}`, {
+                method: 'PATCH',
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    download_count: 1,
+                    file_delivered: true,
+                    last_download_at: new Date().toISOString()
+                })
+            });
+            
+            setTimeout(() => closeCheckoutModal(), 2000);
+        } else {
+            showToast('⚠️', 'Resource file not found. Please contact support.', 'error');
+        }
+
+    } catch (error) {
+        console.error('❌ Free download error:', error);
+        showToast('❌', 'Failed to download: ' + error.message, 'error');
+    }
+
+    if (verifyBtn) {
+        setTimeout(() => {
+            verifyBtn.disabled = false;
+            verifyBtn.classList.remove('loading');
+        }, 3000);
+    }
+}
 
     // ── CHECK ORDER PAYMENT STATUS ──
     async function checkOrderPaymentStatus() {
