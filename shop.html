@@ -1934,7 +1934,7 @@ async function generateSignedUrlWithFallback(filePath, bucketNames = AVAILABLE_B
 
     console.log('🔍 Generating signed URL for:', filePath);
     
-    // Generate multiple path variations (without URL encoding the slashes)
+    // Generate multiple path variations
     const pathVariations = generatePathVariations(filePath);
     console.log('📁 Path variations to try:', pathVariations);
 
@@ -1942,28 +1942,21 @@ async function generateSignedUrlWithFallback(filePath, bucketNames = AVAILABLE_B
     for (const bucket of bucketNames) {
         for (const path of pathVariations) {
             try {
-                // IMPORTANT: Don't encode the full path - Supabase expects slashes
-                // Only encode special characters in the filename
-                const pathParts = path.split('/');
-                const encodedParts = pathParts.map(part => encodeURIComponent(part));
-                const encodedPath = encodedParts.join('/');
+                console.log(`🔍 Trying: bucket=${bucket}, path=${path}`);
                 
-                console.log(`🔍 Trying: bucket=${bucket}, path=${encodedPath}`);
-                
-                const signedRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${bucket}/${encodedPath}?expiresIn=300`, {
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                    }
-                });
+                // Use the Supabase client SDK method for signed URLs
+                const { data, error } = await supabase
+                    .storage
+                    .from(bucket)
+                    .createSignedUrl(path, 300); // 5 minutes expiry
 
-                if (signedRes.ok) {
-                    const signedData = await signedRes.json();
+                if (!error && data?.signedUrl) {
                     console.log(`✅ Signed URL generated: bucket=${bucket}, path=${path}`);
-                    return signedData.signedURL;
+                    return data.signedUrl;
                 } else {
-                    const errorText = await signedRes.text();
-                    console.log(`❌ Failed for bucket=${bucket}, path=${path}: ${signedRes.status} - ${errorText}`);
+                    if (error) {
+                        console.log(`❌ Failed for bucket=${bucket}, path=${path}: ${error.message}`);
+                    }
                 }
             } catch (e) {
                 console.log(`⚠️ Error with bucket=${bucket}, path=${path}:`, e.message);
@@ -1980,53 +1973,74 @@ function generatePathVariations(filePath) {
     if (!filePath) return [];
     
     const variations = new Set();
-    const decoded = decodeURIComponent(filePath);
+    
+    // Decode the path first
+    let decoded = filePath;
+    try {
+        decoded = decodeURIComponent(filePath);
+    } catch (e) {
+        // If decoding fails, use as-is
+    }
+    
+    // Get just the filename
     const fileName = decoded.split('/').pop();
     
-    // Original path (as-is)
+    // 1. Original path (as-is)
     variations.add(decoded);
     
-    // With resources/ prefix
+    // 2. Without any prefix
+    if (decoded.startsWith('resources/')) {
+        variations.add(decoded.replace('resources/', ''));
+    }
+    if (decoded.startsWith('kenyavault-pdfs/')) {
+        variations.add(decoded.replace('kenyavault-pdfs/', ''));
+    }
+    if (decoded.startsWith('kenyavault-resources/')) {
+        variations.add(decoded.replace('kenyavault-resources/', ''));
+    }
+    
+    // 3. With resources/ prefix (if not already)
     if (!decoded.startsWith('resources/')) {
         variations.add(`resources/${decoded}`);
     }
     
-    // Without resources/ prefix
-    if (decoded.startsWith('resources/')) {
-        variations.add(decoded.replace(/^resources\//, ''));
-    }
-    
-    // With kenyavault-pdfs/ prefix
+    // 4. With kenyavault-pdfs/ prefix (if not already)
     if (!decoded.startsWith('kenyavault-pdfs/')) {
         variations.add(`kenyavault-pdfs/${decoded}`);
     }
     
-    // With kenyavault-resources/ prefix
+    // 5. With kenyavault-resources/ prefix (if not already)
     if (!decoded.startsWith('kenyavault-resources/')) {
         variations.add(`kenyavault-resources/${decoded}`);
     }
     
-    // Just the filename (no folder)
+    // 6. Just the filename (no folder)
     if (fileName && fileName !== decoded) {
         variations.add(fileName);
     }
     
-    // With spaces replaced (if any)
+    // 7. Remove any leading slashes
+    const cleaned = new Set();
+    variations.forEach(v => {
+        cleaned.add(v.replace(/^\/+/, ''));
+    });
+    
+    // 8. Try with spaces replaced by underscores
     if (decoded.includes(' ')) {
-        variations.add(decoded.replace(/ /g, '_'));
-        variations.add(decoded.replace(/ /g, '%20'));
+        const spaced = decoded.replace(/ /g, '_');
+        cleaned.add(spaced);
+        cleaned.add(`resources/${spaced}`);
+        cleaned.add(`kenyavault-pdfs/${spaced}`);
     }
     
-    // Remove any leading slashes
-    const cleanedVariations = Array.from(variations).map(v => v.replace(/^\/+/, ''));
-    
-    return cleanedVariations;
+    console.log(`📁 Generated ${cleaned.size} path variations`);
+    return Array.from(cleaned);
 }
 
 // ── DOWNLOAD PREMIUM RESOURCE ──
 async function downloadPremiumResource(orderId) {
     try {
-        console.log('📥 Starting premium download for order:', orderId);
+        console.log('📥 Starting secure download for order:', orderId);
 
         // Fetch order with resource details
         const orderRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}&select=id,order_ref,payment_status,resource_id,resource_file_path,resource_file_name,delivery_token`, {
@@ -2055,23 +2069,27 @@ async function downloadPremiumResource(orderId) {
             return;
         }
 
-        // Get file path from order or resource
+        // Get file path from order
         let filePath = order.resource_file_path || order.resource_file_name;
         
-        if (!filePath) {
-            // Try to fetch from resources table
-            const resourceRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${order.resource_id}&select=file_path,file_url`, {
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+        // If not in order, try to fetch from resources table
+        if (!filePath && order.resource_id) {
+            try {
+                const resourceRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${order.resource_id}&select=file_path,file_url`, {
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                    }
+                });
+                
+                if (resourceRes.ok) {
+                    const resources = await resourceRes.json();
+                    if (resources.length > 0) {
+                        filePath = resources[0].file_path || resources[0].file_url;
+                    }
                 }
-            });
-            
-            if (resourceRes.ok) {
-                const resources = await resourceRes.json();
-                if (resources.length > 0) {
-                    filePath = resources[0].file_path || resources[0].file_url;
-                }
+            } catch (e) {
+                console.warn('⚠️ Could not fetch resource:', e.message);
             }
         }
 
@@ -2080,36 +2098,47 @@ async function downloadPremiumResource(orderId) {
             return;
         }
 
-        console.log('📁 File path from database:', filePath);
+        console.log('📁 Original file path from database:', filePath);
 
-        // Clean the file path - remove bucket prefixes but keep folder structure
+        // Clean the file path - remove bucket prefixes and URL prefixes
         let cleanPath = filePath;
+        
+        // Remove bucket names from the beginning
         for (const bucket of AVAILABLE_BUCKETS) {
-            cleanPath = cleanPath.replace(new RegExp(`^${bucket}\\/`), '');
+            if (cleanPath.startsWith(`${bucket}/`)) {
+                cleanPath = cleanPath.replace(`${bucket}/`, '');
+                break;
+            }
         }
+        
+        // Remove URL prefixes
         cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
         cleanPath = cleanPath.replace(/^\/+/, '');
         
         console.log('📁 Cleaned file path:', cleanPath);
 
-        // Generate signed URL with fallback
+        // Generate signed URL with fallback using Supabase client
         const downloadUrl = await generateSignedUrlWithFallback(cleanPath);
 
         if (downloadUrl) {
             // Update download tracking
-            await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}`, {
-                method: 'PATCH',
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    download_count: 1,
-                    file_delivered: true,
-                    last_download_at: new Date().toISOString()
-                })
-            });
+            try {
+                await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        download_count: 1,
+                        file_delivered: true,
+                        last_download_at: new Date().toISOString()
+                    })
+                });
+            } catch (e) {
+                console.warn('⚠️ Could not update download count:', e.message);
+            }
 
             window.open(downloadUrl, '_blank');
             showToast('📥', 'Your file is downloading!', 'success');
