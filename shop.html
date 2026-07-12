@@ -2013,40 +2013,102 @@
     }
 
     // ── DOWNLOAD PREMIUM RESOURCE ──
-    async function downloadPremiumResource(orderId) {
-        try {
-            console.log('📥 Starting secure download for order:', orderId);
+async function downloadPremiumResource(orderId) {
+    try {
+        console.log('📥 Starting secure download for order:', orderId);
 
-            const orderRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}&select=id,order_ref,payment_status,resource_id,resource_file_path,resource_file_name`, {
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+        const orderRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}&select=id,order_ref,payment_status,resource_id,resource_file_path,resource_file_name`, {
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            }
+        });
+        
+        if (!orderRes.ok) {
+            throw new Error('Failed to fetch order details');
+        }
+        
+        const orders = await orderRes.json();
+        if (orders.length === 0) {
+            showToast('⚠️', 'Order not found', 'error');
+            return;
+        }
+
+        const order = orders[0];
+        console.log('📦 Order found:', order.order_ref);
+        
+        if (order.payment_status !== 'paid' && order.payment_status !== 'completed') {
+            showToast('⚠️', 'Payment not completed yet', 'error');
+            return;
+        }
+
+        let filePath = order.resource_file_path || order.resource_file_name;
+        
+        if (!filePath && order.resource_id) {
+            try {
+                const resourceRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${order.resource_id}&select=file_path,file_url`, {
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                    }
+                });
+                
+                if (resourceRes.ok) {
+                    const resources = await resourceRes.json();
+                    if (resources.length > 0) {
+                        filePath = resources[0].file_path || resources[0].file_url;
+                    }
                 }
-            });
-            
-            if (!orderRes.ok) {
-                throw new Error('Failed to fetch order details');
+            } catch (e) {
+                console.warn('⚠️ Could not fetch resource:', e.message);
             }
-            
-            const orders = await orderRes.json();
-            if (orders.length === 0) {
-                showToast('⚠️', 'Order not found', 'error');
-                return;
-            }
+        }
 
-            const order = orders[0];
-            console.log('📦 Order found:', order.order_ref);
-            
-            if (order.payment_status !== 'paid' && order.payment_status !== 'completed') {
-                showToast('⚠️', 'Payment not completed yet', 'error');
-                return;
-            }
+        if (!filePath) {
+            showToast('⚠️', 'Resource file not found in database', 'error');
+            return;
+        }
 
-            let filePath = order.resource_file_path || order.resource_file_name;
-            
-            if (!filePath && order.resource_id) {
-                try {
-                    const resourceRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${order.resource_id}&select=file_path,file_url`, {
+        console.log('📁 Original file path from database:', filePath);
+
+        let cleanPath = filePath;
+        
+        for (const bucket of AVAILABLE_BUCKETS) {
+            if (cleanPath.startsWith(`${bucket}/`)) {
+                cleanPath = cleanPath.replace(`${bucket}/`, '');
+                break;
+            }
+        }
+        
+        cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
+        cleanPath = cleanPath.replace(/^\/+/, '');
+        
+        console.log('📁 Cleaned file path:', cleanPath);
+
+        const downloadUrl = await generatePublicUrl(cleanPath);
+
+        if (downloadUrl) {
+            // ── FIX: Update both orders AND resources download counts ──
+            try {
+                // Update order download count
+                await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        download_count: 1,
+                        file_delivered: true,
+                        last_download_at: new Date().toISOString()
+                    })
+                });
+
+                // ── CRITICAL: Update resource download count ──
+                if (order.resource_id) {
+                    // First get current download count
+                    const resourceRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${order.resource_id}&select=download_count`, {
                         headers: {
                             'apikey': SUPABASE_ANON_KEY,
                             'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
@@ -2056,75 +2118,53 @@
                     if (resourceRes.ok) {
                         const resources = await resourceRes.json();
                         if (resources.length > 0) {
-                            filePath = resources[0].file_path || resources[0].file_url;
+                            const currentCount = resources[0].download_count || 0;
+                            const newCount = currentCount + 1;
+                            
+                            // Update the resource download count
+                            await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${order.resource_id}`, {
+                                method: 'PATCH',
+                                headers: {
+                                    'apikey': SUPABASE_ANON_KEY,
+                                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    download_count: newCount,
+                                    updated_at: new Date().toISOString()
+                                })
+                            });
+                            
+                            console.log(`✅ Resource download count updated: ${newCount}`);
+                            
+                            // Update the local allResources array to reflect the new count
+                            const resourceIndex = allResources.findIndex(r => r.id === order.resource_id);
+                            if (resourceIndex !== -1) {
+                                allResources[resourceIndex].download_count = newCount;
+                            }
                         }
                     }
-                } catch (e) {
-                    console.warn('⚠️ Could not fetch resource:', e.message);
                 }
+            } catch (e) {
+                console.warn('⚠️ Could not update download counts:', e.message);
             }
 
-            if (!filePath) {
-                showToast('⚠️', 'Resource file not found in database', 'error');
-                return;
-            }
-
-            console.log('📁 Original file path from database:', filePath);
-
-            // Clean path - keep folder structure
-            let cleanPath = filePath;
-            
-            for (const bucket of AVAILABLE_BUCKETS) {
-                if (cleanPath.startsWith(`${bucket}/`)) {
-                    cleanPath = cleanPath.replace(`${bucket}/`, '');
-                    break;
-                }
-            }
-            
-            cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
-            cleanPath = cleanPath.replace(/^\/+/, '');
-            
-            console.log('📁 Cleaned file path:', cleanPath);
-
-            // Generate public URL (no signed URL needed since bucket is public)
-            const downloadUrl = await generatePublicUrl(cleanPath);
-
-            if (downloadUrl) {
-                // Update download tracking
-                try {
-                    await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}`, {
-                        method: 'PATCH',
-                        headers: {
-                            'apikey': SUPABASE_ANON_KEY,
-                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            download_count: 1,
-                            file_delivered: true,
-                            last_download_at: new Date().toISOString()
-                        })
-                    });
-                } catch (e) {
-                    console.warn('⚠️ Could not update download count:', e.message);
-                }
-
-                // Open in new tab
-                window.open(downloadUrl, '_blank');
-                showToast('📥', 'Your file is downloading!', 'success');
-                return downloadUrl;
-            } else {
-                console.error('❌ Could not generate download URL');
-                showToast('⚠️', 'File not found. Please contact support.', 'error');
-                return null;
-            }
-
-        } catch (error) {
-            console.error('❌ Download error:', error);
-            showToast('❌', 'Failed to download: ' + error.message, 'error');
+            // Open in new tab
+            window.open(downloadUrl, '_blank');
+            showToast('📥', 'Your file is downloading!', 'success');
+            return downloadUrl;
+        } else {
+            console.error('❌ Could not generate download URL');
+            showToast('⚠️', 'File not found. Please contact support.', 'error');
             return null;
         }
+
+    } catch (error) {
+        console.error('❌ Download error:', error);
+        showToast('❌', 'Failed to download: ' + error.message, 'error');
+        return null;
     }
+}
 
     // ── DOWNLOAD FREE RESOURCE ──
 async function downloadFreeResource(product) {
@@ -2170,7 +2210,6 @@ async function downloadFreeResource(product) {
         cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
         cleanPath = cleanPath.replace(/^\/+/, '');
         
-        // Ensure path has resources/ prefix
         if (cleanPath && !cleanPath.startsWith('resources/')) {
             cleanPath = `resources/${cleanPath}`;
         }
@@ -2180,26 +2219,70 @@ async function downloadFreeResource(product) {
         const downloadUrl = await generatePublicUrl(cleanPath);
 
         if (downloadUrl) {
-            // Open in new tab
+            // ── FIX: Update both orders AND resources download counts ──
+            try {
+                // Update order download count
+                await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        download_count: 1,
+                        file_delivered: true,
+                        last_download_at: new Date().toISOString()
+                    })
+                });
+
+                // ── CRITICAL: Update resource download count ──
+                if (product.id) {
+                    // First get current download count
+                    const resourceRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${product.id}&select=download_count`, {
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                        }
+                    });
+                    
+                    if (resourceRes.ok) {
+                        const resources = await resourceRes.json();
+                        if (resources.length > 0) {
+                            const currentCount = resources[0].download_count || 0;
+                            const newCount = currentCount + 1;
+                            
+                            // Update the resource download count
+                            await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${product.id}`, {
+                                method: 'PATCH',
+                                headers: {
+                                    'apikey': SUPABASE_ANON_KEY,
+                                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    download_count: newCount,
+                                    updated_at: new Date().toISOString()
+                                })
+                            });
+                            
+                            console.log(`✅ Resource download count updated: ${newCount}`);
+                            
+                            // Update the local allResources array
+                            const resourceIndex = allResources.findIndex(r => r.id === product.id);
+                            if (resourceIndex !== -1) {
+                                allResources[resourceIndex].download_count = newCount;
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn('⚠️ Could not update download counts:', e.message);
+            }
+
             window.open(downloadUrl, '_blank');
             showToast('📥', 'Download started!', 'success');
             
-            // Update order
-            await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}`, {
-                method: 'PATCH',
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    download_count: 1,
-                    file_delivered: true,
-                    last_download_at: new Date().toISOString()
-                })
-            });
-            
-            // Close modal after download
             setTimeout(() => closeCheckoutModal(), 2000);
         } else {
             showToast('⚠️', 'Resource file not found. Please contact support.', 'error');
