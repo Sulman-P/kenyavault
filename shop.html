@@ -1720,7 +1720,6 @@
     const AVAILABLE_BUCKETS = [
         'kenyavault-pdfs',
         'kenyavault-resources',
-        'resources',
         'academic-resources',
         'kenyavault-covers'
     ];
@@ -1979,33 +1978,7 @@ async function generateSignedUrlWithFallback(filePath, bucketNames = AVAILABLE_B
 
     console.log('🔍 Generating signed URL for:', filePath);
     
-    // Step 1: Auto-correct the path
-    const corrected = await autoCorrectFilePath(filePath);
-    if (corrected) {
-        console.log('📁 Using corrected path:', corrected.path);
-        // Try the corrected path first
-        const url = `${SUPABASE_URL}/storage/v1/object/sign/${corrected.bucket}/${encodeURIComponent(corrected.path)}?expiresIn=300`;
-        try {
-            const response = await fetch(url, {
-                method: 'GET',
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                }
-            });
-            if (response.ok) {
-                const data = await response.json();
-                if (data.signedURL) {
-                    console.log(`✅ Signed URL generated with corrected path`);
-                    return data.signedURL;
-                }
-            }
-        } catch (e) {
-            console.log('⚠️ Corrected path failed, trying variations...');
-        }
-    }
-    
-    // Step 2: Generate multiple path variations as fallback
+    // Generate multiple path variations
     const pathVariations = generatePathVariations(filePath);
     console.log('📁 Path variations to try:', pathVariations);
 
@@ -2013,14 +1986,16 @@ async function generateSignedUrlWithFallback(filePath, bucketNames = AVAILABLE_B
     for (const bucket of bucketNames) {
         for (const path of pathVariations) {
             try {
-                // Clean the path
+                // Clean the path - remove double slashes but KEEP folder structure
                 const cleanPath = path.replace(/\/+/g, '/').replace(/^\/+/, '');
                 
-                // URL encode the path - but keep the slashes
+                // URL encode the path - keep slashes
                 const pathSegments = cleanPath.split('/').map(s => encodeURIComponent(s));
                 const encodedPath = pathSegments.join('/');
                 
                 const url = `${SUPABASE_URL}/storage/v1/object/sign/${bucket}/${encodedPath}?expiresIn=300`;
+                
+                console.log(`🔍 Trying: bucket=${bucket}, path=${cleanPath}`);
                 
                 const response = await fetch(url, {
                     method: 'GET',
@@ -2038,7 +2013,7 @@ async function generateSignedUrlWithFallback(filePath, bucketNames = AVAILABLE_B
                     }
                 }
             } catch (e) {
-                // Silently continue to next variation
+                // Continue to next variation
             }
         }
     }
@@ -2269,68 +2244,29 @@ async function downloadPremiumResource(orderId) {
 
         console.log('📁 Original file path from database:', filePath);
 
-        // Clean the file path - remove bucket prefixes and URL prefixes
+        // ── FIX: Clean ONLY bucket prefixes, KEEP folder structure ──
         let cleanPath = filePath;
         
-        // ── AUTO-CORRECT FILE PATH ──
-async function autoCorrectFilePath(filePath) {
-    if (!filePath) return filePath;
-    
-    // Try different path variations
-    const variations = [
-        filePath,
-        `resources/${filePath}`,
-        filePath.replace(/^resources\//, ''),
-        `kenyavault-pdfs/${filePath}`,
-        `kenyavault-resources/${filePath}`,
-        filePath.replace(/^kenyavault-pdfs\//, ''),
-        filePath.replace(/^kenyavault-resources\//, '')
-    ];
-    
-    // Remove duplicates and clean
-    const uniqueVariations = [...new Set(variations)];
-    
-    // Try to find which path exists
-    for (const bucket of AVAILABLE_BUCKETS) {
-        for (const path of uniqueVariations) {
-            try {
-                const cleanPath = path.replace(/\/+/g, '/').replace(/^\/+/, '');
-                const checkUrl = `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${encodeURIComponent(cleanPath)}`;
-                const checkRes = await fetch(checkUrl, { method: 'HEAD' });
-                if (checkRes.ok) {
-                    console.log(`✅ Found file: bucket=${bucket}, path=${cleanPath}`);
-                    return { bucket, path: cleanPath };
+        if (cleanPath) {
+            // Remove bucket names from the beginning (if they exist)
+            for (const bucket of AVAILABLE_BUCKETS) {
+                if (cleanPath.startsWith(`${bucket}/`)) {
+                    cleanPath = cleanPath.replace(`${bucket}/`, '');
+                    break;
                 }
-            } catch (e) {
-                // Continue checking
             }
-        }
-    }
-    
-    // If file not found, return the original path with resources/ prefix as default
-    if (!filePath.startsWith('resources/')) {
-        console.log('📁 File not found, defaulting to resources/ prefix');
-        return { bucket: 'kenyavault-pdfs', path: `resources/${filePath}` };
-    }
-    
-    return { bucket: 'kenyavault-pdfs', path: filePath };
-}
-        
-        // Remove bucket names from the beginning
-        for (const bucket of AVAILABLE_BUCKETS) {
-            if (cleanPath.startsWith(`${bucket}/`)) {
-                cleanPath = cleanPath.replace(`${bucket}/`, '');
-                break;
-            }
+            
+            // Remove URL prefixes (if they exist)
+            cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
+            cleanPath = cleanPath.replace(/^\/+/, '');
+            
+            // ── CRITICAL: KEEP the folder structure ──
+            // DO NOT remove 'resources/' or any other folder prefixes
         }
         
-        // Remove URL prefixes
-        cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
-        cleanPath = cleanPath.replace(/^\/+/, '');
-        
-        console.log('📁 Cleaned file path:', cleanPath);
+        console.log('📁 File path for storage (keeping folder structure):', cleanPath);
 
-        // Generate signed URL with fallback
+        // Generate signed URL
         const downloadUrl = await generateSignedUrlWithFallback(cleanPath);
 
         if (downloadUrl) {
@@ -2353,12 +2289,11 @@ async function autoCorrectFilePath(filePath) {
                 console.warn('⚠️ Could not update download count:', e.message);
             }
 
-            // Open the download in a new tab
             window.open(downloadUrl, '_blank');
             showToast('📥', 'Your file is downloading!', 'success');
             return downloadUrl;
         } else {
-            console.error('❌ No download URL could be generated for:', cleanPath);
+            console.error('❌ Could not generate download URL');
             showToast('⚠️', 'Could not generate download link. Please contact support.', 'error');
             return null;
         }
