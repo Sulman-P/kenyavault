@@ -1851,404 +1851,229 @@
     }
 
     // ── CREATE ORDER ──
-async function createOrder(product, customerName, phone) {
-    const orderRef = generateOrderRef();
-    const sessionId = getOrCreateSessionId();
-    
-    // Get file path from product
-    let filePath = product.file_path || product.file_url || '';
-    const fileName = filePath ? filePath.split('/').pop() : `${product.title || 'resource'}.pdf`;
-    const productId = product.id || null;
-    
-    // ── FIX: Clean and normalize the file path ──
-    let cleanFilePath = filePath;
-    if (cleanFilePath) {
-        // Remove bucket names from the beginning
-        for (const bucket of AVAILABLE_BUCKETS) {
-            if (cleanFilePath.startsWith(`${bucket}/`)) {
-                cleanFilePath = cleanFilePath.replace(`${bucket}/`, '');
-                break;
+    async function createOrder(product, customerName, phone) {
+        const orderRef = generateOrderRef();
+        const sessionId = getOrCreateSessionId();
+        
+        let filePath = product.file_path || product.file_url || '';
+        const fileName = filePath ? filePath.split('/').pop() : `${product.title || 'resource'}.pdf`;
+        const productId = product.id || null;
+        
+        let cleanFilePath = filePath;
+        if (cleanFilePath) {
+            for (const bucket of AVAILABLE_BUCKETS) {
+                if (cleanFilePath.startsWith(`${bucket}/`)) {
+                    cleanFilePath = cleanFilePath.replace(`${bucket}/`, '');
+                    break;
+                }
             }
-        }
-        
-        // Remove URL prefixes
-        cleanFilePath = cleanFilePath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
-        cleanFilePath = cleanFilePath.replace(/^\/+/, '');
-        
-        // ── CRITICAL FIX: Ensure the path has the resources/ prefix ──
-        // Check if the file exists in the resources folder in storage
-        // If the path doesn't start with 'resources/', add it
-        if (cleanFilePath && !cleanFilePath.startsWith('resources/')) {
-            // Check if this file exists in the resources folder
-            // We'll try to find it in storage with resources/ prefix
-            const pathWithResources = `resources/${cleanFilePath}`;
             
-            // Try to check if the file exists with resources/ prefix
-            try {
-                const checkUrl = `${SUPABASE_URL}/storage/v1/object/public/kenyavault-pdfs/${encodeURIComponent(pathWithResources)}`;
-                const checkRes = await fetch(checkUrl, { method: 'HEAD' });
-                if (checkRes.ok) {
-                    // File exists with resources/ prefix, use that
-                    cleanFilePath = pathWithResources;
-                    console.log('📁 Using path with resources/ prefix:', cleanFilePath);
-                } else {
-                    // File doesn't exist with resources/ prefix, check without
-                    const checkUrl2 = `${SUPABASE_URL}/storage/v1/object/public/kenyavault-pdfs/${encodeURIComponent(cleanFilePath)}`;
-                    const checkRes2 = await fetch(checkUrl2, { method: 'HEAD' });
-                    if (checkRes2.ok) {
-                        // File exists without resources/ prefix, keep as is
-                        console.log('📁 Using path without resources/ prefix:', cleanFilePath);
-                    } else {
-                        // File doesn't exist anywhere, but we'll use resources/ prefix as default
-                        // since that's where most files are stored
-                        cleanFilePath = pathWithResources;
-                        console.log('📁 Defaulting to resources/ prefix:', cleanFilePath);
-                    }
-                }
-            } catch (e) {
-                // If we can't check, default to resources/ prefix
-                cleanFilePath = pathWithResources;
-                console.log('📁 Defaulting to resources/ prefix (check failed):', cleanFilePath);
+            cleanFilePath = cleanFilePath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
+            cleanFilePath = cleanFilePath.replace(/^\/+/, '');
+            
+            // Ensure path has resources/ prefix
+            if (cleanFilePath && !cleanFilePath.startsWith('resources/')) {
+                cleanFilePath = `resources/${cleanFilePath}`;
             }
+            
+            cleanFilePath = cleanFilePath.replace(/^resources\/resources\//, 'resources/');
+        }
+
+        const isFree = (product.price === 0 || product.price === null || product.price === undefined) || 
+                       product.resource_type === 'free';
+
+        const orderData = {
+            order_ref: orderRef,
+            customer_name: customerName,
+            phone: phone,
+            session_id: sessionId,
+            item_title: product.title || 'Resource',
+            item_price: product.price || 0,
+            total_amount: product.price || 0,
+            status: isFree ? 'completed' : 'pending',
+            payment_status: isFree ? 'completed' : 'pending',
+            resource_id: productId,
+            resource_file_path: cleanFilePath,
+            resource_file_name: fileName,
+            ip_address: await getClientIP(),
+            user_agent: navigator.userAgent,
+            created_at: new Date().toISOString()
+        };
+
+        console.log('📝 Creating order with file path:', cleanFilePath);
+
+        try {
+            const response = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
+                method: 'POST',
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=representation'
+                },
+                body: JSON.stringify(orderData)
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('❌ Order creation error:', errorText);
+                throw new Error(`HTTP ${response.status}: ${errorText}`);
+            }
+
+            const result = await response.json();
+            const createdOrder = result[0] || result;
+            console.log('✅ Order created:', createdOrder);
+
+            return { orderRef, orderId: createdOrder.id };
+
+        } catch (error) {
+            console.error('❌ Order creation failed:', error);
+            throw error;
+        }
+    }
+
+    // ── GENERATE PATH VARIATIONS ──
+    function generatePathVariations(filePath) {
+        if (!filePath) return [];
+        
+        const variations = new Set();
+        
+        let decoded = filePath;
+        try {
+            decoded = decodeURIComponent(filePath);
+        } catch (e) {}
+        
+        const fileName = decoded.split('/').pop();
+        
+        // Original path
+        variations.add(decoded);
+        
+        // Without resources/ prefix
+        if (decoded.startsWith('resources/')) {
+            variations.add(decoded.replace('resources/', ''));
         }
         
-        // Remove any duplicate resources/ prefixes
-        cleanFilePath = cleanFilePath.replace(/^resources\/resources\//, 'resources/');
+        // With resources/ prefix
+        if (!decoded.startsWith('resources/')) {
+            variations.add(`resources/${decoded}`);
+        }
+        
+        // Just the filename
+        if (fileName && fileName !== decoded) {
+            variations.add(fileName);
+        }
+        
+        // Remove leading slashes
+        const cleaned = new Set();
+        variations.forEach(v => {
+            cleaned.add(v.replace(/^\/+/, ''));
+        });
+        
+        return Array.from(cleaned);
     }
 
-    const isFree = (product.price === 0 || product.price === null || product.price === undefined) || 
-                   product.resource_type === 'free';
-
-    const orderData = {
-        order_ref: orderRef,
-        customer_name: customerName,
-        phone: phone,
-        session_id: sessionId,
-        item_title: product.title || 'Resource',
-        item_price: product.price || 0,
-        total_amount: product.price || 0,
-        status: isFree ? 'completed' : 'pending',
-        payment_status: isFree ? 'completed' : 'pending',
-        resource_id: productId,
-        resource_file_path: cleanFilePath,
-        resource_file_name: fileName,
-        ip_address: await getClientIP(),
-        user_agent: navigator.userAgent,
-        created_at: new Date().toISOString()
-    };
-
-    console.log('📝 Creating order with file path:', cleanFilePath);
-
-    try {
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
-            method: 'POST',
-            headers: {
-                'apikey': SUPABASE_ANON_KEY,
-                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                'Content-Type': 'application/json',
-                'Prefer': 'return=representation'
-            },
-            body: JSON.stringify(orderData)
-        });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('❌ Order creation error:', errorText);
-            throw new Error(`HTTP ${response.status}: ${errorText}`);
+    // ── GENERATE PUBLIC URL FOR FILE ──
+    async function generatePublicUrl(filePath, bucketNames = AVAILABLE_BUCKETS) {
+        if (!filePath) {
+            console.error('❌ No file path provided');
+            return null;
         }
 
-        const result = await response.json();
-        const createdOrder = result[0] || result;
-        console.log('✅ Order created:', createdOrder);
+        console.log('🔍 Generating public URL for:', filePath);
+        
+        const pathVariations = generatePathVariations(filePath);
+        console.log('📁 Path variations to try:', pathVariations);
 
-        return { orderRef, orderId: createdOrder.id };
-
-    } catch (error) {
-        console.error('❌ Order creation failed:', error);
-        throw error;
-    }
-}
-
-// ── GENERATE SIGNED URL WITH MULTIPLE PATH FALLBACKS ──
-async function generateSignedUrlWithFallback(filePath, bucketNames = AVAILABLE_BUCKETS) {
-    if (!filePath) {
-        console.error('❌ No file path provided');
-        return null;
-    }
-
-    console.log('🔍 Generating signed URL for:', filePath);
-    
-    // Generate multiple path variations
-    const pathVariations = generatePathVariations(filePath);
-    console.log('📁 Path variations to try:', pathVariations);
-
-    // Try each bucket with each path variation
-    for (const bucket of bucketNames) {
-        for (const path of pathVariations) {
-            try {
-                // Clean the path - remove double slashes but KEEP folder structure
-                const cleanPath = path.replace(/\/+/g, '/').replace(/^\/+/, '');
-                
-                // URL encode the path - keep slashes
-                const pathSegments = cleanPath.split('/').map(s => encodeURIComponent(s));
-                const encodedPath = pathSegments.join('/');
-                
-                const url = `${SUPABASE_URL}/storage/v1/object/sign/${bucket}/${encodedPath}?expiresIn=300`;
-                
-                console.log(`🔍 Trying: bucket=${bucket}, path=${cleanPath}`);
-                
-                const response = await fetch(url, {
-                    method: 'GET',
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+        // Try each bucket with each path variation
+        for (const bucket of bucketNames) {
+            for (const path of pathVariations) {
+                try {
+                    const cleanPath = path.replace(/\/+/g, '/').replace(/^\/+/, '');
+                    const pathSegments = cleanPath.split('/').map(s => encodeURIComponent(s));
+                    const encodedPath = pathSegments.join('/');
+                    
+                    const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${encodedPath}`;
+                    
+                    console.log(`🔍 Trying public URL: bucket=${bucket}, path=${cleanPath}`);
+                    
+                    const response = await fetch(publicUrl, { method: 'HEAD' });
+                    
+                    if (response.ok) {
+                        console.log(`✅ Public URL found: ${publicUrl}`);
+                        return publicUrl;
                     }
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data.signedURL) {
-                        console.log(`✅ Signed URL generated: bucket=${bucket}, path=${cleanPath}`);
-                        return data.signedURL;
-                    }
+                } catch (e) {
+                    // Continue searching
                 }
-            } catch (e) {
-                // Continue to next variation
             }
         }
-    }
 
-    console.error('❌ No signed URL could be generated for:', filePath);
-    return null;
-}
-
-// ── GENERATE PATH VARIATIONS ──
-function generatePathVariations(filePath) {
-    if (!filePath) return [];
-    
-    const variations = new Set();
-    
-    // Decode the path first
-    let decoded = filePath;
-    try {
-        decoded = decodeURIComponent(filePath);
-    } catch (e) {
-        // If decoding fails, use as-is
-    }
-    
-    // Get just the filename
-    const fileName = decoded.split('/').pop();
-    
-    // 1. Original path (as-is)
-    variations.add(decoded);
-    
-    // 2. Without any prefix
-    if (decoded.startsWith('resources/')) {
-        variations.add(decoded.replace('resources/', ''));
-    }
-    if (decoded.startsWith('kenyavault-pdfs/')) {
-        variations.add(decoded.replace('kenyavault-pdfs/', ''));
-    }
-    if (decoded.startsWith('kenyavault-resources/')) {
-        variations.add(decoded.replace('kenyavault-resources/', ''));
-    }
-    
-    // 3. With resources/ prefix (if not already)
-    if (!decoded.startsWith('resources/')) {
-        variations.add(`resources/${decoded}`);
-    }
-    
-    // 4. With kenyavault-pdfs/ prefix (if not already)
-    if (!decoded.startsWith('kenyavault-pdfs/')) {
-        variations.add(`kenyavault-pdfs/${decoded}`);
-    }
-    
-    // 5. With kenyavault-resources/ prefix (if not already)
-    if (!decoded.startsWith('kenyavault-resources/')) {
-        variations.add(`kenyavault-resources/${decoded}`);
-    }
-    
-    // 6. Just the filename (no folder)
-    if (fileName && fileName !== decoded) {
-        variations.add(fileName);
-    }
-    
-    // 7. Remove any leading slashes
-    const cleaned = new Set();
-    variations.forEach(v => {
-        cleaned.add(v.replace(/^\/+/, ''));
-    });
-    
-    // 8. Try with spaces replaced by underscores
-    if (decoded.includes(' ')) {
-        const spaced = decoded.replace(/ /g, '_');
-        cleaned.add(spaced);
-        cleaned.add(`resources/${spaced}`);
-        cleaned.add(`kenyavault-pdfs/${spaced}`);
-    }
-    
-    return Array.from(cleaned);
-}
-
-// ── GENERATE SIGNED URL WITH MULTIPLE PATH FALLBACKS (PURE FETCH) ──
-async function generateSignedUrlWithFallback(filePath, bucketNames = AVAILABLE_BUCKETS) {
-    if (!filePath) {
-        console.error('❌ No file path provided');
+        console.error('❌ No public URL could be generated for:', filePath);
         return null;
     }
 
-    console.log('🔍 Generating signed URL for:', filePath);
-    
-    // Generate multiple path variations
-    const pathVariations = generatePathVariations(filePath);
-    console.log('📁 Path variations to try:', pathVariations);
+    // ── DOWNLOAD PREMIUM RESOURCE ──
+    async function downloadPremiumResource(orderId) {
+        try {
+            console.log('📥 Starting secure download for order:', orderId);
 
-    // Try each bucket with each path variation
-    for (const bucket of bucketNames) {
-        for (const path of pathVariations) {
-            try {
-                // Clean the path - remove any double slashes
-                const cleanPath = path.replace(/\/+/g, '/').replace(/^\/+/, '');
-                
-                // URL encode the path - but keep the slashes
-                const pathSegments = cleanPath.split('/').map(s => encodeURIComponent(s));
-                const encodedPath = pathSegments.join('/');
-                
-                // Build the signed URL endpoint
-                const url = `${SUPABASE_URL}/storage/v1/object/sign/${bucket}/${encodedPath}?expiresIn=300`;
-                
-                console.log(`🔍 Trying: bucket=${bucket}, path=${cleanPath}`);
-                
-                const response = await fetch(url, {
-                    method: 'GET',
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                    }
-                });
+            const orderRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}&select=id,order_ref,payment_status,resource_id,resource_file_path,resource_file_name`, {
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                }
+            });
+            
+            if (!orderRes.ok) {
+                throw new Error('Failed to fetch order details');
+            }
+            
+            const orders = await orderRes.json();
+            if (orders.length === 0) {
+                showToast('⚠️', 'Order not found', 'error');
+                return;
+            }
 
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data.signedURL) {
-                        console.log(`✅ Signed URL generated: bucket=${bucket}, path=${cleanPath}`);
-                        return data.signedURL;
-                    }
-                } else {
-                    // Try without encoding (sometimes Supabase handles it)
-                    const url2 = `${SUPABASE_URL}/storage/v1/object/sign/${bucket}/${cleanPath}?expiresIn=300`;
-                    const response2 = await fetch(url2, {
-                        method: 'GET',
+            const order = orders[0];
+            console.log('📦 Order found:', order.order_ref);
+            
+            if (order.payment_status !== 'paid' && order.payment_status !== 'completed') {
+                showToast('⚠️', 'Payment not completed yet', 'error');
+                return;
+            }
+
+            let filePath = order.resource_file_path || order.resource_file_name;
+            
+            if (!filePath && order.resource_id) {
+                try {
+                    const resourceRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${order.resource_id}&select=file_path,file_url`, {
                         headers: {
                             'apikey': SUPABASE_ANON_KEY,
                             'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
                         }
                     });
                     
-                    if (response2.ok) {
-                        const data = await response2.json();
-                        if (data.signedURL) {
-                            console.log(`✅ Signed URL generated (no encode): bucket=${bucket}, path=${cleanPath}`);
-                            return data.signedURL;
+                    if (resourceRes.ok) {
+                        const resources = await resourceRes.json();
+                        if (resources.length > 0) {
+                            filePath = resources[0].file_path || resources[0].file_url;
                         }
                     }
+                } catch (e) {
+                    console.warn('⚠️ Could not fetch resource:', e.message);
                 }
-            } catch (e) {
-                // Silently continue to next variation
-                console.log(`⚠️ Error with bucket=${bucket}, path=${path}:`, e.message);
             }
-        }
-    }
 
-    console.error('❌ No signed URL could be generated for:', filePath);
-    
-    // Last resort: Try to generate a public URL (if bucket is public)
-    try {
-        for (const bucket of bucketNames) {
-            const cleanPath = filePath.replace(/\/+/g, '/').replace(/^\/+/, '');
-            const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${cleanPath}`;
-            console.log(`🔍 Trying public URL: ${publicUrl}`);
+            if (!filePath) {
+                showToast('⚠️', 'Resource file not found in database', 'error');
+                return;
+            }
+
+            console.log('📁 Original file path from database:', filePath);
+
+            // Clean path - keep folder structure
+            let cleanPath = filePath;
             
-            const response = await fetch(publicUrl, { method: 'HEAD' });
-            if (response.ok) {
-                console.log(`✅ Public URL works: ${publicUrl}`);
-                return publicUrl;
-            }
-        }
-    } catch (e) {
-        console.log('⚠️ Public URL check failed:', e.message);
-    }
-    
-    return null;
-}
-
-// ── DOWNLOAD PREMIUM RESOURCE ──
-async function downloadPremiumResource(orderId) {
-    try {
-        console.log('📥 Starting secure download for order:', orderId);
-
-        // Fetch order with resource details
-        const orderRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}&select=id,order_ref,payment_status,resource_id,resource_file_path,resource_file_name,delivery_token`, {
-            headers: {
-                'apikey': SUPABASE_ANON_KEY,
-                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-            }
-        });
-        
-        if (!orderRes.ok) {
-            throw new Error('Failed to fetch order details');
-        }
-        
-        const orders = await orderRes.json();
-        if (orders.length === 0) {
-            showToast('⚠️', 'Order not found', 'error');
-            return;
-        }
-
-        const order = orders[0];
-        console.log('📦 Order found:', order.order_ref);
-        
-        // Check payment status
-        if (order.payment_status !== 'paid' && order.payment_status !== 'completed') {
-            showToast('⚠️', 'Payment not completed yet', 'error');
-            return;
-        }
-
-        // Get file path from order
-        let filePath = order.resource_file_path || order.resource_file_name;
-        
-        // If not in order, try to fetch from resources table
-        if (!filePath && order.resource_id) {
-            try {
-                const resourceRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${order.resource_id}&select=file_path,file_url`, {
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                    }
-                });
-                
-                if (resourceRes.ok) {
-                    const resources = await resourceRes.json();
-                    if (resources.length > 0) {
-                        filePath = resources[0].file_path || resources[0].file_url;
-                    }
-                }
-            } catch (e) {
-                console.warn('⚠️ Could not fetch resource:', e.message);
-            }
-        }
-
-        if (!filePath) {
-            showToast('⚠️', 'Resource file not found in database', 'error');
-            return;
-        }
-
-        console.log('📁 Original file path from database:', filePath);
-
-        // ── FIX: Clean ONLY bucket prefixes, KEEP folder structure ──
-        let cleanPath = filePath;
-        
-        if (cleanPath) {
-            // Remove bucket names from the beginning (if they exist)
             for (const bucket of AVAILABLE_BUCKETS) {
                 if (cleanPath.startsWith(`${bucket}/`)) {
                     cleanPath = cleanPath.replace(`${bucket}/`, '');
@@ -2256,22 +2081,103 @@ async function downloadPremiumResource(orderId) {
                 }
             }
             
-            // Remove URL prefixes (if they exist)
             cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
             cleanPath = cleanPath.replace(/^\/+/, '');
             
-            // ── CRITICAL: KEEP the folder structure ──
-            // DO NOT remove 'resources/' or any other folder prefixes
+            console.log('📁 Cleaned file path:', cleanPath);
+
+            // Generate public URL (no signed URL needed since bucket is public)
+            const downloadUrl = await generatePublicUrl(cleanPath);
+
+            if (downloadUrl) {
+                // Update download tracking
+                try {
+                    await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}`, {
+                        method: 'PATCH',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            download_count: 1,
+                            file_delivered: true,
+                            last_download_at: new Date().toISOString()
+                        })
+                    });
+                } catch (e) {
+                    console.warn('⚠️ Could not update download count:', e.message);
+                }
+
+                // Open in new tab
+                window.open(downloadUrl, '_blank');
+                showToast('📥', 'Your file is downloading!', 'success');
+                return downloadUrl;
+            } else {
+                console.error('❌ Could not generate download URL');
+                showToast('⚠️', 'File not found. Please contact support.', 'error');
+                return null;
+            }
+
+        } catch (error) {
+            console.error('❌ Download error:', error);
+            showToast('❌', 'Failed to download: ' + error.message, 'error');
+            return null;
         }
-        
-        console.log('📁 File path for storage (keeping folder structure):', cleanPath);
+    }
 
-        // Generate signed URL
-        const downloadUrl = await generateSignedUrlWithFallback(cleanPath);
+    // ── DOWNLOAD FREE RESOURCE ──
+    async function downloadFreeResource(product) {
+        const phone = phoneInput.value.trim().replace(/\s/g, '');
+        const customerName = customerNameInput.value.trim();
 
-        if (downloadUrl) {
-            // Update download tracking
-            try {
+        if (!customerName) {
+            customerNameInput.classList.add('error');
+            showToast('⚠️', 'Please enter your full name', 'error');
+            customerNameInput.focus();
+            return;
+        }
+        customerNameInput.classList.remove('error');
+
+        if (!phone || phone.length < 9) {
+            phoneInput.classList.add('error');
+            showToast('⚠️', 'Please enter a valid phone number', 'error');
+            phoneInput.focus();
+            return;
+        }
+        phoneInput.classList.remove('error');
+
+        const verifyBtn = document.querySelector('.btn-verify-order');
+        if (verifyBtn) {
+            verifyBtn.disabled = true;
+            verifyBtn.classList.add('loading');
+        }
+
+        try {
+            const { orderRef, orderId } = await createOrder(product, customerName, phone);
+            currentOrderRef = orderRef;
+            currentOrderId = orderId;
+
+            let filePath = product.file_path || product.file_url || '';
+            
+            let cleanPath = filePath;
+            for (const bucket of AVAILABLE_BUCKETS) {
+                if (cleanPath.startsWith(`${bucket}/`)) {
+                    cleanPath = cleanPath.replace(`${bucket}/`, '');
+                    break;
+                }
+            }
+            cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
+            cleanPath = cleanPath.replace(/^\/+/, '');
+            
+            console.log('📁 Cleaned free download path:', cleanPath);
+
+            const downloadUrl = await generatePublicUrl(cleanPath);
+
+            if (downloadUrl) {
+                window.open(downloadUrl, '_blank');
+                showToast('📥', 'Download started!', 'success');
+                
                 await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}`, {
                     method: 'PATCH',
                     headers: {
@@ -2285,113 +2191,24 @@ async function downloadPremiumResource(orderId) {
                         last_download_at: new Date().toISOString()
                     })
                 });
-            } catch (e) {
-                console.warn('⚠️ Could not update download count:', e.message);
+                
+                setTimeout(() => closeCheckoutModal(), 2000);
+            } else {
+                showToast('⚠️', 'Resource file not found. Please contact support.', 'error');
             }
 
-            window.open(downloadUrl, '_blank');
-            showToast('📥', 'Your file is downloading!', 'success');
-            return downloadUrl;
-        } else {
-            console.error('❌ Could not generate download URL');
-            showToast('⚠️', 'Could not generate download link. Please contact support.', 'error');
-            return null;
+        } catch (error) {
+            console.error('❌ Free download error:', error);
+            showToast('❌', 'Failed to download: ' + error.message, 'error');
         }
 
-    } catch (error) {
-        console.error('❌ Download error:', error);
-        showToast('❌', 'Failed to download: ' + error.message, 'error');
-        return null;
-    }
-}
-
-    // ── DOWNLOAD FREE RESOURCE ──
-async function downloadFreeResource(product) {
-    const phone = phoneInput.value.trim().replace(/\s/g, '');
-    const customerName = customerNameInput.value.trim();
-
-    if (!customerName) {
-        customerNameInput.classList.add('error');
-        showToast('⚠️', 'Please enter your full name', 'error');
-        customerNameInput.focus();
-        return;
-    }
-    customerNameInput.classList.remove('error');
-
-    if (!phone || phone.length < 9) {
-        phoneInput.classList.add('error');
-        showToast('⚠️', 'Please enter a valid phone number', 'error');
-        phoneInput.focus();
-        return;
-    }
-    phoneInput.classList.remove('error');
-
-    const verifyBtn = document.querySelector('.btn-verify-order');
-    if (verifyBtn) {
-        verifyBtn.disabled = true;
-        verifyBtn.classList.add('loading');
-    }
-
-    try {
-        const { orderRef, orderId } = await createOrder(product, customerName, phone);
-        currentOrderRef = orderRef;
-        currentOrderId = orderId;
-
-        let filePath = product.file_path || product.file_url || '';
-        
-        console.log('📁 Free download file path:', filePath);
-
-        // Clean the path
-        let cleanPath = filePath;
-        for (const bucket of AVAILABLE_BUCKETS) {
-            if (cleanPath.startsWith(`${bucket}/`)) {
-                cleanPath = cleanPath.replace(`${bucket}/`, '');
-                break;
-            }
+        if (verifyBtn) {
+            setTimeout(() => {
+                verifyBtn.disabled = false;
+                verifyBtn.classList.remove('loading');
+            }, 3000);
         }
-        cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
-        cleanPath = cleanPath.replace(/^\/+/, '');
-        
-        console.log('📁 Cleaned free download path:', cleanPath);
-
-        // Generate signed URL with fallback
-        const downloadUrl = await generateSignedUrlWithFallback(cleanPath);
-
-        if (downloadUrl) {
-            window.open(downloadUrl, '_blank');
-            showToast('📥', 'Download started!', 'success');
-            
-            await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}`, {
-                method: 'PATCH',
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    download_count: 1,
-                    file_delivered: true,
-                    last_download_at: new Date().toISOString()
-                })
-            });
-            
-            setTimeout(() => closeCheckoutModal(), 2000);
-        } else {
-            showToast('⚠️', 'Resource file not found. Please contact support.', 'error');
-        }
-
-    } catch (error) {
-        console.error('❌ Free download error:', error);
-        showToast('❌', 'Failed to download: ' + error.message, 'error');
     }
-
-    if (verifyBtn) {
-        setTimeout(() => {
-            verifyBtn.disabled = false;
-            verifyBtn.classList.remove('loading');
-        }, 3000);
-    }
-}
 
     // ── CHECK ORDER PAYMENT STATUS ──
     async function checkOrderPaymentStatus() {
@@ -2438,7 +2255,6 @@ async function downloadFreeResource(product) {
                 currentOrderId = order.id;
                 currentOrderRef = order.order_ref;
                 
-                // Update UI
                 const verifyLabel = document.querySelector('.verify-label');
                 const verifySub = document.querySelector('.verify-sub');
                 if (verifyLabel) verifyLabel.textContent = '✅ Payment Confirmed!';
@@ -2454,10 +2270,8 @@ async function downloadFreeResource(product) {
                 
                 showToast('✅', 'Payment confirmed! Downloading your file...', 'success');
                 
-                // Download the resource
                 await downloadPremiumResource(order.id);
                 
-                // Show success and close modal
                 showSuccess(order.order_ref, phoneInput.value);
                 
                 setTimeout(() => {
@@ -2476,7 +2290,6 @@ async function downloadFreeResource(product) {
         paymentCheckAttempts = 0;
         console.log('🔄 Starting STK Push payment polling...');
         
-        // Check immediately
         setTimeout(() => checkOrderPaymentStatus(), 1000);
         
         paymentPollingInterval = setInterval(async () => {
@@ -2484,7 +2297,6 @@ async function downloadFreeResource(product) {
             console.log(`📊 Polling attempt ${paymentCheckAttempts}/${MAX_POLLING_ATTEMPTS}`);
             await checkOrderPaymentStatus();
             
-            // If payment is confirmed, stop polling
             if (currentOrderId) {
                 const orderRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${currentOrderId}&select=payment_status`, {
                     headers: {
@@ -2591,8 +2403,6 @@ async function downloadFreeResource(product) {
             localStorage.setItem('pendingCustomerPhone', formattedPhone);
 
             const siteUrl = window.location.origin;
-            
-            // Use the mpesa-webhook endpoint
             const webhookUrl = `${SUPABASE_URL}/functions/v1/mpesa-webhook`;
             const callbackUrl = encodeURIComponent(webhookUrl);
             
@@ -2626,7 +2436,6 @@ async function downloadFreeResource(product) {
                 showToast('📱', 'MegaPay opened. Check your phone for M-Pesa PIN prompt.', 'success');
             }
 
-            // Update UI
             mpesaVerificationBox.classList.add('visible');
             payPrimaryBtn.style.display = 'none';
             
@@ -2667,14 +2476,11 @@ async function downloadFreeResource(product) {
                 verifyBtn.disabled = true;
             }
 
-            // Start polling for STK Push confirmation
             startPaymentPolling();
 
-            // Additional checks at intervals
             setTimeout(() => checkOrderPaymentStatus(), 10000);
             setTimeout(() => checkOrderPaymentStatus(), 30000);
 
-            // Check for webhook callback in URL
             checkPaymentCallback();
 
         } catch (error) {
