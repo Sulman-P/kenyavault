@@ -1852,79 +1852,123 @@
     }
 
     // ── CREATE ORDER ──
-    async function createOrder(product, customerName, phone) {
-        const orderRef = generateOrderRef();
-        const sessionId = getOrCreateSessionId();
-        
-        const filePath = product.file_path || product.file_url || '';
-        const fileName = filePath ? filePath.split('/').pop() : `${product.title || 'resource'}.pdf`;
-        const productId = product.id || null;
-        
-        // Clean the file path - keep the folder structure for storage lookup
-        let cleanFilePath = filePath;
-        if (cleanFilePath) {
-            // Remove bucket names from the beginning
-            for (const bucket of AVAILABLE_BUCKETS) {
-                cleanFilePath = cleanFilePath.replace(new RegExp(`^${bucket}\\/`), '');
+async function createOrder(product, customerName, phone) {
+    const orderRef = generateOrderRef();
+    const sessionId = getOrCreateSessionId();
+    
+    // Get file path from product
+    let filePath = product.file_path || product.file_url || '';
+    const fileName = filePath ? filePath.split('/').pop() : `${product.title || 'resource'}.pdf`;
+    const productId = product.id || null;
+    
+    // ── FIX: Clean and normalize the file path ──
+    let cleanFilePath = filePath;
+    if (cleanFilePath) {
+        // Remove bucket names from the beginning
+        for (const bucket of AVAILABLE_BUCKETS) {
+            if (cleanFilePath.startsWith(`${bucket}/`)) {
+                cleanFilePath = cleanFilePath.replace(`${bucket}/`, '');
+                break;
             }
-            // Remove URL prefixes
-            cleanFilePath = cleanFilePath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
-            cleanFilePath = cleanFilePath.replace(/^\/+/, '');
-            // Don't remove 'resources/' - it's part of the actual path
         }
-
-        const isFree = (product.price === 0 || product.price === null || product.price === undefined) || 
-                       product.resource_type === 'free';
-
-        const orderData = {
-            order_ref: orderRef,
-            customer_name: customerName,
-            phone: phone,
-            session_id: sessionId,
-            item_title: product.title || 'Resource',
-            item_price: product.price || 0,
-            total_amount: product.price || 0,
-            status: isFree ? 'completed' : 'pending',
-            payment_status: isFree ? 'completed' : 'pending',
-            resource_id: productId,
-            resource_file_path: cleanFilePath,
-            resource_file_name: fileName,
-            ip_address: await getClientIP(),
-            user_agent: navigator.userAgent,
-            created_at: new Date().toISOString()
-        };
-
-        console.log('📝 Creating order with data:', orderData);
-
-        try {
-            const response = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
-                method: 'POST',
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                    'Content-Type': 'application/json',
-                    'Prefer': 'return=representation'
-                },
-                body: JSON.stringify(orderData)
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error('❌ Order creation error:', errorText);
-                throw new Error(`HTTP ${response.status}: ${errorText}`);
+        
+        // Remove URL prefixes
+        cleanFilePath = cleanFilePath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
+        cleanFilePath = cleanFilePath.replace(/^\/+/, '');
+        
+        // ── CRITICAL FIX: Ensure the path has the resources/ prefix ──
+        // Check if the file exists in the resources folder in storage
+        // If the path doesn't start with 'resources/', add it
+        if (cleanFilePath && !cleanFilePath.startsWith('resources/')) {
+            // Check if this file exists in the resources folder
+            // We'll try to find it in storage with resources/ prefix
+            const pathWithResources = `resources/${cleanFilePath}`;
+            
+            // Try to check if the file exists with resources/ prefix
+            try {
+                const checkUrl = `${SUPABASE_URL}/storage/v1/object/public/kenyavault-pdfs/${encodeURIComponent(pathWithResources)}`;
+                const checkRes = await fetch(checkUrl, { method: 'HEAD' });
+                if (checkRes.ok) {
+                    // File exists with resources/ prefix, use that
+                    cleanFilePath = pathWithResources;
+                    console.log('📁 Using path with resources/ prefix:', cleanFilePath);
+                } else {
+                    // File doesn't exist with resources/ prefix, check without
+                    const checkUrl2 = `${SUPABASE_URL}/storage/v1/object/public/kenyavault-pdfs/${encodeURIComponent(cleanFilePath)}`;
+                    const checkRes2 = await fetch(checkUrl2, { method: 'HEAD' });
+                    if (checkRes2.ok) {
+                        // File exists without resources/ prefix, keep as is
+                        console.log('📁 Using path without resources/ prefix:', cleanFilePath);
+                    } else {
+                        // File doesn't exist anywhere, but we'll use resources/ prefix as default
+                        // since that's where most files are stored
+                        cleanFilePath = pathWithResources;
+                        console.log('📁 Defaulting to resources/ prefix:', cleanFilePath);
+                    }
+                }
+            } catch (e) {
+                // If we can't check, default to resources/ prefix
+                cleanFilePath = pathWithResources;
+                console.log('📁 Defaulting to resources/ prefix (check failed):', cleanFilePath);
             }
-
-            const result = await response.json();
-            const createdOrder = result[0] || result;
-            console.log('✅ Order created:', createdOrder);
-
-            return { orderRef, orderId: createdOrder.id };
-
-        } catch (error) {
-            console.error('❌ Order creation failed:', error);
-            throw error;
         }
+        
+        // Remove any duplicate resources/ prefixes
+        cleanFilePath = cleanFilePath.replace(/^resources\/resources\//, 'resources/');
     }
+
+    const isFree = (product.price === 0 || product.price === null || product.price === undefined) || 
+                   product.resource_type === 'free';
+
+    const orderData = {
+        order_ref: orderRef,
+        customer_name: customerName,
+        phone: phone,
+        session_id: sessionId,
+        item_title: product.title || 'Resource',
+        item_price: product.price || 0,
+        total_amount: product.price || 0,
+        status: isFree ? 'completed' : 'pending',
+        payment_status: isFree ? 'completed' : 'pending',
+        resource_id: productId,
+        resource_file_path: cleanFilePath,
+        resource_file_name: fileName,
+        ip_address: await getClientIP(),
+        user_agent: navigator.userAgent,
+        created_at: new Date().toISOString()
+    };
+
+    console.log('📝 Creating order with file path:', cleanFilePath);
+
+    try {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
+            method: 'POST',
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=representation'
+            },
+            body: JSON.stringify(orderData)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ Order creation error:', errorText);
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+
+        const result = await response.json();
+        const createdOrder = result[0] || result;
+        console.log('✅ Order created:', createdOrder);
+
+        return { orderRef, orderId: createdOrder.id };
+
+    } catch (error) {
+        console.error('❌ Order creation failed:', error);
+        throw error;
+    }
+}
 
 // ── GENERATE SIGNED URL WITH MULTIPLE PATH FALLBACKS ──
 async function generateSignedUrlWithFallback(filePath, bucketNames = AVAILABLE_BUCKETS) {
@@ -1935,7 +1979,33 @@ async function generateSignedUrlWithFallback(filePath, bucketNames = AVAILABLE_B
 
     console.log('🔍 Generating signed URL for:', filePath);
     
-    // Generate multiple path variations
+    // Step 1: Auto-correct the path
+    const corrected = await autoCorrectFilePath(filePath);
+    if (corrected) {
+        console.log('📁 Using corrected path:', corrected.path);
+        // Try the corrected path first
+        const url = `${SUPABASE_URL}/storage/v1/object/sign/${corrected.bucket}/${encodeURIComponent(corrected.path)}?expiresIn=300`;
+        try {
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                if (data.signedURL) {
+                    console.log(`✅ Signed URL generated with corrected path`);
+                    return data.signedURL;
+                }
+            }
+        } catch (e) {
+            console.log('⚠️ Corrected path failed, trying variations...');
+        }
+    }
+    
+    // Step 2: Generate multiple path variations as fallback
     const pathVariations = generatePathVariations(filePath);
     console.log('📁 Path variations to try:', pathVariations);
 
@@ -1943,24 +2013,32 @@ async function generateSignedUrlWithFallback(filePath, bucketNames = AVAILABLE_B
     for (const bucket of bucketNames) {
         for (const path of pathVariations) {
             try {
-                console.log(`🔍 Trying: bucket=${bucket}, path=${path}`);
+                // Clean the path
+                const cleanPath = path.replace(/\/+/g, '/').replace(/^\/+/, '');
                 
-                // Use the Supabase client SDK method for signed URLs
-                const { data, error } = await supabase
-                    .storage
-                    .from(bucket)
-                    .createSignedUrl(path, 300); // 5 minutes expiry
+                // URL encode the path - but keep the slashes
+                const pathSegments = cleanPath.split('/').map(s => encodeURIComponent(s));
+                const encodedPath = pathSegments.join('/');
+                
+                const url = `${SUPABASE_URL}/storage/v1/object/sign/${bucket}/${encodedPath}?expiresIn=300`;
+                
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                    }
+                });
 
-                if (!error && data?.signedUrl) {
-                    console.log(`✅ Signed URL generated: bucket=${bucket}, path=${path}`);
-                    return data.signedUrl;
-                } else {
-                    if (error) {
-                        console.log(`❌ Failed for bucket=${bucket}, path=${path}: ${error.message}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.signedURL) {
+                        console.log(`✅ Signed URL generated: bucket=${bucket}, path=${cleanPath}`);
+                        return data.signedURL;
                     }
                 }
             } catch (e) {
-                console.log(`⚠️ Error with bucket=${bucket}, path=${path}:`, e.message);
+                // Silently continue to next variation
             }
         }
     }
@@ -2193,6 +2271,50 @@ async function downloadPremiumResource(orderId) {
 
         // Clean the file path - remove bucket prefixes and URL prefixes
         let cleanPath = filePath;
+        
+        // ── AUTO-CORRECT FILE PATH ──
+async function autoCorrectFilePath(filePath) {
+    if (!filePath) return filePath;
+    
+    // Try different path variations
+    const variations = [
+        filePath,
+        `resources/${filePath}`,
+        filePath.replace(/^resources\//, ''),
+        `kenyavault-pdfs/${filePath}`,
+        `kenyavault-resources/${filePath}`,
+        filePath.replace(/^kenyavault-pdfs\//, ''),
+        filePath.replace(/^kenyavault-resources\//, '')
+    ];
+    
+    // Remove duplicates and clean
+    const uniqueVariations = [...new Set(variations)];
+    
+    // Try to find which path exists
+    for (const bucket of AVAILABLE_BUCKETS) {
+        for (const path of uniqueVariations) {
+            try {
+                const cleanPath = path.replace(/\/+/g, '/').replace(/^\/+/, '');
+                const checkUrl = `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${encodeURIComponent(cleanPath)}`;
+                const checkRes = await fetch(checkUrl, { method: 'HEAD' });
+                if (checkRes.ok) {
+                    console.log(`✅ Found file: bucket=${bucket}, path=${cleanPath}`);
+                    return { bucket, path: cleanPath };
+                }
+            } catch (e) {
+                // Continue checking
+            }
+        }
+    }
+    
+    // If file not found, return the original path with resources/ prefix as default
+    if (!filePath.startsWith('resources/')) {
+        console.log('📁 File not found, defaulting to resources/ prefix');
+        return { bucket: 'kenyavault-pdfs', path: `resources/${filePath}` };
+    }
+    
+    return { bucket: 'kenyavault-pdfs', path: filePath };
+}
         
         // Remove bucket names from the beginning
         for (const bucket of AVAILABLE_BUCKETS) {
