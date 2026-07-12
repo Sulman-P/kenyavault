@@ -1724,6 +1724,7 @@
     let activeCategories = ['lesson-plan', 'scheme-work', 'revision-paper', 'cbc-portfolio', 'exam-paper'];
     let currentProduct = null;
     let currentOrderRef = null;
+    let currentOrderId = null;
     let isProcessing = false;
     let megapayWindow = null;
     let searchTimeout = null;
@@ -1942,240 +1943,297 @@
         }
     }
 
-// ── DOWNLOAD FREE RESOURCE ──
-async function downloadFreeResource(product) {
-    const phone = phoneInput.value.trim().replace(/\s/g, '');
-    const customerName = customerNameInput.value.trim();
+    // ── GENERATE DELIVERY TOKEN ──
+    async function generateDeliveryToken(orderId) {
+        try {
+            const response = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}`, {
+                method: 'PATCH',
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=representation'
+                },
+                body: JSON.stringify({
+                    delivery_token: crypto.randomUUID ? crypto.randomUUID() : 'token_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9)
+                })
+            });
 
-    if (!customerName) {
-        customerNameInput.classList.add('error');
-        showToast('⚠️', 'Please enter your full name', 'error');
-        customerNameInput.focus();
-        return;
-    }
-    customerNameInput.classList.remove('error');
-
-    if (!phone || phone.length < 9) {
-        phoneInput.classList.add('error');
-        showToast('⚠️', 'Please enter a valid phone number', 'error');
-        phoneInput.focus();
-        return;
-    }
-    phoneInput.classList.remove('error');
-
-    const verifyBtn = document.querySelector('.btn-verify-order');
-    if (verifyBtn) {
-        verifyBtn.disabled = true;
-        verifyBtn.classList.add('loading');
-    }
-
-    try {
-        // Create order for tracking
-        const { orderRef } = await createOrder(product, customerName, phone);
-        currentOrderRef = orderRef;
-
-        // Get the file path from product
-        let filePath = product.file_path || product.file_url || '';
-        console.log('📁 Original file path:', filePath);
-
-        if (!filePath) {
-            showToast('⚠️', 'Resource file not found. Please contact support.', 'error');
-            if (verifyBtn) {
-                verifyBtn.disabled = false;
-                verifyBtn.classList.remove('loading');
+            if (!response.ok) {
+                throw new Error('Failed to generate delivery token');
             }
-            return;
+
+            const result = await response.json();
+            return result[0] || result;
+        } catch (error) {
+            console.error('❌ Token generation error:', error);
+            throw error;
         }
+    }
 
-        // Clean the file path - remove any bucket prefixes
-        let cleanPath = filePath;
-        cleanPath = cleanPath.replace(/^kenyavault-pdfs\//, '');
-        cleanPath = cleanPath.replace(/^kenyavault-resources\//, '');
-        cleanPath = cleanPath.replace(/^academic-resources\//, '');
-        cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
-        cleanPath = cleanPath.replace(/^\/+/, '');
-        cleanPath = decodeURIComponent(cleanPath);
+    // ── DOWNLOAD PREMIUM RESOURCE (AUTOMATIC) ──
+    async function downloadPremiumResource(orderId) {
+        try {
+            console.log('📥 Starting premium download for order:', orderId);
 
-        console.log('📁 Cleaned file path:', cleanPath);
-
-        if (!cleanPath) {
-            showToast('⚠️', 'Invalid file path. Please contact support.', 'error');
-            if (verifyBtn) {
-                verifyBtn.disabled = false;
-                verifyBtn.classList.remove('loading');
-            }
-            return;
-        }
-
-        let downloadUrl = null;
-        let usedBucket = null;
-
-        // Use the product's storage_bucket or default to 'kenyavault-resources'
-        const productBucket = product.storage_bucket || 'kenyavault-resources';
-        console.log('📦 Product bucket from database:', productBucket);
-
-        // Define buckets to try (in order of priority)
-        const buckets = [
-            productBucket,           // Use the product's bucket first
-            'kenyavault-resources',  // Fallback to main bucket
-            'kenyavault-pdfs'        // Final fallback
-        ];
-
-        // Remove duplicates
-        const uniqueBuckets = [...new Set(buckets)];
-        console.log('🔍 Trying buckets:', uniqueBuckets);
-
-        // Try each bucket
-        for (const bucket of uniqueBuckets) {
-            if (downloadUrl) break;
-            
-            console.log(`🔍 Trying bucket: ${bucket}`);
-            
-            // Try signed URL first
-            try {
-                const signedRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${bucket}/${encodeURIComponent(cleanPath)}?expiresIn=300`, {
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                    }
-                });
-
-                if (signedRes.ok) {
-                    const signedData = await signedRes.json();
-                    downloadUrl = signedData.signedURL;
-                    usedBucket = bucket;
-                    console.log(`✅ Signed URL generated for bucket: ${bucket}`);
-                    break;
-                } else {
-                    console.log(`⚠️ Signed URL failed for ${bucket}: ${signedRes.status}`);
-                    
-                    // If 400, the file might not exist in this bucket
-                    if (signedRes.status === 400) {
-                        console.log(`📁 File not found in bucket: ${bucket}`);
-                    }
+            // Get the order with delivery token
+            const orderRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}&select=id,order_ref,payment_status,delivery_token,resource_id`, {
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
                 }
-            } catch (e) {
-                console.warn(`⚠️ Signed URL error for ${bucket}:`, e);
+            });
+            
+            if (!orderRes.ok) {
+                throw new Error('Failed to fetch order details');
+            }
+            
+            const orders = await orderRes.json();
+            if (orders.length === 0) {
+                showToast('⚠️', 'Order not found', 'error');
+                return;
             }
 
-            // Try public URL
-            if (!downloadUrl) {
+            const order = orders[0];
+            
+            // Check if payment is completed
+            if (order.payment_status !== 'paid' && order.payment_status !== 'completed') {
+                showToast('⚠️', 'Payment not completed yet', 'error');
+                return;
+            }
+
+            // Get the resource file path
+            const resourceRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${order.resource_id}&select=file_path,file_url`, {
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                }
+            });
+            
+            if (!resourceRes.ok) {
+                throw new Error('Failed to fetch resource details');
+            }
+            
+            const resources = await resourceRes.json();
+            if (resources.length === 0) {
+                showToast('⚠️', 'Resource not found', 'error');
+                return;
+            }
+
+            const resource = resources[0];
+            let filePath = resource.file_path || resource.file_url;
+
+            if (!filePath) {
+                showToast('⚠️', 'Resource file not found', 'error');
+                return;
+            }
+
+            // Clean the file path
+            let cleanPath = filePath;
+            cleanPath = cleanPath.replace(/^kenyavault-pdfs\//, '');
+            cleanPath = cleanPath.replace(/^kenyavault-resources\//, '');
+            cleanPath = cleanPath.replace(/^academic-resources\//, '');
+            cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
+            cleanPath = cleanPath.replace(/^\/+/, '');
+            cleanPath = decodeURIComponent(cleanPath);
+
+            console.log('📁 File path:', cleanPath);
+
+            // Generate signed URL for download (60 seconds expiry)
+            const signedRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${STORAGE_BUCKET}/${encodeURIComponent(cleanPath)}?expiresIn=60`, {
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                }
+            });
+
+            if (!signedRes.ok) {
+                throw new Error('Failed to generate download link');
+            }
+
+            const signedData = await signedRes.json();
+            const downloadUrl = signedData.signedURL;
+
+            // Update download count
+            await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}`, {
+                method: 'PATCH',
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    download_count: 1,
+                    file_delivered: true,
+                    last_download_at: new Date().toISOString()
+                })
+            });
+
+            // Open download in new tab
+            window.open(downloadUrl, '_blank');
+            showToast('📥', 'Your file is downloading!', 'success');
+
+            return downloadUrl;
+
+        } catch (error) {
+            console.error('❌ Download error:', error);
+            showToast('❌', 'Failed to download: ' + error.message, 'error');
+            return null;
+        }
+    }
+
+    // ── DOWNLOAD FREE RESOURCE ──
+    async function downloadFreeResource(product) {
+        const phone = phoneInput.value.trim().replace(/\s/g, '');
+        const customerName = customerNameInput.value.trim();
+
+        if (!customerName) {
+            customerNameInput.classList.add('error');
+            showToast('⚠️', 'Please enter your full name', 'error');
+            customerNameInput.focus();
+            return;
+        }
+        customerNameInput.classList.remove('error');
+
+        if (!phone || phone.length < 9) {
+            phoneInput.classList.add('error');
+            showToast('⚠️', 'Please enter a valid phone number', 'error');
+            phoneInput.focus();
+            return;
+        }
+        phoneInput.classList.remove('error');
+
+        const verifyBtn = document.querySelector('.btn-verify-order');
+        if (verifyBtn) {
+            verifyBtn.disabled = true;
+            verifyBtn.classList.add('loading');
+        }
+
+        try {
+            // Create order for tracking
+            const { orderRef, orderId } = await createOrder(product, customerName, phone);
+            currentOrderRef = orderRef;
+            currentOrderId = orderId;
+
+            // Get the file path from product
+            let filePath = product.file_path || product.file_url || '';
+            console.log('📁 Original file path:', filePath);
+
+            if (!filePath) {
+                showToast('⚠️', 'Resource file not found. Please contact support.', 'error');
+                if (verifyBtn) {
+                    verifyBtn.disabled = false;
+                    verifyBtn.classList.remove('loading');
+                }
+                return;
+            }
+
+            // Clean the file path
+            let cleanPath = filePath;
+            cleanPath = cleanPath.replace(/^kenyavault-pdfs\//, '');
+            cleanPath = cleanPath.replace(/^kenyavault-resources\//, '');
+            cleanPath = cleanPath.replace(/^academic-resources\//, '');
+            cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
+            cleanPath = cleanPath.replace(/^\/+/, '');
+            cleanPath = decodeURIComponent(cleanPath);
+
+            console.log('📁 Cleaned file path:', cleanPath);
+
+            if (!cleanPath) {
+                showToast('⚠️', 'Invalid file path. Please contact support.', 'error');
+                if (verifyBtn) {
+                    verifyBtn.disabled = false;
+                    verifyBtn.classList.remove('loading');
+                }
+                return;
+            }
+
+            // Try multiple buckets for free resources
+            const buckets = [
+                product.storage_bucket || 'kenyavault-resources',
+                'kenyavault-resources',
+                'kenyavault-pdfs'
+            ];
+            const uniqueBuckets = [...new Set(buckets)];
+            let downloadUrl = null;
+
+            for (const bucket of uniqueBuckets) {
+                if (downloadUrl) break;
+                
                 try {
-                    const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${encodeURIComponent(cleanPath)}`;
-                    const checkRes = await fetch(publicUrl, { 
-                        method: 'HEAD',
+                    const signedRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${bucket}/${encodeURIComponent(cleanPath)}?expiresIn=300`, {
                         headers: {
                             'apikey': SUPABASE_ANON_KEY,
                             'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
                         }
                     });
-                    if (checkRes.ok) {
-                        downloadUrl = publicUrl;
-                        usedBucket = bucket;
-                        console.log(`✅ Public URL works for bucket: ${bucket}`);
+
+                    if (signedRes.ok) {
+                        const signedData = await signedRes.json();
+                        downloadUrl = signedData.signedURL;
+                        console.log(`✅ Download URL from bucket: ${bucket}`);
                         break;
-                    } else {
-                        console.log(`⚠️ Public URL failed for ${bucket}: ${checkRes.status}`);
                     }
                 } catch (e) {
-                    console.warn(`⚠️ Public URL error for ${bucket}:`, e);
+                    // Continue to next bucket
                 }
             }
-        }
 
-        // If still no download URL, try path variations
-        if (!downloadUrl) {
-            console.log('🔍 Trying path variations...');
-            
-            // Try different path variations
-            const pathVariations = [
-                cleanPath,
-                cleanPath.replace(/^resources\//, ''),
-                `resources/${cleanPath.replace(/^resources\//, '')}`,
-                cleanPath.replace(/\//g, '_'),
-                cleanPath.split('/').pop() // Just the filename
-            ];
-
-            for (const bucket of uniqueBuckets) {
-                if (downloadUrl) break;
-                
-                for (const variant of pathVariations) {
+            if (!downloadUrl) {
+                // Try public URL as fallback
+                for (const bucket of uniqueBuckets) {
                     try {
-                        const testUrl = `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${encodeURIComponent(variant)}`;
-                        const checkRes = await fetch(testUrl, { 
-                            method: 'HEAD',
-                            headers: {
-                                'apikey': SUPABASE_ANON_KEY,
-                                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                            }
-                        });
+                        const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${encodeURIComponent(cleanPath)}`;
+                        const checkRes = await fetch(publicUrl, { method: 'HEAD' });
                         if (checkRes.ok) {
-                            downloadUrl = testUrl;
-                            usedBucket = bucket;
-                            console.log(`✅ Found file with variant: ${variant} in ${bucket}`);
+                            downloadUrl = publicUrl;
                             break;
                         }
                     } catch (e) {
-                        // Continue to next variant
+                        // Continue
                     }
                 }
             }
-        }
 
-        // If we have a download URL, open it
-        if (downloadUrl) {
-            console.log('✅ Download URL found:', downloadUrl);
-            window.open(downloadUrl, '_blank');
-            showToast('📥', 'Download started!', 'success');
-            
-            // Update the product with the correct bucket if different
-            if (usedBucket && usedBucket !== productBucket) {
-                try {
-                    await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${product.id}`, {
-                        method: 'PATCH',
-                        headers: {
-                            'apikey': SUPABASE_ANON_KEY,
-                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ 
-                            storage_bucket: usedBucket
-                        })
-                    });
-                    console.log(`✅ Updated product bucket to: ${usedBucket}`);
-                } catch (e) {
-                    console.warn('⚠️ Could not update product:', e);
-                }
+            if (downloadUrl) {
+                window.open(downloadUrl, '_blank');
+                showToast('📥', 'Download started!', 'success');
+                
+                // Update download count
+                await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        download_count: 1,
+                        file_delivered: true,
+                        last_download_at: new Date().toISOString()
+                    })
+                });
+                
+                setTimeout(() => {
+                    closeCheckoutModal();
+                }, 2000);
+            } else {
+                showToast('⚠️', 'Resource file not found. Please contact support.', 'error');
+                console.error('❌ No download URL could be generated for:', cleanPath);
             }
-            
-            setTimeout(() => {
-                closeCheckoutModal();
-            }, 2000);
-        } else {
-            showToast('⚠️', 'Resource file not found. Please contact support.', 'error');
-            console.error('❌ No download URL could be generated');
-            console.log('📋 Debug info:', {
-                product_id: product.id,
-                title: product.title,
-                file_path: product.file_path,
-                clean_path: cleanPath,
-                storage_bucket: productBucket,
-                buckets_tried: uniqueBuckets
-            });
+
+        } catch (error) {
+            console.error('❌ Free download error:', error);
+            showToast('❌', 'Failed to download: ' + error.message, 'error');
         }
 
-    } catch (error) {
-        console.error('❌ Free download error:', error);
-        showToast('❌', 'Failed to download: ' + error.message, 'error');
+        if (verifyBtn) {
+            setTimeout(() => {
+                verifyBtn.disabled = false;
+                verifyBtn.classList.remove('loading');
+            }, 3000);
+        }
     }
-
-    if (verifyBtn) {
-        setTimeout(() => {
-            verifyBtn.disabled = false;
-            verifyBtn.classList.remove('loading');
-        }, 3000);
-    }
-}
 
     // ── INITIATE PAYMENT (PREMIUM) ──
     async function initiatePayment() {
@@ -2226,6 +2284,7 @@ async function downloadFreeResource(product) {
         try {
             const { orderRef, orderId } = await createOrder(currentProduct, customerName, formattedPhone);
             currentOrderRef = orderRef;
+            currentOrderId = orderId;
 
             localStorage.setItem('pendingOrderRef', orderRef);
             localStorage.setItem('pendingOrderId', orderId);
@@ -2263,6 +2322,10 @@ async function downloadFreeResource(product) {
                 showToast('📱', 'After payment, enter your M-PESA code to verify', 'success');
             }, 3000);
 
+            // Subscribe to realtime order updates for automatic download
+            subscribeToOrderUpdates(orderId);
+
+            // Start callback check
             startCallbackCheck();
 
         } catch (error) {
@@ -2277,6 +2340,54 @@ async function downloadFreeResource(product) {
             payPrimaryBtn.disabled = false;
             payPrimaryBtn.classList.remove('loading');
         }
+    }
+
+    // ── SUBSCRIBE TO ORDER REALTIME UPDATES ──
+    function subscribeToOrderUpdates(orderId) {
+        if (orderChannel) {
+            orderChannel.unsubscribe();
+            orderChannel = null;
+        }
+
+        // Use Supabase's realtime subscription via REST
+        const checkOrderStatus = async () => {
+            try {
+                const response = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}&select=payment_status`, {
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                    }
+                });
+                if (response.ok) {
+                    const orders = await response.json();
+                    if (orders.length > 0 && (orders[0].payment_status === 'paid' || orders[0].payment_status === 'completed')) {
+                        console.log('✅ Order paid! Auto-downloading...');
+                        showToast('✅', 'Payment verified! Downloading your file...', 'success');
+                        mpesaVerificationBox.classList.remove('visible');
+                        // Auto-download the premium resource
+                        await downloadPremiumResource(orderId);
+                        // Close modal after download
+                        setTimeout(() => closeCheckoutModal(), 3000);
+                        // Clear interval
+                        if (window._orderCheckInterval) {
+                            clearInterval(window._orderCheckInterval);
+                            window._orderCheckInterval = null;
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error('Order status check error:', e);
+            }
+        };
+
+        // Check every 3 seconds
+        if (window._orderCheckInterval) {
+            clearInterval(window._orderCheckInterval);
+        }
+        window._orderCheckInterval = setInterval(checkOrderStatus, 3000);
+
+        // Also check immediately
+        setTimeout(checkOrderStatus, 500);
     }
 
     // ── VERIFY AND COMPLETE ORDER ──
@@ -2303,6 +2414,7 @@ async function downloadFreeResource(product) {
         verifyOrderBtn.classList.add('loading');
 
         try {
+            // Update order status
             await updateOrderStatus(currentOrderRef, 'completed', mpesaCode);
 
             localStorage.setItem('lastOrderRef', currentOrderRef);
@@ -2313,16 +2425,20 @@ async function downloadFreeResource(product) {
                 megapayWindow = null;
             }
 
+            // Show success
             showSuccess(currentOrderRef, phoneInput.value);
 
+            // Auto-download the premium resource
+            await downloadPremiumResource(currentOrderId);
+
+            // Hide verification box and close modal after download starts
             setTimeout(() => {
+                mpesaVerificationBox.classList.remove('visible');
+                mpesaCodeInput.value = '';
                 closeCheckoutModal();
-            }, 500);
+            }, 3000);
 
-            mpesaVerificationBox.classList.remove('visible');
-            mpesaCodeInput.value = '';
-
-            showToast('✅', 'Payment verified! Check your WhatsApp for download link.', 'success');
+            showToast('✅', 'Payment verified! Your file is downloading.', 'success');
 
         } catch (error) {
             console.error('❌ Verification failed:', error);
@@ -2345,8 +2461,7 @@ async function downloadFreeResource(product) {
         localStorage.removeItem('pendingProductId');
         localStorage.removeItem('pendingProductTitle');
         
-        currentOrderRef = null;
-        currentProduct = null;
+        // Don't clear currentOrderRef/currentOrderId yet - needed for download
     }
 
     // ── CHECK PAYMENT CALLBACK ──
@@ -2362,8 +2477,25 @@ async function downloadFreeResource(product) {
                 try {
                     await updateOrderStatus(orderRef, 'completed', transactionId);
                     showSuccess(orderRef, localStorage.getItem('pendingCustomerPhone') || phoneInput.value);
-                    showToast('✅', 'Payment successful! Check your WhatsApp.', 'success');
+                    
+                    // Get order ID for download
+                    const orderRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?order_ref=eq.${orderRef}&select=id`, {
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                        }
+                    });
+                    if (orderRes.ok) {
+                        const orders = await orderRes.json();
+                        if (orders.length > 0) {
+                            currentOrderId = orders[0].id;
+                            await downloadPremiumResource(currentOrderId);
+                        }
+                    }
+                    
+                    showToast('✅', 'Payment successful! Your file is downloading.', 'success');
                     window.history.replaceState({}, document.title, window.location.pathname);
+                    setTimeout(() => closeCheckoutModal(), 3000);
                 } catch (error) {
                     console.error('❌ Callback processing failed:', error);
                 }
@@ -2391,119 +2523,118 @@ async function downloadFreeResource(product) {
     }
 
     // ── OPEN CHECKOUT ──
-async function openCheckout(productId) {
-    const product = allResources.find(r => r.id === productId);
-    if (!product) {
-        showToast('⚠️', 'Product not found. Please refresh.', 'error');
-        return;
-    }
-
-    currentProduct = product;
-    currentOrderRef = null;
-
-    // Reset form
-    customerNameInput.value = '';
-    customerNameInput.classList.remove('error');
-    phoneInput.value = '';
-    phoneInput.classList.remove('error');
-    mpesaCodeInput.value = '';
-    mpesaCodeInput.classList.remove('error');
-    mpesaVerificationBox.classList.remove('visible');
-    payPrimaryBtn.style.display = 'flex';
-    verifyOrderBtn.classList.remove('loading');
-    verifyOrderBtn.disabled = false;
-    payPrimaryBtn.classList.remove('loading');
-    payPrimaryBtn.disabled = false;
-
-    checkoutItemTitle.textContent = product.title || 'Resource';
-    checkoutTotal.textContent = (product.price || 0) === 0 ? 'FREE' : `KES ${product.price || 0}`;
-
-    // Check if product is free - including KJSEA resources that might be free
-    const isFree = (product.price === 0 || product.price === null || product.price === undefined) || 
-                   product.resource_type === 'free' ||
-                   (product.level === 'grade-9' && product.title && product.title.includes('KJSEA'));
-
-    console.log('📦 Product:', product.title);
-    console.log('💰 Price:', product.price);
-    console.log('🏷️ Type:', product.resource_type);
-    console.log('📚 Level:', product.level);
-    console.log('✅ Is Free:', isFree);
-
-    if (isFree) {
-        // FREE: Show verification box with download button
-        mpesaVerificationBox.classList.add('visible');
-        payPrimaryBtn.style.display = 'none';
-        
-        // Update UI for free resource
-        const verifyLabel = document.querySelector('.verify-label');
-        const verifySub = document.querySelector('.verify-sub');
-        const verifyInput = document.querySelector('.verify-input');
-        const verifyBtn = document.querySelector('.btn-verify-order');
-        
-        if (verifyLabel) verifyLabel.textContent = '📥 Free Resource Download';
-        if (verifySub) {
-            verifySub.innerHTML = `
-                <strong>🎉 This resource is FREE!</strong><br>
-                Enter your name and phone number below, then click "Get Free Resource" to download instantly.
-                No payment required.
-            `;
+    async function openCheckout(productId) {
+        const product = allResources.find(r => r.id === productId);
+        if (!product) {
+            showToast('⚠️', 'Product not found. Please refresh.', 'error');
+            return;
         }
-        if (verifyInput) {
-            verifyInput.placeholder = 'Enter your name or email (optional)';
-            verifyInput.maxLength = 50;
-            verifyInput.style.display = 'none';
-        }
-        if (verifyBtn) {
-            verifyBtn.innerHTML = `
-                <span class="btn-text">📥 Get Free Resource</span>
-                <span class="btn-loading-text">⏳ Processing...</span>
-            `;
-            verifyBtn.onclick = function() {
-                downloadFreeResource(product);
-            };
-        }
-        
-        showToast('📱', 'This resource is free! Enter your details to download.', 'success');
-    } else {
-        // PREMIUM: Show payment flow
+
+        currentProduct = product;
+        currentOrderRef = null;
+        currentOrderId = null;
+
+        // Reset form
+        customerNameInput.value = '';
+        customerNameInput.classList.remove('error');
+        phoneInput.value = '';
+        phoneInput.classList.remove('error');
+        mpesaCodeInput.value = '';
+        mpesaCodeInput.classList.remove('error');
         mpesaVerificationBox.classList.remove('visible');
         payPrimaryBtn.style.display = 'flex';
-        
-        // Reset UI for premium
-        const verifyLabel = document.querySelector('.verify-label');
-        const verifySub = document.querySelector('.verify-sub');
-        const verifyInput = document.querySelector('.verify-input');
-        const verifyBtn = document.querySelector('.btn-verify-order');
-        
-        if (verifyLabel) verifyLabel.textContent = '🔑 Verify Your Payment';
-        if (verifySub) {
-            verifySub.innerHTML = `
-                Once you receive your M-PESA SMS confirmation, enter your transaction details below to unlock your downloads.
-                <br><br>
-                <strong>💡 Tip:</strong> After completing payment in the MegaPay tab, return here to verify.
-            `;
+        verifyOrderBtn.classList.remove('loading');
+        verifyOrderBtn.disabled = false;
+        payPrimaryBtn.classList.remove('loading');
+        payPrimaryBtn.disabled = false;
+
+        checkoutItemTitle.textContent = product.title || 'Resource';
+        checkoutTotal.textContent = (product.price || 0) === 0 ? 'FREE' : `KES ${product.price || 0}`;
+
+        // Check if product is free
+        const isFree = (product.price === 0 || product.price === null || product.price === undefined) || 
+                       product.resource_type === 'free';
+
+        console.log('📦 Product:', product.title);
+        console.log('💰 Price:', product.price);
+        console.log('🏷️ Type:', product.resource_type);
+        console.log('✅ Is Free:', isFree);
+
+        if (isFree) {
+            // FREE: Show verification box with download button
+            mpesaVerificationBox.classList.add('visible');
+            payPrimaryBtn.style.display = 'none';
+            
+            // Update UI for free resource
+            const verifyLabel = document.querySelector('.verify-label');
+            const verifySub = document.querySelector('.verify-sub');
+            const verifyInput = document.querySelector('.verify-input');
+            const verifyBtn = document.querySelector('.btn-verify-order');
+            
+            if (verifyLabel) verifyLabel.textContent = '📥 Free Resource Download';
+            if (verifySub) {
+                verifySub.innerHTML = `
+                    <strong>🎉 This resource is FREE!</strong><br>
+                    Enter your name and phone number below, then click "Get Free Resource" to download instantly.
+                    No payment required.
+                `;
+            }
+            if (verifyInput) {
+                verifyInput.placeholder = 'Enter your name or email (optional)';
+                verifyInput.maxLength = 50;
+                verifyInput.style.display = 'none';
+            }
+            if (verifyBtn) {
+                verifyBtn.innerHTML = `
+                    <span class="btn-text">📥 Get Free Resource</span>
+                    <span class="btn-loading-text">⏳ Processing...</span>
+                `;
+                verifyBtn.onclick = function() {
+                    downloadFreeResource(product);
+                };
+            }
+            
+            showToast('📱', 'This resource is free! Enter your details to download.', 'success');
+        } else {
+            // PREMIUM: Show payment flow
+            mpesaVerificationBox.classList.remove('visible');
+            payPrimaryBtn.style.display = 'flex';
+            
+            // Reset UI for premium
+            const verifyLabel = document.querySelector('.verify-label');
+            const verifySub = document.querySelector('.verify-sub');
+            const verifyInput = document.querySelector('.verify-input');
+            const verifyBtn = document.querySelector('.btn-verify-order');
+            
+            if (verifyLabel) verifyLabel.textContent = '🔑 Verify Your Payment';
+            if (verifySub) {
+                verifySub.innerHTML = `
+                    Once you receive your M-PESA SMS confirmation, enter your transaction details below to unlock your download.
+                    <br><br>
+                    <strong>💡 Tip:</strong> After completing payment in the MegaPay tab, return here to verify and download your file instantly.
+                `;
+            }
+            if (verifyInput) {
+                verifyInput.placeholder = 'Enter Last 4 Digits of M-PESA Code (e.g., 4K7X)';
+                verifyInput.maxLength = 4;
+                verifyInput.style.display = 'block';
+            }
+            if (verifyBtn) {
+                verifyBtn.innerHTML = `
+                    <span class="btn-text">🔓 Verify & Download File</span>
+                    <span class="btn-loading-text">⏳ Verifying...</span>
+                `;
+                verifyBtn.onclick = verifyAndCompleteOrder;
+            }
         }
-        if (verifyInput) {
-            verifyInput.placeholder = 'Enter Last 4 Digits of M-PESA Code (e.g., 4K7X)';
-            verifyInput.maxLength = 4;
-            verifyInput.style.display = 'block';
-        }
-        if (verifyBtn) {
-            verifyBtn.innerHTML = `
-                <span class="btn-text">🔓 Verify Code & Complete Order</span>
-                <span class="btn-loading-text">⏳ Verifying...</span>
-            `;
-            verifyBtn.onclick = verifyAndCompleteOrder;
-        }
+
+        checkoutModal.classList.add('open');
+        document.body.style.overflow = 'hidden';
+
+        setTimeout(() => {
+            customerNameInput.focus();
+        }, 300);
     }
-
-    checkoutModal.classList.add('open');
-    document.body.style.overflow = 'hidden';
-
-    setTimeout(() => {
-        customerNameInput.focus();
-    }, 300);
-}
 
     // ── CLOSE CHECKOUT MODAL ──
     function closeCheckoutModal() {
@@ -2532,6 +2663,16 @@ async function openCheckout(productId) {
             orderChannel.unsubscribe();
             orderChannel = null;
         }
+        
+        if (window._orderCheckInterval) {
+            clearInterval(window._orderCheckInterval);
+            window._orderCheckInterval = null;
+        }
+        
+        // Reset currentOrderId after modal closes
+        setTimeout(() => {
+            currentOrderId = null;
+        }, 500);
     }
 
     // ── CLOSE SUCCESS MODAL ──
@@ -3088,6 +3229,7 @@ async function openCheckout(productId) {
     window.handleSearch = handleSearch;
     window.clearSearchInput = clearSearchInput;
     window.init = init;
+    window.downloadPremiumResource = downloadPremiumResource;
 
     // ── START APP ──
     document.addEventListener('DOMContentLoaded', init);
