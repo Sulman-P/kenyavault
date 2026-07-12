@@ -1730,7 +1730,7 @@
     let searchTimeout = null;
     let paymentPollingInterval = null;
     let paymentCheckAttempts = 0;
-    const MAX_POLLING_ATTEMPTS = 40;
+    const MAX_POLLING_ATTEMPTS = 60;
 
     // ── DOM REFS ──
     const productsGrid = document.getElementById('productsGrid');
@@ -1912,46 +1912,12 @@
         }
     }
 
-    // ── UPDATE ORDER STATUS ──
-    async function updateOrderStatus(orderRef, status, mpesaCode = null) {
-        try {
-            const updates = { 
-                status: status,
-                payment_status: status === 'completed' ? 'paid' : status
-            };
-            if (mpesaCode) updates.mpesa_code = mpesaCode;
-
-            const response = await fetch(`${SUPABASE_URL}/rest/v1/orders?order_ref=eq.${orderRef}`, {
-                method: 'PATCH',
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                    'Content-Type': 'application/json',
-                    'Prefer': 'return=representation'
-                },
-                body: JSON.stringify(updates)
-            });
-
-            if (!response.ok) {
-                throw new Error(`Failed to update order: ${response.status}`);
-            }
-
-            const result = await response.json();
-            console.log('✅ Order updated:', result);
-            return result[0] || result;
-        } catch (error) {
-            console.error('❌ Order update failed:', error);
-            throw error;
-        }
-    }
-
-    // ── DOWNLOAD PREMIUM RESOURCE (SECURE) ──
+    // ── DOWNLOAD PREMIUM RESOURCE ──
     async function downloadPremiumResource(orderId) {
         try {
-            console.log('📥 Starting secure download for order:', orderId);
+            console.log('📥 Starting premium download for order:', orderId);
 
-            // Get the order details
-            const orderRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}&select=id,order_ref,payment_status,resource_id,delivery_token,stk_push_verified`, {
+            const orderRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}&select=id,order_ref,payment_status,resource_id,delivery_token`, {
                 headers: {
                     'apikey': SUPABASE_ANON_KEY,
                     'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
@@ -1970,13 +1936,11 @@
 
             const order = orders[0];
             
-            // Verify STK Push was successful
-            if (!order.stk_push_verified && order.payment_status !== 'paid' && order.payment_status !== 'completed') {
-                showToast('⚠️', 'Payment not verified via STK Push', 'error');
+            if (order.payment_status !== 'paid' && order.payment_status !== 'completed') {
+                showToast('⚠️', 'Payment not completed yet', 'error');
                 return;
             }
 
-            // Get the resource file path
             const resourceRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${order.resource_id}&select=file_path,file_url`, {
                 headers: {
                     'apikey': SUPABASE_ANON_KEY,
@@ -2002,7 +1966,6 @@
                 return;
             }
 
-            // Clean the file path
             let cleanPath = filePath;
             cleanPath = cleanPath.replace(/^kenyavault-pdfs\//, '');
             cleanPath = cleanPath.replace(/^kenyavault-resources\//, '');
@@ -2018,7 +1981,6 @@
                 return;
             }
 
-            // Try multiple buckets
             const buckets = ['kenyavault-pdfs', 'kenyavault-resources'];
             let downloadUrl = null;
 
@@ -2044,7 +2006,6 @@
                 }
             }
 
-            // If signed URL failed, try without resources/ prefix
             if (!downloadUrl && cleanPath.startsWith('resources/')) {
                 const pathWithoutResources = cleanPath.replace(/^resources\//, '');
                 for (const bucket of buckets) {
@@ -2064,14 +2025,11 @@
                             console.log(`✅ Signed URL generated without resources/ prefix`);
                             break;
                         }
-                    } catch (e) {
-                        // Continue
-                    }
+                    } catch (e) {}
                 }
             }
 
             if (downloadUrl) {
-                // Update download count
                 await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}`, {
                     method: 'PATCH',
                     headers: {
@@ -2086,7 +2044,6 @@
                     })
                 });
 
-                // Open download in new tab
                 window.open(downloadUrl, '_blank');
                 showToast('📥', 'Your file is downloading!', 'success');
                 
@@ -2203,7 +2160,7 @@
         }
     }
 
-    // ── CHECK ORDER PAYMENT STATUS (STK PUSH) ──
+    // ── CHECK ORDER PAYMENT STATUS ──
     async function checkOrderPaymentStatus() {
         if (!currentOrderRef && !currentOrderId) {
             console.log('⚠️ No order to check');
@@ -2211,7 +2168,7 @@
         }
 
         try {
-            let query = `${SUPABASE_URL}/rest/v1/orders?select=id,order_ref,payment_status,stk_push_verified`;
+            let query = `${SUPABASE_URL}/rest/v1/orders?select=id,order_ref,payment_status,delivery_token`;
             if (currentOrderId) {
                 query += `&id=eq.${currentOrderId}`;
             } else if (currentOrderRef) {
@@ -2237,29 +2194,28 @@
             }
 
             const order = orders[0];
-            console.log(`📊 STK Push Status: ${order.stk_push_verified ? '✅ Verified' : '⏳ Pending'}`);
+            console.log(`📊 Payment Status: ${order.payment_status}`);
 
-            // If STK Push verified, trigger download
-            if (order.stk_push_verified === true || order.payment_status === 'paid' || order.payment_status === 'completed') {
-                console.log('✅ STK Push verified! Auto-downloading...');
+            if (order.payment_status === 'paid' || order.payment_status === 'completed') {
+                console.log('✅ Payment confirmed! Auto-downloading...');
                 stopPaymentPolling();
+                
                 currentOrderId = order.id;
                 currentOrderRef = order.order_ref;
                 
-                showToast('✅', 'Payment verified via STK Push! Downloading your file...', 'success');
-                
                 const verifyLabel = document.querySelector('.verify-label');
                 const verifySub = document.querySelector('.verify-sub');
-                if (verifyLabel) verifyLabel.textContent = '✅ STK Push Verified!';
+                if (verifyLabel) verifyLabel.textContent = '✅ Payment Confirmed!';
                 if (verifySub) {
                     verifySub.innerHTML = `
-                        <strong>🎉 Your payment has been verified!</strong><br>
+                        <strong>🎉 Your payment has been confirmed!</strong><br>
                         Your file is being downloaded automatically.
                         <br><br>
                         <span style="color:#16a34a;">✓ M-Pesa STK Push successful</span>
                     `;
                 }
                 
+                showToast('✅', 'Payment confirmed! Downloading your file...', 'success');
                 await downloadPremiumResource(order.id);
                 showSuccess(order.order_ref, phoneInput.value);
                 
@@ -2291,14 +2247,23 @@
                 const verifySub = document.querySelector('.verify-sub');
                 if (verifySub) {
                     verifySub.innerHTML = `
-                        ⏳ STK Push verification is taking longer than expected.<br>
-                        Please check your phone for the M-Pesa PIN prompt.<br><br>
-                        <strong>Need help?</strong> Contact us on WhatsApp: +254 768 515 494
+                        ⏳ STK Push verification is taking longer than expected.<br><br>
+                        <strong>📱 Did you complete the payment on your phone?</strong><br>
+                        1. Check your phone for the M-Pesa STK Push prompt<br>
+                        2. Enter your PIN to confirm payment<br>
+                        3. Wait for the confirmation message<br><br>
+                        <strong>If you have completed payment, click the button below to check manually.</strong>
+                        <br><br>
+                        <button onclick="checkOrderPaymentStatus()" style="padding:10px 20px;background:#D4A017;color:#0a1a3a;border:none;border-radius:8px;font-weight:700;cursor:pointer;">
+                            🔄 Check Payment Status
+                        </button>
+                        <br><br>
+                        <span style="font-size:0.8rem;color:#6b7280;">Need help? Contact us on WhatsApp: +254 768 515 494</span>
                     `;
                 }
-                showToast('⏳', 'STK Push is taking longer than expected. Please check your phone.', 'info');
+                showToast('⏳', 'STK Push is taking longer than expected. Check your phone.', 'info');
             }
-        }, 3000);
+        }, 2000);
     }
 
     // ── STOP PAYMENT POLLING ──
@@ -2357,7 +2322,6 @@
         payPrimaryBtn.classList.add('loading');
 
         try {
-            // Create order
             const { orderRef, orderId } = await createOrder(currentProduct, customerName, formattedPhone);
             currentOrderRef = orderRef;
             currentOrderId = orderId;
@@ -2366,13 +2330,13 @@
             localStorage.setItem('pendingOrderId', orderId);
             localStorage.setItem('pendingCustomerPhone', formattedPhone);
 
-            // Build MegaPay URL with STK Push
+            const siteUrl = window.location.origin;
             const callbackUrl = encodeURIComponent(
                 `${SUPABASE_URL}/functions/v1/megapay-webhook`
             );
             
             const returnUrl = encodeURIComponent(
-                `${window.location.origin}/shop.html?payment=callback&order_ref=${orderRef}`
+                `${siteUrl}/shop.html?payment=callback&order_ref=${orderRef}`
             );
 
             const metadata = JSON.stringify({
@@ -2387,7 +2351,6 @@
                 payment_method: 'stk_push'
             });
 
-            // STK Push payment URL
             const payUrl = `${MEGAPAY_PAYMENT_URL}?phone=${encodeURIComponent(formattedPhone)}&amount=${encodeURIComponent(currentProduct.price || 0)}&description=${encodeURIComponent(currentProduct.title || 'Educational Resource')}&callback=${callbackUrl}&return_url=${returnUrl}&metadata=${encodeURIComponent(metadata)}`;
 
             console.log('🔗 Opening MegaPay STK Push:', payUrl);
@@ -2401,7 +2364,6 @@
                 showToast('📱', 'MegaPay opened. Check your phone for M-Pesa PIN prompt.', 'success');
             }
 
-            // Update UI for STK Push waiting
             mpesaVerificationBox.classList.add('visible');
             payPrimaryBtn.style.display = 'none';
             
@@ -2425,6 +2387,10 @@
                     </div>
                     <br>
                     <span style="font-size:0.8rem;color:#6b7280;">⏳ This usually takes 30-60 seconds</span>
+                    <br><br>
+                    <button onclick="checkOrderPaymentStatus()" style="padding:8px 16px;background:transparent;border:1px solid #D4A017;color:#D4A017;border-radius:6px;font-weight:600;cursor:pointer;font-size:0.8rem;">
+                        🔄 Check Payment Status
+                    </button>
                 `;
             }
             if (verifyInput) {
@@ -2438,12 +2404,21 @@
                 verifyBtn.disabled = true;
             }
 
-            // Start polling for STK Push confirmation
             startPaymentPolling();
+
+            setTimeout(() => {
+                console.log('🔄 Additional payment check after 10 seconds...');
+                checkOrderPaymentStatus();
+            }, 10000);
+
+            setTimeout(() => {
+                console.log('🔄 Additional payment check after 30 seconds...');
+                checkOrderPaymentStatus();
+            }, 30000);
 
         } catch (error) {
             console.error('❌ Payment initiation failed:', error);
-            showToast('❌', 'Payment initiation failed. Please try again.', 'error');
+            showToast('❌', 'Payment initiation failed: ' + error.message, 'error');
             if (megapayWindow) {
                 megapayWindow.close();
                 megapayWindow = null;
@@ -2474,11 +2449,11 @@
         const status = params.get('status');
         const orderRef = params.get('order_ref') || localStorage.getItem('pendingOrderRef');
 
-        if (status === 'success' && orderRef) {
+        if ((status === 'success' || status === 'completed') && orderRef) {
             console.log('✅ Payment callback received:', { status, orderRef });
             (async () => {
                 try {
-                    const orderRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?order_ref=eq.${orderRef}&select=id,payment_status,stk_push_verified`, {
+                    const orderRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?order_ref=eq.${orderRef}&select=id,payment_status`, {
                         headers: {
                             'apikey': SUPABASE_ANON_KEY,
                             'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
@@ -2489,7 +2464,7 @@
                         const orders = await orderRes.json();
                         if (orders.length > 0) {
                             const order = orders[0];
-                            if (order.stk_push_verified === true || order.payment_status === 'paid' || order.payment_status === 'completed') {
+                            if (order.payment_status === 'paid' || order.payment_status === 'completed') {
                                 currentOrderId = order.id;
                                 currentOrderRef = orderRef;
                                 showSuccess(orderRef, localStorage.getItem('pendingCustomerPhone') || phoneInput.value);
@@ -2592,7 +2567,6 @@
             
             showToast('📱', 'This resource is free! Enter your details to download.', 'success');
         } else {
-            // Premium - STK Push Flow
             mpesaVerificationBox.classList.add('visible');
             payPrimaryBtn.style.display = 'flex';
             
@@ -3222,6 +3196,7 @@
     window.clearSearchInput = clearSearchInput;
     window.init = init;
     window.downloadPremiumResource = downloadPremiumResource;
+    window.checkOrderPaymentStatus = checkOrderPaymentStatus;
 
     // ── START APP ──
     document.addEventListener('DOMContentLoaded', init);
