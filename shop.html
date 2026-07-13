@@ -1892,6 +1892,45 @@
         'academic-resources',
         'kenyavault-covers'
     ];
+    
+    // ── CHECK IF DEVICE IS MOBILE ──
+function isMobileDevice() {
+    return /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|webOS/i.test(navigator.userAgent) || 
+           (window.innerWidth <= 768);
+}
+
+// ── DOWNLOAD WITH IFRAME (MOBILE FALLBACK) ──
+function downloadWithIframe(url) {
+    try {
+        // Method 1: Try iframe
+        const iframe = document.createElement('iframe');
+        iframe.style.cssText = 'display:none;';
+        iframe.src = url;
+        document.body.appendChild(iframe);
+        
+        showToast('📥', 'Download should start shortly.', 'success');
+        
+        setTimeout(() => {
+            if (iframe.parentNode) {
+                iframe.parentNode.removeChild(iframe);
+            }
+        }, 15000);
+    } catch (e) {
+        // Method 2: Try opening in new window
+        try {
+            const newWindow = window.open(url, '_blank');
+            if (!newWindow || newWindow.closed) {
+                // Method 3: Direct navigation
+                window.location.href = url;
+            }
+            showToast('📥', 'Download should start in new tab.', 'success');
+        } catch (e2) {
+            // Method 4: Last resort - show link to user
+            showToast('📋', 'Tap to download: ' + url, 'info');
+            console.log('Download URL (copy manually):', url);
+        }
+    }
+}
 
     // ── STATE ──
     let allResources = [];
@@ -2181,10 +2220,13 @@
         return null;
     }
 
-    // ── DOWNLOAD PREMIUM RESOURCE ──
+    // ── DOWNLOAD PREMIUM RESOURCE (MOBILE OPTIMIZED) ──
 async function downloadPremiumResource(orderId) {
     try {
         console.log('📥 Starting secure download for order:', orderId);
+
+        // Show loading toast
+        showToast('⏳', 'Preparing your download...', 'info');
 
         const orderRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}&select=id,order_ref,payment_status,resource_id,resource_file_path,resource_file_name`, {
             headers: {
@@ -2257,9 +2299,8 @@ async function downloadPremiumResource(orderId) {
         const downloadUrl = await generatePublicUrl(cleanPath);
 
         if (downloadUrl) {
-            // ── FIX: Update both orders AND resources download counts ──
+            // ── UPDATE DOWNLOAD COUNTS ──
             try {
-                // Update order download count
                 await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}`, {
                     method: 'PATCH',
                     headers: {
@@ -2274,9 +2315,7 @@ async function downloadPremiumResource(orderId) {
                     })
                 });
 
-                // ── CRITICAL: Update resource download count ──
                 if (order.resource_id) {
-                    // First get current download count
                     const resourceRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${order.resource_id}&select=download_count`, {
                         headers: {
                             'apikey': SUPABASE_ANON_KEY,
@@ -2290,7 +2329,6 @@ async function downloadPremiumResource(orderId) {
                             const currentCount = resources[0].download_count || 0;
                             const newCount = currentCount + 1;
                             
-                            // Update the resource download count
                             await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${order.resource_id}`, {
                                 method: 'PATCH',
                                 headers: {
@@ -2304,9 +2342,6 @@ async function downloadPremiumResource(orderId) {
                                 })
                             });
                             
-                            console.log(`✅ Resource download count updated: ${newCount}`);
-                            
-                            // Update the local allResources array to reflect the new count
                             const resourceIndex = allResources.findIndex(r => r.id === order.resource_id);
                             if (resourceIndex !== -1) {
                                 allResources[resourceIndex].download_count = newCount;
@@ -2318,9 +2353,53 @@ async function downloadPremiumResource(orderId) {
                 console.warn('⚠️ Could not update download counts:', e.message);
             }
 
-            // Open in new tab
-            window.open(downloadUrl, '_blank');
-            showToast('📥', 'Your file is downloading!', 'success');
+            // ── MOBILE-FRIENDLY DOWNLOAD ──
+            const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            
+            if (isMobile) {
+                console.log('📱 Mobile device detected - using optimized download');
+                
+                // Method 1: Try to download using fetch + blob (best for mobile)
+                try {
+                    const response = await fetch(downloadUrl);
+                    if (response.ok) {
+                        const blob = await response.blob();
+                        const blobUrl = window.URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = blobUrl;
+                        link.download = order.resource_file_name || 'resource.pdf';
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        window.URL.revokeObjectURL(blobUrl);
+                        
+                        showToast('📥', 'Download started! Check your downloads folder.', 'success');
+                    } else {
+                        // Fallback: Use iframe
+                        downloadWithIframe(downloadUrl);
+                    }
+                } catch (e) {
+                    console.warn('Fetch download failed, using iframe:', e.message);
+                    downloadWithIframe(downloadUrl);
+                }
+                
+                // ── CLOSE MEGAPAY TAB ON MOBILE ──
+                if (megapayWindow) {
+                    setTimeout(() => {
+                        try {
+                            megapayWindow.close();
+                            console.log('📱 MegaPay tab closed automatically');
+                        } catch (e) {
+                            console.log('Could not close MegaPay tab:', e.message);
+                        }
+                    }, 2000);
+                }
+            } else {
+                // DESKTOP: Open in new tab
+                window.open(downloadUrl, '_blank');
+                showToast('📥', 'Your file is downloading!', 'success');
+            }
+            
             return downloadUrl;
         } else {
             console.error('❌ Could not generate download URL');
@@ -2335,7 +2414,31 @@ async function downloadPremiumResource(orderId) {
     }
 }
 
-    // ── DOWNLOAD FREE RESOURCE ──
+// ── DOWNLOAD WITH IFRAME (MOBILE FALLBACK) ──
+function downloadWithIframe(url) {
+    try {
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.src = url;
+        document.body.appendChild(iframe);
+        
+        showToast('📥', 'Download should start shortly.', 'success');
+        
+        // Remove iframe after 10 seconds
+        setTimeout(() => {
+            if (iframe.parentNode) {
+                iframe.parentNode.removeChild(iframe);
+            }
+        }, 10000);
+    } catch (e) {
+        console.warn('Iframe download failed:', e.message);
+        // Last resort: Open in new window
+        window.open(url, '_blank');
+        showToast('📥', 'Download should start in new tab.', 'success');
+    }
+}
+
+// ── DOWNLOAD FREE RESOURCE (MOBILE OPTIMIZED) ──
 async function downloadFreeResource(product) {
     const phone = phoneInput.value.trim().replace(/\s/g, '');
     const customerName = customerNameInput.value.trim();
@@ -2363,6 +2466,8 @@ async function downloadFreeResource(product) {
     }
 
     try {
+        showToast('⏳', 'Preparing your free download...', 'info');
+
         const { orderRef, orderId } = await createOrder(product, customerName, phone);
         currentOrderRef = orderRef;
         currentOrderId = orderId;
@@ -2388,9 +2493,8 @@ async function downloadFreeResource(product) {
         const downloadUrl = await generatePublicUrl(cleanPath);
 
         if (downloadUrl) {
-            // ── FIX: Update both orders AND resources download counts ──
+            // ── UPDATE DOWNLOAD COUNTS ──
             try {
-                // Update order download count
                 await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}`, {
                     method: 'PATCH',
                     headers: {
@@ -2405,9 +2509,7 @@ async function downloadFreeResource(product) {
                     })
                 });
 
-                // ── CRITICAL: Update resource download count ──
                 if (product.id) {
-                    // First get current download count
                     const resourceRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${product.id}&select=download_count`, {
                         headers: {
                             'apikey': SUPABASE_ANON_KEY,
@@ -2421,7 +2523,6 @@ async function downloadFreeResource(product) {
                             const currentCount = resources[0].download_count || 0;
                             const newCount = currentCount + 1;
                             
-                            // Update the resource download count
                             await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${product.id}`, {
                                 method: 'PATCH',
                                 headers: {
@@ -2435,9 +2536,6 @@ async function downloadFreeResource(product) {
                                 })
                             });
                             
-                            console.log(`✅ Resource download count updated: ${newCount}`);
-                            
-                            // Update the local allResources array
                             const resourceIndex = allResources.findIndex(r => r.id === product.id);
                             if (resourceIndex !== -1) {
                                 allResources[resourceIndex].download_count = newCount;
@@ -2449,8 +2547,38 @@ async function downloadFreeResource(product) {
                 console.warn('⚠️ Could not update download counts:', e.message);
             }
 
-            window.open(downloadUrl, '_blank');
-            showToast('📥', 'Download started!', 'success');
+            // ── MOBILE-FRIENDLY DOWNLOAD ──
+            const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            
+            if (isMobile) {
+                console.log('📱 Mobile device detected - using optimized free download');
+                
+                try {
+                    const response = await fetch(downloadUrl);
+                    if (response.ok) {
+                        const blob = await response.blob();
+                        const blobUrl = window.URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = blobUrl;
+                        link.download = product.file_name || product.resource_file_name || 'resource.pdf';
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        window.URL.revokeObjectURL(blobUrl);
+                        
+                        showToast('📥', 'Download started! Check your downloads folder.', 'success');
+                    } else {
+                        downloadWithIframe(downloadUrl);
+                    }
+                } catch (e) {
+                    console.warn('Fetch download failed, using iframe:', e.message);
+                    downloadWithIframe(downloadUrl);
+                }
+            } else {
+                // DESKTOP: Open in new tab
+                window.open(downloadUrl, '_blank');
+                showToast('📥', 'Download started!', 'success');
+            }
             
             setTimeout(() => closeCheckoutModal(), 2000);
         } else {
