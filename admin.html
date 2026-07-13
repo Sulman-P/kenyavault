@@ -477,6 +477,81 @@
             to { opacity: 1; transform: translateX(-50%) translateY(0); }
         }
 
+        /* ── LOGOUT BUTTON FIX FOR MOBILE ── */
+        .logout-btn-mobile {
+            display: none;
+        }
+        @media (max-width: 640px) {
+            .logout-btn-mobile {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+                padding: 10px 16px;
+                border-radius: 12px;
+                background: rgba(220, 38, 38, 0.15);
+                color: #ef4444;
+                font-weight: 600;
+                font-size: 0.9rem;
+                border: 1px solid rgba(220, 38, 38, 0.2);
+                width: 100%;
+                margin-top: 8px;
+            }
+            .logout-btn-mobile:hover {
+                background: rgba(220, 38, 38, 0.25);
+            }
+            .dark .logout-btn-mobile {
+                background: rgba(220, 38, 38, 0.2);
+                border-color: rgba(220, 38, 38, 0.3);
+            }
+            .dark .logout-btn-mobile:hover {
+                background: rgba(220, 38, 38, 0.3);
+            }
+            .sidebar-footer .logout-btn-desktop {
+                display: none !important;
+            }
+        }
+        @media (min-width: 641px) {
+            .logout-btn-mobile {
+                display: none !important;
+            }
+        }
+
+        /* ── SIDEBAR FOOTER ── */
+        .sidebar-footer {
+            padding: 12px 16px;
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+            margin-top: auto;
+        }
+        .sidebar-footer .tutor-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .sidebar-footer .tutor-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: #D4A017;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.9rem;
+            color: #0a1a3a;
+        }
+        .sidebar-footer .tutor-name {
+            font-weight: 600;
+            font-size: 0.85rem;
+            color: #fff;
+        }
+        .sidebar-footer .tutor-status {
+            font-size: 0.65rem;
+            color: rgba(255,255,255,0.4);
+        }
+        .sidebar-footer .tutor-status.approved { color: #34d399; }
+        .sidebar-footer .tutor-status.pending { color: #fbbf24; }
+
         @media (max-width: 640px) {
             .toast-container {
                 top: 10px;
@@ -488,6 +563,12 @@
                 padding: 10px 16px;
                 width: calc(100% - 32px);
                 font-size: 0.8rem;
+            }
+            .sidebar {
+                width: 280px !important;
+            }
+            .sidebar-footer .logout-btn-desktop {
+                display: none !important;
             }
         }
     </style>
@@ -575,9 +656,10 @@
                 }
             };
 
+            // ── CHECK NEW ORDERS AND AUTO-CONFIRM ──
             const checkNewOrders = async () => {
                 try {
-                    const response = await fetch(`${SUPABASE_URL}/rest/v1/orders?select=*&order=created_at.desc&limit=10`, {
+                    const response = await fetch(`${SUPABASE_URL}/rest/v1/orders?select=*&order=created_at.desc&limit=20`, {
                         headers: { 
                             'apikey': SUPABASE_ANON_KEY, 
                             'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
@@ -586,19 +668,55 @@
                     });
                     if (response.ok) {
                         const data = await response.json();
-                        const pendingOrders = data.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification' || o.status === 'pending');
                         
-                        const currentIds = pendingOrders.map(o => o.id);
+                        // ── AUTO-CONFIRM ORDERS FROM MEGAPAY ──
+                        // MegaPay confirms payments automatically, so we mark them as confirmed
+                        const pendingOrders = data.filter(o => 
+                            o.payment_status === 'pending' || 
+                            o.payment_status === 'pending_verification' || 
+                            o.status === 'pending'
+                        );
+                        
+                        // Auto-confirm orders that have been paid (MegaPay auto-confirms)
+                        for (const order of pendingOrders) {
+                            // If order has mpesa_code or payment_ref, it's likely paid
+                            if (order.mpesa_code || order.payment_ref || order.transaction_id) {
+                                try {
+                                    const updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${order.id}`, {
+                                        method: 'PATCH',
+                                        headers: {
+                                            'apikey': SUPABASE_ANON_KEY,
+                                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                                            'Content-Type': 'application/json'
+                                        },
+                                        body: JSON.stringify({
+                                            payment_status: 'confirmed',
+                                            status: 'confirmed'
+                                        })
+                                    });
+                                    if (updateRes.ok) {
+                                        console.log(`✅ Auto-confirmed order ${order.order_ref || order.id}`);
+                                    }
+                                } catch (e) {
+                                    console.error('Auto-confirm error:', e);
+                                }
+                            }
+                        }
+                        
+                        // Reload orders after auto-confirm
+                        await loadOrders();
+                        
+                        const currentIds = data.filter(o => o.payment_status === 'pending' || o.status === 'pending').map(o => o.id);
                         const newIds = currentIds.filter(id => !newOrderIds.includes(id));
                         
                         if (newIds.length > 0) {
                             setNewOrderIds(prev => [...prev, ...newIds]);
-                            const newOrders = pendingOrders.filter(o => newIds.includes(o.id));
+                            const newOrders = data.filter(o => newIds.includes(o.id));
                             newOrders.forEach(order => {
                                 const ref = order.order_ref || order.payment_ref || order.id.slice(0, 8).toUpperCase();
                                 showToast(
-                                    '🆕 New Pending Order!',
-                                    `Order #${ref} - ${order.customer_name || 'Customer'} needs approval (KES ${order.total_amount || order.item_price || 0})`,
+                                    '🆕 New Order!',
+                                    `Order #${ref} - ${order.customer_name || 'Customer'} (KES ${order.total_amount || order.item_price || 0})`,
                                     'warning'
                                 );
                             });
@@ -627,8 +745,7 @@
                     if (response.ok) {
                         const data = await response.json();
                         setOrders(data || []);
-                        // Update pending count
-                        const pending = data.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification' || o.status === 'pending');
+                        const pending = data.filter(o => o.payment_status === 'pending' || o.status === 'pending');
                         setPendingOrderCount(pending.length);
                         return data;
                     }
@@ -667,7 +784,6 @@
                         setClasses(data || []);
                     }
 
-                    // Load payments
                     const pRes = await fetch(`${SUPABASE_URL}/rest/v1/tutor_payments?select=*&order=created_at.desc`, {
                         headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
                     });
@@ -913,10 +1029,17 @@
                                 );
                             })}
                         </nav>
-                        <div className="border-t border-[#D4A017]/20 p-4 flex-shrink-0">
-                            <button onClick={logout} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-red-400 hover:bg-red-500/10 transition">
+                        
+                        {/* ── SIDEBAR FOOTER WITH MOBILE LOGOUT ── */}
+                        <div className="sidebar-footer border-t border-[#D4A017]/20 p-4 flex-shrink-0">
+                            {/* Desktop Logout */}
+                            <button onClick={logout} className="logout-btn-desktop w-full flex items-center gap-3 px-3 py-2 rounded-lg text-red-400 hover:bg-red-500/10 transition">
                                 <span className="text-xl flex-shrink-0">🚪</span>
                                 <span className={`text-sm font-medium transition-opacity duration-300 ${!sidebarOpen ? 'lg:opacity-0 lg:group-hover:opacity-100' : 'opacity-100'}`}>Logout</span>
+                            </button>
+                            {/* Mobile Logout - Always visible on mobile */}
+                            <button onClick={logout} className="logout-btn-mobile">
+                                <span>🚪</span> Logout
                             </button>
                         </div>
                     </aside>
@@ -1274,8 +1397,8 @@
             }, [timeframe, fetchAndRenderRevenue]);
 
             const totalRevenue = orders.reduce((s, o) => s + (o.total_amount || 0), 0);
-            const pendingOrders = orders.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification').length;
-            const confirmedOrders = orders.filter(o => o.payment_status === 'confirmed').length;
+            const pendingOrders = orders.filter(o => o.payment_status === 'pending' || o.status === 'pending').length;
+            const confirmedOrders = orders.filter(o => o.payment_status === 'confirmed' || o.status === 'confirmed').length;
             const completedOrders = orders.filter(o => o.payment_status === 'completed' || o.payment_status === 'paid').length;
             const activeTutors = tutors.filter(t => t.status === 'active').length;
             const totalClasses = classes.length;
@@ -1345,7 +1468,7 @@
             );
         }
 
-        // ── RESOURCES MODULE ── (FIXED UPLOAD + EDIT)
+        // ── RESOURCES MODULE ──
         function ResourcesModule() {
             const { resources, setResources, showToast } = useApp();
             const [uploading, setUploading] = useState(false);
@@ -1403,7 +1526,6 @@
                 }
             };
 
-            // ── OPEN EDIT MODAL ──
             const openEditModal = (resource) => {
                 setEditingResource(resource);
                 setEditFormData({
@@ -1422,7 +1544,6 @@
                 setEditingResource(null);
             };
 
-            // ── HANDLE EDIT SAVE ──
             const handleEditSave = async () => {
                 if (!editingResource) return;
                 
@@ -1690,29 +1811,29 @@
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Subject *</label>
                                     <select value={formData.subject} onChange={(e) => setFormData({...formData, subject: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" required>
+                                        <option value="">Select</option>
                                         <option value="mathematics">Mathematics</option>
-                                            <option value="english">English</option>
-                                            <option value="kiswahili">Kiswahili</option>
-                                            <option value="science">Integrated Science</option>
-                                            <option value="social-studies">Social Studies</option>
-                                            <option value="creative-arts">Creative Arts</option>
-                                            <option value="business-studies">Business Studies</option>
-                                            <option value="religious-education">Religious Education</option>
-                                            <option value="computer-studies">Computer Studies</option>
-                                            <option value="special-education">Special Education</option>
-                                            <option value="early-childhood">Early Childhood</option>
-                                            <option value="chemistry">Chemistry</option>
-                                            <option value="physics">Physics</option>
-                                            <option value="Biology">Biology</option>
-                                            <option value="geography">Geography</option>
-                                            <option value="History-citizenship">History & Citizenship</option>
-                                            <option value="pretechnical-studies">Pretechnical Studies</option>
-                                            <option value="early-childhood">Early Childhood</option>
-                                            <option value="tvet">TVET</option>
-                                            <option value="college">College</option>
-                                            <option value="university">University</option>
-                                            <option value="financial-education">Finacial Education</option>
-                                            <option value="personal-growth">Personal Growth</option>
+                                        <option value="english">English</option>
+                                        <option value="kiswahili">Kiswahili</option>
+                                        <option value="science">Integrated Science</option>
+                                        <option value="social-studies">Social Studies</option>
+                                        <option value="creative-arts">Creative Arts</option>
+                                        <option value="business-studies">Business Studies</option>
+                                        <option value="religious-education">Religious Education</option>
+                                        <option value="computer-studies">Computer Studies</option>
+                                        <option value="special-education">Special Education</option>
+                                        <option value="early-childhood">Early Childhood</option>
+                                        <option value="chemistry">Chemistry</option>
+                                        <option value="physics">Physics</option>
+                                        <option value="Biology">Biology</option>
+                                        <option value="geography">Geography</option>
+                                        <option value="History-citizenship">History & Citizenship</option>
+                                        <option value="pretechnical-studies">Pretechnical Studies</option>
+                                        <option value="tvet">TVET</option>
+                                        <option value="college">College</option>
+                                        <option value="university">University</option>
+                                        <option value="financial-education">Financial Education</option>
+                                        <option value="personal-growth">Personal Growth</option>
                                     </select>
                                 </div>
                                 <div>
@@ -1730,7 +1851,7 @@
                                         <option value="form-3">Form 3</option><option value="form-4">Form 4</option>
                                         <option value="college">College</option><option value="tvet">TVET</option>
                                         <option value="university">University</option>
-                                        <option value="life-education">Life EDucation</option>
+                                        <option value="life-education">Life Education</option>
                                     </select>
                                 </div>
                                 <div>
@@ -1854,11 +1975,10 @@
                                             <option value="geography">Geography</option>
                                             <option value="History-citizenship">History & Citizenship</option>
                                             <option value="pretechnical-studies">Pretechnical Studies</option>
-                                            <option value="early-childhood">Early Childhood</option>
                                             <option value="tvet">TVET</option>
                                             <option value="college">College</option>
                                             <option value="university">University</option>
-                                            <option value="financial-education">Finacial Education</option>
+                                            <option value="financial-education">Financial Education</option>
                                             <option value="personal-growth">Personal Growth</option>
                                         </select>
                                     </div>
@@ -2068,28 +2188,27 @@
                                 <select value={formData.specialization} onChange={(e) => setFormData({...formData, specialization: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" required>
                                     <option value="">Select</option>
                                     <option value="mathematics">Mathematics</option>
-                                            <option value="english">English</option>
-                                            <option value="kiswahili">Kiswahili</option>
-                                            <option value="science">Integrated Science</option>
-                                            <option value="social-studies">Social Studies</option>
-                                            <option value="creative-arts">Creative Arts</option>
-                                            <option value="business-studies">Business Studies</option>
-                                            <option value="religious-education">Religious Education</option>
-                                            <option value="computer-studies">Computer Studies</option>
-                                            <option value="special-education">Special Education</option>
-                                            <option value="early-childhood">Early Childhood</option>
-                                            <option value="chemistry">Chemistry</option>
-                                            <option value="physics">Physics</option>
-                                            <option value="Biology">Biology</option>
-                                            <option value="geography">Geography</option>
-                                            <option value="History-citizenship">History & Citizenship</option>
-                                            <option value="pretechnical-studies">Pretechnical Studies</option>
-                                            <option value="early-childhood">Early Childhood</option>
-                                            <option value="tvet">TVET</option>
-                                            <option value="college">College</option>
-                                            <option value="university">University</option>
-                                            <option value="financial-education">Finacial Education</option>
-                                            <option value="personal-growth">Personal Growth</option>
+                                    <option value="english">English</option>
+                                    <option value="kiswahili">Kiswahili</option>
+                                    <option value="science">Integrated Science</option>
+                                    <option value="social-studies">Social Studies</option>
+                                    <option value="creative-arts">Creative Arts</option>
+                                    <option value="business-studies">Business Studies</option>
+                                    <option value="religious-education">Religious Education</option>
+                                    <option value="computer-studies">Computer Studies</option>
+                                    <option value="special-education">Special Education</option>
+                                    <option value="early-childhood">Early Childhood</option>
+                                    <option value="chemistry">Chemistry</option>
+                                    <option value="physics">Physics</option>
+                                    <option value="Biology">Biology</option>
+                                    <option value="geography">Geography</option>
+                                    <option value="History-citizenship">History & Citizenship</option>
+                                    <option value="pretechnical-studies">Pretechnical Studies</option>
+                                    <option value="tvet">TVET</option>
+                                    <option value="college">College</option>
+                                    <option value="university">University</option>
+                                    <option value="financial-education">Financial Education</option>
+                                    <option value="personal-growth">Personal Growth</option>
                                 </select>
                             </div>
                             <div className="md:col-span-2">
@@ -2177,13 +2296,11 @@
                                             <option value="geography">Geography</option>
                                             <option value="History-citizenship">History & Citizenship</option>
                                             <option value="pretechnical-studies">Pretechnical Studies</option>
-                                            <option value="early-childhood">Early Childhood</option>
                                             <option value="tvet">TVET</option>
                                             <option value="college">College</option>
                                             <option value="university">University</option>
-                                            <option value="financial-education">Finacial Education</option>
+                                            <option value="financial-education">Financial Education</option>
                                             <option value="personal-growth">Personal Growth</option>
-                                            
                                         </select>
                                     </div>
                                     <div>
@@ -2310,14 +2427,14 @@
                                     <option value="grade-3">Grade 3</option><option value="grade-4">Grade 4</option>
                                     <option value="grade-5">Grade 5</option><option value="grade-6">Grade 6</option>
                                     <option value="grade-7">Grade 7</option><option value="grade-8">Grade 8</option>
-                                     <option value="grade-9">Grade 9</option><option value="grade-10">Grade 10</option>
-                                     <option value="grade-11">Grade 11</option><option value="grade-12">Grade 12</option>
-                                     <option value="form-1">Form 1</option><option value="form-2">Form 2</option>
-                                     <option value="form-3">Form 3</option><option value="form-4">Form 4</option>
+                                    <option value="grade-9">Grade 9</option><option value="grade-10">Grade 10</option>
+                                    <option value="grade-11">Grade 11</option><option value="grade-12">Grade 12</option>
+                                    <option value="form-1">Form 1</option><option value="form-2">Form 2</option>
+                                    <option value="form-3">Form 3</option><option value="form-4">Form 4</option>
                                     <option value="college">College</option>
                                     <option value="tvet">TVET</option>
                                     <option value="university">University</option>
-                                    <option value="Life-education">LIfe Education</option>
+                                    <option value="Life-education">Life Education</option>
                                 </select>
                             </div>
                             <div>
@@ -2406,7 +2523,7 @@
             );
         }
 
-        // ── ORDERS MODULE ── (FIXED CONFIRM/REJECT)
+        // ── ORDERS MODULE ──
         function OrdersModule() {
             const { orders, loadOrders, showNotification, newOrderIds, setNewOrderIds, pendingOrderCount, setPendingOrderCount } = useApp();
             const [filter, setFilter] = useState('all');
@@ -2434,14 +2551,14 @@
                 const total = orders.reduce((sum, o) => sum + (o.total_amount || o.item_price || 0), 0);
                 
                 const pending = orders
-                    .filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification' || o.status === 'pending')
+                    .filter(o => o.payment_status === 'pending' || o.status === 'pending')
                     .reduce((sum, o) => sum + (o.total_amount || o.item_price || 0), 0);
                 
                 const completed = orders
                     .filter(o => o.payment_status === 'confirmed' || o.payment_status === 'paid' || o.payment_status === 'completed' || o.status === 'completed' || o.status === 'confirmed' || o.status === 'paid')
                     .reduce((sum, o) => sum + (o.total_amount || o.item_price || 0), 0);
                 
-                const pendingCount = orders.filter(o => o.payment_status === 'pending' || o.payment_status === 'pending_verification' || o.status === 'pending').length;
+                const pendingCount = orders.filter(o => o.payment_status === 'pending' || o.status === 'pending').length;
                 const completedCount = orders.filter(o => o.payment_status === 'confirmed' || o.payment_status === 'paid' || o.payment_status === 'completed' || o.status === 'completed' || o.status === 'confirmed' || o.status === 'paid').length;
                 
                 setRevenueStats({
@@ -2453,7 +2570,6 @@
                     completedOrders: completedCount
                 });
 
-                // Update global pending count
                 setPendingOrderCount(pendingCount);
             };
 
@@ -2462,7 +2578,6 @@
                 return () => clearInterval(interval);
             }, []);
 
-            // ── GENERATE SIGNED URL ──
             const generateSignedUrl = async (filePath) => {
                 try {
                     if (!filePath) return null;
@@ -2505,7 +2620,6 @@
                 }
             };
 
-            // ── FETCH ORDER ITEMS WITH RESOURCE DETAILS ──
             const fetchOrderItemsWithDetails = async (order) => {
                 try {
                     let items = [];
@@ -2643,21 +2757,18 @@
                 setOrderItems([]);
             };
 
-            // ── FIXED: HANDLE CONFIRM ORDER ──
             const handleConfirmOrder = async (order) => {
                 const ref = order.payment_ref || order.order_ref || order.id.slice(0, 8).toUpperCase();
                 if (!confirm(`Confirm order #${ref}?`)) return;
                 
                 setLoadingOrderId(order.id);
                 try {
-                    // Remove confirmed_at - column doesn't exist
                     const updateData = {
                         payment_status: 'confirmed',
                         status: 'confirmed'
                     };
                     
                     console.log('📝 Confirming order:', order.id, order.order_ref);
-                    console.log('📝 Update data:', updateData);
                     
                     let updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${order.id}`, {
                         method: 'PATCH',
@@ -2702,7 +2813,6 @@
                 setLoadingOrderId(null);
             };
 
-            // ── FIXED: HANDLE REJECT ORDER ──
             const handleRejectOrder = async (order) => {
                 const ref = order.payment_ref || order.order_ref || order.id.slice(0, 8).toUpperCase();
                 if (!confirm(`Reject order #${ref}?`)) return;
@@ -2915,9 +3025,7 @@
             };
 
             const isPending = (order) => {
-                return order.payment_status === 'pending' || 
-                       order.payment_status === 'pending_verification' || 
-                       order.status === 'pending';
+                return order.payment_status === 'pending' || order.status === 'pending';
             };
 
             const isCompleted = (order) => {
@@ -3237,6 +3345,7 @@
             const [selectedTutor, setSelectedTutor] = useState(null);
             const [showPaymentModal, setShowPaymentModal] = useState(false);
             const [paymentAmount, setPaymentAmount] = useState(0);
+            const { classes } = useApp();
 
             const loadPayments = async () => {
                 try {
@@ -3252,9 +3361,8 @@
 
             useEffect(() => { loadPayments(); }, []);
 
-            // Calculate tutor earnings
             const calculateTutorEarnings = (tutorId) => {
-                const tutorClasses = classes.filter(c => c.tutor_id === tutorId && c.is_live === true);
+                const tutorClasses = classes ? classes.filter(c => c.tutor_id === tutorId && c.is_live === true) : [];
                 
                 let totalRevenue = 0;
                 let totalEnrollments = 0;
@@ -3318,7 +3426,7 @@
             };
 
             const totalRevenue = orders.reduce((s, o) => s + (o.total_amount || 0), 0);
-            const confirmedOrders = orders.filter(o => o.payment_status === 'confirmed').length;
+            const confirmedOrders = orders.filter(o => o.payment_status === 'confirmed' || o.status === 'confirmed').length;
             const paidOrders = orders.filter(o => o.payment_status === 'paid' || o.payment_status === 'completed').length;
             
             const totalPayouts = payments
@@ -3333,7 +3441,6 @@
 
             return (
                 <div className="space-y-6 fade-in">
-                    {/* Stats */}
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                         <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
                             <p className="text-sm text-gray-500 dark:text-gray-400">Total Revenue</p>
@@ -3353,7 +3460,6 @@
                         </div>
                     </div>
 
-                    {/* Tutor Payouts */}
                     <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-lg font-semibold text-gray-800 dark:text-white">🧑‍🏫 Tutor Payouts ({TUTOR_PAYOUT_PERCENTAGE}% of Revenue)</h3>
@@ -3414,7 +3520,6 @@
                         )}
                     </div>
 
-                    {/* Payment History */}
                     <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-lg font-semibold text-gray-800 dark:text-white">📋 Payment History</h3>
@@ -3455,7 +3560,6 @@
                         )}
                     </div>
 
-                    {/* Payment Modal */}
                     {showPaymentModal && selectedTutor && (
                         <div className="modal-overlay open" onClick={() => setShowPaymentModal(false)}>
                             <div className="modal-box" onClick={(e) => e.stopPropagation()}>
@@ -3542,7 +3646,6 @@
                         <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-6">⚙️ Settings</h3>
                         
                         <form onSubmit={handleSaveSettings}>
-                            {/* General Settings */}
                             <div className="settings-section">
                                 <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">General</h4>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -3569,7 +3672,6 @@
                                 </div>
                             </div>
 
-                            {/* Payout Settings */}
                             <div className="settings-section">
                                 <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Payout Settings</h4>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -3606,7 +3708,6 @@
                                 </div>
                             </div>
 
-                            {/* Notification Settings */}
                             <div className="settings-section">
                                 <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Notifications</h4>
                                 <div className="space-y-2">
@@ -3633,7 +3734,6 @@
                                 </div>
                             </div>
 
-                            {/* Display Settings */}
                             <div className="settings-section">
                                 <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Display</h4>
                                 <div className="flex items-center justify-between">
@@ -3651,7 +3751,6 @@
                                 </div>
                             </div>
 
-                            {/* Timezone */}
                             <div className="settings-section">
                                 <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Regional</h4>
                                 <div>
