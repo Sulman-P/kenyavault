@@ -876,67 +876,127 @@
                 setTimeout(() => setToast(null), 6000);
             };
 
-            // ── UPDATED: Load Orders with Customer Phone & Order Items ──
-   const loadOrders = async () => {
-       try {
-           // Fetch orders with customer phone and items
-             const response = await fetch(`${SUPABASE_URL}/rest/v1/orders?select=*,customer_phone,order_items(*,resources(*))&order=created_at.desc`, {
-                headers: { 
-                    'apikey': SUPABASE_ANON_KEY, 
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                    'Content-Type': 'application/json'
-                 }
-             });
-           if (response.ok) {
-                const data = await response.json();
-               setOrders(data || []);
-                const pending = data.filter(o => o.payment_status === 'pending' || o.status === 'pending');
-             setPendingOrderCount(pending.length);
-             return data;
-            }
-          } catch (e) {
-               console.error('Load orders error:', e);
-            throw e;
-         }
-       };
+            // ── FIXED: Load Orders with Customer Phone ──
+            const loadOrders = async () => {
+                try {
+                    console.log('🔄 Loading orders...');
+                    
+                    const response = await fetch(`${SUPABASE_URL}/rest/v1/orders?select=*&order=created_at.desc`, {
+                        headers: { 
+                            'apikey': SUPABASE_ANON_KEY, 
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
 
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        console.error('❌ API Error:', response.status, errorText);
+                        throw new Error(`Failed to load orders: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    console.log('✅ Orders loaded:', data.length);
+                    
+                    // Ensure we have data even if empty
+                    setOrders(data || []);
+                    const pending = (data || []).filter(o => o.payment_status === 'pending' || o.status === 'pending');
+                    setPendingOrderCount(pending.length);
+                    return data;
+                    
+                } catch (e) {
+                    console.error('❌ Load orders error:', e);
+                    setOrders([]);
+                    setPendingOrderCount(0);
+                    throw e;
+                }
+            };
+
+            // ── FIXED: loadData with proper error handling ──
             const loadData = async () => {
                 setLoading(true);
                 try {
+                    console.log('🔄 Loading all data...');
+                    
+                    // Load orders first
                     await loadOrders();
                     
-                    const rRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?select=*&order=created_at.desc`, {
-                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
-                    });
-                    if (rRes.ok) {
-                        const data = await rRes.json();
-                        setResources(data || []);
+                    // Load resources
+                    try {
+                        const rRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?select=*&order=created_at.desc`, {
+                            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+                        });
+                        if (rRes.ok) {
+                            const data = await rRes.json();
+                            setResources(data || []);
+                            console.log('✅ Resources loaded:', data.length);
+                        } else {
+                            console.warn('⚠️ Failed to load resources:', rRes.status);
+                            setResources([]);
+                        }
+                    } catch (e) { 
+                        console.error('❌ Resources error:', e);
+                        setResources([]);
                     }
 
-                    const tRes = await fetch(`${SUPABASE_URL}/rest/v1/tutors?select=*`, {
-                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
-                    });
-                    if (tRes.ok) {
-                        const data = await tRes.json();
-                        setTutors(data || []);
+                    // Load tutors
+                    try {
+                        const tRes = await fetch(`${SUPABASE_URL}/rest/v1/tutors?select=*`, {
+                            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+                        });
+                        if (tRes.ok) {
+                            const data = await tRes.json();
+                            setTutors(data || []);
+                            console.log('✅ Tutors loaded:', data.length);
+                        } else {
+                            console.warn('⚠️ Failed to load tutors:', tRes.status);
+                            setTutors([]);
+                        }
+                    } catch (e) { 
+                        console.error('❌ Tutors error:', e);
+                        setTutors([]);
                     }
 
-                    const cRes = await fetch(`${SUPABASE_URL}/rest/v1/classes?select=*&order=created_at.desc`, {
-                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
-                    });
-                    if (cRes.ok) {
-                        const data = await cRes.json();
-                        setClasses(data || []);
+                    // Load classes
+                    try {
+                        const cRes = await fetch(`${SUPABASE_URL}/rest/v1/classes?select=*&order=created_at.desc`, {
+                            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+                        });
+                        if (cRes.ok) {
+                            const data = await cRes.json();
+                            setClasses(data || []);
+                            console.log('✅ Classes loaded:', data.length);
+                        } else {
+                            console.warn('⚠️ Failed to load classes:', cRes.status);
+                            setClasses([]);
+                        }
+                    } catch (e) { 
+                        console.error('❌ Classes error:', e);
+                        setClasses([]);
                     }
 
-                    const pRes = await fetch(`${SUPABASE_URL}/rest/v1/tutor_payments?select=*&order=created_at.desc`, {
-                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
-                    });
-                    if (pRes.ok) {
-                        const data = await pRes.json();
-                        setPayments(data || []);
+                    // Load payments
+                    try {
+                        const pRes = await fetch(`${SUPABASE_URL}/rest/v1/tutor_payments?select=*&order=created_at.desc`, {
+                            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+                        });
+                        if (pRes.ok) {
+                            const data = await pRes.json();
+                            setPayments(data || []);
+                            console.log('✅ Payments loaded:', data.length);
+                        } else {
+                            console.warn('⚠️ Failed to load payments:', pRes.status);
+                            setPayments([]);
+                        }
+                    } catch (e) { 
+                        console.error('❌ Payments error:', e);
+                        setPayments([]);
                     }
-                } catch (e) { console.error('Load error:', e); }
+                    
+                } catch (e) { 
+                    console.error('❌ Load data error:', e); 
+                    showNotification('Error loading data: ' + e.message, 'error');
+                }
                 setLoading(false);
             };
 
@@ -1371,20 +1431,21 @@
                 return () => clearInterval(interval);
             }, [timeframe, fetchAndRenderRevenue]);
 
-            const totalRevenue = orders.reduce((s, o) => s + (o.total_amount || 0), 0);
-            const confirmedOrders = orders.filter(o => o.payment_status === 'confirmed' || o.status === 'confirmed').length;
-            const activeTutors = tutors.filter(t => t.status === 'active').length;
-            const totalClasses = classes.length;
-            const liveClasses = classes.filter(c => c.is_live === true).length;
+            // Safe calculations with fallbacks
+            const totalRevenue = Array.isArray(orders) ? orders.reduce((s, o) => s + (o.total_amount || 0), 0) : 0;
+            const confirmedOrders = Array.isArray(orders) ? orders.filter(o => o.payment_status === 'confirmed' || o.status === 'confirmed').length : 0;
+            const activeTutors = Array.isArray(tutors) ? tutors.filter(t => t.status === 'active').length : 0;
+            const totalClasses = Array.isArray(classes) ? classes.length : 0;
+            const liveClasses = Array.isArray(classes) ? classes.filter(c => c.is_live === true).length : 0;
 
             return (
                 <div className="space-y-6 fade-in">
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                         {[
                             { label: 'Total Revenue', value: 'KES ' + totalRevenue.toLocaleString(), change: '+15%', icon: '💰' },
-                            { label: 'Pending Orders', value: pendingOrderCount, change: '', icon: '⏳' },
-                            { label: 'Active Tutors', value: activeTutors, change: '', icon: '🧑‍🏫' },
-                            { label: 'Live Classes', value: liveClasses, change: '', icon: '📹' },
+                            { label: 'Pending Orders', value: pendingOrderCount || 0, change: '', icon: '⏳' },
+                            { label: 'Active Tutors', value: activeTutors || 0, change: '', icon: '🧑‍🏫' },
+                            { label: 'Live Classes', value: liveClasses || 0, change: '', icon: '📹' },
                         ].map((stat, i) => (
                             <div key={i} className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
                                 <div className="flex items-center justify-between">
@@ -1415,13 +1476,13 @@
                         <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
                             <div className="flex items-center justify-between">
                                 <span className="text-sm text-gray-500 dark:text-gray-400">Total Orders</span>
-                                <span className="text-2xl font-bold text-blue-600">{orders.length}</span>
+                                <span className="text-2xl font-bold text-blue-600">{(Array.isArray(orders) ? orders.length : 0)}</span>
                             </div>
                         </div>
                         <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
                             <div className="flex items-center justify-between">
                                 <span className="text-sm text-gray-500 dark:text-gray-400">Total Resources</span>
-                                <span className="text-2xl font-bold text-green-600">{resources.length}</span>
+                                <span className="text-2xl font-bold text-green-600">{(Array.isArray(resources) ? resources.length : 0)}</span>
                             </div>
                         </div>
                         <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
@@ -2583,429 +2644,429 @@
             );
         }
 
-        // ── ORDERS MODULE (UPDATED) ──
-function OrdersModule() {
-    const { orders, loadOrders, showNotification, newOrderIds, setNewOrderIds, pendingOrderCount, setPendingOrderCount } = useApp();
-    const [filter, setFilter] = useState('all');
-    const [loadingOrderId, setLoadingOrderId] = useState(null);
-    const [expandedOrderId, setExpandedOrderId] = useState(null);
-    const [searchTerm, setSearchTerm] = useState('');
-    const [revenueStats, setRevenueStats] = useState({
-        totalRevenue: 0,
-        pendingRevenue: 0,
-        completedRevenue: 0,
-        totalOrders: 0,
-        pendingOrders: 0,
-        completedOrders: 0
-    });
+        // ── ORDERS MODULE (UPDATED WITH PHONE & RESOURCE DETAILS) ──
+        function OrdersModule() {
+            const { orders, loadOrders, showNotification, newOrderIds, setNewOrderIds, pendingOrderCount, setPendingOrderCount } = useApp();
+            const [filter, setFilter] = useState('all');
+            const [loadingOrderId, setLoadingOrderId] = useState(null);
+            const [expandedOrderId, setExpandedOrderId] = useState(null);
+            const [searchTerm, setSearchTerm] = useState('');
+            const [revenueStats, setRevenueStats] = useState({
+                totalRevenue: 0,
+                pendingRevenue: 0,
+                completedRevenue: 0,
+                totalOrders: 0,
+                pendingOrders: 0,
+                completedOrders: 0
+            });
 
-    // ── Toggle order expansion ──
-    const toggleOrderExpand = (orderId) => {
-        setExpandedOrderId(expandedOrderId === orderId ? null : orderId);
-    };
+            // ── Toggle order expansion ──
+            const toggleOrderExpand = (orderId) => {
+                setExpandedOrderId(expandedOrderId === orderId ? null : orderId);
+            };
 
-    // ── Get order items with resource details ──
-    const getOrderItems = (order) => {
-        if (order.order_items && order.order_items.length > 0) {
-            return order.order_items;
-        }
-        // Fallback: create item from order data
-        if (order.item_title || order.resource_title) {
-            return [{
-                resource_title: order.item_title || order.resource_title || 'Resource',
-                resource_type: order.resource_type || 'Digital',
-                quantity: order.quantity || 1,
-                price: order.item_price || order.total_amount || 0,
-                resources: {
-                    title: order.item_title || order.resource_title || 'Resource',
-                    resource_type: order.resource_type || 'Digital'
+            // ── Get order items with resource details ──
+            const getOrderItems = (order) => {
+                if (order.order_items && order.order_items.length > 0) {
+                    return order.order_items;
                 }
-            }];
-        }
-        return [];
-    };
+                // Fallback: create item from order data
+                if (order.item_title || order.resource_title) {
+                    return [{
+                        resource_title: order.item_title || order.resource_title || 'Resource',
+                        resource_type: order.resource_type || 'Digital',
+                        quantity: order.quantity || 1,
+                        price: order.item_price || order.total_amount || 0,
+                        resources: {
+                            title: order.item_title || order.resource_title || 'Resource',
+                            resource_type: order.resource_type || 'Digital'
+                        }
+                    }];
+                }
+                return [];
+            };
 
-    // ── Get resource type display ──
-    const getResourceTypeDisplay = (item) => {
-        const type = item.resource_type || item.resources?.resource_type || 'digital';
-        if (type === 'physical' || type === 'book') {
-            return '📖 Physical Book';
-        }
-        return '📄 Digital Download';
-    };
+            // ── Get resource type display ──
+            const getResourceTypeDisplay = (item) => {
+                const type = item.resource_type || item.resources?.resource_type || 'digital';
+                if (type === 'physical' || type === 'book') {
+                    return '📖 Physical Book';
+                }
+                return '📄 Digital Download';
+            };
 
-    // ── Calculate revenue stats ──
-    useEffect(() => {
-        calculateRevenueStats();
-    }, [orders]);
+            // ── Calculate revenue stats ──
+            useEffect(() => {
+                calculateRevenueStats();
+            }, [orders]);
 
-    const calculateRevenueStats = () => {
-        const total = orders.reduce((sum, o) => sum + (o.total_amount || o.item_price || 0), 0);
-        const pending = orders
-            .filter(o => o.payment_status === 'pending' || o.status === 'pending')
-            .reduce((sum, o) => sum + (o.total_amount || o.item_price || 0), 0);
-        const completed = orders
-            .filter(o => o.payment_status === 'confirmed' || o.payment_status === 'paid' || o.payment_status === 'completed' || o.status === 'completed' || o.status === 'confirmed' || o.status === 'paid')
-            .reduce((sum, o) => sum + (o.total_amount || o.item_price || 0), 0);
-        const pendingCount = orders.filter(o => o.payment_status === 'pending' || o.status === 'pending').length;
-        const completedCount = orders.filter(o => o.payment_status === 'confirmed' || o.payment_status === 'paid' || o.payment_status === 'completed' || o.status === 'completed' || o.status === 'confirmed' || o.status === 'paid').length;
-        
-        setRevenueStats({
-            totalRevenue: total,
-            pendingRevenue: pending,
-            completedRevenue: completed,
-            totalOrders: orders.length,
-            pendingOrders: pendingCount,
-            completedOrders: completedCount
-        });
-        setPendingOrderCount(pendingCount);
-    };
-
-    useEffect(() => {
-        const interval = setInterval(() => loadOrders(), 10000);
-        return () => clearInterval(interval);
-    }, []);
-
-    const getStatusBadge = (status) => {
-        const map = {
-            'pending': 'pending',
-            'pending_verification': 'pending_verification',
-            'confirmed': 'confirmed',
-            'paid': 'paid',
-            'completed': 'paid',
-            'cancelled': 'rejected',
-            'rejected': 'rejected'
-        };
-        return map[status] || 'pending';
-    };
-
-    const getStatusLabel = (status) => {
-        const map = {
-            'pending': '⏳ Pending',
-            'pending_verification': '⏳ Pending Approval',
-            'confirmed': '✅ Confirmed',
-            'paid': '✅ Paid',
-            'completed': '✅ Paid',
-            'cancelled': '❌ Cancelled',
-            'rejected': '❌ Rejected'
-        };
-        return map[status] || '⏳ Pending';
-    };
-
-    const isPending = (order) => order.payment_status === 'pending' || order.status === 'pending';
-    const isCompleted = (order) => order.payment_status === 'confirmed' || order.payment_status === 'paid' || order.payment_status === 'completed' || order.status === 'completed' || order.status === 'confirmed' || order.status === 'paid';
-
-    // ── Handle Confirm Order ──
-    const handleConfirmOrder = async (order) => {
-        const ref = order.payment_ref || order.order_ref || order.id.slice(0, 8).toUpperCase();
-        if (!confirm(`Confirm order #${ref}?`)) return;
-        setLoadingOrderId(order.id);
-        try {
-            const updateData = { payment_status: 'confirmed', status: 'confirmed' };
-            let updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${order.id}`, {
-                method: 'PATCH',
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(updateData)
-            });
-            if (!updateRes.ok && order.order_ref) {
-                updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?order_ref=eq.${order.order_ref}`, {
-                    method: 'PATCH',
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(updateData)
+            const calculateRevenueStats = () => {
+                const total = orders.reduce((sum, o) => sum + (o.total_amount || o.item_price || 0), 0);
+                const pending = orders
+                    .filter(o => o.payment_status === 'pending' || o.status === 'pending')
+                    .reduce((sum, o) => sum + (o.total_amount || o.item_price || 0), 0);
+                const completed = orders
+                    .filter(o => o.payment_status === 'confirmed' || o.payment_status === 'paid' || o.payment_status === 'completed' || o.status === 'completed' || o.status === 'confirmed' || o.status === 'paid')
+                    .reduce((sum, o) => sum + (o.total_amount || o.item_price || 0), 0);
+                const pendingCount = orders.filter(o => o.payment_status === 'pending' || o.status === 'pending').length;
+                const completedCount = orders.filter(o => o.payment_status === 'confirmed' || o.payment_status === 'paid' || o.payment_status === 'completed' || o.status === 'completed' || o.status === 'confirmed' || o.status === 'paid').length;
+                
+                setRevenueStats({
+                    totalRevenue: total,
+                    pendingRevenue: pending,
+                    completedRevenue: completed,
+                    totalOrders: orders.length,
+                    pendingOrders: pendingCount,
+                    completedOrders: completedCount
                 });
-            }
-            if (!updateRes.ok) {
-                const errorText = await updateRes.text();
-                throw new Error(`Failed to update order: ${updateRes.status} - ${errorText}`);
-            }
-            showNotification('✅ Order confirmed!', 'success');
-            await loadOrders();
-            setNewOrderIds(prev => prev.filter(id => id !== order.id));
-        } catch (e) {
-            console.error('Confirm error:', e);
-            showNotification('Error confirming order: ' + e.message, 'error');
-        }
-        setLoadingOrderId(null);
-    };
+                setPendingOrderCount(pendingCount);
+            };
 
-    // ── Handle Reject Order ──
-    const handleRejectOrder = async (order) => {
-        const ref = order.payment_ref || order.order_ref || order.id.slice(0, 8).toUpperCase();
-        if (!confirm(`Reject order #${ref}?`)) return;
-        try {
-            const updateData = { payment_status: 'rejected', status: 'rejected' };
-            let updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${order.id}`, {
-                method: 'PATCH',
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(updateData)
+            useEffect(() => {
+                const interval = setInterval(() => loadOrders(), 10000);
+                return () => clearInterval(interval);
+            }, []);
+
+            const getStatusBadge = (status) => {
+                const map = {
+                    'pending': 'pending',
+                    'pending_verification': 'pending_verification',
+                    'confirmed': 'confirmed',
+                    'paid': 'paid',
+                    'completed': 'paid',
+                    'cancelled': 'rejected',
+                    'rejected': 'rejected'
+                };
+                return map[status] || 'pending';
+            };
+
+            const getStatusLabel = (status) => {
+                const map = {
+                    'pending': '⏳ Pending',
+                    'pending_verification': '⏳ Pending Approval',
+                    'confirmed': '✅ Confirmed',
+                    'paid': '✅ Paid',
+                    'completed': '✅ Paid',
+                    'cancelled': '❌ Cancelled',
+                    'rejected': '❌ Rejected'
+                };
+                return map[status] || '⏳ Pending';
+            };
+
+            const isPending = (order) => order.payment_status === 'pending' || order.status === 'pending';
+            const isCompleted = (order) => order.payment_status === 'confirmed' || order.payment_status === 'paid' || order.payment_status === 'completed' || order.status === 'completed' || order.status === 'confirmed' || order.status === 'paid';
+
+            // ── Handle Confirm Order ──
+            const handleConfirmOrder = async (order) => {
+                const ref = order.payment_ref || order.order_ref || order.id.slice(0, 8).toUpperCase();
+                if (!confirm(`Confirm order #${ref}?`)) return;
+                setLoadingOrderId(order.id);
+                try {
+                    const updateData = { payment_status: 'confirmed', status: 'confirmed' };
+                    let updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${order.id}`, {
+                        method: 'PATCH',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(updateData)
+                    });
+                    if (!updateRes.ok && order.order_ref) {
+                        updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?order_ref=eq.${order.order_ref}`, {
+                            method: 'PATCH',
+                            headers: {
+                                'apikey': SUPABASE_ANON_KEY,
+                                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify(updateData)
+                        });
+                    }
+                    if (!updateRes.ok) {
+                        const errorText = await updateRes.text();
+                        throw new Error(`Failed to update order: ${updateRes.status} - ${errorText}`);
+                    }
+                    showNotification('✅ Order confirmed!', 'success');
+                    await loadOrders();
+                    setNewOrderIds(prev => prev.filter(id => id !== order.id));
+                } catch (e) {
+                    console.error('Confirm error:', e);
+                    showNotification('Error confirming order: ' + e.message, 'error');
+                }
+                setLoadingOrderId(null);
+            };
+
+            // ── Handle Reject Order ──
+            const handleRejectOrder = async (order) => {
+                const ref = order.payment_ref || order.order_ref || order.id.slice(0, 8).toUpperCase();
+                if (!confirm(`Reject order #${ref}?`)) return;
+                try {
+                    const updateData = { payment_status: 'rejected', status: 'rejected' };
+                    let updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${order.id}`, {
+                        method: 'PATCH',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(updateData)
+                    });
+                    if (!updateRes.ok && order.order_ref) {
+                        updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?order_ref=eq.${order.order_ref}`, {
+                            method: 'PATCH',
+                            headers: {
+                                'apikey': SUPABASE_ANON_KEY,
+                                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify(updateData)
+                        });
+                    }
+                    if (!updateRes.ok) {
+                        const errorText = await updateRes.text();
+                        throw new Error(`Failed to reject order: ${updateRes.status} - ${errorText}`);
+                    }
+                    showNotification('❌ Order rejected', 'success');
+                    await loadOrders();
+                    setNewOrderIds(prev => prev.filter(id => id !== order.id));
+                } catch (e) {
+                    console.error('Reject error:', e);
+                    showNotification('Error rejecting order: ' + e.message, 'error');
+                }
+            };
+
+            const filteredOrders = orders.filter(o => {
+                if (searchTerm) {
+                    const search = searchTerm.toLowerCase();
+                    const match = (o.order_ref || '').toLowerCase().includes(search) ||
+                        (o.payment_ref || '').toLowerCase().includes(search) ||
+                        (o.customer_name || '').toLowerCase().includes(search) ||
+                        (o.customer_phone || '').includes(search) ||
+                        (o.phone || '').includes(search) ||
+                        (o.item_title || '').toLowerCase().includes(search) ||
+                        (o.resource_title || '').toLowerCase().includes(search);
+                    if (!match) return false;
+                }
+                if (filter === 'pending') return isPending(o);
+                if (filter === 'confirmed') return o.payment_status === 'confirmed' || o.status === 'confirmed';
+                if (filter === 'paid') return o.payment_status === 'paid' || o.payment_status === 'completed' || o.status === 'completed' || o.status === 'paid';
+                if (filter === 'cancelled') return o.payment_status === 'cancelled' || o.payment_status === 'rejected' || o.status === 'cancelled' || o.status === 'rejected';
+                return true;
             });
-            if (!updateRes.ok && order.order_ref) {
-                updateRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?order_ref=eq.${order.order_ref}`, {
-                    method: 'PATCH',
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(updateData)
-                });
-            }
-            if (!updateRes.ok) {
-                const errorText = await updateRes.text();
-                throw new Error(`Failed to reject order: ${updateRes.status} - ${errorText}`);
-            }
-            showNotification('❌ Order rejected', 'success');
-            await loadOrders();
-            setNewOrderIds(prev => prev.filter(id => id !== order.id));
-        } catch (e) {
-            console.error('Reject error:', e);
-            showNotification('Error rejecting order: ' + e.message, 'error');
-        }
-    };
 
-    const filteredOrders = orders.filter(o => {
-        if (searchTerm) {
-            const search = searchTerm.toLowerCase();
-            const match = (o.order_ref || '').toLowerCase().includes(search) ||
-                (o.payment_ref || '').toLowerCase().includes(search) ||
-                (o.customer_name || '').toLowerCase().includes(search) ||
-                (o.customer_phone || '').includes(search) ||
-                (o.phone || '').includes(search) ||
-                (o.item_title || '').toLowerCase().includes(search) ||
-                (o.resource_title || '').toLowerCase().includes(search);
-            if (!match) return false;
-        }
-        if (filter === 'pending') return isPending(o);
-        if (filter === 'confirmed') return o.payment_status === 'confirmed' || o.status === 'confirmed';
-        if (filter === 'paid') return o.payment_status === 'paid' || o.payment_status === 'completed' || o.status === 'completed' || o.status === 'paid';
-        if (filter === 'cancelled') return o.payment_status === 'cancelled' || o.payment_status === 'rejected' || o.status === 'cancelled' || o.status === 'rejected';
-        return true;
-    });
-
-    return (
-        <div className="fade-in">
-            {/* Revenue Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Total Revenue</p>
-                    <p className="text-2xl font-bold text-[#D4A017]">KES {revenueStats.totalRevenue.toLocaleString()}</p>
-                    <p className="text-xs text-gray-400">{revenueStats.totalOrders} total orders</p>
-                </div>
-                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Pending Revenue</p>
-                    <p className="text-2xl font-bold text-amber-600">KES {revenueStats.pendingRevenue.toLocaleString()}</p>
-                    <p className="text-xs text-gray-400">{revenueStats.pendingOrders} pending orders</p>
-                </div>
-                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Completed Revenue</p>
-                    <p className="text-2xl font-bold text-green-600">KES {revenueStats.completedRevenue.toLocaleString()}</p>
-                    <p className="text-xs text-gray-400">{revenueStats.completedOrders} completed orders</p>
-                </div>
-                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Platform Fee (20%)</p>
-                    <p className="text-2xl font-bold text-purple-600">KES {Math.round(revenueStats.completedRevenue * 0.2).toLocaleString()}</p>
-                    <p className="text-xs text-gray-400">80% goes to tutors</p>
-                </div>
-            </div>
-
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
-                <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
-                    <h2 className="text-xl font-bold text-gray-800 dark:text-white">
-                        📦 Orders ({orders.length})
-                        {revenueStats.pendingOrders > 0 && (
-                            <span className="ml-2 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-full animate-pulse">
-                                {revenueStats.pendingOrders} pending approval
-                            </span>
-                        )}
-                    </h2>
-                    <button onClick={() => loadOrders()} className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg text-xs hover:bg-blue-200 transition">
-                        🔄 Refresh
-                    </button>
-                </div>
-
-                {/* Filter Buttons */}
-                <div className="flex gap-2 flex-wrap mb-4">
-                    <button onClick={() => setFilter('all')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'all' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>All</button>
-                    <button onClick={() => setFilter('pending')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'pending' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>⏳ Pending</button>
-                    <button onClick={() => setFilter('confirmed')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'confirmed' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>✅ Confirmed</button>
-                    <button onClick={() => setFilter('paid')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'paid' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>💳 Paid</button>
-                    <button onClick={() => setFilter('cancelled')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'cancelled' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>❌ Cancelled/Rejected</button>
-                </div>
-
-                {/* Search Input */}
-                <div className="mb-4">
-                    <input 
-                        type="text" 
-                        placeholder="🔍 Search by order ref, customer, phone, or resource..." 
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#D4A017]"
-                    />
-                </div>
-
-                {/* Orders Table */}
-                {filteredOrders.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                        {orders.length === 0 ? 'No orders found. Orders will appear here when customers make purchases.' : 'No orders match your filters.'}
+            return (
+                <div className="fade-in">
+                    {/* Revenue Stats Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Total Revenue</p>
+                            <p className="text-2xl font-bold text-[#D4A017]">KES {revenueStats.totalRevenue.toLocaleString()}</p>
+                            <p className="text-xs text-gray-400">{revenueStats.totalOrders} total orders</p>
+                        </div>
+                        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Pending Revenue</p>
+                            <p className="text-2xl font-bold text-amber-600">KES {revenueStats.pendingRevenue.toLocaleString()}</p>
+                            <p className="text-xs text-gray-400">{revenueStats.pendingOrders} pending orders</p>
+                        </div>
+                        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Completed Revenue</p>
+                            <p className="text-2xl font-bold text-green-600">KES {revenueStats.completedRevenue.toLocaleString()}</p>
+                            <p className="text-xs text-gray-400">{revenueStats.completedOrders} completed orders</p>
+                        </div>
+                        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Platform Fee (20%)</p>
+                            <p className="text-2xl font-bold text-purple-600">KES {Math.round(revenueStats.completedRevenue * 0.2).toLocaleString()}</p>
+                            <p className="text-xs text-gray-400">80% goes to tutors</p>
+                        </div>
                     </div>
-                ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead className="bg-gray-50 dark:bg-gray-700/50">
-                                <tr>
-                                    <th className="px-4 py-2 text-left">Reference</th>
-                                    <th className="px-4 py-2 text-left">Customer</th>
-                                    <th className="px-4 py-2 text-left">📱 Phone</th>
-                                    <th className="px-4 py-2 text-left">Items</th>
-                                    <th className="px-4 py-2 text-left">Total</th>
-                                    <th className="px-4 py-2 text-left">Status</th>
-                                    <th className="px-4 py-2 text-left">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {filteredOrders.map(o => {
-                                    const isNew = newOrderIds.includes(o.id);
-                                    const pending = isPending(o);
-                                    const ref = o.order_ref || o.payment_ref || o.id.slice(0, 8).toUpperCase();
-                                    const orderItems = getOrderItems(o);
-                                    const isExpanded = expandedOrderId === o.id;
-                                    const customerPhone = o.customer_phone || o.phone || '—';
 
-                                    return (
-                                        <React.Fragment key={o.id}>
-                                            <tr className={`border-t border-gray-100 dark:border-gray-700 ${pending ? 'bg-amber-50 dark:bg-amber-900/10' : ''} ${isNew ? 'new-order-flash' : ''}`}>
-                                                <td className="px-4 py-2 font-medium text-gray-800 dark:text-white">#{ref}</td>
-                                                <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{o.customer_name || 'N/A'}</td>
-                                                <td className="px-4 py-2 text-gray-600 dark:text-gray-400 font-mono text-sm">
-                                                    {customerPhone !== '—' ? (
-                                                        <a href={`tel:${customerPhone}`} className="text-[#D4A017] hover:underline flex items-center gap-1">
-                                                            <i className="fas fa-phone text-xs"></i> {customerPhone}
-                                                        </a>
-                                                    ) : (
-                                                        '—'
-                                                    )}
-                                                </td>
-                                                <td className="px-4 py-2 text-gray-600 dark:text-gray-400">
-                                                    <button 
-                                                        onClick={() => toggleOrderExpand(o.id)} 
-                                                        className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-1 rounded-full hover:bg-blue-200 transition flex items-center gap-1"
-                                                    >
-                                                        <i className={`fas fa-chevron-${isExpanded ? 'up' : 'down'} text-xs`}></i>
-                                                        {isExpanded ? 'Hide Items' : `${orderItems.length} item${orderItems.length > 1 ? 's' : ''}`}
-                                                    </button>
-                                                </td>
-                                                <td className="px-4 py-2 font-semibold text-[#D4A017]">KES {o.total_amount || o.item_price || 0}</td>
-                                                <td className="px-4 py-2">
-                                                    <span className={`status-badge ${getStatusBadge(o.payment_status || o.status)}`}>
-                                                        {getStatusLabel(o.payment_status || o.status)}
-                                                    </span>
-                                                    {isNew && <span className="ml-1 text-xs text-green-500 font-bold">NEW!</span>}
-                                                    {o.mpesa_code && <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">M-PESA: {o.mpesa_code}</div>}
-                                                </td>
-                                                <td className="px-4 py-2">
-                                                    <div className="flex gap-2 flex-wrap">
-                                                        {pending && (
-                                                            <>
-                                                                <button 
-                                                                    onClick={() => handleConfirmOrder(o)} 
-                                                                    disabled={loadingOrderId === o.id}
-                                                                    className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg text-xs hover:bg-green-200 transition disabled:opacity-50 flex items-center gap-1"
-                                                                >
-                                                                    {loadingOrderId === o.id ? (
-                                                                        <><span className="spinner"></span> Processing</>
-                                                                    ) : (
-                                                                        '✅ Confirm'
-                                                                    )}
-                                                                </button>
-                                                                <button 
-                                                                    onClick={() => handleRejectOrder(o)} 
-                                                                    className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg text-xs hover:bg-red-200 transition"
-                                                                >
-                                                                    ❌ Reject
-                                                                </button>
-                                                            </>
-                                                        )}
-                                                        {(o.payment_status === 'confirmed' || o.status === 'confirmed') && (
-                                                            <span className="text-xs text-green-600 dark:text-green-400">✅ Confirmed</span>
-                                                        )}
-                                                        {(o.payment_status === 'paid' || o.payment_status === 'completed') && (
-                                                            <span className="text-xs text-blue-600 dark:text-blue-400">💳 Paid</span>
-                                                        )}
-                                                        {(o.payment_status === 'cancelled' || o.payment_status === 'rejected') && (
-                                                            <span className="text-xs text-red-600 dark:text-red-400">✗ Cancelled</span>
-                                                        )}
-                                                    </div>
-                                                </td>
-                                            </tr>
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+                            <h2 className="text-xl font-bold text-gray-800 dark:text-white">
+                                📦 Orders ({orders.length})
+                                {revenueStats.pendingOrders > 0 && (
+                                    <span className="ml-2 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-full animate-pulse">
+                                        {revenueStats.pendingOrders} pending approval
+                                    </span>
+                                )}
+                            </h2>
+                            <button onClick={() => loadOrders()} className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg text-xs hover:bg-blue-200 transition">
+                                🔄 Refresh
+                            </button>
+                        </div>
 
-                                            {/* ── EXPANDED ORDER ITEMS ROW ── */}
-                                            {isExpanded && orderItems.length > 0 && (
-                                                <tr>
-                                                    <td colSpan="7" className="px-4 py-3 bg-gray-50 dark:bg-gray-800/50">
-                                                        <div className="space-y-2">
-                                                            <div className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">
-                                                                📦 Order Items
-                                                            </div>
-                                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                                                {orderItems.map((item, idx) => {
-                                                                    const title = item.resource_title || item.resources?.title || 'Resource';
-                                                                    const type = getResourceTypeDisplay(item);
-                                                                    const price = item.price || item.resources?.price || 0;
-                                                                    const qty = item.quantity || 1;
-                                                                    return (
-                                                                        <div key={idx} className="bg-white dark:bg-gray-700 rounded-lg p-3 border border-gray-200 dark:border-gray-600 flex justify-between items-center">
-                                                                            <div className="flex-1 min-w-0">
-                                                                                <div className="font-medium text-sm text-gray-800 dark:text-white truncate">
-                                                                                    {title}
-                                                                                </div>
-                                                                                <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                                                                    <span className="flex items-center gap-1">
-                                                                                        <i className="fas fa-tag text-[#D4A017]"></i>
-                                                                                        {type}
-                                                                                    </span>
-                                                                                    <span>× {qty}</span>
-                                                                                    <span className="font-semibold text-[#D4A017]">
-                                                                                        KES {price}
-                                                                                    </span>
-                                                                                </div>
-                                                                            </div>
-                                                                            {item.resource_type === 'physical' && (
-                                                                                <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full">📦 Physical</span>
+                        {/* Filter Buttons */}
+                        <div className="flex gap-2 flex-wrap mb-4">
+                            <button onClick={() => setFilter('all')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'all' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>All</button>
+                            <button onClick={() => setFilter('pending')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'pending' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>⏳ Pending</button>
+                            <button onClick={() => setFilter('confirmed')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'confirmed' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>✅ Confirmed</button>
+                            <button onClick={() => setFilter('paid')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'paid' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>💳 Paid</button>
+                            <button onClick={() => setFilter('cancelled')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'cancelled' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>❌ Cancelled/Rejected</button>
+                        </div>
+
+                        {/* Search Input */}
+                        <div className="mb-4">
+                            <input 
+                                type="text" 
+                                placeholder="🔍 Search by order ref, customer, phone, or resource..." 
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#D4A017]"
+                            />
+                        </div>
+
+                        {/* Orders Table */}
+                        {filteredOrders.length === 0 ? (
+                            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                                {orders.length === 0 ? 'No orders found. Orders will appear here when customers make purchases.' : 'No orders match your filters.'}
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead className="bg-gray-50 dark:bg-gray-700/50">
+                                        <tr>
+                                            <th className="px-4 py-2 text-left">Reference</th>
+                                            <th className="px-4 py-2 text-left">Customer</th>
+                                            <th className="px-4 py-2 text-left">📱 Phone</th>
+                                            <th className="px-4 py-2 text-left">Items</th>
+                                            <th className="px-4 py-2 text-left">Total</th>
+                                            <th className="px-4 py-2 text-left">Status</th>
+                                            <th className="px-4 py-2 text-left">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {filteredOrders.map(o => {
+                                            const isNew = newOrderIds.includes(o.id);
+                                            const pending = isPending(o);
+                                            const ref = o.order_ref || o.payment_ref || o.id.slice(0, 8).toUpperCase();
+                                            const orderItems = getOrderItems(o);
+                                            const isExpanded = expandedOrderId === o.id;
+                                            const customerPhone = o.customer_phone || o.phone || '—';
+
+                                            return (
+                                                <React.Fragment key={o.id}>
+                                                    <tr className={`border-t border-gray-100 dark:border-gray-700 ${pending ? 'bg-amber-50 dark:bg-amber-900/10' : ''} ${isNew ? 'new-order-flash' : ''}`}>
+                                                        <td className="px-4 py-2 font-medium text-gray-800 dark:text-white">#{ref}</td>
+                                                        <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{o.customer_name || 'N/A'}</td>
+                                                        <td className="px-4 py-2 text-gray-600 dark:text-gray-400 font-mono text-sm">
+                                                            {customerPhone !== '—' ? (
+                                                                <a href={`tel:${customerPhone}`} className="text-[#D4A017] hover:underline flex items-center gap-1">
+                                                                    <i className="fas fa-phone text-xs"></i> {customerPhone}
+                                                                </a>
+                                                            ) : (
+                                                                '—'
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-gray-600 dark:text-gray-400">
+                                                            <button 
+                                                                onClick={() => toggleOrderExpand(o.id)} 
+                                                                className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-1 rounded-full hover:bg-blue-200 transition flex items-center gap-1"
+                                                            >
+                                                                <i className={`fas fa-chevron-${isExpanded ? 'up' : 'down'} text-xs`}></i>
+                                                                {isExpanded ? 'Hide Items' : `${orderItems.length} item${orderItems.length > 1 ? 's' : ''}`}
+                                                            </button>
+                                                        </td>
+                                                        <td className="px-4 py-2 font-semibold text-[#D4A017]">KES {o.total_amount || o.item_price || 0}</td>
+                                                        <td className="px-4 py-2">
+                                                            <span className={`status-badge ${getStatusBadge(o.payment_status || o.status)}`}>
+                                                                {getStatusLabel(o.payment_status || o.status)}
+                                                            </span>
+                                                            {isNew && <span className="ml-1 text-xs text-green-500 font-bold">NEW!</span>}
+                                                            {o.mpesa_code && <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">M-PESA: {o.mpesa_code}</div>}
+                                                        </td>
+                                                        <td className="px-4 py-2">
+                                                            <div className="flex gap-2 flex-wrap">
+                                                                {pending && (
+                                                                    <>
+                                                                        <button 
+                                                                            onClick={() => handleConfirmOrder(o)} 
+                                                                            disabled={loadingOrderId === o.id}
+                                                                            className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg text-xs hover:bg-green-200 transition disabled:opacity-50 flex items-center gap-1"
+                                                                        >
+                                                                            {loadingOrderId === o.id ? (
+                                                                                <><span className="spinner"></span> Processing</>
+                                                                            ) : (
+                                                                                '✅ Confirm'
                                                                             )}
-                                                                        </div>
-                                                                    );
-                                                                })}
+                                                                        </button>
+                                                                        <button 
+                                                                            onClick={() => handleRejectOrder(o)} 
+                                                                            className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg text-xs hover:bg-red-200 transition"
+                                                                        >
+                                                                            ❌ Reject
+                                                                        </button>
+                                                                    </>
+                                                                )}
+                                                                {(o.payment_status === 'confirmed' || o.status === 'confirmed') && (
+                                                                    <span className="text-xs text-green-600 dark:text-green-400">✅ Confirmed</span>
+                                                                )}
+                                                                {(o.payment_status === 'paid' || o.payment_status === 'completed') && (
+                                                                    <span className="text-xs text-blue-600 dark:text-blue-400">💳 Paid</span>
+                                                                )}
+                                                                {(o.payment_status === 'cancelled' || o.payment_status === 'rejected') && (
+                                                                    <span className="text-xs text-red-600 dark:text-red-400">✗ Cancelled</span>
+                                                                )}
                                                             </div>
-                                                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-2 pt-2 border-t border-gray-200 dark:border-gray-600 flex justify-end">
-                                                                Subtotal: <span className="font-semibold text-[#D4A017] ml-1">KES {orderItems.reduce((sum, item) => sum + (item.price || item.resources?.price || 0) * (item.quantity || 1), 0)}</span>
-                                                            </div>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            )}
-                                        </React.Fragment>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
+                                                        </td>
+                                                    </tr>
+
+                                                    {/* ── EXPANDED ORDER ITEMS ROW ── */}
+                                                    {isExpanded && orderItems.length > 0 && (
+                                                        <tr>
+                                                            <td colSpan="7" className="px-4 py-3 bg-gray-50 dark:bg-gray-800/50">
+                                                                <div className="space-y-2">
+                                                                    <div className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">
+                                                                        📦 Order Items
+                                                                    </div>
+                                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                                        {orderItems.map((item, idx) => {
+                                                                            const title = item.resource_title || item.resources?.title || 'Resource';
+                                                                            const type = getResourceTypeDisplay(item);
+                                                                            const price = item.price || item.resources?.price || 0;
+                                                                            const qty = item.quantity || 1;
+                                                                            return (
+                                                                                <div key={idx} className="bg-white dark:bg-gray-700 rounded-lg p-3 border border-gray-200 dark:border-gray-600 flex justify-between items-center">
+                                                                                    <div className="flex-1 min-w-0">
+                                                                                        <div className="font-medium text-sm text-gray-800 dark:text-white truncate">
+                                                                                            {title}
+                                                                                        </div>
+                                                                                        <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                                                                            <span className="flex items-center gap-1">
+                                                                                                <i className="fas fa-tag text-[#D4A017]"></i>
+                                                                                                {type}
+                                                                                            </span>
+                                                                                            <span>× {qty}</span>
+                                                                                            <span className="font-semibold text-[#D4A017]">
+                                                                                                KES {price}
+                                                                                            </span>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                    {item.resource_type === 'physical' && (
+                                                                                        <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full">📦 Physical</span>
+                                                                                    )}
+                                                                                </div>
+                                                                            );
+                                                                        })}
+                                                                    </div>
+                                                                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-2 pt-2 border-t border-gray-200 dark:border-gray-600 flex justify-end">
+                                                                        Subtotal: <span className="font-semibold text-[#D4A017] ml-1">KES {orderItems.reduce((sum, item) => sum + (item.price || item.resources?.price || 0) * (item.quantity || 1), 0)}</span>
+                                                                    </div>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                </React.Fragment>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
                     </div>
-                )}
-            </div>
-        </div>
-    );
-}
+                </div>
+            );
+        }
 
         // ── FINANCE MODULE ──
         function FinanceModule() {
