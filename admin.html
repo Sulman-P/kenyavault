@@ -1166,6 +1166,532 @@
             </div>
         );
     }
+    // ── FINANCE MODULE ──
+function FinanceModule() {
+    const { orders, tutors, payments, setPayments, showNotification, TUTOR_PAYOUT_PERCENTAGE } = useApp();
+    const [selectedTutor, setSelectedTutor] = useState(null);
+    const [showPaymentModal, setShowPaymentModal] = useState(false);
+    const [paymentAmount, setPaymentAmount] = useState(0);
+    const [showAuditModal, setShowAuditModal] = useState(false);
+    const [auditData, setAuditData] = useState({
+        marketing_spent: 0,
+        tutor_payouts_total: 0,
+        notes: ''
+    });
+    const [auditLoading, setAuditLoading] = useState(false);
+    const [financeSummary, setFinanceSummary] = useState({
+        total_revenue: 0,
+        platform_fee: 0,
+        tutor_payouts: 0,
+        marketing_spent: 0,
+        actual_balance: 0,
+        pending_payouts: 0
+    });
+
+    const loadPayments = async () => {
+        try {
+            const response = await fetch(`${SUPABASE_URL}/rest/v1/tutor_payments?select=*&order=created_at.desc`, {
+                headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setPayments(data || []);
+                return data;
+            }
+        } catch (e) { console.error('Load payments error:', e); }
+    };
+
+    // ── LOAD FINANCE SUMMARY ──
+    const loadFinanceSummary = async () => {
+        try {
+            // Load finance settings from localStorage or Supabase
+            const savedAudit = localStorage.getItem('kv_finance_audit');
+            if (savedAudit) {
+                const parsed = JSON.parse(savedAudit);
+                setAuditData({
+                    marketing_spent: parsed.marketing_spent || 0,
+                    tutor_payouts_total: parsed.tutor_payouts_total || 0,
+                    notes: parsed.notes || ''
+                });
+            }
+
+            // Calculate totals from orders
+            const totalRevenue = orders.reduce((sum, o) => sum + (o.total_amount || o.item_price || 0), 0);
+            const platformFee = totalRevenue * 0.2;
+            const tutorEarnings = totalRevenue * 0.8;
+
+            // Calculate pending payouts (orders not yet paid to tutors)
+            const pendingPayouts = orders
+                .filter(o => o.payment_status === 'confirmed' || o.payment_status === 'completed' || o.status === 'confirmed')
+                .reduce((sum, o) => sum + Math.round((o.total_amount || o.item_price || 0) * 0.8), 0);
+
+            // Get paid payouts
+            const paidPayouts = payments
+                .filter(p => p.status === 'paid')
+                .reduce((sum, p) => sum + (p.amount || 0), 0);
+
+            // Get audit data
+            const marketingSpent = auditData.marketing_spent || 0;
+            const tutorPayoutsTotal = auditData.tutor_payouts_total || paidPayouts;
+
+            // Calculate actual balance
+            const actualBalance = totalRevenue - marketingSpent - tutorPayoutsTotal;
+
+            setFinanceSummary({
+                total_revenue: totalRevenue,
+                platform_fee: platformFee,
+                tutor_payouts: tutorPayoutsTotal,
+                marketing_spent: marketingSpent,
+                actual_balance: actualBalance,
+                pending_payouts: pendingPayouts
+            });
+
+        } catch (e) {
+            console.error('Error loading finance summary:', e);
+        }
+    };
+
+    useEffect(() => {
+        loadPayments();
+    }, []);
+
+    useEffect(() => {
+        loadFinanceSummary();
+    }, [orders, payments]);
+
+    // ── SAVE AUDIT ──
+    const saveAudit = async () => {
+        if (!confirm('Save audit changes? This will update the account balance.')) return;
+        
+        setAuditLoading(true);
+        try {
+            const auditRecord = {
+                marketing_spent: parseFloat(auditData.marketing_spent) || 0,
+                tutor_payouts_total: parseFloat(auditData.tutor_payouts_total) || 0,
+                notes: auditData.notes || '',
+                updated_at: new Date().toISOString(),
+                updated_by: 'Admin'
+            };
+
+            localStorage.setItem('kv_finance_audit', JSON.stringify(auditRecord));
+            
+            // Update the actual balance
+            const totalRevenue = orders.reduce((sum, o) => sum + (o.total_amount || o.item_price || 0), 0);
+            const actualBalance = totalRevenue - auditRecord.marketing_spent - auditRecord.tutor_payouts_total;
+            
+            setFinanceSummary(prev => ({
+                ...prev,
+                marketing_spent: auditRecord.marketing_spent,
+                tutor_payouts: auditRecord.tutor_payouts_total,
+                actual_balance: actualBalance
+            }));
+
+            showNotification('✅ Audit saved successfully!', 'success');
+            setShowAuditModal(false);
+        } catch (e) {
+            showNotification('❌ Failed to save audit: ' + e.message, 'error');
+        }
+        setAuditLoading(false);
+    };
+
+    // ── CALCULATE TUTOR EARNINGS ──
+    const calculateTutorEarnings = (tutorId) => {
+        const tutorOrders = orders.filter(o => o.tutor_id === tutorId);
+        let totalRevenue = 0;
+        let completedRevenue = 0;
+        
+        tutorOrders.forEach(o => {
+            const amount = o.total_amount || o.item_price || 0;
+            totalRevenue += amount;
+            if (o.payment_status === 'confirmed' || o.payment_status === 'completed' || o.status === 'confirmed') {
+                completedRevenue += amount;
+            }
+        });
+        
+        const tutorPayout = totalRevenue * (TUTOR_PAYOUT_PERCENTAGE / 100);
+        const completedPayout = completedRevenue * (TUTOR_PAYOUT_PERCENTAGE / 100);
+        
+        return {
+            totalRevenue,
+            completedRevenue,
+            tutorPayout,
+            completedPayout,
+            ordersCount: tutorOrders.length
+        };
+    };
+
+    // ── PROCESS TUTOR PAYMENT ──
+    const handleProcessPayment = async (tutor) => {
+        const earnings = calculateTutorEarnings(tutor.id);
+        const pendingAmount = earnings.completedPayout;
+        
+        if (pendingAmount <= 0) {
+            showNotification('⚠️ No pending earnings for this tutor', 'warning');
+            return;
+        }
+        
+        setSelectedTutor(tutor);
+        setPaymentAmount(pendingAmount);
+        setShowPaymentModal(true);
+    };
+
+    const confirmPayment = async () => {
+        if (!selectedTutor) return;
+        
+        try {
+            const paymentData = {
+                tutor_id: selectedTutor.id,
+                tutor_name: selectedTutor.name,
+                amount: paymentAmount,
+                status: 'paid',
+                payment_date: new Date().toISOString(),
+                created_at: new Date().toISOString()
+            };
+            
+            const response = await fetch(`${SUPABASE_URL}/rest/v1/tutor_payments`, {
+                method: 'POST',
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(paymentData)
+            });
+            
+            if (response.ok) {
+                showNotification(`✅ Payment of KES ${paymentAmount.toLocaleString()} processed for ${selectedTutor.name}`, 'success');
+                setShowPaymentModal(false);
+                await loadPayments();
+                await loadFinanceSummary();
+            } else {
+                throw new Error('Failed to process payment');
+            }
+        } catch (e) {
+            showNotification('❌ Failed to process payment: ' + e.message, 'error');
+        }
+    };
+
+    // ── GET TUTOR PAYMENT STATUS ──
+    const getTutorPaymentStatus = (tutorId) => {
+        const tutorPayments = payments.filter(p => p.tutor_id === tutorId);
+        const totalPaid = tutorPayments
+            .filter(p => p.status === 'paid')
+            .reduce((sum, p) => sum + (p.amount || 0), 0);
+        const hasPending = tutorPayments.some(p => p.status === 'pending');
+        return { totalPaid, hasPending };
+    };
+
+    // ── OPEN AUDIT MODAL ──
+    const openAuditModal = () => {
+        setAuditData({
+            marketing_spent: financeSummary.marketing_spent || 0,
+            tutor_payouts_total: financeSummary.tutor_payouts || 0,
+            notes: auditData.notes || ''
+        });
+        setShowAuditModal(true);
+    };
+
+    return (
+        <div className="space-y-6 fade-in">
+            {/* ── MAIN FINANCE SUMMARY CARDS ── */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Total Revenue</p>
+                    <p className="text-2xl font-bold text-[#D4A017]">KES {financeSummary.total_revenue.toLocaleString()}</p>
+                    <p className="text-xs text-gray-400">{orders.length} total orders</p>
+                </div>
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Pending Payouts</p>
+                    <p className="text-2xl font-bold text-amber-600">KES {financeSummary.pending_payouts.toLocaleString()}</p>
+                    <p className="text-xs text-gray-400">Awaiting tutor payment</p>
+                </div>
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Amount Spent</p>
+                    <p className="text-2xl font-bold text-red-600">KES {financeSummary.marketing_spent.toLocaleString()}</p>
+                    <p className="text-xs text-gray-400">Marketing + Tutor Payouts</p>
+                </div>
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700 payout-card paid">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">💰 Actual Balance</p>
+                    <p className="text-2xl font-bold text-green-600">KES {financeSummary.actual_balance.toLocaleString()}</p>
+                    <p className="text-xs text-gray-400">Revenue - Spending</p>
+                </div>
+            </div>
+
+            {/* ── DETAILED BREAKDOWN ── */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold text-gray-800 dark:text-white">📊 Financial Breakdown</h3>
+                    <button onClick={openAuditModal} className="btn-gold px-4 py-2 rounded-lg font-semibold text-sm">
+                        🔍 Audit Account
+                    </button>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                        <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-700">
+                            <span className="text-gray-600 dark:text-gray-400">Total Revenue</span>
+                            <span className="font-semibold text-[#D4A017]">KES {financeSummary.total_revenue.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-700">
+                            <span className="text-gray-600 dark:text-gray-400">Platform Fee (20%)</span>
+                            <span className="font-semibold text-blue-600">KES {financeSummary.platform_fee.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-700">
+                            <span className="text-gray-600 dark:text-gray-400">Tutor Payouts (80%)</span>
+                            <span className="font-semibold text-amber-600">KES {financeSummary.tutor_payouts.toLocaleString()}</span>
+                        </div>
+                    </div>
+                    <div className="space-y-2">
+                        <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-700">
+                            <span className="text-gray-600 dark:text-gray-400">Marketing Spent</span>
+                            <span className="font-semibold text-red-600">KES {financeSummary.marketing_spent.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-700">
+                            <span className="text-gray-600 dark:text-gray-400">Pending Payouts</span>
+                            <span className="font-semibold text-amber-600">KES {financeSummary.pending_payouts.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between py-2 bg-green-50 dark:bg-green-900/20 rounded-lg px-3 -mx-3">
+                            <span className="font-bold text-gray-800 dark:text-white">💰 Actual Balance</span>
+                            <span className="font-bold text-green-600">KES {financeSummary.actual_balance.toLocaleString()}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* ── TUTOR PAYOUTS TABLE ── */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold text-gray-800 dark:text-white">🧑‍🏫 Tutor Payouts ({TUTOR_PAYOUT_PERCENTAGE}% of Revenue)</h3>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">80% to tutors · 20% to platform</span>
+                </div>
+                
+                {tutors.filter(t => t.status === 'active' || t.status === 'approved').length === 0 ? (
+                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">No active tutors available</div>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead className="bg-gray-50 dark:bg-gray-700/50">
+                                <tr>
+                                    <th className="px-4 py-2 text-left">Tutor</th>
+                                    <th className="px-4 py-2 text-left">Orders</th>
+                                    <th className="px-4 py-2 text-left">Total Revenue</th>
+                                    <th className="px-4 py-2 text-left">Payout (80%)</th>
+                                    <th className="px-4 py-2 text-left">Paid</th>
+                                    <th className="px-4 py-2 text-left">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {tutors.filter(t => t.status === 'active' || t.status === 'approved').map(tutor => {
+                                    const earnings = calculateTutorEarnings(tutor.id);
+                                    const { totalPaid, hasPending } = getTutorPaymentStatus(tutor.id);
+                                    const pendingAmount = earnings.completedPayout - totalPaid;
+                                    
+                                    return (
+                                        <tr key={tutor.id} className="border-t border-gray-100 dark:border-gray-700">
+                                            <td className="px-4 py-2 font-medium text-gray-800 dark:text-white">{tutor.name}</td>
+                                            <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{earnings.ordersCount}</td>
+                                            <td className="px-4 py-2 text-gray-600 dark:text-gray-400">KES {earnings.totalRevenue.toLocaleString()}</td>
+                                            <td className="px-4 py-2 font-semibold text-[#D4A017]">KES {earnings.tutorPayout.toLocaleString()}</td>
+                                            <td className="px-4 py-2 text-gray-600 dark:text-gray-400">KES {totalPaid.toLocaleString()}</td>
+                                            <td className="px-4 py-2 flex gap-2 flex-wrap">
+                                                {pendingAmount > 0 && (
+                                                    <button 
+                                                        onClick={() => handleProcessPayment(tutor)}
+                                                        className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg text-xs hover:bg-green-200 transition"
+                                                    >
+                                                        💰 Pay KES {pendingAmount.toLocaleString()}
+                                                    </button>
+                                                )}
+                                                {pendingAmount <= 0 && earnings.ordersCount > 0 && (
+                                                    <span className="text-xs text-green-600 dark:text-green-400">✅ Fully Paid</span>
+                                                )}
+                                                {earnings.ordersCount === 0 && (
+                                                    <span className="text-xs text-gray-400">No revenue yet</span>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+
+            {/* ── PAYMENT HISTORY ── */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold text-gray-800 dark:text-white">📋 Payment History</h3>
+                    <button onClick={() => { loadPayments(); loadFinanceSummary(); }} className="text-sm text-[#D4A017] hover:text-[#FCD34D] transition">
+                        🔄 Refresh
+                    </button>
+                </div>
+                
+                {payments.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">No payments recorded yet</div>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead className="bg-gray-50 dark:bg-gray-700/50">
+                                <tr>
+                                    <th className="px-4 py-2 text-left">Tutor</th>
+                                    <th className="px-4 py-2 text-left">Amount</th>
+                                    <th className="px-4 py-2 text-left">Status</th>
+                                    <th className="px-4 py-2 text-left">Date</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {payments.slice(0, 20).map(p => (
+                                    <tr key={p.id} className="border-t border-gray-100 dark:border-gray-700">
+                                        <td className="px-4 py-2 font-medium text-gray-800 dark:text-white">{p.tutor_name || 'Unknown'}</td>
+                                        <td className="px-4 py-2 font-semibold text-[#D4A017]">KES {p.amount?.toLocaleString() || 0}</td>
+                                        <td className="px-4 py-2">
+                                            <span className={`status-badge ${p.status === 'paid' ? 'paid-out' : 'pending-payment'}`}>
+                                                {p.status === 'paid' ? '✅ Paid' : '⏳ Pending'}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-2 text-gray-500 dark:text-gray-400">
+                                            {p.payment_date ? new Date(p.payment_date).toLocaleDateString() : new Date(p.created_at).toLocaleDateString()}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                            <tfoot>
+                                <tr className="bg-gray-50 dark:bg-gray-700/50 font-bold">
+                                    <td className="px-4 py-2">TOTAL PAID</td>
+                                    <td className="px-4 py-2 text-[#D4A017]">
+                                        KES {payments.filter(p => p.status === 'paid').reduce((s, p) => s + (p.amount || 0), 0).toLocaleString()}
+                                    </td>
+                                    <td colSpan="2"></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                )}
+            </div>
+
+            {/* ── PAYMENT MODAL ── */}
+            {showPaymentModal && selectedTutor && (
+                <div className="modal-overlay open" onClick={() => setShowPaymentModal(false)}>
+                    <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+                        <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-4">💳 Process Payment</h3>
+                        <div className="space-y-4">
+                            <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-4">
+                                <p className="text-sm text-gray-600 dark:text-gray-300">
+                                    <strong>Tutor:</strong> {selectedTutor.name}
+                                </p>
+                                <p className="text-sm text-gray-600 dark:text-gray-300">
+                                    <strong>Amount:</strong> KES {paymentAmount.toLocaleString()}
+                                </p>
+                                <p className="text-sm text-gray-600 dark:text-gray-300">
+                                    <strong>Payout Rate:</strong> {TUTOR_PAYOUT_PERCENTAGE}% of revenue
+                                </p>
+                            </div>
+                            <div className="flex gap-3">
+                                <button onClick={confirmPayment} className="btn-gold px-6 py-2 rounded-lg font-semibold flex-1">
+                                    ✅ Confirm Payment
+                                </button>
+                                <button onClick={() => setShowPaymentModal(false)} className="px-6 py-2 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg font-semibold hover:bg-gray-300 dark:hover:bg-gray-500 transition">
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── AUDIT MODAL ── */}
+            {showAuditModal && (
+                <div className="modal-overlay open" onClick={() => setShowAuditModal(false)}>
+                    <div className="modal-box max-w-2xl" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-bold text-gray-800 dark:text-white">🔍 Audit Account</h3>
+                            <button onClick={() => setShowAuditModal(false)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-xl">✕</button>
+                        </div>
+                        
+                        <div className="space-y-4">
+                            <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
+                                <p className="text-sm text-blue-700 dark:text-blue-300">
+                                    <strong>Current Balance:</strong> KES {financeSummary.actual_balance.toLocaleString()}
+                                </p>
+                                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                                    Update marketing spend and tutor payouts to reflect actual account balance.
+                                </p>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Marketing Spent (KES)</label>
+                                <input 
+                                    type="number" 
+                                    value={auditData.marketing_spent} 
+                                    onChange={(e) => setAuditData({...auditData, marketing_spent: parseFloat(e.target.value) || 0})}
+                                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                                    min="0"
+                                    step="100"
+                                />
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Total spent on marketing campaigns</p>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tutor Payouts Total (KES)</label>
+                                <input 
+                                    type="number" 
+                                    value={auditData.tutor_payouts_total} 
+                                    onChange={(e) => setAuditData({...auditData, tutor_payouts_total: parseFloat(e.target.value) || 0})}
+                                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                                    min="0"
+                                    step="100"
+                                />
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Total paid to tutors (from payment history)</p>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Notes</label>
+                                <textarea 
+                                    value={auditData.notes} 
+                                    onChange={(e) => setAuditData({...auditData, notes: e.target.value})}
+                                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                                    rows="2"
+                                    placeholder="Audit notes..."
+                                />
+                            </div>
+
+                            <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-4">
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-gray-600 dark:text-gray-400">Total Revenue:</span>
+                                    <span className="font-semibold">KES {financeSummary.total_revenue.toLocaleString()}</span>
+                                </div>
+                                <div className="flex justify-between text-sm mt-1">
+                                    <span className="text-gray-600 dark:text-gray-400">Marketing Spent:</span>
+                                    <span className="font-semibold text-red-600">- KES {(auditData.marketing_spent || 0).toLocaleString()}</span>
+                                </div>
+                                <div className="flex justify-between text-sm mt-1">
+                                    <span className="text-gray-600 dark:text-gray-400">Tutor Payouts:</span>
+                                    <span className="font-semibold text-amber-600">- KES {(auditData.tutor_payouts_total || 0).toLocaleString()}</span>
+                                </div>
+                                <div className="flex justify-between text-sm mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
+                                    <span className="font-bold text-gray-800 dark:text-white">New Balance:</span>
+                                    <span className="font-bold text-green-600">
+                                        KES {(financeSummary.total_revenue - (auditData.marketing_spent || 0) - (auditData.tutor_payouts_total || 0)).toLocaleString()}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div className="flex gap-3">
+                                <button onClick={saveAudit} disabled={auditLoading} className="btn-gold px-6 py-2 rounded-lg font-semibold flex-1 disabled:opacity-50">
+                                    {auditLoading ? '⏳ Saving...' : '💾 Save Audit'}
+                                </button>
+                                <button onClick={() => setShowAuditModal(false)} className="px-6 py-2 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg font-semibold hover:bg-gray-300 dark:hover:bg-gray-500 transition">
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+  }
 
     // ── MODULE RENDERER ──
     function ModuleRenderer() {
