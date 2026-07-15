@@ -884,7 +884,7 @@
                 setTimeout(() => setToast(null), 6000);
             };
 
-            // ── FIXED: Load Orders ──
+            // ── FIXED: Load Orders with customer phone ──
             const loadOrders = async () => {
                 try {
                     console.log('🔄 Loading orders...');
@@ -3082,7 +3082,7 @@
             );
         }
 
-        // ── FINANCE MODULE ──
+        // ── FINANCE MODULE (FIXED AUDIT) ──
         function FinanceModule() {
             const { orders, tutors, payments, setPayments, showNotification, TUTOR_PAYOUT_PERCENTAGE, classes } = useApp();
             const [selectedTutor, setSelectedTutor] = useState(null);
@@ -3137,17 +3137,17 @@
                         });
                     }
 
-                    const totalRevenue = orders.reduce((sum, o) => sum + (o.total_amount || o.item_price || 0), 0);
+                    const totalRevenue = Array.isArray(orders) ? orders.reduce((sum, o) => sum + (o.total_amount || o.item_price || 0), 0) : 0;
                     const platformFee = totalRevenue * 0.2;
                     const tutorEarnings = totalRevenue * 0.8;
 
-                    const pendingPayouts = orders
+                    const pendingPayouts = Array.isArray(orders) ? orders
                         .filter(o => o.payment_status === 'confirmed' || o.payment_status === 'completed' || o.status === 'confirmed')
-                        .reduce((sum, o) => sum + Math.round((o.total_amount || o.item_price || 0) * 0.8), 0);
+                        .reduce((sum, o) => sum + Math.round((o.total_amount || o.item_price || 0) * 0.8), 0) : 0;
 
-                    const paidPayouts = payments
+                    const paidPayouts = Array.isArray(payments) ? payments
                         .filter(p => p.status === 'paid')
-                        .reduce((sum, p) => sum + (p.amount || 0), 0);
+                        .reduce((sum, p) => sum + (p.amount || 0), 0) : 0;
 
                     const marketingSpent = auditData.marketing_spent || 0;
                     const tutorPayoutsTotal = auditData.tutor_payouts_total || paidPayouts;
@@ -3168,7 +3168,7 @@
             };
 
             const calculateTutorEarnings = (tutorId) => {
-                const tutorOrders = orders.filter(o => o.tutor_id === tutorId);
+                const tutorOrders = Array.isArray(orders) ? orders.filter(o => o.tutor_id === tutorId) : [];
                 let totalRevenue = 0;
                 let completedRevenue = 0;
                 
@@ -3193,7 +3193,7 @@
             };
 
             const getTutorPaymentStatus = (tutorId) => {
-                const tutorPayments = payments.filter(p => p.tutor_id === tutorId);
+                const tutorPayments = Array.isArray(payments) ? payments.filter(p => p.tutor_id === tutorId) : [];
                 const totalPaid = tutorPayments
                     .filter(p => p.status === 'paid')
                     .reduce((sum, p) => sum + (p.amount || 0), 0);
@@ -3251,6 +3251,7 @@
                 }
             };
 
+            // ── FIXED: Open Audit Modal with current values ──
             const openAuditModal = () => {
                 setAuditData({
                     marketing_spent: financeSummary.marketing_spent || 0,
@@ -3260,14 +3261,18 @@
                 setShowAuditModal(true);
             };
 
+            // ── FIXED: Save Audit with proper validation ──
             const saveAudit = async () => {
                 if (!confirm('Save audit changes? This will update the account balance.')) return;
                 
                 setAuditLoading(true);
                 try {
+                    const marketingSpent = parseFloat(auditData.marketing_spent) || 0;
+                    const tutorPayoutsTotal = parseFloat(auditData.tutor_payouts_total) || 0;
+                    
                     const auditRecord = {
-                        marketing_spent: parseFloat(auditData.marketing_spent) || 0,
-                        tutor_payouts_total: parseFloat(auditData.tutor_payouts_total) || 0,
+                        marketing_spent: marketingSpent,
+                        tutor_payouts_total: tutorPayoutsTotal,
                         notes: auditData.notes || '',
                         updated_at: new Date().toISOString(),
                         updated_by: 'Admin'
@@ -3275,13 +3280,13 @@
 
                     localStorage.setItem('kv_finance_audit', JSON.stringify(auditRecord));
                     
-                    const totalRevenue = orders.reduce((sum, o) => sum + (o.total_amount || o.item_price || 0), 0);
-                    const actualBalance = totalRevenue - auditRecord.marketing_spent - auditRecord.tutor_payouts_total;
+                    const totalRevenue = Array.isArray(orders) ? orders.reduce((sum, o) => sum + (o.total_amount || o.item_price || 0), 0) : 0;
+                    const actualBalance = totalRevenue - marketingSpent - tutorPayoutsTotal;
                     
                     setFinanceSummary(prev => ({
                         ...prev,
-                        marketing_spent: auditRecord.marketing_spent,
-                        tutor_payouts: auditRecord.tutor_payouts_total,
+                        marketing_spent: marketingSpent,
+                        tutor_payouts: tutorPayoutsTotal,
                         actual_balance: actualBalance
                     }));
 
@@ -3293,13 +3298,13 @@
                 setAuditLoading(false);
             };
 
-            const totalPayouts = payments
+            const totalPayouts = Array.isArray(payments) ? payments
                 .filter(p => p.status === 'paid')
-                .reduce((s, p) => s + (p.amount || 0), 0);
+                .reduce((s, p) => s + (p.amount || 0), 0) : 0;
             
-            const pendingPayouts = payments
+            const pendingPayouts = Array.isArray(payments) ? payments
                 .filter(p => p.status === 'pending')
-                .reduce((s, p) => s + (p.amount || 0), 0);
+                .reduce((s, p) => s + (p.amount || 0), 0) : 0;
 
             return (
                 <div className="space-y-6 fade-in">
@@ -3308,7 +3313,7 @@
                         <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
                             <p className="text-sm text-gray-500 dark:text-gray-400">Total Revenue</p>
                             <p className="text-2xl font-bold text-[#D4A017]">KES {financeSummary.total_revenue.toLocaleString()}</p>
-                            <p className="text-xs text-gray-400">{orders.length} total orders</p>
+                            <p className="text-xs text-gray-400">{Array.isArray(orders) ? orders.length : 0} total orders</p>
                         </div>
                         <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
                             <p className="text-sm text-gray-500 dark:text-gray-400">Pending Payouts</p>
@@ -3375,7 +3380,7 @@
                             <span className="text-xs text-gray-500 dark:text-gray-400">80% to tutors · 20% to platform</span>
                         </div>
                         
-                        {tutors.length === 0 ? (
+                        {Array.isArray(tutors) && tutors.length === 0 ? (
                             <div className="text-center py-8 text-gray-500 dark:text-gray-400">No tutors available</div>
                         ) : (
                             <div className="overflow-x-auto">
@@ -3391,7 +3396,7 @@
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {tutors.filter(t => t.status === 'active' || t.status === 'approved').map(tutor => {
+                                        {(Array.isArray(tutors) ? tutors.filter(t => t.status === 'active' || t.status === 'approved') : []).map(tutor => {
                                             const earnings = calculateTutorEarnings(tutor.id);
                                             const { totalPaid, hasPending } = getTutorPaymentStatus(tutor.id);
                                             const pendingAmount = earnings.completedPayout - totalPaid;
@@ -3437,7 +3442,7 @@
                             </button>
                         </div>
                         
-                        {payments.length === 0 ? (
+                        {Array.isArray(payments) && payments.length === 0 ? (
                             <div className="text-center py-8 text-gray-500 dark:text-gray-400">No payments recorded yet</div>
                         ) : (
                             <div className="overflow-x-auto">
@@ -3451,7 +3456,7 @@
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {payments.slice(0, 20).map(p => (
+                                        {(Array.isArray(payments) ? payments.slice(0, 20) : []).map(p => (
                                             <tr key={p.id} className="border-t border-gray-100 dark:border-gray-700">
                                                 <td className="px-4 py-2 font-medium text-gray-800 dark:text-white">{p.tutor_name || 'Unknown'}</td>
                                                 <td className="px-4 py-2 font-semibold text-[#D4A017]">KES {p.amount?.toLocaleString() || 0}</td>
@@ -3470,7 +3475,7 @@
                                         <tr className="bg-gray-50 dark:bg-gray-700/50 font-bold">
                                             <td className="px-4 py-2">TOTAL PAID</td>
                                             <td className="px-4 py-2 text-[#D4A017]">
-                                                KES {payments.filter(p => p.status === 'paid').reduce((s, p) => s + (p.amount || 0), 0).toLocaleString()}
+                                                KES {(Array.isArray(payments) ? payments.filter(p => p.status === 'paid').reduce((s, p) => s + (p.amount || 0), 0) : 0).toLocaleString()}
                                             </td>
                                             <td colSpan="2"></td>
                                         </tr>
@@ -3510,7 +3515,7 @@
                         </div>
                     )}
 
-                    {/* ── AUDIT MODAL ── */}
+                    {/* ── FIXED: AUDIT MODAL ── */}
                     {showAuditModal && (
                         <div className="modal-overlay open" onClick={() => setShowAuditModal(false)}>
                             <div className="modal-box max-w-2xl" onClick={(e) => e.stopPropagation()}>
@@ -3538,6 +3543,7 @@
                                             className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
                                             min="0"
                                             step="100"
+                                            placeholder="0"
                                         />
                                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Total spent on marketing campaigns</p>
                                     </div>
@@ -3551,6 +3557,7 @@
                                             className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
                                             min="0"
                                             step="100"
+                                            placeholder="0"
                                         />
                                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Total paid to tutors (from payment history)</p>
                                     </div>
