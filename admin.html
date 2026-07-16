@@ -774,51 +774,247 @@
             const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
 
             // ── NEWS STATE ──
-            const [newsItems, setNewsItems] = useState(() => {
+            const [newsItems, setNewsItems] = useState([]);
+            const [newsLoading, setNewsLoading] = useState(false);
+
+            // ── LOAD NEWS FROM SUPABASE ──
+            const loadNewsFromSupabase = async () => {
+                setNewsLoading(true);
+                try {
+                    const response = await fetch(`${SUPABASE_URL}/rest/v1/news?select=*&order=date.desc`, {
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                        }
+                    });
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        setNewsItems(data || []);
+                        // Also save to localStorage as backup
+                        localStorage.setItem('kv_news_items', JSON.stringify(data));
+                        return data;
+                    } else {
+                        console.warn('Failed to load news from Supabase, using localStorage fallback');
+                        loadNewsFromLocalStorage();
+                    }
+                } catch (e) {
+                    console.error('Error loading news from Supabase:', e);
+                    loadNewsFromLocalStorage();
+                }
+                setNewsLoading(false);
+            };
+
+            // ── LOAD NEWS FROM LOCALSTORAGE (FALLBACK) ──
+            const loadNewsFromLocalStorage = () => {
                 const saved = localStorage.getItem('kv_news_items');
                 if (saved) {
-                    try { return JSON.parse(saved); } catch (e) { return []; }
+                    try {
+                        const data = JSON.parse(saved);
+                        setNewsItems(data);
+                        return data;
+                    } catch (e) { 
+                        setNewsItems([]);
+                        return [];
+                    }
                 }
-                // Seed with demo data
-                return [
+                // Seed with demo data if nothing exists
+                const demos = [
                     { id: '1', title: 'KJSEA 2026: Complete Preparation Guide', category: 'CBC News', audience: 'All', content: 'Everything you need to know about Kenya\'s second-ever CBC national examination — tips, strategies, and resources.', pinned: true, status: 'Active', date: '2026-07-01' },
                     { id: '2', title: 'CBC Senior School Subject Pathways', category: 'System Updates', audience: 'Teachers', content: 'Understanding the CBC Senior School structure, compulsory subjects, elective pathways, and career alignment.', pinned: false, status: 'Active', date: '2026-06-28' },
                     { id: '3', title: '8-4-4 to CBC Transition Guide', category: 'Exam Alerts', audience: 'Students', content: 'Understanding the transition from 8-4-4 to CBC, exam formats, and how to stay ahead during the change.', pinned: false, status: 'Draft', date: '2026-06-25' },
                 ];
-            });
+                setNewsItems(demos);
+                localStorage.setItem('kv_news_items', JSON.stringify(demos));
+                return demos;
+            };
 
-            // Save news to localStorage whenever it changes
-            useEffect(() => {
-                localStorage.setItem('kv_news_items', JSON.stringify(newsItems));
-            }, [newsItems]);
+            // ── SAVE NEWS TO SUPABASE ──
+            const saveNewsToSupabase = async (newsData) => {
+                try {
+                    // Check if item exists (update) or is new (insert)
+                    if (newsData.id && !newsData.id.startsWith('temp_')) {
+                        // Update existing
+                        const response = await fetch(`${SUPABASE_URL}/rest/v1/news?id=eq.${newsData.id}`, {
+                            method: 'PATCH',
+                            headers: {
+                                'apikey': SUPABASE_ANON_KEY,
+                                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                                'Content-Type': 'application/json',
+                                'Prefer': 'return=representation'
+                            },
+                            body: JSON.stringify({
+                                title: newsData.title,
+                                category: newsData.category,
+                                audience: newsData.audience,
+                                content: newsData.content,
+                                pinned: newsData.pinned || false,
+                                status: newsData.status || 'Active',
+                                date: newsData.date || new Date().toISOString().split('T')[0]
+                            })
+                        });
+                        
+                        if (response.ok) {
+                            const updated = await response.json();
+                            return updated[0] || updated;
+                        }
+                        throw new Error('Failed to update news in Supabase');
+                    } else {
+                        // Insert new
+                        const response = await fetch(`${SUPABASE_URL}/rest/v1/news`, {
+                            method: 'POST',
+                            headers: {
+                                'apikey': SUPABASE_ANON_KEY,
+                                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                                'Content-Type': 'application/json',
+                                'Prefer': 'return=representation'
+                            },
+                            body: JSON.stringify({
+                                title: newsData.title,
+                                category: newsData.category,
+                                audience: newsData.audience,
+                                content: newsData.content,
+                                pinned: newsData.pinned || false,
+                                status: newsData.status || 'Active',
+                                date: newsData.date || new Date().toISOString().split('T')[0]
+                            })
+                        });
+                        
+                        if (response.ok) {
+                            const inserted = await response.json();
+                            return inserted[0] || inserted;
+                        }
+                        throw new Error('Failed to save news to Supabase');
+                    }
+                } catch (e) {
+                    console.error('Error saving news to Supabase:', e);
+                    // Fallback to localStorage
+                    return null;
+                }
+            };
 
-            // ── NEWS CRUD FUNCTIONS ──
-            const addNewsItem = (item) => {
+            // ── DELETE NEWS FROM SUPABASE ──
+            const deleteNewsFromSupabase = async (id) => {
+                try {
+                    const response = await fetch(`${SUPABASE_URL}/rest/v1/news?id=eq.${id}`, {
+                        method: 'DELETE',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                        }
+                    });
+                    
+                    if (response.ok) {
+                        return true;
+                    }
+                    throw new Error('Failed to delete news from Supabase');
+                } catch (e) {
+                    console.error('Error deleting news:', e);
+                    return false;
+                }
+            };
+
+            // ── NEWS CRUD FUNCTIONS (UPDATED WITH SUPABASE) ──
+            const addNewsItem = async (item) => {
                 const newItem = {
                     ...item,
-                    id: Date.now().toString() + '_' + Math.random().toString(36).substr(2, 4),
+                    id: 'temp_' + Date.now().toString() + '_' + Math.random().toString(36).substr(2, 4),
                     date: new Date().toISOString().split('T')[0],
                     status: 'Active'
                 };
+                
+                // Optimistically add to UI
                 setNewsItems(prev => [newItem, ...prev]);
-                return newItem;
+                
+                try {
+                    const saved = await saveNewsToSupabase(newItem);
+                    if (saved) {
+                        // Replace temp item with saved one
+                        setNewsItems(prev => prev.map(item => 
+                            item.id === newItem.id ? saved : item
+                        ));
+                        // Update localStorage
+                        const updated = await loadNewsFromSupabase();
+                        return saved;
+                    } else {
+                        // If Supabase failed, keep the temp item in localStorage
+                        localStorage.setItem('kv_news_items', JSON.stringify([newItem, ...newsItems]));
+                        return newItem;
+                    }
+                } catch (e) {
+                    console.error('Error adding news:', e);
+                    return newItem;
+                }
             };
 
-            const updateNewsItem = (id, updates) => {
+            const updateNewsItem = async (id, updates) => {
+                // Find the item to update
+                const itemToUpdate = newsItems.find(item => item.id === id);
+                if (!itemToUpdate) return;
+                
+                const updatedItem = { ...itemToUpdate, ...updates };
+                
+                // Optimistically update UI
                 setNewsItems(prev => prev.map(item => 
-                    item.id === id ? { ...item, ...updates } : item
+                    item.id === id ? updatedItem : item
                 ));
+                
+                try {
+                    const saved = await saveNewsToSupabase(updatedItem);
+                    if (saved) {
+                        setNewsItems(prev => prev.map(item => 
+                            item.id === id ? saved : item
+                        ));
+                        await loadNewsFromSupabase();
+                    }
+                } catch (e) {
+                    console.error('Error updating news:', e);
+                    // Revert to previous state
+                    await loadNewsFromSupabase();
+                }
             };
 
-            const deleteNewsItem = (id) => {
+            const deleteNewsItem = async (id) => {
+                const itemToDelete = newsItems.find(item => item.id === id);
+                if (!itemToDelete) return;
+                
+                // Optimistically remove from UI
                 setNewsItems(prev => prev.filter(item => item.id !== id));
+                
+                try {
+                    const success = await deleteNewsFromSupabase(id);
+                    if (success) {
+                        await loadNewsFromSupabase();
+                    } else {
+                        // If Supabase delete failed, restore from localStorage
+                        await loadNewsFromSupabase();
+                    }
+                } catch (e) {
+                    console.error('Error deleting news:', e);
+                    await loadNewsFromSupabase();
+                }
             };
 
-            const togglePinNews = (id) => {
-                setNewsItems(prev => prev.map(item => 
-                    item.id === id ? { ...item, pinned: !item.pinned } : item
-                ));
+            const togglePinNews = async (id) => {
+                const item = newsItems.find(item => item.id === id);
+                if (item) {
+                    await updateNewsItem(id, { pinned: !item.pinned });
+                }
             };
+
+            // ── INITIALIZE NEWS ──
+            useEffect(() => {
+                if (isAuthenticated) {
+                    loadNewsFromSupabase();
+                }
+            }, [isAuthenticated]);
+
+            // Save news to localStorage whenever it changes (backup)
+            useEffect(() => {
+                if (newsItems.length > 0) {
+                    localStorage.setItem('kv_news_items', JSON.stringify(newsItems));
+                }
+            }, [newsItems]);
 
             // ── EXISTING FUNCTIONS ──
             useEffect(() => {
@@ -1002,6 +1198,9 @@
                         } else { setPayments([]); }
                     } catch (e) { setPayments([]); }
                     
+                    // Load news from Supabase
+                    await loadNewsFromSupabase();
+                    
                 } catch (e) { 
                     console.error('❌ Load data error:', e); 
                     showToast('Error loading data: ' + e.message, 'error');
@@ -1071,12 +1270,14 @@
                     pendingOrderCount,
                     setPendingOrderCount,
                     isMobile,
-                    // NEWS
+                    // NEWS (updated with Supabase)
                     newsItems, setNewsItems,
+                    newsLoading,
                     addNewsItem,
                     updateNewsItem,
                     deleteNewsItem,
                     togglePinNews,
+                    loadNewsFromSupabase,
                 }}>
                     {children}
                 </AppContext.Provider>
@@ -2675,8 +2876,7 @@
                 completedRevenue: 0,
                 totalOrders: 0,
                 pendingOrders: 0,
-                completedOrders: 0
-            });
+                completedOrders: 0            });
 
             const toggleOrderExpand = (orderId) => {
                 setExpandedOrderId(expandedOrderId === orderId ? null : orderId);
@@ -3594,9 +3794,9 @@
             );
         }
 
-        // ── ✨ NEW: UPDATES & NEWS MODULE ──
+        // ── ✨ UPDATED: UPDATES & NEWS MODULE (with Supabase sync) ──
         function NewsModule() {
-            const { newsItems, addNewsItem, updateNewsItem, deleteNewsItem, togglePinNews, showToast } = useApp();
+            const { newsItems, addNewsItem, updateNewsItem, deleteNewsItem, togglePinNews, showToast, loadNewsFromSupabase, newsLoading } = useApp();
             const [formData, setFormData] = useState({
                 title: '',
                 category: 'CBC News',
@@ -3614,23 +3814,32 @@
                 status: 'Active'
             });
             const [showEditModal, setShowEditModal] = useState(false);
+            const [isSubmitting, setIsSubmitting] = useState(false);
 
-            const handleSubmit = (e) => {
+            const handleSubmit = async (e) => {
                 e.preventDefault();
                 const { title, category, audience, content, pinned } = formData;
                 if (!title || !content) {
                     showToast('⚠️ Please fill in Title and Content', 'error');
                     return;
                 }
-                const newItem = addNewsItem({
-                    title,
-                    category,
-                    audience,
-                    content,
-                    pinned,
-                });
-                showToast(`✅ "${newItem.title}" published successfully!`);
-                setFormData({ title: '', category: 'CBC News', audience: 'All', content: '', pinned: false });
+                setIsSubmitting(true);
+                try {
+                    const newItem = await addNewsItem({
+                        title,
+                        category,
+                        audience,
+                        content,
+                        pinned,
+                    });
+                    showToast(`✅ "${newItem.title}" published successfully!`);
+                    setFormData({ title: '', category: 'CBC News', audience: 'All', content: '', pinned: false });
+                    // Refresh from Supabase to ensure sync
+                    await loadNewsFromSupabase();
+                } catch (e) {
+                    showToast('❌ Failed to publish: ' + e.message, 'error');
+                }
+                setIsSubmitting(false);
             };
 
             const openEditModal = (item) => {
@@ -3651,29 +3860,50 @@
                 setEditingId(null);
             };
 
-            const handleEditSave = () => {
+            const handleEditSave = async () => {
                 if (!editingId) return;
                 const { title, category, audience, content, pinned, status } = editFormData;
                 if (!title || !content) {
                     showToast('⚠️ Please fill in Title and Content', 'error');
                     return;
                 }
-                updateNewsItem(editingId, {
-                    title,
-                    category,
-                    audience,
-                    content,
-                    pinned,
-                    status
-                });
-                showToast('✅ Update saved successfully!');
-                closeEditModal();
+                setIsSubmitting(true);
+                try {
+                    await updateNewsItem(editingId, {
+                        title,
+                        category,
+                        audience,
+                        content,
+                        pinned,
+                        status
+                    });
+                    showToast('✅ Update saved successfully!');
+                    closeEditModal();
+                    await loadNewsFromSupabase();
+                } catch (e) {
+                    showToast('❌ Failed to update: ' + e.message, 'error');
+                }
+                setIsSubmitting(false);
             };
 
-            const handleDelete = (id) => {
+            const handleDelete = async (id) => {
                 if (!confirm('Delete this news item permanently?')) return;
-                deleteNewsItem(id);
-                showToast('🗑️ News item deleted');
+                try {
+                    await deleteNewsItem(id);
+                    showToast('🗑️ News item deleted');
+                    await loadNewsFromSupabase();
+                } catch (e) {
+                    showToast('❌ Failed to delete: ' + e.message, 'error');
+                }
+            };
+
+            const handleTogglePin = async (id) => {
+                try {
+                    await togglePinNews(id);
+                    await loadNewsFromSupabase();
+                } catch (e) {
+                    showToast('❌ Failed to update pin status: ' + e.message, 'error');
+                }
             };
 
             // Sort: pinned first, then by date (newest first)
@@ -3750,7 +3980,9 @@
                                     />
                                     <span className="text-sm text-gray-700 dark:text-gray-300">📌 Pin this post</span>
                                 </label>
-                                <button type="submit" className="btn-gold px-6 py-2 rounded-lg font-semibold">🚀 Publish</button>
+                                <button type="submit" disabled={isSubmitting} className="btn-gold px-6 py-2 rounded-lg font-semibold disabled:opacity-50">
+                                    {isSubmitting ? '⏳ Publishing...' : '🚀 Publish'}
+                                </button>
                             </div>
                         </form>
                     </div>
@@ -3758,9 +3990,20 @@
                     <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-lg font-semibold text-gray-800 dark:text-white">📋 Published Updates</h3>
-                            <span className="text-sm text-gray-500 dark:text-gray-400">{sortedNews.length} items</span>
+                            <div className="flex items-center gap-2">
+                                <span className="text-sm text-gray-500 dark:text-gray-400">{sortedNews.length} items</span>
+                                <button 
+                                    onClick={() => loadNewsFromSupabase()} 
+                                    className="text-sm text-[#D4A017] hover:text-[#FCD34D] transition flex items-center gap-1"
+                                    disabled={newsLoading}
+                                >
+                                    {newsLoading ? '⏳' : '🔄'} Refresh
+                                </button>
+                            </div>
                         </div>
-                        {sortedNews.length === 0 ? (
+                        {newsLoading ? (
+                            <div className="text-center py-8 text-gray-500 dark:text-gray-400">Loading updates...</div>
+                        ) : sortedNews.length === 0 ? (
                             <div className="text-center py-8 text-gray-500 dark:text-gray-400">No updates published yet. Create your first news item!</div>
                         ) : (
                             <div className="overflow-x-auto">
@@ -3794,7 +4037,7 @@
                                                 </td>
                                                 <td className="px-4 py-2 flex gap-2 flex-wrap">
                                                     <button onClick={() => openEditModal(item)} className="px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded hover:bg-blue-200 transition">✏️ Edit</button>
-                                                    <button onClick={() => togglePinNews(item.id)} className="px-2 py-1 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded hover:bg-amber-200 transition">
+                                                    <button onClick={() => handleTogglePin(item.id)} className="px-2 py-1 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded hover:bg-amber-200 transition">
                                                         {item.pinned ? '📌 Unpin' : '📌 Pin'}
                                                     </button>
                                                     <button onClick={() => handleDelete(item.id)} className="px-2 py-1 text-xs bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded hover:bg-red-200 transition">🗑️</button>
@@ -3887,7 +4130,9 @@
                                         </div>
                                     </div>
                                     <div className="flex gap-3">
-                                        <button onClick={handleEditSave} className="btn-gold px-4 py-2 rounded-lg font-semibold">💾 Save Changes</button>
+                                        <button onClick={handleEditSave} disabled={isSubmitting} className="btn-gold px-4 py-2 rounded-lg font-semibold disabled:opacity-50">
+                                            {isSubmitting ? '⏳ Saving...' : '💾 Save Changes'}
+                                        </button>
                                         <button onClick={closeEditModal} className="px-4 py-2 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg font-semibold hover:bg-gray-300 dark:hover:bg-gray-500 transition">Cancel</button>
                                     </div>
                                 </div>
@@ -4106,6 +4351,7 @@
 
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </body>
 </html>
