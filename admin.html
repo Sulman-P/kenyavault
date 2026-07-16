@@ -778,32 +778,42 @@
             const [newsLoading, setNewsLoading] = useState(false);
 
             // ── LOAD NEWS FROM SUPABASE ──
-            const loadNewsFromSupabase = async () => {
-                setNewsLoading(true);
-                try {
-                    const response = await fetch(`${SUPABASE_URL}/rest/v1/news?select=*&order=date.desc`, {
-                        headers: {
-                            'apikey': SUPABASE_ANON_KEY,
-                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                        }
-                    });
-                    
-                    if (response.ok) {
-                        const data = await response.json();
-                        setNewsItems(data || []);
-                        // Also save to localStorage as backup
-                        localStorage.setItem('kv_news_items', JSON.stringify(data));
-                        return data;
-                    } else {
-                        console.warn('Failed to load news from Supabase, using localStorage fallback');
-                        loadNewsFromLocalStorage();
-                    }
-                } catch (e) {
-                    console.error('Error loading news from Supabase:', e);
-                    loadNewsFromLocalStorage();
-                }
-                setNewsLoading(false);
-            };
+const loadNewsFromSupabase = async () => {
+    setNewsLoading(true);
+    try {
+        console.log('📰 Fetching news from Supabase...');
+        
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/news?select=*&order=date.desc`, {
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        console.log('📊 Response status:', response.status);
+        
+        if (response.ok) {
+            const data = await response.json();
+            console.log('✅ News loaded:', data.length, 'items');
+            setNewsItems(data || []);
+            // Also save to localStorage as backup
+            localStorage.setItem('kv_news_items', JSON.stringify(data));
+            setNewsLoading(false);
+            return data;
+        } else {
+            const errorText = await response.text();
+            console.error('❌ Failed to load news:', response.status, errorText);
+            // Fallback to localStorage
+            loadNewsFromLocalStorage();
+            setNewsLoading(false);
+        }
+       } catch (e) {
+           console.error('❌ Error loading news from Supabase:', e);
+         loadNewsFromLocalStorage();
+          setNewsLoading(false);
+      }
+    };
 
             // ── LOAD NEWS FROM LOCALSTORAGE (FALLBACK) ──
             const loadNewsFromLocalStorage = () => {
