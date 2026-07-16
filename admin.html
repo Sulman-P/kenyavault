@@ -799,45 +799,44 @@ const loadNewsFromSupabase = async () => {
             setNewsItems(data || []);
             // Also save to localStorage as backup
             localStorage.setItem('kv_news_items', JSON.stringify(data));
-            setNewsLoading(false);
-            return data;
         } else {
             const errorText = await response.text();
             console.error('❌ Failed to load news:', response.status, errorText);
             // Fallback to localStorage
             loadNewsFromLocalStorage();
-            setNewsLoading(false);
         }
-       } catch (e) {
-           console.error('❌ Error loading news from Supabase:', e);
-         loadNewsFromLocalStorage();
-          setNewsLoading(false);
-      }
-    };
+    } catch (e) {
+        console.error('❌ Error loading news from Supabase:', e);
+        loadNewsFromLocalStorage();
+    } finally {
+        setNewsLoading(false); // ✅ This is the key fix!
+    }
+};
 
-            // ── LOAD NEWS FROM LOCALSTORAGE (FALLBACK) ──
-            const loadNewsFromLocalStorage = () => {
-                const saved = localStorage.getItem('kv_news_items');
-                if (saved) {
-                    try {
-                        const data = JSON.parse(saved);
-                        setNewsItems(data);
-                        return data;
-                    } catch (e) { 
-                        setNewsItems([]);
-                        return [];
-                    }
-                }
-                // Seed with demo data if nothing exists
-                const demos = [
-                    { id: '1', title: 'KJSEA 2026: Complete Preparation Guide', category: 'CBC News', audience: 'All', content: 'Everything you need to know about Kenya\'s second-ever CBC national examination — tips, strategies, and resources.', pinned: true, status: 'Active', date: '2026-07-01' },
-                    { id: '2', title: 'CBC Senior School Subject Pathways', category: 'System Updates', audience: 'Teachers', content: 'Understanding the CBC Senior School structure, compulsory subjects, elective pathways, and career alignment.', pinned: false, status: 'Active', date: '2026-06-28' },
-                    { id: '3', title: '8-4-4 to CBC Transition Guide', category: 'Exam Alerts', audience: 'Students', content: 'Understanding the transition from 8-4-4 to CBC, exam formats, and how to stay ahead during the change.', pinned: false, status: 'Draft', date: '2026-06-25' },
-                ];
-                setNewsItems(demos);
-                localStorage.setItem('kv_news_items', JSON.stringify(demos));
-                return demos;
-            };
+// ── LOAD NEWS FROM LOCALSTORAGE (FALLBACK) ──
+const loadNewsFromLocalStorage = () => {
+    const saved = localStorage.getItem('kv_news_items');
+    if (saved) {
+        try {
+            const data = JSON.parse(saved);
+            setNewsItems(data);
+            console.log('📦 Loaded from localStorage:', data.length, 'items');
+            return data;
+        } catch (e) { 
+            setNewsItems([]);
+            return [];
+        }
+    }
+    // Seed with demo data if nothing exists
+    const demos = [
+        { id: '1', title: 'KJSEA 2026: Complete Preparation Guide', category: 'CBC News', audience: 'All', content: 'Everything you need to know about Kenya\'s second-ever CBC national examination — tips, strategies, and resources.', pinned: true, status: 'Active', date: '2026-07-01' },
+        { id: '2', title: 'CBC Senior School Subject Pathways', category: 'System Updates', audience: 'Teachers', content: 'Understanding the CBC Senior School structure, compulsory subjects, elective pathways, and career alignment.', pinned: false, status: 'Active', date: '2026-06-28' },
+        { id: '3', title: '8-4-4 to CBC Transition Guide', category: 'Exam Alerts', audience: 'Students', content: 'Understanding the transition from 8-4-4 to CBC, exam formats, and how to stay ahead during the change.', pinned: false, status: 'Draft', date: '2026-06-25' },
+      ];
+     setNewsItems(demos);
+      localStorage.setItem('kv_news_items', JSON.stringify(demos));
+     return demos;
+   };
 
             // ── SAVE NEWS TO SUPABASE ──
             const saveNewsToSupabase = async (newsData) => {
@@ -3804,138 +3803,304 @@ const loadNewsFromSupabase = async () => {
             );
         }
 
-        // ── ✨ UPDATED: UPDATES & NEWS MODULE (with Supabase sync) ──
-        function NewsModule() {
-            const { newsItems, addNewsItem, updateNewsItem, deleteNewsItem, togglePinNews, showToast, loadNewsFromSupabase, newsLoading } = useApp();
-            const [formData, setFormData] = useState({
-                title: '',
-                category: 'CBC News',
-                audience: 'All',
-                content: '',
-                pinned: false,
+        // ── ✨ UPDATED: UPDATES & NEWS MODULE ──
+function NewsModule() {
+    const { newsItems, addNewsItem, updateNewsItem, deleteNewsItem, togglePinNews, showToast, loadNewsFromSupabase, newsLoading } = useApp();
+    const [formData, setFormData] = useState({
+        title: '',
+        category: 'CBC News',
+        audience: 'All',
+        content: '',
+        pinned: false,
+    });
+    const [editingId, setEditingId] = useState(null);
+    const [editFormData, setEditFormData] = useState({
+        title: '',
+        category: 'CBC News',
+        audience: 'All',
+        content: '',
+        pinned: false,
+        status: 'Active'
+    });
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [loadError, setLoadError] = useState(null);
+
+    // Force reload news
+    const handleRefresh = async () => {
+        setLoadError(null);
+        try {
+            await loadNewsFromSupabase();
+            showToast('✅ News refreshed successfully!', 'success');
+        } catch (e) {
+            setLoadError(e.message);
+            showToast('❌ Failed to refresh: ' + e.message, 'error');
+        }
+    };
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        const { title, category, audience, content, pinned } = formData;
+        if (!title || !content) {
+            showToast('⚠️ Please fill in Title and Content', 'error');
+            return;
+        }
+        setIsSubmitting(true);
+        try {
+            const newItem = await addNewsItem({
+                title,
+                category,
+                audience,
+                content,
+                pinned,
             });
-            const [editingId, setEditingId] = useState(null);
-            const [editFormData, setEditFormData] = useState({
-                title: '',
-                category: 'CBC News',
-                audience: 'All',
-                content: '',
-                pinned: false,
-                status: 'Active'
+            showToast(`✅ "${newItem.title}" published successfully!`);
+            setFormData({ title: '', category: 'CBC News', audience: 'All', content: '', pinned: false });
+            // Refresh from Supabase to ensure sync
+            await loadNewsFromSupabase();
+        } catch (e) {
+            showToast('❌ Failed to publish: ' + e.message, 'error');
+        }
+        setIsSubmitting(false);
+    };
+
+    const openEditModal = (item) => {
+        setEditingId(item.id);
+        setEditFormData({
+            title: item.title,
+            category: item.category,
+            audience: item.audience,
+            content: item.content,
+            pinned: item.pinned,
+            status: item.status || 'Active'
+        });
+        setShowEditModal(true);
+    };
+
+    const closeEditModal = () => {
+        setShowEditModal(false);
+        setEditingId(null);
+    };
+
+    const handleEditSave = async () => {
+        if (!editingId) return;
+        const { title, category, audience, content, pinned, status } = editFormData;
+        if (!title || !content) {
+            showToast('⚠️ Please fill in Title and Content', 'error');
+            return;
+        }
+        setIsSubmitting(true);
+        try {
+            await updateNewsItem(editingId, {
+                title,
+                category,
+                audience,
+                content,
+                pinned,
+                status
             });
-            const [showEditModal, setShowEditModal] = useState(false);
-            const [isSubmitting, setIsSubmitting] = useState(false);
+            showToast('✅ Update saved successfully!');
+            closeEditModal();
+            await loadNewsFromSupabase();
+        } catch (e) {
+            showToast('❌ Failed to update: ' + e.message, 'error');
+        }
+        setIsSubmitting(false);
+    };
 
-            const handleSubmit = async (e) => {
-                e.preventDefault();
-                const { title, category, audience, content, pinned } = formData;
-                if (!title || !content) {
-                    showToast('⚠️ Please fill in Title and Content', 'error');
-                    return;
-                }
-                setIsSubmitting(true);
-                try {
-                    const newItem = await addNewsItem({
-                        title,
-                        category,
-                        audience,
-                        content,
-                        pinned,
-                    });
-                    showToast(`✅ "${newItem.title}" published successfully!`);
-                    setFormData({ title: '', category: 'CBC News', audience: 'All', content: '', pinned: false });
-                    // Refresh from Supabase to ensure sync
-                    await loadNewsFromSupabase();
-                } catch (e) {
-                    showToast('❌ Failed to publish: ' + e.message, 'error');
-                }
-                setIsSubmitting(false);
-            };
+    const handleDelete = async (id) => {
+        if (!confirm('Delete this news item permanently?')) return;
+        try {
+            await deleteNewsItem(id);
+            showToast('🗑️ News item deleted');
+            await loadNewsFromSupabase();
+        } catch (e) {
+            showToast('❌ Failed to delete: ' + e.message, 'error');
+        }
+    };
 
-            const openEditModal = (item) => {
-                setEditingId(item.id);
-                setEditFormData({
-                    title: item.title,
-                    category: item.category,
-                    audience: item.audience,
-                    content: item.content,
-                    pinned: item.pinned,
-                    status: item.status || 'Active'
-                });
-                setShowEditModal(true);
-            };
+    const handleTogglePin = async (id) => {
+        try {
+            await togglePinNews(id);
+            await loadNewsFromSupabase();
+        } catch (e) {
+            showToast('❌ Failed to update pin status: ' + e.message, 'error');
+        }
+    };
 
-            const closeEditModal = () => {
-                setShowEditModal(false);
-                setEditingId(null);
-            };
+    // Sort: pinned first, then by date (newest first)
+    const sortedNews = [...newsItems].sort((a, b) => {
+        if (a.pinned && !b.pinned) return -1;
+        if (!a.pinned && b.pinned) return 1;
+        return new Date(b.date) - new Date(a.date);
+    });
 
-            const handleEditSave = async () => {
-                if (!editingId) return;
-                const { title, category, audience, content, pinned, status } = editFormData;
-                if (!title || !content) {
-                    showToast('⚠️ Please fill in Title and Content', 'error');
-                    return;
-                }
-                setIsSubmitting(true);
-                try {
-                    await updateNewsItem(editingId, {
-                        title,
-                        category,
-                        audience,
-                        content,
-                        pinned,
-                        status
-                    });
-                    showToast('✅ Update saved successfully!');
-                    closeEditModal();
-                    await loadNewsFromSupabase();
-                } catch (e) {
-                    showToast('❌ Failed to update: ' + e.message, 'error');
-                }
-                setIsSubmitting(false);
-            };
+    // Get active news for display
+    const activeNews = sortedNews.filter(item => item.status !== 'Archived');
 
-            const handleDelete = async (id) => {
-                if (!confirm('Delete this news item permanently?')) return;
-                try {
-                    await deleteNewsItem(id);
-                    showToast('🗑️ News item deleted');
-                    await loadNewsFromSupabase();
-                } catch (e) {
-                    showToast('❌ Failed to delete: ' + e.message, 'error');
-                }
-            };
+    return (
+        <div className="space-y-6 fade-in">
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">📰 Publish New Update</h3>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Title *</label>
+                        <input 
+                            type="text" 
+                            value={formData.title} 
+                            onChange={(e) => setFormData({...formData, title: e.target.value})}
+                            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                            placeholder="e.g. KJSEA 2026 Registration Opens"
+                            required
+                        />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Category</label>
+                            <select 
+                                value={formData.category} 
+                                onChange={(e) => setFormData({...formData, category: e.target.value})}
+                                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                            >
+                                <option value="CBC News">CBC News</option>
+                                <option value="Exam Alerts">Exam Alerts</option>
+                                <option value="System Updates">System Updates</option>
+                                <option value="Maintenance">Maintenance</option>
+                                <option value="General">General</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Target Audience</label>
+                            <select 
+                                value={formData.audience} 
+                                onChange={(e) => setFormData({...formData, audience: e.target.value})}
+                                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                            >
+                                <option value="All">All</option>
+                                <option value="Teachers">Teachers</option>
+                                <option value="Students">Students</option>
+                                <option value="Parents">Parents</option>
+                                <option value="Admins">Admins</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Content *</label>
+                        <textarea 
+                            value={formData.content} 
+                            onChange={(e) => setFormData({...formData, content: e.target.value})}
+                            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                            rows="4"
+                            placeholder="Write your news update here..."
+                            required
+                        ></textarea>
+                    </div>
+                    <div className="flex items-center gap-4">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                            <input 
+                                type="checkbox" 
+                                checked={formData.pinned} 
+                                onChange={(e) => setFormData({...formData, pinned: e.target.checked})}
+                                className="w-4 h-4 accent-[#D4A017]"
+                            />
+                            <span className="text-sm text-gray-700 dark:text-gray-300">📌 Pin this post</span>
+                        </label>
+                        <button type="submit" disabled={isSubmitting} className="btn-gold px-6 py-2 rounded-lg font-semibold disabled:opacity-50">
+                            {isSubmitting ? '⏳ Publishing...' : '🚀 Publish'}
+                        </button>
+                    </div>
+                </form>
+            </div>
 
-            const handleTogglePin = async (id) => {
-                try {
-                    await togglePinNews(id);
-                    await loadNewsFromSupabase();
-                } catch (e) {
-                    showToast('❌ Failed to update pin status: ' + e.message, 'error');
-                }
-            };
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold text-gray-800 dark:text-white">📋 Published Updates</h3>
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-500 dark:text-gray-400">{activeNews.length} items</span>
+                        <button 
+                            onClick={handleRefresh} 
+                            className="text-sm text-[#D4A017] hover:text-[#FCD34D] transition flex items-center gap-1"
+                            disabled={newsLoading}
+                        >
+                            {newsLoading ? '⏳' : '🔄'} Refresh
+                        </button>
+                    </div>
+                </div>
+                
+                {loadError && (
+                    <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-700 dark:text-red-400 text-sm">
+                        ⚠️ Error loading news: {loadError}
+                        <button onClick={handleRefresh} className="ml-2 underline">Try again</button>
+                    </div>
+                )}
+                
+                {newsLoading ? (
+                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                        <div className="inline-block animate-spin text-2xl mr-2">⏳</div>
+                        Loading updates...
+                    </div>
+                ) : activeNews.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                        📭 No updates published yet. Create your first news item!
+                    </div>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead className="bg-gray-50 dark:bg-gray-700/50">
+                                <tr>
+                                    <th className="px-4 py-2 text-left">Title</th>
+                                    <th className="px-4 py-2 text-left">Category</th>
+                                    <th className="px-4 py-2 text-left">Audience</th>
+                                    <th className="px-4 py-2 text-left">Date</th>
+                                    <th className="px-4 py-2 text-left">Status</th>
+                                    <th className="px-4 py-2 text-left">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {activeNews.map(item => (
+                                    <tr key={item.id} className="border-t border-gray-100 dark:border-gray-700">
+                                        <td className="px-4 py-2 font-medium text-gray-800 dark:text-white flex items-center gap-2">
+                                            {item.pinned && <span className="text-[#D4A017]">📌</span>}
+                                            {item.title}
+                                        </td>
+                                        <td className="px-4 py-2 text-gray-600 dark:text-gray-400">
+                                            <span className="text-xs bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">{item.category}</span>
+                                        </td>
+                                        <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{item.audience}</td>
+                                        <td className="px-4 py-2 text-gray-500 dark:text-gray-400">{item.date}</td>
+                                        <td className="px-4 py-2">
+                                            <span className={`status-badge ${item.status === 'Active' ? 'live' : 'draft'}`}>
+                                                {item.status || 'Active'}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-2 flex gap-2 flex-wrap">
+                                            <button onClick={() => openEditModal(item)} className="px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded hover:bg-blue-200 transition">✏️ Edit</button>
+                                            <button onClick={() => handleTogglePin(item.id)} className="px-2 py-1 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded hover:bg-amber-200 transition">
+                                                {item.pinned ? '📌 Unpin' : '📌 Pin'}
+                                            </button>
+                                            <button onClick={() => handleDelete(item.id)} className="px-2 py-1 text-xs bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded hover:bg-red-200 transition">🗑️</button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
 
-            // Sort: pinned first, then by date (newest first)
-            const sortedNews = [...newsItems].sort((a, b) => {
-                if (a.pinned && !b.pinned) return -1;
-                if (!a.pinned && b.pinned) return 1;
-                return new Date(b.date) - new Date(a.date);
-            });
-
-            return (
-                <div className="space-y-6 fade-in">
-                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
-                        <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">📰 Publish New Update</h3>
-                        <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Edit Modal */}
+            {showEditModal && (
+                <div className="modal-overlay open" onClick={closeEditModal}>
+                    <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+                        <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">✏️ Edit News Update</h3>
+                        <div className="space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Title *</label>
                                 <input 
                                     type="text" 
-                                    value={formData.title} 
-                                    onChange={(e) => setFormData({...formData, title: e.target.value})}
+                                    value={editFormData.title} 
+                                    onChange={(e) => setEditFormData({...editFormData, title: e.target.value})}
                                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-                                    placeholder="e.g. KJSEA 2026 Registration Opens"
                                     required
                                 />
                             </div>
@@ -3943,8 +4108,8 @@ const loadNewsFromSupabase = async () => {
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Category</label>
                                     <select 
-                                        value={formData.category} 
-                                        onChange={(e) => setFormData({...formData, category: e.target.value})}
+                                        value={editFormData.category} 
+                                        onChange={(e) => setEditFormData({...editFormData, category: e.target.value})}
                                         className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
                                     >
                                         <option value="CBC News">CBC News</option>
@@ -3957,8 +4122,8 @@ const loadNewsFromSupabase = async () => {
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Target Audience</label>
                                     <select 
-                                        value={formData.audience} 
-                                        onChange={(e) => setFormData({...formData, audience: e.target.value})}
+                                        value={editFormData.audience} 
+                                        onChange={(e) => setEditFormData({...editFormData, audience: e.target.value})}
                                         className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
                                     >
                                         <option value="All">All</option>
@@ -3972,11 +4137,10 @@ const loadNewsFromSupabase = async () => {
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Content *</label>
                                 <textarea 
-                                    value={formData.content} 
-                                    onChange={(e) => setFormData({...formData, content: e.target.value})}
+                                    value={editFormData.content} 
+                                    onChange={(e) => setEditFormData({...editFormData, content: e.target.value})}
                                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
                                     rows="4"
-                                    placeholder="Write your news update here..."
                                     required
                                 ></textarea>
                             </div>
@@ -3984,174 +4148,38 @@ const loadNewsFromSupabase = async () => {
                                 <label className="flex items-center gap-2 cursor-pointer">
                                     <input 
                                         type="checkbox" 
-                                        checked={formData.pinned} 
-                                        onChange={(e) => setFormData({...formData, pinned: e.target.checked})}
+                                        checked={editFormData.pinned} 
+                                        onChange={(e) => setEditFormData({...editFormData, pinned: e.target.checked})}
                                         className="w-4 h-4 accent-[#D4A017]"
                                     />
                                     <span className="text-sm text-gray-700 dark:text-gray-300">📌 Pin this post</span>
                                 </label>
-                                <button type="submit" disabled={isSubmitting} className="btn-gold px-6 py-2 rounded-lg font-semibold disabled:opacity-50">
-                                    {isSubmitting ? '⏳ Publishing...' : '🚀 Publish'}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-
-                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">📋 Published Updates</h3>
-                            <div className="flex items-center gap-2">
-                                <span className="text-sm text-gray-500 dark:text-gray-400">{sortedNews.length} items</span>
-                                <button 
-                                    onClick={() => loadNewsFromSupabase()} 
-                                    className="text-sm text-[#D4A017] hover:text-[#FCD34D] transition flex items-center gap-1"
-                                    disabled={newsLoading}
-                                >
-                                    {newsLoading ? '⏳' : '🔄'} Refresh
-                                </button>
-                            </div>
-                        </div>
-                        {newsLoading ? (
-                            <div className="text-center py-8 text-gray-500 dark:text-gray-400">Loading updates...</div>
-                        ) : sortedNews.length === 0 ? (
-                            <div className="text-center py-8 text-gray-500 dark:text-gray-400">No updates published yet. Create your first news item!</div>
-                        ) : (
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-sm">
-                                    <thead className="bg-gray-50 dark:bg-gray-700/50">
-                                        <tr>
-                                            <th className="px-4 py-2 text-left">Title</th>
-                                            <th className="px-4 py-2 text-left">Category</th>
-                                            <th className="px-4 py-2 text-left">Audience</th>
-                                            <th className="px-4 py-2 text-left">Date</th>
-                                            <th className="px-4 py-2 text-left">Status</th>
-                                            <th className="px-4 py-2 text-left">Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {sortedNews.map(item => (
-                                            <tr key={item.id} className="border-t border-gray-100 dark:border-gray-700">
-                                                <td className="px-4 py-2 font-medium text-gray-800 dark:text-white flex items-center gap-2">
-                                                    {item.pinned && <span className="text-[#D4A017]">📌</span>}
-                                                    {item.title}
-                                                </td>
-                                                <td className="px-4 py-2 text-gray-600 dark:text-gray-400">
-                                                    <span className="text-xs bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">{item.category}</span>
-                                                </td>
-                                                <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{item.audience}</td>
-                                                <td className="px-4 py-2 text-gray-500 dark:text-gray-400">{item.date}</td>
-                                                <td className="px-4 py-2">
-                                                    <span className={`status-badge ${item.status === 'Active' ? 'live' : 'draft'}`}>
-                                                        {item.status || 'Active'}
-                                                    </span>
-                                                </td>
-                                                <td className="px-4 py-2 flex gap-2 flex-wrap">
-                                                    <button onClick={() => openEditModal(item)} className="px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded hover:bg-blue-200 transition">✏️ Edit</button>
-                                                    <button onClick={() => handleTogglePin(item.id)} className="px-2 py-1 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded hover:bg-amber-200 transition">
-                                                        {item.pinned ? '📌 Unpin' : '📌 Pin'}
-                                                    </button>
-                                                    <button onClick={() => handleDelete(item.id)} className="px-2 py-1 text-xs bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded hover:bg-red-200 transition">🗑️</button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Edit Modal */}
-                    {showEditModal && (
-                        <div className="modal-overlay open" onClick={closeEditModal}>
-                            <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-                                <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">✏️ Edit News Update</h3>
-                                <div className="space-y-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Title *</label>
-                                        <input 
-                                            type="text" 
-                                            value={editFormData.title} 
-                                            onChange={(e) => setEditFormData({...editFormData, title: e.target.value})}
-                                            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-                                            required
-                                        />
-                                    </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Category</label>
-                                            <select 
-                                                value={editFormData.category} 
-                                                onChange={(e) => setEditFormData({...editFormData, category: e.target.value})}
-                                                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-                                            >
-                                                <option value="CBC News">CBC News</option>
-                                                <option value="Exam Alerts">Exam Alerts</option>
-                                                <option value="System Updates">System Updates</option>
-                                                <option value="Maintenance">Maintenance</option>
-                                                <option value="General">General</option>
-                                            </select>
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Target Audience</label>
-                                            <select 
-                                                value={editFormData.audience} 
-                                                onChange={(e) => setEditFormData({...editFormData, audience: e.target.value})}
-                                                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-                                            >
-                                                <option value="All">All</option>
-                                                <option value="Teachers">Teachers</option>
-                                                <option value="Students">Students</option>
-                                                <option value="Parents">Parents</option>
-                                                <option value="Admins">Admins</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Content *</label>
-                                        <textarea 
-                                            value={editFormData.content} 
-                                            onChange={(e) => setEditFormData({...editFormData, content: e.target.value})}
-                                            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-                                            rows="4"
-                                            required
-                                        ></textarea>
-                                    </div>
-                                    <div className="flex items-center gap-4">
-                                        <label className="flex items-center gap-2 cursor-pointer">
-                                            <input 
-                                                type="checkbox" 
-                                                checked={editFormData.pinned} 
-                                                onChange={(e) => setEditFormData({...editFormData, pinned: e.target.checked})}
-                                                className="w-4 h-4 accent-[#D4A017]"
-                                            />
-                                            <span className="text-sm text-gray-700 dark:text-gray-300">📌 Pin this post</span>
-                                        </label>
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
-                                            <select 
-                                                value={editFormData.status} 
-                                                onChange={(e) => setEditFormData({...editFormData, status: e.target.value})}
-                                                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-                                            >
-                                                <option value="Active">Active</option>
-                                                <option value="Draft">Draft</option>
-                                                <option value="Archived">Archived</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div className="flex gap-3">
-                                        <button onClick={handleEditSave} disabled={isSubmitting} className="btn-gold px-4 py-2 rounded-lg font-semibold disabled:opacity-50">
-                                            {isSubmitting ? '⏳ Saving...' : '💾 Save Changes'}
-                                        </button>
-                                        <button onClick={closeEditModal} className="px-4 py-2 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg font-semibold hover:bg-gray-300 dark:hover:bg-gray-500 transition">Cancel</button>
-                                    </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
+                                    <select 
+                                        value={editFormData.status} 
+                                        onChange={(e) => setEditFormData({...editFormData, status: e.target.value})}
+                                        className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                                    >
+                                        <option value="Active">Active</option>
+                                        <option value="Draft">Draft</option>
+                                        <option value="Archived">Archived</option>
+                                    </select>
                                 </div>
                             </div>
+                            <div className="flex gap-3">
+                                <button onClick={handleEditSave} disabled={isSubmitting} className="btn-gold px-4 py-2 rounded-lg font-semibold disabled:opacity-50">
+                                    {isSubmitting ? '⏳ Saving...' : '💾 Save Changes'}
+                                </button>
+                                <button onClick={closeEditModal} className="px-4 py-2 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg font-semibold hover:bg-gray-300 dark:hover:bg-gray-500 transition">Cancel</button>
+                            </div>
                         </div>
-                    )}
+                    </div>
                 </div>
-            );
-        }
+            )}
+        </div>
+    );
+}
 
         // ── SETTINGS MODULE ──
         function SettingsModule() {
