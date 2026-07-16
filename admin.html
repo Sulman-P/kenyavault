@@ -739,6 +739,7 @@
         };
         const TUTOR_PAYOUT_PERCENTAGE = 80;
 
+        // ── ADD "Updates & News" to adminModules ──
         const adminModules = [
             { id: 'dashboard', icon: 'fa-chart-pie', label: 'Dashboard', desc: 'Overview & Analytics' },
             { id: 'resources', icon: 'fa-book', label: 'Resources', desc: 'Advanced Resource Manager' },
@@ -746,6 +747,8 @@
             { id: 'classes', icon: 'fa-video', label: 'Classes', desc: 'Virtual Online Class Engine' },
             { id: 'orders', icon: 'fa-shopping-bag', label: 'Orders', desc: 'Real-time order management' },
             { id: 'finance', icon: 'fa-coins', label: 'Finance', desc: 'Revenue & Reconciliation' },
+            // NEW: Updates & News module
+            { id: 'news', icon: 'fa-bell', label: 'Updates & News', desc: 'Manage news & announcements' },
             { id: 'settings', icon: 'fa-gear', label: 'Settings', desc: 'Configuration' },
         ];
 
@@ -754,7 +757,6 @@
 
         function AppProvider({ children }) {
             const [darkMode, setDarkMode] = useState(() => localStorage.getItem('kv-dark-mode') === 'true');
-            // ── FIX: Sidebar open by default on desktop, closed on mobile ──
             const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 768);
             const [currentModule, setCurrentModule] = useState('dashboard');
             const [isAuthenticated, setIsAuthenticated] = useState(() => sessionStorage.getItem('kv-auth') === 'true');
@@ -771,23 +773,66 @@
             const [pendingOrderCount, setPendingOrderCount] = useState(0);
             const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
 
+            // ── NEWS STATE ──
+            const [newsItems, setNewsItems] = useState(() => {
+                const saved = localStorage.getItem('kv_news_items');
+                if (saved) {
+                    try { return JSON.parse(saved); } catch (e) { return []; }
+                }
+                // Seed with demo data
+                return [
+                    { id: '1', title: 'KJSEA 2026: Complete Preparation Guide', category: 'CBC News', audience: 'All', content: 'Everything you need to know about Kenya\'s second-ever CBC national examination — tips, strategies, and resources.', pinned: true, status: 'Active', date: '2026-07-01' },
+                    { id: '2', title: 'CBC Senior School Subject Pathways', category: 'System Updates', audience: 'Teachers', content: 'Understanding the CBC Senior School structure, compulsory subjects, elective pathways, and career alignment.', pinned: false, status: 'Active', date: '2026-06-28' },
+                    { id: '3', title: '8-4-4 to CBC Transition Guide', category: 'Exam Alerts', audience: 'Students', content: 'Understanding the transition from 8-4-4 to CBC, exam formats, and how to stay ahead during the change.', pinned: false, status: 'Draft', date: '2026-06-25' },
+                ];
+            });
+
+            // Save news to localStorage whenever it changes
+            useEffect(() => {
+                localStorage.setItem('kv_news_items', JSON.stringify(newsItems));
+            }, [newsItems]);
+
+            // ── NEWS CRUD FUNCTIONS ──
+            const addNewsItem = (item) => {
+                const newItem = {
+                    ...item,
+                    id: Date.now().toString() + '_' + Math.random().toString(36).substr(2, 4),
+                    date: new Date().toISOString().split('T')[0],
+                    status: 'Active'
+                };
+                setNewsItems(prev => [newItem, ...prev]);
+                return newItem;
+            };
+
+            const updateNewsItem = (id, updates) => {
+                setNewsItems(prev => prev.map(item => 
+                    item.id === id ? { ...item, ...updates } : item
+                ));
+            };
+
+            const deleteNewsItem = (id) => {
+                setNewsItems(prev => prev.filter(item => item.id !== id));
+            };
+
+            const togglePinNews = (id) => {
+                setNewsItems(prev => prev.map(item => 
+                    item.id === id ? { ...item, pinned: !item.pinned } : item
+                ));
+            };
+
+            // ── EXISTING FUNCTIONS ──
             useEffect(() => {
                 localStorage.setItem('kv-dark-mode', darkMode);
                 if (darkMode) document.documentElement.classList.add('dark');
                 else document.documentElement.classList.remove('dark');
             }, [darkMode]);
 
-            // ── FIX: Handle resize to update sidebar state ──
             useEffect(() => {
                 const handleResize = () => {
                     const mobile = window.innerWidth <= 768;
                     setIsMobile(mobile);
-                    // Close sidebar on mobile by default, open on desktop
-                    if (mobile) {
-                        setSidebarOpen(false);
-                    } else {
-                        setSidebarOpen(true);
-                    }
+                    if (mobile) setSidebarOpen(false);
+                    else setSidebarOpen(true);
                 };
                 window.addEventListener('resize', handleResize);
                 return () => window.removeEventListener('resize', handleResize);
@@ -884,11 +929,8 @@
                 setTimeout(() => setToast(null), 6000);
             };
 
-            // ── FIXED: Load Orders with customer phone ──
             const loadOrders = async () => {
                 try {
-                    console.log('🔄 Loading orders...');
-                    
                     const response = await fetch(`${SUPABASE_URL}/rest/v1/orders?select=*&order=created_at.desc`, {
                         headers: { 
                             'apikey': SUPABASE_ANON_KEY, 
@@ -896,21 +938,16 @@
                             'Content-Type': 'application/json'
                         }
                     });
-
                     if (!response.ok) {
                         const errorText = await response.text();
                         console.error('❌ API Error:', response.status, errorText);
                         throw new Error(`Failed to load orders: ${response.status}`);
                     }
-
                     const data = await response.json();
-                    console.log('✅ Orders loaded:', data.length);
-                    
                     setOrders(data || []);
                     const pending = (data || []).filter(o => o.payment_status === 'pending' || o.status === 'pending');
                     setPendingOrderCount(pending.length);
                     return data;
-                    
                 } catch (e) {
                     console.error('❌ Load orders error:', e);
                     setOrders([]);
@@ -919,12 +956,10 @@
                 }
             };
 
-            // ── FIXED: loadData ──
             const loadData = async () => {
                 setLoading(true);
                 try {
                     console.log('🔄 Loading all data...');
-                    
                     await loadOrders();
                     
                     try {
@@ -934,15 +969,8 @@
                         if (rRes.ok) {
                             const data = await rRes.json();
                             setResources(data || []);
-                            console.log('✅ Resources loaded:', data.length);
-                        } else {
-                            console.warn('⚠️ Failed to load resources:', rRes.status);
-                            setResources([]);
-                        }
-                    } catch (e) { 
-                        console.error('❌ Resources error:', e);
-                        setResources([]);
-                    }
+                        } else { setResources([]); }
+                    } catch (e) { setResources([]); }
 
                     try {
                         const tRes = await fetch(`${SUPABASE_URL}/rest/v1/tutors?select=*`, {
@@ -951,15 +979,8 @@
                         if (tRes.ok) {
                             const data = await tRes.json();
                             setTutors(data || []);
-                            console.log('✅ Tutors loaded:', data.length);
-                        } else {
-                            console.warn('⚠️ Failed to load tutors:', tRes.status);
-                            setTutors([]);
-                        }
-                    } catch (e) { 
-                        console.error('❌ Tutors error:', e);
-                        setTutors([]);
-                    }
+                        } else { setTutors([]); }
+                    } catch (e) { setTutors([]); }
 
                     try {
                         const cRes = await fetch(`${SUPABASE_URL}/rest/v1/classes?select=*&order=created_at.desc`, {
@@ -968,15 +989,8 @@
                         if (cRes.ok) {
                             const data = await cRes.json();
                             setClasses(data || []);
-                            console.log('✅ Classes loaded:', data.length);
-                        } else {
-                            console.warn('⚠️ Failed to load classes:', cRes.status);
-                            setClasses([]);
-                        }
-                    } catch (e) { 
-                        console.error('❌ Classes error:', e);
-                        setClasses([]);
-                    }
+                        } else { setClasses([]); }
+                    } catch (e) { setClasses([]); }
 
                     try {
                         const pRes = await fetch(`${SUPABASE_URL}/rest/v1/tutor_payments?select=*&order=created_at.desc`, {
@@ -985,33 +999,19 @@
                         if (pRes.ok) {
                             const data = await pRes.json();
                             setPayments(data || []);
-                            console.log('✅ Payments loaded:', data.length);
-                        } else {
-                            console.warn('⚠️ Failed to load payments:', pRes.status);
-                            setPayments([]);
-                        }
-                    } catch (e) { 
-                        console.error('❌ Payments error:', e);
-                        setPayments([]);
-                    }
+                        } else { setPayments([]); }
+                    } catch (e) { setPayments([]); }
                     
                 } catch (e) { 
                     console.error('❌ Load data error:', e); 
-                    showNotification('Error loading data: ' + e.message, 'error');
+                    showToast('Error loading data: ' + e.message, 'error');
                 }
                 setLoading(false);
             };
 
             const toggleDarkMode = () => setDarkMode(!darkMode);
-            
-            // ── FIX: Toggle sidebar function ──
-            const toggleSidebar = () => {
-                setSidebarOpen(!sidebarOpen);
-            };
-            
-            const closeSidebar = () => {
-                setSidebarOpen(false);
-            };
+            const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
+            const closeSidebar = () => setSidebarOpen(false);
 
             const login = (username, password) => {
                 setAuthLoading(true);
@@ -1070,7 +1070,13 @@
                     TUTOR_PAYOUT_PERCENTAGE,
                     pendingOrderCount,
                     setPendingOrderCount,
-                    isMobile
+                    isMobile,
+                    // NEWS
+                    newsItems, setNewsItems,
+                    addNewsItem,
+                    updateNewsItem,
+                    deleteNewsItem,
+                    togglePinNews,
                 }}>
                     {children}
                 </AppContext.Provider>
@@ -1225,10 +1231,7 @@
                                     className={`menu-item ${currentModule === mod.id ? 'active' : ''}`}
                                     onClick={() => { 
                                         setCurrentModule(mod.id); 
-                                        // ── FIX: Close sidebar on mobile after selection ──
-                                        if (window.innerWidth <= 768) {
-                                            closeSidebar();
-                                        }
+                                        if (window.innerWidth <= 768) closeSidebar();
                                     }}
                                 >
                                     <i className={`fas ${mod.icon}`}></i>
@@ -1238,6 +1241,9 @@
                                             {pendingOrderCount}
                                             <span className="badge-count">{pendingOrderCount}</span>
                                         </span>
+                                    )}
+                                    {mod.id === 'news' && (
+                                        <span className="badge" style={{ background: 'rgba(212,160,23,0.2)', color: '#FCD34D', fontSize: '0.6rem', padding: '2px 8px' }}>NEW</span>
                                     )}
                                 </button>
                             ))}
@@ -2155,7 +2161,6 @@
 
             useEffect(() => { loadTutors(); }, []);
 
-            // ── Get resource count for each tutor ──
             const getTutorResourceCount = (tutorId) => {
                 return resources.filter(r => r.tutor_id === tutorId).length;
             };
@@ -2525,13 +2530,11 @@
                 }
             };
 
-            // ── Get tutor name by ID ──
             const getTutorName = (tutorId) => {
                 const tutor = tutors.find(t => t.id === tutorId);
                 return tutor ? tutor.name : '—';
             };
 
-            // ── Format date ──
             const formatDate = (dateString) => {
                 if (!dateString) return '—';
                 try {
@@ -2675,12 +2678,10 @@
                 completedOrders: 0
             });
 
-            // ── Toggle order expansion ──
             const toggleOrderExpand = (orderId) => {
                 setExpandedOrderId(expandedOrderId === orderId ? null : orderId);
             };
 
-            // ── Get order items with resource details ──
             const getOrderItems = (order) => {
                 if (order.order_items && order.order_items.length > 0) {
                     return order.order_items;
@@ -2700,7 +2701,6 @@
                 return [];
             };
 
-            // ── Get resource type display ──
             const getResourceTypeDisplay = (item) => {
                 const type = item.resource_type || item.resources?.resource_type || 'digital';
                 if (type === 'physical' || type === 'book') {
@@ -2709,7 +2709,6 @@
                 return '📄 Digital Download';
             };
 
-            // ── Calculate revenue stats ──
             useEffect(() => {
                 calculateRevenueStats();
             }, [orders]);
@@ -2770,7 +2769,6 @@
             const isPending = (order) => order.payment_status === 'pending' || order.status === 'pending';
             const isCompleted = (order) => order.payment_status === 'confirmed' || order.payment_status === 'paid' || order.payment_status === 'completed' || order.status === 'completed' || order.status === 'confirmed' || order.status === 'paid';
 
-            // ── Handle Confirm Order ──
             const handleConfirmOrder = async (order) => {
                 const ref = order.payment_ref || order.order_ref || order.id.slice(0, 8).toUpperCase();
                 if (!confirm(`Confirm order #${ref}?`)) return;
@@ -2811,7 +2809,6 @@
                 setLoadingOrderId(null);
             };
 
-            // ── Handle Reject Order ──
             const handleRejectOrder = async (order) => {
                 const ref = order.payment_ref || order.order_ref || order.id.slice(0, 8).toUpperCase();
                 if (!confirm(`Reject order #${ref}?`)) return;
@@ -2871,7 +2868,6 @@
 
             return (
                 <div className="fade-in">
-                    {/* Revenue Stats Cards */}
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                         <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
                             <p className="text-sm text-gray-500 dark:text-gray-400">Total Revenue</p>
@@ -2910,7 +2906,6 @@
                             </button>
                         </div>
 
-                        {/* Filter Buttons */}
                         <div className="flex gap-2 flex-wrap mb-4">
                             <button onClick={() => setFilter('all')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'all' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>All</button>
                             <button onClick={() => setFilter('pending')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'pending' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>⏳ Pending</button>
@@ -2919,7 +2914,6 @@
                             <button onClick={() => setFilter('cancelled')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'cancelled' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>❌ Cancelled/Rejected</button>
                         </div>
 
-                        {/* Search Input */}
                         <div className="mb-4">
                             <input 
                                 type="text" 
@@ -2930,7 +2924,6 @@
                             />
                         </div>
 
-                        {/* Orders Table */}
                         {filteredOrders.length === 0 ? (
                             <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                                 {orders.length === 0 ? 'No orders found. Orders will appear here when customers make purchases.' : 'No orders match your filters.'}
@@ -3025,7 +3018,6 @@
                                                         </td>
                                                     </tr>
 
-                                                    {/* ── EXPANDED ORDER ITEMS ROW ── */}
                                                     {isExpanded && orderItems.length > 0 && (
                                                         <tr>
                                                             <td colSpan="7" className="px-4 py-3 bg-gray-50 dark:bg-gray-800/50">
@@ -3082,7 +3074,7 @@
             );
         }
 
-        // ── FINANCE MODULE (FIXED AUDIT) ──
+        // ── FINANCE MODULE ──
         function FinanceModule() {
             const { orders, tutors, payments, setPayments, showNotification, TUTOR_PAYOUT_PERCENTAGE, classes } = useApp();
             const [selectedTutor, setSelectedTutor] = useState(null);
@@ -3251,7 +3243,6 @@
                 }
             };
 
-            // ── FIXED: Open Audit Modal with current values ──
             const openAuditModal = () => {
                 setAuditData({
                     marketing_spent: financeSummary.marketing_spent || 0,
@@ -3261,7 +3252,6 @@
                 setShowAuditModal(true);
             };
 
-            // ── FIXED: Save Audit with proper validation ──
             const saveAudit = async () => {
                 if (!confirm('Save audit changes? This will update the account balance.')) return;
                 
@@ -3308,7 +3298,6 @@
 
             return (
                 <div className="space-y-6 fade-in">
-                    {/* ── MAIN FINANCE SUMMARY CARDS ── */}
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                         <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
                             <p className="text-sm text-gray-500 dark:text-gray-400">Total Revenue</p>
@@ -3332,7 +3321,6 @@
                         </div>
                     </div>
 
-                    {/* ── DETAILED BREAKDOWN ── */}
                     <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-lg font-semibold text-gray-800 dark:text-white">📊 Financial Breakdown</h3>
@@ -3373,7 +3361,6 @@
                         </div>
                     </div>
 
-                    {/* ── TUTOR PAYOUTS TABLE ── */}
                     <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-lg font-semibold text-gray-800 dark:text-white">🧑‍🏫 Tutor Payouts ({TUTOR_PAYOUT_PERCENTAGE}% of Revenue)</h3>
@@ -3433,7 +3420,6 @@
                         )}
                     </div>
 
-                    {/* ── PAYMENT HISTORY ── */}
                     <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-lg font-semibold text-gray-800 dark:text-white">📋 Payment History</h3>
@@ -3485,7 +3471,6 @@
                         )}
                     </div>
 
-                    {/* ── PAYMENT MODAL ── */}
                     {showPaymentModal && selectedTutor && (
                         <div className="modal-overlay open" onClick={() => setShowPaymentModal(false)}>
                             <div className="modal-box" onClick={(e) => e.stopPropagation()}>
@@ -3515,7 +3500,6 @@
                         </div>
                     )}
 
-                    {/* ── FIXED: AUDIT MODAL ── */}
                     {showAuditModal && (
                         <div className="modal-overlay open" onClick={() => setShowAuditModal(false)}>
                             <div className="modal-box max-w-2xl" onClick={(e) => e.stopPropagation()}>
@@ -3601,6 +3585,310 @@
                                         <button onClick={() => setShowAuditModal(false)} className="px-6 py-2 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg font-semibold hover:bg-gray-300 dark:hover:bg-gray-500 transition">
                                             Cancel
                                         </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        // ── ✨ NEW: UPDATES & NEWS MODULE ──
+        function NewsModule() {
+            const { newsItems, addNewsItem, updateNewsItem, deleteNewsItem, togglePinNews, showToast } = useApp();
+            const [formData, setFormData] = useState({
+                title: '',
+                category: 'CBC News',
+                audience: 'All',
+                content: '',
+                pinned: false,
+            });
+            const [editingId, setEditingId] = useState(null);
+            const [editFormData, setEditFormData] = useState({
+                title: '',
+                category: 'CBC News',
+                audience: 'All',
+                content: '',
+                pinned: false,
+                status: 'Active'
+            });
+            const [showEditModal, setShowEditModal] = useState(false);
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                const { title, category, audience, content, pinned } = formData;
+                if (!title || !content) {
+                    showToast('⚠️ Please fill in Title and Content', 'error');
+                    return;
+                }
+                const newItem = addNewsItem({
+                    title,
+                    category,
+                    audience,
+                    content,
+                    pinned,
+                });
+                showToast(`✅ "${newItem.title}" published successfully!`);
+                setFormData({ title: '', category: 'CBC News', audience: 'All', content: '', pinned: false });
+            };
+
+            const openEditModal = (item) => {
+                setEditingId(item.id);
+                setEditFormData({
+                    title: item.title,
+                    category: item.category,
+                    audience: item.audience,
+                    content: item.content,
+                    pinned: item.pinned,
+                    status: item.status || 'Active'
+                });
+                setShowEditModal(true);
+            };
+
+            const closeEditModal = () => {
+                setShowEditModal(false);
+                setEditingId(null);
+            };
+
+            const handleEditSave = () => {
+                if (!editingId) return;
+                const { title, category, audience, content, pinned, status } = editFormData;
+                if (!title || !content) {
+                    showToast('⚠️ Please fill in Title and Content', 'error');
+                    return;
+                }
+                updateNewsItem(editingId, {
+                    title,
+                    category,
+                    audience,
+                    content,
+                    pinned,
+                    status
+                });
+                showToast('✅ Update saved successfully!');
+                closeEditModal();
+            };
+
+            const handleDelete = (id) => {
+                if (!confirm('Delete this news item permanently?')) return;
+                deleteNewsItem(id);
+                showToast('🗑️ News item deleted');
+            };
+
+            // Sort: pinned first, then by date (newest first)
+            const sortedNews = [...newsItems].sort((a, b) => {
+                if (a.pinned && !b.pinned) return -1;
+                if (!a.pinned && b.pinned) return 1;
+                return new Date(b.date) - new Date(a.date);
+            });
+
+            return (
+                <div className="space-y-6 fade-in">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">📰 Publish New Update</h3>
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Title *</label>
+                                <input 
+                                    type="text" 
+                                    value={formData.title} 
+                                    onChange={(e) => setFormData({...formData, title: e.target.value})}
+                                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                                    placeholder="e.g. KJSEA 2026 Registration Opens"
+                                    required
+                                />
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Category</label>
+                                    <select 
+                                        value={formData.category} 
+                                        onChange={(e) => setFormData({...formData, category: e.target.value})}
+                                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                                    >
+                                        <option value="CBC News">CBC News</option>
+                                        <option value="Exam Alerts">Exam Alerts</option>
+                                        <option value="System Updates">System Updates</option>
+                                        <option value="Maintenance">Maintenance</option>
+                                        <option value="General">General</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Target Audience</label>
+                                    <select 
+                                        value={formData.audience} 
+                                        onChange={(e) => setFormData({...formData, audience: e.target.value})}
+                                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                                    >
+                                        <option value="All">All</option>
+                                        <option value="Teachers">Teachers</option>
+                                        <option value="Students">Students</option>
+                                        <option value="Parents">Parents</option>
+                                        <option value="Admins">Admins</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Content *</label>
+                                <textarea 
+                                    value={formData.content} 
+                                    onChange={(e) => setFormData({...formData, content: e.target.value})}
+                                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                                    rows="4"
+                                    placeholder="Write your news update here..."
+                                    required
+                                ></textarea>
+                            </div>
+                            <div className="flex items-center gap-4">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={formData.pinned} 
+                                        onChange={(e) => setFormData({...formData, pinned: e.target.checked})}
+                                        className="w-4 h-4 accent-[#D4A017]"
+                                    />
+                                    <span className="text-sm text-gray-700 dark:text-gray-300">📌 Pin this post</span>
+                                </label>
+                                <button type="submit" className="btn-gold px-6 py-2 rounded-lg font-semibold">🚀 Publish</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">📋 Published Updates</h3>
+                            <span className="text-sm text-gray-500 dark:text-gray-400">{sortedNews.length} items</span>
+                        </div>
+                        {sortedNews.length === 0 ? (
+                            <div className="text-center py-8 text-gray-500 dark:text-gray-400">No updates published yet. Create your first news item!</div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead className="bg-gray-50 dark:bg-gray-700/50">
+                                        <tr>
+                                            <th className="px-4 py-2 text-left">Title</th>
+                                            <th className="px-4 py-2 text-left">Category</th>
+                                            <th className="px-4 py-2 text-left">Audience</th>
+                                            <th className="px-4 py-2 text-left">Date</th>
+                                            <th className="px-4 py-2 text-left">Status</th>
+                                            <th className="px-4 py-2 text-left">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {sortedNews.map(item => (
+                                            <tr key={item.id} className="border-t border-gray-100 dark:border-gray-700">
+                                                <td className="px-4 py-2 font-medium text-gray-800 dark:text-white flex items-center gap-2">
+                                                    {item.pinned && <span className="text-[#D4A017]">📌</span>}
+                                                    {item.title}
+                                                </td>
+                                                <td className="px-4 py-2 text-gray-600 dark:text-gray-400">
+                                                    <span className="text-xs bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">{item.category}</span>
+                                                </td>
+                                                <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{item.audience}</td>
+                                                <td className="px-4 py-2 text-gray-500 dark:text-gray-400">{item.date}</td>
+                                                <td className="px-4 py-2">
+                                                    <span className={`status-badge ${item.status === 'Active' ? 'live' : 'draft'}`}>
+                                                        {item.status || 'Active'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-2 flex gap-2 flex-wrap">
+                                                    <button onClick={() => openEditModal(item)} className="px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded hover:bg-blue-200 transition">✏️ Edit</button>
+                                                    <button onClick={() => togglePinNews(item.id)} className="px-2 py-1 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded hover:bg-amber-200 transition">
+                                                        {item.pinned ? '📌 Unpin' : '📌 Pin'}
+                                                    </button>
+                                                    <button onClick={() => handleDelete(item.id)} className="px-2 py-1 text-xs bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded hover:bg-red-200 transition">🗑️</button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Edit Modal */}
+                    {showEditModal && (
+                        <div className="modal-overlay open" onClick={closeEditModal}>
+                            <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+                                <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">✏️ Edit News Update</h3>
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Title *</label>
+                                        <input 
+                                            type="text" 
+                                            value={editFormData.title} 
+                                            onChange={(e) => setEditFormData({...editFormData, title: e.target.value})}
+                                            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                                            required
+                                        />
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Category</label>
+                                            <select 
+                                                value={editFormData.category} 
+                                                onChange={(e) => setEditFormData({...editFormData, category: e.target.value})}
+                                                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                                            >
+                                                <option value="CBC News">CBC News</option>
+                                                <option value="Exam Alerts">Exam Alerts</option>
+                                                <option value="System Updates">System Updates</option>
+                                                <option value="Maintenance">Maintenance</option>
+                                                <option value="General">General</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Target Audience</label>
+                                            <select 
+                                                value={editFormData.audience} 
+                                                onChange={(e) => setEditFormData({...editFormData, audience: e.target.value})}
+                                                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                                            >
+                                                <option value="All">All</option>
+                                                <option value="Teachers">Teachers</option>
+                                                <option value="Students">Students</option>
+                                                <option value="Parents">Parents</option>
+                                                <option value="Admins">Admins</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Content *</label>
+                                        <textarea 
+                                            value={editFormData.content} 
+                                            onChange={(e) => setEditFormData({...editFormData, content: e.target.value})}
+                                            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                                            rows="4"
+                                            required
+                                        ></textarea>
+                                    </div>
+                                    <div className="flex items-center gap-4">
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={editFormData.pinned} 
+                                                onChange={(e) => setEditFormData({...editFormData, pinned: e.target.checked})}
+                                                className="w-4 h-4 accent-[#D4A017]"
+                                            />
+                                            <span className="text-sm text-gray-700 dark:text-gray-300">📌 Pin this post</span>
+                                        </label>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
+                                            <select 
+                                                value={editFormData.status} 
+                                                onChange={(e) => setEditFormData({...editFormData, status: e.target.value})}
+                                                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                                            >
+                                                <option value="Active">Active</option>
+                                                <option value="Draft">Draft</option>
+                                                <option value="Archived">Archived</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-3">
+                                        <button onClick={handleEditSave} className="btn-gold px-4 py-2 rounded-lg font-semibold">💾 Save Changes</button>
+                                        <button onClick={closeEditModal} className="px-4 py-2 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg font-semibold hover:bg-gray-300 dark:hover:bg-gray-500 transition">Cancel</button>
                                     </div>
                                 </div>
                             </div>
@@ -3780,6 +4068,7 @@
                 classes: <ClassesModule />,
                 orders: <OrdersModule />,
                 finance: <FinanceModule />,
+                news: <NewsModule />,
                 settings: <SettingsModule />,
             };
             return map[currentModule] || <DashboardModule />;
