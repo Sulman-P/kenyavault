@@ -1245,6 +1245,7 @@
             const [sidebarOpen, setSidebarOpen] = useState(false);
             const [debugInfo, setDebugInfo] = useState([]);
             const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+            const [payoutRequests, setPayoutRequests] = useState([]);
 
             useEffect(() => {
                 localStorage.setItem('tutor-dark-mode', darkMode);
@@ -1274,7 +1275,9 @@
 
             const loadTutorData = async (tutorId) => {
                 setLoading(true);
+                setDebugInfo([]);
                 try {
+                    // Load tutor
                     const tRes = await fetch(`${SUPABASE_URL}/rest/v1/tutors?id=eq.${tutorId}&select=*`, {
                         headers: { 
                             'apikey': SUPABASE_ANON_KEY, 
@@ -1289,11 +1292,14 @@
                             setTutor(data[0]);
                             sessionStorage.setItem('tutor_name', data[0].name);
                             addDebug('✅ Tutor data loaded', 'success');
+                        } else {
+                            addDebug('❌ No tutor found with ID: ' + tutorId, 'error');
                         }
                     } else {
                         addDebug('❌ Failed to load tutor: ' + tRes.status, 'error');
                     }
 
+                    // Load resources
                     try {
                         const rRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?tutor_id=eq.${tutorId}&select=*`, {
                             headers: { 
@@ -1313,6 +1319,7 @@
                         addDebug('❌ Error loading resources: ' + e.message, 'error');
                     }
 
+                    // Load orders with tutor_share
                     try {
                         const oRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?tutor_id=eq.${tutorId}&select=*&order=created_at.desc`, {
                             headers: { 
@@ -1336,6 +1343,7 @@
                         addDebug('❌ Error loading orders: ' + e.message, 'error');
                     }
 
+                    // Load classes
                     try {
                         const cRes = await fetch(`${SUPABASE_URL}/rest/v1/classes?tutor_id=eq.${tutorId}&select=*`, {
                             headers: { 
@@ -1355,11 +1363,36 @@
                         addDebug('❌ Error loading classes: ' + e.message, 'error');
                     }
 
+                    // Load payout requests
+                    try {
+                        const pRes = await fetch(`${SUPABASE_URL}/rest/v1/tutor_payouts?tutor_id=eq.${tutorId}&select=*&order=created_at.desc`, {
+                            headers: { 
+                                'apikey': SUPABASE_ANON_KEY, 
+                                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                                'Content-Type': 'application/json'
+                            }
+                        });
+                        if (pRes.ok) {
+                            const data = await pRes.json();
+                            setPayoutRequests(data || []);
+                            addDebug(`✅ Loaded ${data.length} payout requests`, 'success');
+                        } else {
+                            addDebug('❌ Failed to load payout requests: ' + pRes.status, 'error');
+                        }
+                    } catch (e) { 
+                        addDebug('❌ Error loading payout requests: ' + e.message, 'error');
+                    }
+
                 } catch (e) { 
                     console.error('Load error:', e); 
                     addDebug('❌ Error loading data: ' + e.message, 'error');
                 }
                 setLoading(false);
+            };
+
+            const refreshData = () => {
+                const tutorId = sessionStorage.getItem('tutor_id');
+                if (tutorId) loadTutorData(tutorId);
             };
 
             const showNotification = (msg, type = 'success') => {
@@ -1376,6 +1409,7 @@
                 setResources([]);
                 setOrders([]);
                 setClasses([]);
+                setPayoutRequests([]);
                 setActiveTab('dashboard');
                 setDebugInfo([]);
                 showNotification('Logged out successfully', 'success');
@@ -1386,6 +1420,62 @@
             const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
             const closeSidebar = () => setSidebarOpen(false);
 
+            const calculateEarnings = () => {
+                let total = 0, pending = 0, completed = 0;
+                orders.forEach(o => {
+                    const share = o.tutor_share || Math.round((o.total_amount || o.item_price || 0) * 0.8);
+                    total += share;
+                    const status = o.status || o.payment_status || 'pending';
+                    if (status === 'pending' || status === 'processing' || status === 'initiated') {
+                        pending += share;
+                    } else if (status === 'completed' || status === 'paid' || status === 'approved' || status === 'success' || status === 'confirmed') {
+                        completed += share;
+                    }
+                });
+                // Subtract paid out amounts
+                const paidOut = payoutRequests
+                    .filter(p => p.status === 'paid')
+                    .reduce((sum, p) => sum + (p.amount || 0), 0);
+                return { total, pending, completed, paidOut };
+            };
+
+            const requestPayout = async (amount) => {
+                const tutorId = sessionStorage.getItem('tutor_id');
+                if (!tutorId) return null;
+                
+                try {
+                    const payoutData = {
+                        tutor_id: tutorId,
+                        tutor_name: tutor?.name || sessionStorage.getItem('tutor_name') || 'Tutor',
+                        amount: amount,
+                        phone: tutor?.mpesa_number || '',
+                        status: 'pending',
+                        created_at: new Date().toISOString()
+                    };
+                    
+                    const response = await fetch(`${SUPABASE_URL}/rest/v1/tutor_payouts`, {
+                        method: 'POST',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json',
+                            'Prefer': 'return=representation'
+                        },
+                        body: JSON.stringify(payoutData)
+                    });
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        setPayoutRequests(prev => [data[0], ...prev]);
+                        return data[0];
+                    }
+                    return null;
+                } catch (e) {
+                    console.error('Payout request error:', e);
+                    return null;
+                }
+            };
+
             return (
                 <TutorContext.Provider value={{
                     darkMode, toggleDarkMode,
@@ -1394,14 +1484,18 @@
                     resources, setResources,
                     orders, setOrders,
                     classes, setClasses,
+                    payoutRequests, setPayoutRequests,
                     loading, setLoading,
                     notification, showNotification,
                     activeTab, setActiveTab,
                     logout,
                     loadTutorData,
+                    refreshData,
                     sidebarOpen, toggleSidebar, closeSidebar,
                     debugInfo, addDebug,
-                    isMobile
+                    isMobile,
+                    calculateEarnings,
+                    requestPayout,
                 }}>
                     {children}
                 </TutorContext.Provider>
@@ -1415,7 +1509,7 @@
         }
 
         // ────────────────────────────────────────────────
-        // LOGIN PAGE (unchanged, kept for completeness)
+        // LOGIN PAGE
         // ────────────────────────────────────────────────
         function LoginPage() {
             const { setIsLoggedIn, setTutor, showNotification, loadTutorData, darkMode, toggleDarkMode, addDebug } = useTutor();
@@ -1802,28 +1896,14 @@
             const { 
                 tutor, resources, orders, classes, 
                 activeTab, setActiveTab, 
-                showNotification, loadTutorData,
+                showNotification, refreshData,
                 darkMode, toggleDarkMode,
                 logout,
                 sidebarOpen, toggleSidebar, closeSidebar,
                 debugInfo,
-                isMobile
+                isMobile,
+                calculateEarnings,
             } = useTutor();
-
-            const calculateEarnings = () => {
-                let total = 0, pending = 0, completed = 0;
-                orders.forEach(o => {
-                    const share = o.tutor_share || Math.round((o.total_amount || o.item_price || 0) * 0.8);
-                    total += share;
-                    const status = o.status || o.payment_status || 'pending';
-                    if (status === 'pending' || status === 'processing' || status === 'initiated') {
-                        pending += share;
-                    } else if (status === 'completed' || status === 'paid' || status === 'approved' || status === 'success') {
-                        completed += share;
-                    }
-                });
-                return { total, pending, completed };
-            };
 
             const earnings = calculateEarnings();
             const totalDownloads = resources.reduce((sum, r) => sum + (r.download_count || 0), 0);
@@ -1917,6 +1997,9 @@
                                 <button className="dark-toggle-nav" onClick={toggleDarkMode}>
                                     <i className={`fas ${darkMode ? 'fa-sun' : 'fa-moon'}`}></i>
                                 </button>
+                                <button onClick={refreshData} className="text-sm text-[#D4A017] hover:text-[#FCD34D] transition">
+                                    🔄 Refresh
+                                </button>
                             </div>
                         </div>
 
@@ -1941,28 +2024,13 @@
 
         // ── DASHBOARD CONTENT ──
         function DashboardContent() {
-            const { tutor, resources, orders, setActiveTab } = useTutor();
+            const { tutor, resources, orders, classes, setActiveTab, calculateEarnings } = useTutor();
 
-            let totalEarnings = 0, pendingEarnings = 0, thisMonthEarnings = 0;
-            const now = new Date();
-            const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-            
-            orders.forEach(o => {
-                const share = o.tutor_share || Math.round((o.total_amount || o.item_price || 0) * 0.8);
-                totalEarnings += share;
-                const status = o.status || o.payment_status || 'pending';
-                if (status === 'pending' || status === 'processing' || status === 'initiated') {
-                    pendingEarnings += share;
-                }
-                const orderDate = new Date(o.created_at);
-                if (orderDate >= thisMonthStart) {
-                    thisMonthEarnings += share;
-                }
-            });
+            const earnings = calculateEarnings();
             const totalDownloads = resources.reduce((sum, r) => sum + (r.download_count || 0), 0);
-            const activeResources = resources.filter(r => r.status === 'live' || r.published !== false).length;
 
             // Monthly chart data - last 6 months
+            const now = new Date();
             const months = [];
             const monthlyData = [];
             for (let i = 5; i >= 0; i--) {
@@ -1981,6 +2049,16 @@
             }
 
             const maxEarning = Math.max(...monthlyData, 100);
+
+            // Calculate this month's earnings
+            const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            let thisMonthEarnings = 0;
+            orders.forEach(o => {
+                const orderDate = new Date(o.created_at);
+                if (orderDate >= thisMonthStart) {
+                    thisMonthEarnings += o.tutor_share || Math.round((o.total_amount || o.item_price || 0) * 0.8);
+                }
+            });
 
             return (
                 <>
@@ -2005,7 +2083,7 @@
                     <div className="stat-grid">
                         <div className="stat-card">
                             <div className="stat-icon">💰</div>
-                            <div className="stat-number gold">KES {totalEarnings.toLocaleString()}</div>
+                            <div className="stat-number gold">KES {earnings.total.toLocaleString()}</div>
                             <div className="stat-label">Total Earnings</div>
                         </div>
                         <div className="stat-card">
@@ -2015,7 +2093,7 @@
                         </div>
                         <div className="stat-card">
                             <div className="stat-icon">⏳</div>
-                            <div className="stat-number blue">KES {pendingEarnings.toLocaleString()}</div>
+                            <div className="stat-number blue">KES {earnings.pending.toLocaleString()}</div>
                             <div className="stat-label">Pending Payout</div>
                         </div>
                         <div className="stat-card">
@@ -2025,7 +2103,7 @@
                         </div>
                         <div className="stat-card">
                             <div className="stat-icon">📚</div>
-                            <div className="stat-number">{activeResources}</div>
+                            <div className="stat-number">{resources.filter(r => r.status === 'live' || r.published !== false).length}</div>
                             <div className="stat-label">Active Resources</div>
                         </div>
                     </div>
@@ -2128,19 +2206,21 @@
 
         // ── RESOURCES TAB ──
         function ResourcesTab() {
-            const { resources, showNotification, loadTutorData } = useTutor();
-            const tutorId = sessionStorage.getItem('tutor_id');
+            const { resources, showNotification, refreshData } = useTutor();
 
             const deleteResource = async (id) => {
                 if (!confirm('Delete this resource permanently?')) return;
                 try {
                     const res = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${id}`, {
                         method: 'DELETE',
-                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+                        headers: { 
+                            'apikey': SUPABASE_ANON_KEY, 
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                        }
                     });
                     if (res.ok) {
                         showNotification('Resource deleted', 'success');
-                        loadTutorData(tutorId);
+                        refreshData();
                     }
                 } catch (e) { showNotification('Error deleting', 'error'); }
             };
@@ -2259,97 +2339,75 @@
 
         // ── EARNINGS TAB ──
         function EarningsTab() {
-            const { orders, tutor, showNotification, setOrders } = useTutor();
-            const tutorId = sessionStorage.getItem('tutor_id');
+            const { orders, tutor, showNotification, refreshData, calculateEarnings, requestPayout } = useTutor();
 
-            const calculateEarnings = () => {
-                let totalEarnings = 0, pendingEarnings = 0, completedEarnings = 0;
-                orders.forEach(o => {
-                    const share = o.tutor_share || Math.round((o.total_amount || o.item_price || 0) * 0.8);
-                    totalEarnings += share;
-                    const status = o.status || o.payment_status || 'pending';
-                    if (status === 'pending' || status === 'processing' || status === 'initiated') {
-                        pendingEarnings += share;
-                    } else if (status === 'completed' || status === 'paid' || status === 'approved' || status === 'success') {
-                        completedEarnings += share;
-                    }
-                });
-                return { totalEarnings, pendingEarnings, completedEarnings };
-            };
+            const earnings = calculateEarnings();
+            const [payoutAmount, setPayoutAmount] = useState('');
+            const [requesting, setRequesting] = useState(false);
 
-            const { totalEarnings, pendingEarnings, completedEarnings } = calculateEarnings();
-            const paidOut = tutor?.total_paid_out || 0;
-            const completedOrders = orders.filter(o => 
-                o.status === 'completed' || o.payment_status === 'paid' || o.payment_status === 'completed'
-            ).length;
-
-            const refreshEarnings = async () => {
-                if (!tutorId) return;
-                showNotification('🔄 Refreshing earnings...', 'info');
-                
-                try {
-                    const oRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?tutor_id=eq.${tutorId}&select=*&order=created_at.desc`, {
-                        headers: { 
-                            'apikey': SUPABASE_ANON_KEY, 
-                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                            'Content-Type': 'application/json'
-                        }
-                    });
-                    
-                    if (oRes.ok) {
-                        const data = await oRes.json();
-                        const processedOrders = data.map(o => ({
-                            ...o,
-                            tutor_share: o.tutor_share || Math.round((o.total_amount || o.item_price || 0) * 0.8)
-                        }));
-                        setOrders(processedOrders);
-                        showNotification('✅ Earnings refreshed successfully!', 'success');
-                    } else {
-                        showNotification('❌ Failed to refresh. Status: ' + oRes.status, 'error');
-                    }
-                } catch (e) {
-                    showNotification('❌ Error: ' + e.message, 'error');
+            const handlePayoutRequest = async () => {
+                const amount = parseFloat(payoutAmount);
+                if (!amount || amount <= 0) {
+                    showNotification('⚠️ Please enter a valid amount', 'error');
+                    return;
                 }
-            };
-
-            const requestPayout = () => {
-                if (pendingEarnings < 500) {
-                    showNotification('⚠️ Minimum payout is KES 500. Current pending: KES ' + pendingEarnings.toLocaleString(), 'error');
+                if (amount > earnings.pending) {
+                    showNotification(`⚠️ You only have KES ${earnings.pending.toLocaleString()} pending`, 'error');
+                    return;
+                }
+                if (amount < 500) {
+                    showNotification('⚠️ Minimum payout is KES 500', 'error');
                     return;
                 }
                 if (!tutor?.mpesa_number) {
                     showNotification('⚠️ Please set your M-PESA number in profile settings first.', 'error');
                     return;
                 }
-                if (confirm(`Request payout of KES ${pendingEarnings.toLocaleString()} to ${tutor.mpesa_number}?`)) {
-                    showNotification('✅ Payout request submitted! You will receive funds within 24-48 hours.', 'success');
+
+                setRequesting(true);
+                try {
+                    const result = await requestPayout(amount);
+                    if (result) {
+                        showNotification(`✅ Payout request of KES ${amount.toLocaleString()} submitted!`, 'success');
+                        setPayoutAmount('');
+                        refreshData();
+                    } else {
+                        showNotification('❌ Failed to submit payout request', 'error');
+                    }
+                } catch (e) {
+                    showNotification('❌ Error: ' + e.message, 'error');
                 }
+                setRequesting(false);
+            };
+
+            const getTotalPaid = () => {
+                return earnings.paidOut || 0;
             };
 
             return (
                 <div className="content-card">
                     <div className="card-header">
                         <h3>💰 Earnings</h3>
-                        <button onClick={refreshEarnings} className="btn-sm" style={{ background: '#3b82f6', color: '#fff' }}>
+                        <button onClick={refreshData} className="btn-sm" style={{ background: '#3b82f6', color: '#fff' }}>
                             🔄 Refresh
                         </button>
                     </div>
 
                     <div className="stat-grid" style={{ marginBottom: '20px' }}>
                         <div className="stat-card" style={{ textAlign: 'center' }}>
-                            <div className="stat-number gold">KES {totalEarnings.toLocaleString()}</div>
-                            <div className="stat-label">Total Earned (80%)</div>
+                            <div className="stat-number gold">KES {earnings.total.toLocaleString()}</div>
+                            <div className="stat-label">Total Earned</div>
                         </div>
                         <div className="stat-card" style={{ textAlign: 'center' }}>
-                            <div className="stat-number purple">KES {pendingEarnings.toLocaleString()}</div>
+                            <div className="stat-number purple">KES {earnings.pending.toLocaleString()}</div>
                             <div className="stat-label">Pending Payout</div>
                         </div>
                         <div className="stat-card" style={{ textAlign: 'center' }}>
-                            <div className="stat-number green">KES {paidOut.toLocaleString()}</div>
+                            <div className="stat-number green">KES {getTotalPaid().toLocaleString()}</div>
                             <div className="stat-label">Paid Out</div>
                         </div>
                         <div className="stat-card" style={{ textAlign: 'center' }}>
-                            <div className="stat-number blue">{completedOrders}</div>
+                            <div className="stat-number blue">{orders.filter(o => o.status === 'completed' || o.payment_status === 'paid' || o.payment_status === 'confirmed').length}</div>
                             <div className="stat-label">Completed Sales</div>
                         </div>
                     </div>
@@ -2358,16 +2416,46 @@
                         <p style={{ fontSize: '0.85rem', color: '#6b7280' }}>
                             💡 You earn <strong style={{ color: '#D4A017' }}>80%</strong> of every sale on your resources.
                             Payouts are processed when your pending earnings reach <strong style={{ color: '#D4A017' }}>KES 500</strong> or more.
-                        </p>
-                        <p style={{ fontSize: '0.75rem', color: '#9ca3af', marginTop: '4px' }}>
-                            📊 Showing {orders.length} orders • Last updated: {new Date().toLocaleTimeString()}
+                            <br/>
+                            <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>
+                                M-PESA Number: {tutor?.mpesa_number || 'Not set'}
+                            </span>
                         </p>
                     </div>
 
-                    {pendingEarnings >= 500 && tutor?.mpesa_number && (
-                        <button onClick={requestPayout} className="btn-gold" style={{ width: 'auto', padding: '12px 32px' }}>
-                            💰 Request Payout (KES {pendingEarnings.toLocaleString()})
-                        </button>
+                    {earnings.pending >= 500 && tutor?.mpesa_number && (
+                        <div style={{ marginTop: '16px', padding: '16px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+                            <h4 style={{ fontFamily: 'Sora, sans-serif', fontWeight: 700, fontSize: '0.9rem', marginBottom: '8px' }}>💰 Request Payout</h4>
+                            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                                <input 
+                                    type="number" 
+                                    value={payoutAmount} 
+                                    onChange={(e) => setPayoutAmount(e.target.value)}
+                                    placeholder={`Amount (KES ${earnings.pending.toLocaleString()} available)`}
+                                    className="form-input" 
+                                    style={{ flex: 1, minWidth: '200px' }}
+                                />
+                                <button 
+                                    onClick={handlePayoutRequest} 
+                                    disabled={requesting} 
+                                    className="btn-gold" 
+                                    style={{ width: 'auto', padding: '12px 24px' }}
+                                >
+                                    {requesting ? '⏳ Submitting...' : '📤 Request Payout'}
+                                </button>
+                            </div>
+                            <p style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: '8px' }}>
+                                Payouts are processed within 24-48 hours to your M-PESA number: {tutor.mpesa_number}
+                            </p>
+                        </div>
+                    )}
+
+                    {earnings.pending >= 500 && !tutor?.mpesa_number && (
+                        <div style={{ padding: '16px', background: '#fef3c7', borderRadius: '8px', border: '1px solid #fcd34d', marginBottom: '16px' }}>
+                            <p style={{ fontSize: '0.85rem', color: '#92400e' }}>
+                                ⚠️ Please set your M-PESA number in <a href="#" onClick={() => { /* Navigate to profile */ }} style={{ color: '#D4A017', fontWeight: 600 }}>Profile Settings</a> to request payouts.
+                            </p>
+                        </div>
                     )}
 
                     {orders.length > 0 && (
@@ -2407,7 +2495,7 @@
                                     <tfoot>
                                         <tr style={{ background: 'rgba(212,160,23,0.05)', fontWeight: 700 }}>
                                             <td colSpan="3" style={{ textAlign: 'right' }}>TOTAL:</td>
-                                            <td style={{ color: '#D4A017' }}>KES {totalEarnings.toLocaleString()}</td>
+                                            <td style={{ color: '#D4A017' }}>KES {earnings.total.toLocaleString()}</td>
                                             <td colSpan="2"></td>
                                         </tr>
                                     </tfoot>
@@ -2543,12 +2631,71 @@
 
         // ── PROFILE TAB ──
         function ProfileTab() {
-            const { tutor, showNotification } = useTutor();
+            const { tutor, showNotification, refreshData } = useTutor();
             const [changingPassword, setChangingPassword] = useState(false);
             const [newPassword, setNewPassword] = useState('');
             const [confirmPassword, setConfirmPassword] = useState('');
             const [updating, setUpdating] = useState(false);
-            const tutorId = sessionStorage.getItem('tutor_id');
+            const [editMode, setEditMode] = useState(false);
+            const [editData, setEditData] = useState({
+                name: '',
+                email: '',
+                phone: '',
+                mpesa_number: '',
+                bio: '',
+                subjects: [],
+                levels: []
+            });
+
+            useEffect(() => {
+                if (tutor) {
+                    setEditData({
+                        name: tutor.name || '',
+                        email: tutor.email || '',
+                        phone: tutor.phone || '',
+                        mpesa_number: tutor.mpesa_number || '',
+                        bio: tutor.bio || '',
+                        subjects: tutor.subjects || [],
+                        levels: tutor.levels || []
+                    });
+                }
+            }, [tutor]);
+
+            const updateProfile = async () => {
+                const tutorId = sessionStorage.getItem('tutor_id');
+                if (!tutorId) return;
+
+                setUpdating(true);
+                try {
+                    const response = await fetch(`${SUPABASE_URL}/rest/v1/tutors?id=eq.${tutorId}`, {
+                        method: 'PATCH',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            name: editData.name,
+                            email: editData.email,
+                            phone: editData.phone,
+                            mpesa_number: editData.mpesa_number,
+                            bio: editData.bio,
+                            subjects: editData.subjects,
+                            levels: editData.levels
+                        })
+                    });
+                    if (response.ok) {
+                        showNotification('✅ Profile updated successfully!', 'success');
+                        setEditMode(false);
+                        refreshData();
+                    } else {
+                        showNotification('❌ Failed to update profile', 'error');
+                    }
+                } catch (e) {
+                    showNotification('❌ Error: ' + e.message, 'error');
+                }
+                setUpdating(false);
+            };
 
             const updatePassword = async () => {
                 if (newPassword.length < 6) {
@@ -2559,6 +2706,9 @@
                     showNotification('Passwords do not match.', 'error');
                     return;
                 }
+                const tutorId = sessionStorage.getItem('tutor_id');
+                if (!tutorId) return;
+
                 setUpdating(true);
                 try {
                     const res = await fetch(`${SUPABASE_URL}/rest/v1/tutors?id=eq.${tutorId}`, {
@@ -2588,6 +2738,11 @@
                 <div className="content-card">
                     <div className="card-header">
                         <h3>👤 Profile</h3>
+                        {!editMode && (
+                            <button onClick={() => setEditMode(true)} className="btn-sm">
+                                ✏️ Edit Profile
+                            </button>
+                        )}
                     </div>
 
                     <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
@@ -2601,73 +2756,136 @@
                         </div>
 
                         <div style={{ flex: 1 }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                                <div>
-                                    <label className="form-label">Full Name</label>
-                                    <p style={{ fontWeight: 600 }}>{tutor.name}</p>
-                                </div>
-                                <div>
-                                    <label className="form-label">Email</label>
-                                    <p style={{ fontWeight: 600 }}>{tutor.email}</p>
-                                </div>
-                                <div>
-                                    <label className="form-label">Phone</label>
-                                    <p style={{ fontWeight: 600 }}>{tutor.phone}</p>
-                                </div>
-                                <div>
-                                    <label className="form-label">M-PESA Number</label>
-                                    <p style={{ fontWeight: 600 }}>{tutor.mpesa_number}</p>
-                                </div>
-                            </div>
-
-                            <div style={{ marginTop: '16px' }}>
-                                <label className="form-label">📚 Subjects</label>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                                    {tutor.subjects?.map(s => (
-                                        <span key={s} className="status-badge approved" style={{ background: '#dbeafe', color: '#1e40af' }}>{s}</span>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div style={{ marginTop: '12px' }}>
-                                <label className="form-label">🎓 Levels</label>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                                    {tutor.levels?.map(l => {
-                                        const levelLabel = LEVELS.find(lev => lev.value === l)?.label || l;
-                                        return (
-                                            <span key={l} className="status-badge pending" style={{ background: '#fef3c7', color: '#92400e' }}>{levelLabel}</span>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-
-                            {tutor.bio && (
-                                <div style={{ marginTop: '12px' }}>
-                                    <label className="form-label">📝 About</label>
-                                    <p style={{ fontSize: '0.9rem', color: '#6b7280' }}>{tutor.bio}</p>
-                                </div>
-                            )}
-
-                            <div style={{ marginTop: '20px', borderTop: '1px solid #e5e7eb', paddingTop: '16px' }}>
-                                <button onClick={() => setChangingPassword(!changingPassword)} className="btn-link">
-                                    🔑 {changingPassword ? 'Cancel' : 'Change Password'}
-                                </button>
-                                {changingPassword && (
-                                    <div style={{ marginTop: '12px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                                        <div style={{ flex: 1, minWidth: '200px' }}>
-                                            <label className="form-label">New Password</label>
-                                            <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="form-input" placeholder="Min 6 characters" />
+                            {editMode ? (
+                                <div className="space-y-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="form-label">Full Name *</label>
+                                            <input 
+                                                type="text" 
+                                                value={editData.name} 
+                                                onChange={(e) => setEditData({...editData, name: e.target.value})} 
+                                                className="form-input" 
+                                            />
                                         </div>
-                                        <div style={{ flex: 1, minWidth: '200px' }}>
-                                            <label className="form-label">Confirm Password</label>
-                                            <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="form-input" placeholder="Confirm" />
+                                        <div>
+                                            <label className="form-label">Email *</label>
+                                            <input 
+                                                type="email" 
+                                                value={editData.email} 
+                                                onChange={(e) => setEditData({...editData, email: e.target.value})} 
+                                                className="form-input" 
+                                            />
                                         </div>
-                                        <button onClick={updatePassword} disabled={updating} className="btn-sm" style={{ alignSelf: 'flex-end' }}>
-                                            {updating ? '⏳ Updating...' : 'Update'}
+                                        <div>
+                                            <label className="form-label">Phone</label>
+                                            <input 
+                                                type="tel" 
+                                                value={editData.phone} 
+                                                onChange={(e) => setEditData({...editData, phone: e.target.value})} 
+                                                className="form-input" 
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="form-label">M-PESA Number *</label>
+                                            <input 
+                                                type="tel" 
+                                                value={editData.mpesa_number} 
+                                                onChange={(e) => setEditData({...editData, mpesa_number: e.target.value})} 
+                                                className="form-input" 
+                                                placeholder="0712 345 678"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="form-label">Bio</label>
+                                        <textarea 
+                                            value={editData.bio} 
+                                            onChange={(e) => setEditData({...editData, bio: e.target.value})} 
+                                            className="form-input" 
+                                            rows="3"
+                                        />
+                                    </div>
+                                    <div className="flex gap-3">
+                                        <button onClick={updateProfile} disabled={updating} className="btn-gold" style={{ width: 'auto', padding: '10px 24px' }}>
+                                            {updating ? '⏳ Saving...' : '💾 Save Changes'}
+                                        </button>
+                                        <button onClick={() => setEditMode(false)} className="btn-sm outline">
+                                            Cancel
                                         </button>
                                     </div>
-                                )}
-                            </div>
+                                </div>
+                            ) : (
+                                <>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                        <div>
+                                            <label className="form-label">Full Name</label>
+                                            <p style={{ fontWeight: 600 }}>{tutor.name}</p>
+                                        </div>
+                                        <div>
+                                            <label className="form-label">Email</label>
+                                            <p style={{ fontWeight: 600 }}>{tutor.email}</p>
+                                        </div>
+                                        <div>
+                                            <label className="form-label">Phone</label>
+                                            <p style={{ fontWeight: 600 }}>{tutor.phone}</p>
+                                        </div>
+                                        <div>
+                                            <label className="form-label">M-PESA Number</label>
+                                            <p style={{ fontWeight: 600 }}>{tutor.mpesa_number || 'Not set'}</p>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ marginTop: '16px' }}>
+                                        <label className="form-label">📚 Subjects</label>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                            {tutor.subjects?.map(s => (
+                                                <span key={s} className="status-badge approved" style={{ background: '#dbeafe', color: '#1e40af' }}>{s}</span>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div style={{ marginTop: '12px' }}>
+                                        <label className="form-label">🎓 Levels</label>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                            {tutor.levels?.map(l => {
+                                                const levelLabel = LEVELS.find(lev => lev.value === l)?.label || l;
+                                                return (
+                                                    <span key={l} className="status-badge pending" style={{ background: '#fef3c7', color: '#92400e' }}>{levelLabel}</span>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {tutor.bio && (
+                                        <div style={{ marginTop: '12px' }}>
+                                            <label className="form-label">📝 About</label>
+                                            <p style={{ fontSize: '0.9rem', color: '#6b7280' }}>{tutor.bio}</p>
+                                        </div>
+                                    )}
+
+                                    <div style={{ marginTop: '20px', borderTop: '1px solid #e5e7eb', paddingTop: '16px' }}>
+                                        <button onClick={() => setChangingPassword(!changingPassword)} className="btn-link">
+                                            🔑 {changingPassword ? 'Cancel' : 'Change Password'}
+                                        </button>
+                                        {changingPassword && (
+                                            <div style={{ marginTop: '12px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                                                <div style={{ flex: 1, minWidth: '200px' }}>
+                                                    <label className="form-label">New Password</label>
+                                                    <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="form-input" placeholder="Min 6 characters" />
+                                                </div>
+                                                <div style={{ flex: 1, minWidth: '200px' }}>
+                                                    <label className="form-label">Confirm Password</label>
+                                                    <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="form-input" placeholder="Confirm" />
+                                                </div>
+                                                <button onClick={updatePassword} disabled={updating} className="btn-sm" style={{ alignSelf: 'flex-end' }}>
+                                                    {updating ? '⏳ Updating...' : 'Update'}
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                </>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -2676,7 +2894,7 @@
 
         // ── UPLOAD TAB ──
         function UploadTab() {
-            const { showNotification, loadTutorData } = useTutor();
+            const { showNotification, refreshData } = useTutor();
             const tutorId = sessionStorage.getItem('tutor_id');
             const [title, setTitle] = useState('');
             const [price, setPrice] = useState(30);
@@ -2725,6 +2943,11 @@
             const handleUpload = async () => {
                 if (!title || !price || !level || !subject || !selectedFile) {
                     showNotification('Please fill all required fields and select a PDF', 'error');
+                    return;
+                }
+
+                if (!tutorId) {
+                    showNotification('You must be logged in to upload', 'error');
                     return;
                 }
 
@@ -2816,7 +3039,7 @@
                     if (fileInputRef.current) fileInputRef.current.value = '';
                     if (coverInputRef.current) coverInputRef.current.value = '';
 
-                    loadTutorData(tutorId);
+                    refreshData();
 
                 } catch (e) {
                     console.error('Upload error:', e);
