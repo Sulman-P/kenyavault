@@ -308,6 +308,8 @@
         }
         .fade-in { animation:fadeIn 0.4s ease; }
         @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+        .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 768px) { .chart-grid { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
@@ -641,12 +643,113 @@
             );
         }
 
-        // ── DASHBOARD ──
+        // ── DASHBOARD WITH TWO GRAPHS ──
         function DashboardModule() {
             const { orders, resources, tutors, classes, pendingOrderCount } = useApp();
+            const lineChartRef = useRef(null);
+            const barChartRef = useRef(null);
+            const { darkMode } = useApp();
+
+            // Prepare data for line chart: payments per order (cumulative)
+            const prepareLineData = useCallback(() => {
+                const sorted = [...orders].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+                const labels = sorted.map(o => o.order_ref || o.id.slice(0,6));
+                const data = sorted.map(o => o.total_amount || 0);
+                return { labels, data };
+            }, [orders]);
+
+            // Prepare data for bar chart: resources ordered vs count
+            const prepareBarData = useCallback(() => {
+                const resourceMap = {};
+                orders.forEach(o => {
+                    const title = o.item_title || o.resource_title || 'Unnamed';
+                    resourceMap[title] = (resourceMap[title] || 0) + 1;
+                });
+                const labels = Object.keys(resourceMap);
+                const data = Object.values(resourceMap);
+                return { labels, data };
+            }, [orders]);
+
+            useEffect(() => {
+                if (typeof Chart === 'undefined') return;
+
+                // Line Chart
+                const lineCtx = document.getElementById('lineChart')?.getContext('2d');
+                if (lineCtx) {
+                    if (lineChartRef.current) lineChartRef.current.destroy();
+                    const lineData = prepareLineData();
+                    const isDark = document.documentElement.classList.contains('dark');
+                    lineChartRef.current = new Chart(lineCtx, {
+                        type: 'line',
+                        data: {
+                            labels: lineData.labels.length ? lineData.labels : ['No Orders'],
+                            datasets: [{
+                                label: 'Payment per Order (KES)',
+                                data: lineData.data.length ? lineData.data : [0],
+                                borderColor: '#D4A017',
+                                backgroundColor: isDark ? 'rgba(212,160,23,0.2)' : 'rgba(212,160,23,0.1)',
+                                fill: true,
+                                tension: 0.3,
+                                pointBackgroundColor: '#D4A017',
+                                pointBorderColor: isDark ? '#1f2937' : '#ffffff',
+                                pointBorderWidth: 2,
+                                pointRadius: 4,
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { labels: { color: isDark ? '#e5e7eb' : '#1f2937' } },
+                                tooltip: { callbacks: { label: (ctx) => 'KES ' + ctx.parsed.y.toLocaleString() } }
+                            },
+                            scales: {
+                                y: { beginAtZero: true, ticks: { color: isDark ? '#9ca3af' : '#6b7280', callback: (v) => 'KES ' + v.toLocaleString() } },
+                                x: { ticks: { color: isDark ? '#9ca3af' : '#6b7280', maxRotation: 45, autoSkip: true, maxTicksLimit: 20 } }
+                            }
+                        }
+                    });
+                }
+
+                // Bar Chart
+                const barCtx = document.getElementById('barChart')?.getContext('2d');
+                if (barCtx) {
+                    if (barChartRef.current) barChartRef.current.destroy();
+                    const barData = prepareBarData();
+                    const isDark = document.documentElement.classList.contains('dark');
+                    const colors = ['#D4A017', '#3b82f6', '#16a34a', '#dc2626', '#8b5cf6', '#f59e0b', '#ec4899', '#14b8a6'];
+                    barChartRef.current = new Chart(barCtx, {
+                        type: 'bar',
+                        data: {
+                            labels: barData.labels.length ? barData.labels : ['No Resources'],
+                            datasets: [{
+                                label: 'Orders Count',
+                                data: barData.data.length ? barData.data : [0],
+                                backgroundColor: barData.labels.map((_, i) => colors[i % colors.length]),
+                                borderColor: isDark ? '#1f2937' : '#ffffff',
+                                borderWidth: 1,
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { labels: { color: isDark ? '#e5e7eb' : '#1f2937' } },
+                                tooltip: { callbacks: { label: (ctx) => ctx.parsed.y + ' orders' } }
+                            },
+                            scales: {
+                                y: { beginAtZero: true, ticks: { color: isDark ? '#9ca3af' : '#6b7280', stepSize: 1 } },
+                                x: { ticks: { color: isDark ? '#9ca3af' : '#6b7280', maxRotation: 45, autoSkip: true, maxTicksLimit: 15 } }
+                            }
+                        }
+                    });
+                }
+            }, [orders, darkMode, prepareLineData, prepareBarData]);
+
             const totalRevenue = orders.reduce((s, o) => s + (o.total_amount || 0), 0);
             const activeTutors = tutors.filter(t => t.status === 'active').length;
             const liveClasses = classes.filter(c => c.is_live === true).length;
+
             return (
                 <div className="space-y-6 fade-in">
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -665,6 +768,22 @@
                             </div>
                         ))}
                     </div>
+
+                    <div className="chart-grid">
+                        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                            <h3 className="font-semibold text-gray-800 dark:text-white mb-2">📈 Payments per Order</h3>
+                            <div className="chart-container">
+                                <canvas id="lineChart"></canvas>
+                            </div>
+                        </div>
+                        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                            <h3 className="font-semibold text-gray-800 dark:text-white mb-2">📊 Resources Ordered vs Count</h3>
+                            <div className="chart-container">
+                                <canvas id="barChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
                             <div className="flex items-center justify-between"><span className="text-sm text-gray-500 dark:text-gray-400">Total Orders</span><span className="text-2xl font-bold text-blue-600">{orders.length}</span></div>
