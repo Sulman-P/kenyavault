@@ -1246,6 +1246,7 @@
             const [debugInfo, setDebugInfo] = useState([]);
             const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
             const [payoutRequests, setPayoutRequests] = useState([]);
+            const [payoutsLoading, setPayoutsLoading] = useState(false);
 
             useEffect(() => {
                 localStorage.setItem('tutor-dark-mode', darkMode);
@@ -1363,7 +1364,7 @@
                         addDebug('❌ Error loading classes: ' + e.message, 'error');
                     }
 
-                    // Load payout requests
+                    // Load payout requests - handle 404 gracefully
                     try {
                         const pRes = await fetch(`${SUPABASE_URL}/rest/v1/tutor_payouts?tutor_id=eq.${tutorId}&select=*&order=created_at.desc`, {
                             headers: { 
@@ -1376,11 +1377,31 @@
                             const data = await pRes.json();
                             setPayoutRequests(data || []);
                             addDebug(`✅ Loaded ${data.length} payout requests`, 'success');
+                        } else if (pRes.status === 404) {
+                            // Table doesn't exist yet - that's fine, we'll use localStorage fallback
+                            addDebug('ℹ️ Payouts table not found, using localStorage fallback', 'info');
+                            // Try to load from localStorage
+                            const savedPayouts = localStorage.getItem('kv_tutor_payouts');
+                            if (savedPayouts) {
+                                try {
+                                    const parsed = JSON.parse(savedPayouts);
+                                    setPayoutRequests(parsed || []);
+                                    addDebug(`✅ Loaded ${parsed.length} payout requests from localStorage`, 'success');
+                                } catch (e) {}
+                            }
                         } else {
                             addDebug('❌ Failed to load payout requests: ' + pRes.status, 'error');
                         }
                     } catch (e) { 
                         addDebug('❌ Error loading payout requests: ' + e.message, 'error');
+                        // Fallback to localStorage
+                        const savedPayouts = localStorage.getItem('kv_tutor_payouts');
+                        if (savedPayouts) {
+                            try {
+                                const parsed = JSON.parse(savedPayouts);
+                                setPayoutRequests(parsed || []);
+                            } catch (e) {}
+                        }
                     }
 
                 } catch (e) { 
@@ -1453,23 +1474,39 @@
                         created_at: new Date().toISOString()
                     };
                     
-                    const response = await fetch(`${SUPABASE_URL}/rest/v1/tutor_payouts`, {
-                        method: 'POST',
-                        headers: {
-                            'apikey': SUPABASE_ANON_KEY,
-                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                            'Content-Type': 'application/json',
-                            'Prefer': 'return=representation'
-                        },
-                        body: JSON.stringify(payoutData)
-                    });
-                    
-                    if (response.ok) {
-                        const data = await response.json();
-                        setPayoutRequests(prev => [data[0], ...prev]);
-                        return data[0];
+                    // Try to save to Supabase
+                    try {
+                        const response = await fetch(`${SUPABASE_URL}/rest/v1/tutor_payouts`, {
+                            method: 'POST',
+                            headers: {
+                                'apikey': SUPABASE_ANON_KEY,
+                                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                                'Content-Type': 'application/json',
+                                'Prefer': 'return=representation'
+                            },
+                            body: JSON.stringify(payoutData)
+                        });
+                        
+                        if (response.ok) {
+                            const data = await response.json();
+                            const newPayout = data[0] || data;
+                            setPayoutRequests(prev => [newPayout, ...prev]);
+                            // Save to localStorage as backup
+                            const saved = [...payoutRequests, newPayout];
+                            localStorage.setItem('kv_tutor_payouts', JSON.stringify(saved));
+                            return newPayout;
+                        }
+                    } catch (e) {
+                        console.warn('⚠️ Could not save payout to Supabase, saving to localStorage:', e.message);
                     }
-                    return null;
+                    
+                    // Fallback: Save to localStorage
+                    const newPayout = { ...payoutData, id: 'local_' + Date.now() };
+                    const updated = [newPayout, ...payoutRequests];
+                    setPayoutRequests(updated);
+                    localStorage.setItem('kv_tutor_payouts', JSON.stringify(updated));
+                    return newPayout;
+                    
                 } catch (e) {
                     console.error('Payout request error:', e);
                     return null;
@@ -1496,6 +1533,7 @@
                     isMobile,
                     calculateEarnings,
                     requestPayout,
+                    payoutsLoading,
                 }}>
                     {children}
                 </TutorContext.Provider>
@@ -2339,7 +2377,7 @@
 
         // ── EARNINGS TAB ──
         function EarningsTab() {
-            const { orders, tutor, showNotification, refreshData, calculateEarnings, requestPayout } = useTutor();
+            const { orders, tutor, showNotification, refreshData, calculateEarnings, requestPayout, payoutsLoading } = useTutor();
 
             const earnings = calculateEarnings();
             const [payoutAmount, setPayoutAmount] = useState('');
@@ -2437,7 +2475,7 @@
                                 />
                                 <button 
                                     onClick={handlePayoutRequest} 
-                                    disabled={requesting} 
+                                    disabled={requesting || payoutsLoading} 
                                     className="btn-gold" 
                                     style={{ width: 'auto', padding: '12px 24px' }}
                                 >
@@ -2453,7 +2491,7 @@
                     {earnings.pending >= 500 && !tutor?.mpesa_number && (
                         <div style={{ padding: '16px', background: '#fef3c7', borderRadius: '8px', border: '1px solid #fcd34d', marginBottom: '16px' }}>
                             <p style={{ fontSize: '0.85rem', color: '#92400e' }}>
-                                ⚠️ Please set your M-PESA number in <a href="#" onClick={() => { /* Navigate to profile */ }} style={{ color: '#D4A017', fontWeight: 600 }}>Profile Settings</a> to request payouts.
+                                ⚠️ Please set your M-PESA number in <a href="#" onClick={() => { setActiveTab('profile'); }} style={{ color: '#D4A017', fontWeight: 600 }}>Profile Settings</a> to request payouts.
                             </p>
                         </div>
                     )}
