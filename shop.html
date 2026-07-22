@@ -4235,139 +4235,298 @@
     }
 
     // ── CHECKOUT CART ──
-    function checkoutCart() {
-        if (cart.length === 0) {
-            showToast('⚠️', 'Your cart is empty', 'error');
-            return;
-        }
-
-        const total = getCartTotal();
-        if (total <= 0) {
-            // Free cart items - handle separately
-            handleFreeCartCheckout();
-            return;
-        }
-
-        // Build a multi-item checkout
-        const cartItems = cart.map(item => ({
-            id: item.id,
-            title: item.title,
-            price: item.price,
-            quantity: item.quantity
-        }));
-
-        // Open checkout with cart total
-        currentProduct = {
-            id: 'cart_' + Date.now(),
-            title: `${cart.length} item${cart.length > 1 ? 's' : ''} in cart`,
-            price: total,
-            is_cart: true
-        };
-
-        // Show checkout modal
-        openCheckoutForCart();
+function checkoutCart() {
+    if (cart.length === 0) {
+        showToast('⚠️', 'Your cart is empty', 'error');
+        return;
     }
 
-    function openCheckoutForCart() {
-        const total = getCartTotal();
-        const itemCount = getCartItemCount();
+    const total = getCartTotal();
+    if (total <= 0) {
+        handleFreeCartCheckout();
+        return;
+    }
 
-        customerNameInput.value = '';
-        customerNameInput.classList.remove('error');
-        phoneInput.value = '';
-        phoneInput.classList.remove('error');
-        mpesaCodeInput.value = '';
-        mpesaCodeInput.classList.remove('error');
-        mpesaVerificationBox.classList.remove('visible');
-        payPrimaryBtn.style.display = 'flex';
-        verifyOrderBtn.classList.remove('loading');
-        verifyOrderBtn.disabled = false;
-        payPrimaryBtn.classList.remove('loading');
-        payPrimaryBtn.disabled = false;
+    // Build a multi-item checkout
+    const cartItems = cart.map(item => ({
+        id: item.id,
+        title: item.title,
+        price: item.price,
+        quantity: item.quantity
+    }));
 
-        checkoutItemTitle.textContent = `${itemCount} item${itemCount > 1 ? 's' : ''} in cart`;
-        checkoutTotal.textContent = `KES ${total.toLocaleString()}`;
+    // Set the product for MegaPay
+    const cartTitle = `${cart.length} item${cart.length > 1 ? 's' : ''} in cart`;
+    currentProduct = {
+        id: 'cart_' + Date.now(),
+        title: cartTitle,
+        price: total,
+        is_cart: true,
+        cart_items: cartItems
+    };
+
+    // Open checkout modal
+    openCheckoutForCart();
+}
+
+function openCheckoutForCart() {
+    const total = getCartTotal();
+    const itemCount = getCartItemCount();
+
+    customerNameInput.value = '';
+    customerNameInput.classList.remove('error');
+    phoneInput.value = '';
+    phoneInput.classList.remove('error');
+    mpesaCodeInput.value = '';
+    mpesaCodeInput.classList.remove('error');
+    mpesaVerificationBox.classList.remove('visible');
+    payPrimaryBtn.style.display = 'flex';
+    verifyOrderBtn.classList.remove('loading');
+    verifyOrderBtn.disabled = false;
+    payPrimaryBtn.classList.remove('loading');
+    payPrimaryBtn.disabled = false;
+
+    checkoutItemTitle.textContent = `${itemCount} item${itemCount > 1 ? 's' : ''} in cart`;
+    checkoutTotal.textContent = `KES ${total.toLocaleString()}`;
+
+    const verifyLabel = document.querySelector('.verify-label');
+    const verifySub = document.querySelector('.verify-sub');
+    const verifyInput = document.querySelector('.verify-input');
+    const verifyBtn = document.querySelector('.btn-verify-order');
+
+    mpesaVerificationBox.classList.add('visible');
+    payPrimaryBtn.style.display = 'flex';
+    if (verifyLabel) verifyLabel.textContent = '💰 Secure M-Pesa STK Push';
+    if (verifySub) {
+        verifySub.innerHTML = `
+            <strong>🔒 Secure Payment via M-Pesa STK Push</strong><br>
+            After clicking "Buy Now", you'll receive an M-Pesa PIN prompt on your phone.<br><br>
+            <strong>💡 How it works:</strong><br>
+            1. Click "Buy Now" below<br>
+            2. Enter your M-Pesa PIN on your phone<br>
+            3. Payment is verified instantly<br>
+            4. Your downloads start automatically<br><br>
+            <span style="font-size:0.85rem;color:#6b7280;">✅ No manual code entry required. Fully automated.</span>
+        `;
+    }
+    if (verifyInput) verifyInput.style.display = 'none';
+    if (verifyBtn) {
+        verifyBtn.style.display = 'none';
+        verifyBtn.innerHTML = `<span class="btn-text">⏳ Waiting for payment...</span><span class="btn-loading-text">⏳ Checking...</span>`;
+        verifyBtn.disabled = true;
+    }
+    payPrimaryBtn.style.display = 'flex';
+
+    checkoutModal.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    setTimeout(() => customerNameInput.focus(), 300);
+}
+
+// ── CREATE CART ORDER ──
+async function createCartOrder(customerName, phone) {
+    const orderRef = generateOrderRef();
+    const sessionId = getOrCreateSessionId();
+    const total = getCartTotal();
+    const itemCount = getCartItemCount();
+    const cartItems = cart.map(item => ({
+        id: item.id,
+        title: item.title,
+        price: item.price,
+        quantity: item.quantity
+    }));
+
+    const orderData = {
+        order_ref: orderRef,
+        customer_name: customerName,
+        phone: phone,
+        session_id: sessionId,
+        item_title: `${itemCount} item${itemCount > 1 ? 's' : ''} in cart`,
+        item_price: total,
+        total_amount: total,
+        status: 'pending',
+        payment_status: 'pending',
+        cart_items: cartItems,
+        ip_address: await getClientIP(),
+        user_agent: navigator.userAgent,
+        created_at: new Date().toISOString()
+    };
+
+    console.log('📝 Creating cart order:', orderData);
+
+    try {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
+            method: 'POST',
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=representation'
+            },
+            body: JSON.stringify(orderData)
+        });
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ Order creation error:', errorText);
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+        const result = await response.json();
+        const createdOrder = result[0] || result;
+        console.log('✅ Cart order created:', createdOrder);
+        return { orderRef, orderId: createdOrder.id };
+    } catch (error) {
+        console.error('❌ Order creation failed:', error);
+        throw error;
+    }
+}
+
+// ── MODIFIED INITIATE PAYMENT FOR CART ──
+async function initiatePayment() {
+    if (isProcessing) return;
+    const phone = phoneInput.value.trim().replace(/\s/g, '');
+    const customerName = customerNameInput.value.trim();
+
+    if (!customerName) {
+        customerNameInput.classList.add('error');
+        showToast('⚠️', 'Please enter your full name', 'error');
+        customerNameInput.focus();
+        return;
+    }
+    customerNameInput.classList.remove('error');
+
+    if (!phone || phone.length < 9) {
+        phoneInput.classList.add('error');
+        showToast('⚠️', 'Please enter a valid Safaricom phone number', 'error');
+        phoneInput.focus();
+        return;
+    }
+    phoneInput.classList.remove('error');
+
+    let formattedPhone = phone;
+    if (phone.startsWith('0')) formattedPhone = '254' + phone.substring(1);
+    if (phone.startsWith('+')) formattedPhone = phone.substring(1);
+    if (phone.startsWith('254') && phone.length === 12) formattedPhone = phone;
+    if (phone.length === 10 && phone.startsWith('07')) formattedPhone = '254' + phone.substring(1);
+    if (phone.length === 9 && phone.startsWith('7')) formattedPhone = '254' + phone;
+
+    if (!/^254[0-9]{9}$/.test(formattedPhone)) {
+        phoneInput.classList.add('error');
+        showToast('⚠️', 'Invalid phone number. Use format: 07XX XXX XXX', 'error');
+        phoneInput.focus();
+        return;
+    }
+
+    if (!currentProduct) {
+        showToast('⚠️', 'No product selected', 'error');
+        return;
+    }
+
+    isProcessing = true;
+    payPrimaryBtn.disabled = true;
+    payPrimaryBtn.classList.add('loading');
+
+    try {
+        let orderRef, orderId;
+        
+        // Check if this is a cart checkout
+        if (currentProduct.is_cart) {
+            const result = await createCartOrder(customerName, formattedPhone);
+            orderRef = result.orderRef;
+            orderId = result.orderId;
+        } else {
+            const result = await createOrder(currentProduct, customerName, formattedPhone);
+            orderRef = result.orderRef;
+            orderId = result.orderId;
+        }
+        
+        currentOrderRef = orderRef;
+        currentOrderId = orderId;
+
+        localStorage.setItem('pendingOrderRef', orderRef);
+        localStorage.setItem('pendingOrderId', orderId);
+        localStorage.setItem('pendingCustomerPhone', formattedPhone);
+
+        const siteUrl = window.location.origin;
+        const webhookUrl = `${SUPABASE_URL}/functions/v1/mpesa-webhook`;
+        const callbackUrl = encodeURIComponent(webhookUrl);
+        const returnUrl = encodeURIComponent(`${siteUrl}/shop.html?payment=callback&order_ref=${orderRef}`);
+
+        const metadata = JSON.stringify({
+            order_ref: orderRef,
+            order_id: orderId,
+            product_title: currentProduct.title || 'Educational Resources',
+            customer_name: customerName,
+            customer_phone: formattedPhone,
+            amount: currentProduct.price || 0,
+            currency: 'KES',
+            payment_method: 'stk_push',
+            is_cart: currentProduct.is_cart || false
+        });
+
+        const payUrl = `${MEGAPAY_PAYMENT_URL}?phone=${encodeURIComponent(formattedPhone)}&amount=${encodeURIComponent(currentProduct.price || 0)}&description=${encodeURIComponent(currentProduct.title || 'Educational Resources')}&callback=${callbackUrl}&return_url=${returnUrl}&metadata=${encodeURIComponent(metadata)}`;
+
+        console.log('🔗 Opening MegaPay STK Push:', payUrl);
+        console.log('📡 Webhook URL:', webhookUrl);
+
+        megapayWindow = window.open(payUrl, '_blank', 'width=500,height=700,scrollbars=yes');
+
+        if (!megapayWindow) {
+            showToast('⚠️', 'Please allow popups to complete payment', 'error');
+            window.location.href = payUrl;
+        } else {
+            showToast('📱', 'MegaPay opened. Check your phone for M-Pesa PIN prompt.', 'success');
+        }
+
+        mpesaVerificationBox.classList.add('visible');
+        payPrimaryBtn.style.display = 'none';
 
         const verifyLabel = document.querySelector('.verify-label');
         const verifySub = document.querySelector('.verify-sub');
         const verifyInput = document.querySelector('.verify-input');
         const verifyBtn = document.querySelector('.btn-verify-order');
 
-        mpesaVerificationBox.classList.add('visible');
-        payPrimaryBtn.style.display = 'flex';
-        if (verifyLabel) verifyLabel.textContent = '💰 Secure M-Pesa STK Push';
+        if (verifyLabel) verifyLabel.textContent = '📱 STK Push Initiated';
         if (verifySub) {
             verifySub.innerHTML = `
-                <strong>🔒 Secure Payment via M-Pesa STK Push</strong><br>
-                After clicking "Buy Now", you'll receive an M-Pesa PIN prompt on your phone.<br><br>
-                <strong>💡 How it works:</strong><br>
-                1. Click "Buy Now" below<br>
-                2. Enter your M-Pesa PIN on your phone<br>
-                3. Payment is verified instantly<br>
-                4. Your downloads start automatically<br><br>
-                <span style="font-size:0.85rem;color:#6b7280;">✅ No manual code entry required. Fully automated.</span>
+                <strong>🔔 M-Pesa PIN prompt sent to your phone!</strong><br>
+                Check your phone for the M-Pesa STK Push prompt.<br><br>
+                <strong>💡 Instructions:</strong><br>
+                1. Enter your M-Pesa PIN on your phone<br>
+                2. Confirm the payment<br>
+                3. Your download will start automatically<br><br>
+                <div style="display:flex;align-items:center;gap:10px;justify-content:center;margin-top:8px;">
+                    <span class="spinner" style="display:inline-block;width:20px;height:20px;"></span>
+                    <span style="color:#D4A017;font-weight:600;">Waiting for STK Push confirmation...</span>
+                </div>
+                <br>
+                <span style="font-size:0.8rem;color:#6b7280;">⏳ This usually takes 30-60 seconds</span>
+                <br><br>
+                <button onclick="checkOrderPaymentStatus()" style="padding:10px 20px;background:#D4A017;color:#0a1a3a;border:none;border-radius:8px;font-weight:700;cursor:pointer;">
+                    🔄 Check Payment Status
+                </button>
             `;
         }
         if (verifyInput) verifyInput.style.display = 'none';
         if (verifyBtn) {
-            verifyBtn.style.display = 'none';
-            verifyBtn.innerHTML = `<span class="btn-text">⏳ Waiting for payment...</span><span class="btn-loading-text">⏳ Checking...</span>`;
+            verifyBtn.innerHTML = `<span class="btn-text">⏳ Waiting for STK Push...</span><span class="btn-loading-text">⏳ Checking...</span>`;
             verifyBtn.disabled = true;
         }
-        payPrimaryBtn.style.display = 'flex';
 
-        checkoutModal.classList.add('open');
-        document.body.style.overflow = 'hidden';
-        setTimeout(() => customerNameInput.focus(), 300);
+        startPaymentPolling();
+        setTimeout(() => checkOrderPaymentStatus(), 10000);
+        setTimeout(() => checkOrderPaymentStatus(), 30000);
+        checkPaymentCallback();
+
+    } catch (error) {
+        console.error('❌ Payment initiation failed:', error);
+        showToast('❌', 'Payment initiation failed: ' + error.message, 'error');
+        if (megapayWindow) { megapayWindow.close(); megapayWindow = null; }
+        stopPaymentPolling();
+    } finally {
+        isProcessing = false;
+        payPrimaryBtn.disabled = false;
+        payPrimaryBtn.classList.remove('loading');
     }
-
-    async function handleFreeCartCheckout() {
-        const phone = phoneInput.value.trim().replace(/\s/g, '');
-        const customerName = customerNameInput.value.trim();
-
-        if (!customerName) {
-            customerNameInput.classList.add('error');
-            showToast('⚠️', 'Please enter your full name', 'error');
-            customerNameInput.focus();
-            return;
-        }
-        customerNameInput.classList.remove('error');
-
-        if (!phone || phone.length < 9) {
-            phoneInput.classList.add('error');
-            showToast('⚠️', 'Please enter a valid phone number', 'error');
-            phoneInput.focus();
-            return;
-        }
-        phoneInput.classList.remove('error');
-
-        showToast('⏳', 'Processing free downloads...', 'info');
-        
-        let successCount = 0;
-        for (const item of cart) {
-            try {
-                const product = allResources.find(r => r.id === item.id);
-                if (product) {
-                    const { orderRef, orderId } = await createOrder(product, customerName, phone);
-                    await downloadFreeResource(product);
-                    successCount++;
-                }
-            } catch (e) {
-                console.error('Failed to download:', e);
-            }
-        }
-
-        if (successCount > 0) {
-            showToast('✅', `Downloaded ${successCount} free resource${successCount > 1 ? 's' : ''}!`, 'success');
-            cart = [];
-            saveCart();
-            updateCartUI();
-            setTimeout(() => closeCheckoutModal(), 2000);
-        } else {
-            showToast('⚠️', 'Failed to download resources', 'error');
-        }
-    }
-
+}
     // ── GET SUBJECT EMOJI ──
     function getSubjectEmoji(subject) {
         const map = {
