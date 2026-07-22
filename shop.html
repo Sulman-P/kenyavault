@@ -4322,7 +4322,7 @@ function openCheckoutForCart() {
     setTimeout(() => customerNameInput.focus(), 300);
 }
 
-// ── CREATE CART ORDER ──
+/// ── CREATE CART ORDER ──
 async function createCartOrder(customerName, phone) {
     const orderRef = generateOrderRef();
     const sessionId = getOrCreateSessionId();
@@ -4332,20 +4332,28 @@ async function createCartOrder(customerName, phone) {
         id: item.id,
         title: item.title,
         price: item.price,
-        quantity: item.quantity
+        quantity: item.quantity,
+        subject: item.subject || 'General'
     }));
+
+    // Build a readable items string for the item_title column
+    const itemsList = cart.map(item => 
+        `${item.title} (x${item.quantity})`
+    ).join(', ');
 
     const orderData = {
         order_ref: orderRef,
         customer_name: customerName,
         phone: phone,
         session_id: sessionId,
-        item_title: `${itemCount} item${itemCount > 1 ? 's' : ''} in cart`,
+        item_title: `${itemCount} item${itemCount > 1 ? 's' : ''}: ${itemsList.substring(0, 200)}`,
         item_price: total,
         total_amount: total,
         status: 'pending',
         payment_status: 'pending',
-        cart_items: cartItems,
+        // Store cart items as JSON in a text field (use description or notes if available)
+        description: JSON.stringify(cartItems),
+        notes: `Cart items: ${cartItems.length} items. Total: KES ${total}`,
         ip_address: await getClientIP(),
         user_agent: navigator.userAgent,
         created_at: new Date().toISOString()
@@ -4379,7 +4387,77 @@ async function createCartOrder(customerName, phone) {
     }
 }
 
-// ── MODIFIED INITIATE PAYMENT FOR CART ──
+// ── CREATE SINGLE ITEM ORDER ──
+async function createOrder(product, customerName, phone) {
+    const orderRef = generateOrderRef();
+    const sessionId = getOrCreateSessionId();
+    const filePath = product.file_path || product.file_url || '';
+    const fileName = filePath ? filePath.split('/').pop() : `${product.title || 'resource'}.pdf`;
+    const productId = product.id || null;
+
+    let cleanFilePath = filePath;
+    for (const bucket of AVAILABLE_BUCKETS) {
+        if (cleanFilePath.startsWith(`${bucket}/`)) {
+            cleanFilePath = cleanFilePath.replace(`${bucket}/`, '');
+            break;
+        }
+    }
+    cleanFilePath = cleanFilePath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
+    cleanFilePath = cleanFilePath.replace(/^\/+/, '');
+    if (cleanFilePath && !cleanFilePath.startsWith('resources/')) {
+        cleanFilePath = `resources/${cleanFilePath}`;
+    }
+
+    const isFree = (product.price === 0 || product.price === null || product.price === undefined) || 
+                   product.resource_type === 'free';
+
+    const orderData = {
+        order_ref: orderRef,
+        customer_name: customerName,
+        phone: phone,
+        session_id: sessionId,
+        item_title: product.title || 'Resource',
+        item_price: product.price || 0,
+        total_amount: product.price || 0,
+        status: isFree ? 'completed' : 'pending',
+        payment_status: isFree ? 'completed' : 'pending',
+        resource_id: productId,
+        resource_file_path: cleanFilePath,
+        resource_file_name: fileName,
+        ip_address: await getClientIP(),
+        user_agent: navigator.userAgent,
+        created_at: new Date().toISOString()
+    };
+
+    console.log('📝 Creating order with file path:', cleanFilePath);
+
+    try {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
+            method: 'POST',
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=representation'
+            },
+            body: JSON.stringify(orderData)
+        });
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ Order creation error:', errorText);
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+        const result = await response.json();
+        const createdOrder = result[0] || result;
+        console.log('✅ Order created:', createdOrder);
+        return { orderRef, orderId: createdOrder.id };
+    } catch (error) {
+        console.error('❌ Order creation failed:', error);
+        throw error;
+    }
+}
+
+// ── MODIFIED INITIATE PAYMENT ──
 async function initiatePayment() {
     if (isProcessing) return;
     const phone = phoneInput.value.trim().replace(/\s/g, '');
