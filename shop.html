@@ -2865,15 +2865,17 @@ function generateOrderRef() {
         }
     }
 
-    // ── CREATE ORDERS FOR AN ENTIRE CART ──
+        // ── UPDATED CART ORDER CREATOR ──
     async function createCartOrders(items, customerName, phone) {
         const orderIds = [];
         let totalAmount = 0;
         
-        // This acts as the uniform transaction reference for your front-end payment window tracking
-        const globalPaymentTrackingRef = `PAY-${Date.now()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+        // This is the clean, uniform reference passed to MegaPay/M-Pesa
+        const baseTimestamp = Date.now();
+        const baseSalt = Math.random().toString(36).substring(2, 7).toUpperCase();
+        const parentOrderRef = `ORD-${baseTimestamp}-${baseSalt}`; 
         
-        console.log(`🚀 Executing batched inserts for ${items.length} item(s)...`);
+        console.log(`🚀 Executing batched inserts for ${items.length} item(s) tied to base: ${parentOrderRef}`);
 
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
@@ -2886,16 +2888,60 @@ function generateOrderRef() {
                 file_url: item.file_url
             };
             
-            // Build an instantly dynamic random reference on each cycle iteration
-            const dynamicItemRef = createGuaranteedUniqueRef(i);
+            // Format: ORD-1718293021-XYZ-001, ORD-1718293021-XYZ-002
+            // This satisfies the unique constraint while keeping the base reference fully intact at the front
+            const sequentialRef = `${parentOrderRef}-${String(i + 1).padStart(3, '0')}`;
             
-            const { orderId } = await createOrder(productStub, customerName, phone, dynamicItemRef, item.qty);
+            const { orderId } = await createOrder(productStub, customerName, phone, sequentialRef, item.qty);
             orderIds.push(orderId);
             totalAmount += (item.price || 0) * item.qty;
         }
         
-        // Return globalPaymentTrackingRef to pass cleanly down to line 3624 (initiatePayment)
-        return { orderRef: globalPaymentTrackingRef, orderIds, totalAmount };
+        // CRITICAL: We return the parentOrderRef here so MegaPay triggers tracking on the base string
+        return { orderRef: parentOrderRef, orderIds, totalAmount };
+    }
+
+    // ── FIX FOR THE POLLING / CHECK FUNCTION (Around Line 3414) ──
+    // Locate your function that prints "🔍 Checking order:" and replace its inner query block with this:
+    async function checkOrderStatus(orderRefToVerify) {
+        console.log(`🔍 Checking order matching base or string: ${orderRefToVerify}`);
+        
+        try {
+            // Instead of an exact match (=), we look for any row that starts with or contains the reference string
+            // This catches "ORD-20260723-XXXXX-001" perfectly when tracking "ORD-20260723-XXXXX"
+            const response = await fetch(
+                `${SUPABASE_URL}/rest/v1/orders?order_ref=ilike.*${orderRefToVerify}*&select=*`, {
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            
+            const orders = await response.json();
+            
+            if (!orders || orders.length === 0) {
+                console.warn('⚠️ Order not found in database yet');
+                return null; 
+            }
+
+            // Check if any item in the matched transaction block has been marked completed by MegaPay
+            const completedOrder = orders.find(o => o.status === 'completed' || o.payment_status === 'completed');
+            
+            if (completedOrder) {
+                console.log('✅ Payment verified successfully via partial matching string!');
+                return completedOrder;
+            }
+            
+            console.log('⏳ Order found, but status is still pending...');
+            return orders[0]; // Return the first record if still pending
+
+        } catch (error) {
+            console.error('❌ Status verification failed:', error);
+            return null;
+        }
     }
 
 
@@ -3610,6 +3656,8 @@ function generateOrderRef() {
                 const { orderRef, orderIds } = await createCartOrders(checkoutCartItems, customerName, formattedPhone);
                 currentOrderRef = orderRef;
                 checkoutOrderIds = orderIds;
+                
+                // Triggers structural batch lookup across child item rows 
                 await downloadAllForOrderRef(orderRef, orderIds);
                 showSuccess(orderRef, formattedPhone);
                 clearCart();
@@ -3631,7 +3679,7 @@ function generateOrderRef() {
 
             if (checkoutMode === 'cart') {
                 const result = await createCartOrders(checkoutCartItems, customerName, formattedPhone);
-                orderRef = result.orderRef;
+                orderRef = result.orderRef; // The root base reference (e.g. ORD-1718293021-XYZ)
                 checkoutOrderIds = result.orderIds;
                 orderId = result.orderIds[0];
                 totalAmount = result.totalAmount;
@@ -3660,6 +3708,7 @@ function generateOrderRef() {
             const callbackUrl = encodeURIComponent(webhookUrl);
             const returnUrl = encodeURIComponent(`${siteUrl}/shop.html?payment=callback&order_ref=${orderRef}`);
 
+            // Embed complete tracking configuration arrays down to MegaPay callback hooks
             const metadata = JSON.stringify({
                 order_ref: orderRef,
                 order_id: orderId,
@@ -3723,14 +3772,9 @@ function generateOrderRef() {
             startPaymentPolling();
             setTimeout(() => checkOrderPaymentStatus(), 10000);
             setTimeout(() => checkOrderPaymentStatus(), 30000);
-            checkPaymentCallback();
-
         } catch (error) {
             console.error('❌ Payment initiation failed:', error);
-            showToast('❌', 'Payment initiation failed: ' + error.message, 'error');
-            if (megapayWindow) { megapayWindow.close(); megapayWindow = null; }
-            stopPaymentPolling();
-        } finally {
+            showToast('❌', 'Failed to initiate payment: ' + error.message, 'error');
             isProcessing = false;
             payPrimaryBtn.disabled = false;
             payPrimaryBtn.classList.remove('loading');
