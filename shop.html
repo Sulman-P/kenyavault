@@ -3192,28 +3192,99 @@
         }
     }
 
-    // ── CREATE ORDERS FOR AN ENTIRE CART ──
-    async function createCartOrders(items, customerName, phone) {
-        const baseRef = generateOrderRef();
-        const orderIds = [];
-        const totalAmount = items.reduce((sum, item) => sum + (item.price || 0) * item.qty, 0);
-        
-        for (const item of items) {
-            const productStub = {
-                id: item.id,
-                title: item.title,
-                price: item.price,
-                resource_type: item.resource_type,
-                file_path: item.file_path,
-                file_url: item.file_url
-            };
-            
-            const { orderId } = await createOrder(productStub, customerName, phone);
-            orderIds.push(orderId);
-        }
-        return { orderRef: baseRef, orderIds, totalAmount };
-    }
+    // ── CREATE ORDER (SINGLE ORDER WITH CART ITEMS) ──
+async function createCartOrder(items, customerName, phone, retryCount = 0) {
+    const maxRetries = 3;
+    const orderRef = generateOrderRef();
+    const sessionId = getOrCreateSessionId();
+    
+    // Calculate total amount
+    const totalAmount = items.reduce((sum, item) => sum + (item.price || 0) * item.qty, 0);
+    const itemCount = items.reduce((sum, item) => sum + item.qty, 0);
+    
+    // Prepare cart items for storage as JSON
+    const cartItems = items.map(item => ({
+        id: item.id,
+        title: item.title,
+        price: item.price,
+        quantity: item.qty,
+        resource_type: item.resource_type || 'digital',
+        level: item.level || '',
+        file_path: item.file_path || '',
+        file_url: item.file_url || ''
+    }));
 
+    // Build a summary for the item_title
+    const itemsList = items.map(item => 
+        `${item.title} (x${item.qty})`
+    ).join(', ');
+    const summary = `${itemCount} item${itemCount > 1 ? 's' : ''}: ${itemsList.substring(0, 200)}`;
+
+    // Determine if all items are free
+    const allFree = totalAmount === 0;
+
+    // Store the base reference for all items
+    const baseOrderRef = orderRef;
+
+    const orderData = {
+        order_ref: orderRef,
+        customer_name: customerName,
+        phone: phone,
+        session_id: sessionId,
+        item_title: summary,
+        item_price: totalAmount,
+        total_amount: totalAmount,
+        cart_total: totalAmount,
+        item_count: itemCount,
+        cart_items: cartItems,
+        description: `Cart purchase: ${itemCount} items. Total: KES ${totalAmount}`,
+        status: allFree ? 'completed' : 'pending',
+        payment_status: allFree ? 'completed' : 'pending',
+        payment_method: allFree ? 'free' : 'stk_push',
+        ip_address: await getClientIP(),
+        user_agent: navigator.userAgent,
+        created_at: new Date().toISOString(),
+        // Store the base reference for grouping
+        base_order_ref: baseOrderRef
+    };
+
+    console.log('📝 Creating cart order with order_ref:', orderRef);
+    console.log('📦 Cart items:', cartItems.length);
+    console.log('💰 Total amount:', totalAmount);
+    console.log('🔗 Base order ref:', baseOrderRef);
+
+    try {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
+            method: 'POST',
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=representation'
+            },
+            body: JSON.stringify(orderData)
+        });
+        
+        if (response.status === 409 && retryCount < maxRetries) {
+            console.log(`⚠️ Duplicate order_ref detected. Retrying... (${retryCount + 1}/${maxRetries})`);
+            return createCartOrder(items, customerName, phone, retryCount + 1);
+        }
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ Order creation error:', errorText);
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+        
+        const result = await response.json();
+        const createdOrder = result[0] || result;
+        console.log('✅ Cart order created:', createdOrder);
+        return { orderRef, orderId: createdOrder.id, baseOrderRef };
+    } catch (error) {
+        console.error('❌ Cart order creation failed:', error);
+        throw error;
+    }
+}
     // ── GENERATE PUBLIC URL ──
     async function generatePublicUrl(filePath, bucketNames = AVAILABLE_BUCKETS) {
         if (!filePath) {
@@ -3446,138 +3517,162 @@
         return successCount;
     }
 
-    // ── CHECK ORDER PAYMENT STATUS (UPDATED FOR CART) ──
-    async function checkOrderPaymentStatus() {
-        if (!currentOrderRef && !currentOrderId) {
-            console.log('⚠️ No order to check');
+    // ── CHECK ORDER PAYMENT STATUS (FIXED FOR CART WITH SUFFIXES) ──
+async function checkOrderPaymentStatus() {
+    if (!currentOrderRef && !currentOrderId) {
+        console.log('⚠️ No order to check');
+        return;
+    }
+    try {
+        console.log(`🔍 Checking order: ${currentOrderRef || currentOrderId}`);
+        
+        let orders = [];
+        
+        // First try exact match
+        let query = `${SUPABASE_URL}/rest/v1/orders?select=id,order_ref,payment_status,resource_file_path,delivery_token,mpesa_transaction_id,file_delivered,total_amount,cart_items,item_count`;
+        
+        if (checkoutMode === 'cart' && currentOrderRef) {
+            // For cart, we need to find all orders that start with the base reference
+            console.log('🔍 Searching for cart orders with base ref:', currentOrderRef);
+            
+            // Strategy 1: Try to find orders that start with the base reference using pattern matching
+            // Supabase doesn't support LIKE with REST API directly, so we'll use a workaround
+            // Fetch all recent orders and filter client-side
+            console.log('🔄 Fetching all recent orders for filtering...');
+            const allRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?select=id,order_ref,payment_status,resource_file_path,delivery_token,mpesa_transaction_id,file_delivered,total_amount,cart_items,item_count&order=created_at.desc&limit=100`, {
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                }
+            });
+            
+            if (allRes.ok) {
+                const allOrders = await allRes.json();
+                // Filter orders that start with the base reference
+                // Also check if the order_ref matches exactly (for single orders)
+                orders = allOrders.filter(o => {
+                    if (!o.order_ref) return false;
+                    // Check if order_ref starts with the base reference
+                    // OR if the base reference is part of the order_ref (for suffix variations)
+                    return o.order_ref === currentOrderRef || 
+                           o.order_ref.startsWith(currentOrderRef + '-') ||
+                           o.order_ref.includes(currentOrderRef);
+                });
+                console.log('📊 Filtered cart orders:', orders.length);
+            }
+        } else if (currentOrderId) {
+            const res = await fetch(`${query}&id=eq.${currentOrderId}`, {
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                }
+            });
+            if (res.ok) {
+                orders = await res.json();
+            }
+        } else if (currentOrderRef) {
+            // Try exact match first
+            const exactRes = await fetch(`${query}&order_ref=eq.${currentOrderRef}`, {
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                }
+            });
+            if (exactRes.ok) {
+                const exactOrders = await exactRes.json();
+                if (exactOrders.length > 0) {
+                    orders = exactOrders;
+                    console.log('✅ Found exact match orders:', orders.length);
+                }
+            }
+            
+            // If no exact match and in cart mode, try to find orders with suffixes
+            if (orders.length === 0 && checkoutMode === 'cart') {
+                console.log('🔄 No exact match, fetching all orders for suffix matching...');
+                const allRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?select=id,order_ref,payment_status,resource_file_path,delivery_token,mpesa_transaction_id,file_delivered,total_amount,cart_items,item_count&order=created_at.desc&limit=100`, {
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                    }
+                });
+                if (allRes.ok) {
+                    const allOrders = await allRes.json();
+                    // Look for orders that start with the base reference
+                    orders = allOrders.filter(o => {
+                        if (!o.order_ref) return false;
+                        // Check if order_ref contains the base reference
+                        return o.order_ref.includes(currentOrderRef) || 
+                               o.order_ref.startsWith(currentOrderRef);
+                    });
+                    console.log('📊 Found orders with suffix matching:', orders.length);
+                }
+            }
+        }
+        
+        console.log('📊 Orders found:', orders.length);
+        
+        if (orders.length === 0) {
+            console.log('⚠️ Order not found');
             return;
         }
-        try {
-            console.log(`🔍 Checking order: ${currentOrderRef || currentOrderId}`);
-            
-            let orders = [];
-            
-            // First try exact match
-            let query = `${SUPABASE_URL}/rest/v1/orders?select=id,order_ref,payment_status,resource_file_path,delivery_token,mpesa_transaction_id,file_delivered,total_amount`;
-            
-            if (checkoutMode === 'cart' && currentOrderRef) {
-                // For cart, we need to find all orders that start with the base reference
-                console.log('🔍 Searching for cart orders with base ref:', currentOrderRef);
-                
-                // Strategy 1: Try to find the exact base reference (if any order was created with it)
-                const exactRes = await fetch(`${query}&order_ref=eq.${currentOrderRef}`, {
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                    }
-                });
-                
-                if (exactRes.ok) {
-                    const exactOrders = await exactRes.json();
-                    if (exactOrders.length > 0) {
-                        orders = exactOrders;
-                        console.log('✅ Found exact match orders:', orders.length);
-                    }
-                }
-                
-                // Strategy 2: If no exact match, fetch all recent orders and filter client-side
-                if (orders.length === 0) {
-                    console.log('🔄 No exact match, fetching all recent orders for filtering...');
-                    const allRes = await fetch(`${SUPABASE_URL}/rest/v1/orders?select=id,order_ref,payment_status,resource_file_path,delivery_token,mpesa_transaction_id,file_delivered,total_amount&order=created_at.desc&limit=50`, {
-                        headers: {
-                            'apikey': SUPABASE_ANON_KEY,
-                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                        }
-                    });
-                    
-                    if (allRes.ok) {
-                        const allOrders = await allRes.json();
-                        // Filter orders that start with the base reference
-                        orders = allOrders.filter(o => o.order_ref && o.order_ref.startsWith(currentOrderRef));
-                        console.log('📊 Filtered cart orders:', orders.length);
-                    }
-                }
-            } else if (currentOrderId) {
-                const res = await fetch(`${query}&id=eq.${currentOrderId}`, {
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                    }
-                });
-                if (res.ok) {
-                    orders = await res.json();
-                }
-            } else if (currentOrderRef) {
-                const res = await fetch(`${query}&order_ref=eq.${currentOrderRef}`, {
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                    }
-                });
-                if (res.ok) {
-                    orders = await res.json();
-                }
+
+        // Check if all orders are paid or completed
+        const allPaid = orders.every(o => o.payment_status === 'paid' || o.payment_status === 'completed');
+
+        if (allPaid) {
+            console.log('✅ Payment confirmed! Auto-downloading...');
+            stopPaymentPolling();
+            const orderRefFound = orders[0].order_ref;
+            const orderIdsFound = orders.map(o => o.id);
+            currentOrderId = orderIdsFound[0];
+            currentOrderRef = orderRefFound;
+            checkoutOrderIds = orderIdsFound;
+
+            const verifyLabel = document.querySelector('.verify-label');
+            const verifySub = document.querySelector('.verify-sub');
+            if (verifyLabel) verifyLabel.textContent = '✅ Payment Confirmed!';
+            if (verifySub) {
+                verifySub.innerHTML = `
+                    <strong>🎉 Your payment has been confirmed!</strong><br>
+                    Transaction ID: <strong>${orders[0].mpesa_transaction_id || 'N/A'}</strong><br>
+                    Your file${orderIdsFound.length > 1 ? 's are' : ' is'} being downloaded automatically.
+                    <br><br>
+                    <span style="color:#16a34a;">✓ M-Pesa STK Push successful</span>
+                `;
             }
+            showToast('✅', 'Payment confirmed! Downloading...', 'success');
             
-            console.log('📊 Orders found:', orders.length);
-            
-            if (orders.length === 0) {
-                console.log('⚠️ Order not found');
-                return;
-            }
-
-            // Check if all orders are paid or completed
-            const allPaid = orders.every(o => o.payment_status === 'paid' || o.payment_status === 'completed');
-
-            if (allPaid) {
-                console.log('✅ Payment confirmed! Auto-downloading...');
-                stopPaymentPolling();
-                const orderRefFound = orders[0].order_ref;
-                const orderIdsFound = orders.map(o => o.id);
-                currentOrderId = orderIdsFound[0];
-                currentOrderRef = orderRefFound;
-                checkoutOrderIds = orderIdsFound;
-
-                const verifyLabel = document.querySelector('.verify-label');
-                const verifySub = document.querySelector('.verify-sub');
-                if (verifyLabel) verifyLabel.textContent = '✅ Payment Confirmed!';
-                if (verifySub) {
-                    verifySub.innerHTML = `
-                        <strong>🎉 Your payment has been confirmed!</strong><br>
-                        Transaction ID: <strong>${orders[0].mpesa_transaction_id || 'N/A'}</strong><br>
-                        Your file${orderIdsFound.length > 1 ? 's are' : ' is'} being downloaded automatically.
-                        <br><br>
-                        <span style="color:#16a34a;">✓ M-Pesa STK Push successful</span>
-                    `;
-                }
-                showToast('✅', 'Payment confirmed! Downloading...', 'success');
-                
-                if (orderIdsFound.length > 1) {
-                    await downloadAllForOrderRef(orderRefFound, orderIdsFound);
-                } else {
-                    await downloadPremiumResource(orderIdsFound[0]);
-                }
-                
-                showSuccess(orderRefFound, phoneInput.value);
-                if (checkoutMode === 'cart') {
-                    clearCart();
-                }
-                setTimeout(() => {
-                    mpesaVerificationBox.classList.remove('visible');
-                    closeCheckoutModal();
-                }, 3000);
+            if (orderIdsFound.length > 1) {
+                await downloadAllForOrderRef(orderRefFound, orderIdsFound);
             } else {
-                // Check if any orders are pending
-                const pendingOrders = orders.filter(o => o.payment_status === 'pending');
-                if (pendingOrders.length > 0) {
-                    console.log(`⏳ ${pendingOrders.length} order(s) still pending payment`);
-                }
+                await downloadPremiumResource(orderIdsFound[0]);
             }
-        } catch (error) {
-            console.error('❌ Payment status check error:', error);
+            
+            showSuccess(orderRefFound, phoneInput.value);
+            if (checkoutMode === 'cart') {
+                clearCart();
+            }
+            setTimeout(() => {
+                mpesaVerificationBox.classList.remove('visible');
+                closeCheckoutModal();
+            }, 3000);
+        } else {
+            // Check which orders are still pending
+            const pendingOrders = orders.filter(o => o.payment_status === 'pending');
+            const paidOrders = orders.filter(o => o.payment_status === 'paid' || o.payment_status === 'completed');
+            console.log(`⏳ ${pendingOrders.length} order(s) still pending payment`);
+            console.log(`✅ ${paidOrders.length} order(s) already paid`);
+            
+            // If we have a mix of paid and pending, check if the paid ones can be downloaded
+            if (paidOrders.length > 0 && pendingOrders.length > 0) {
+                console.log('⚠️ Some orders are paid, some are pending. This may indicate a partial payment issue.');
+                // You might want to handle this scenario differently
+            }
         }
+    } catch (error) {
+        console.error('❌ Payment status check error:', error);
     }
-
+}
     // ── START PAYMENT POLLING ──
     function startPaymentPolling() {
         stopPaymentPolling();
