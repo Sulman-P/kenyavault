@@ -3090,6 +3090,7 @@ async function createCartOrders(items, customerName, phone) {
 
     // ── CREATE ORDER ──
     async function createOrder(product, customerName, phone, sharedOrderRef = null, qty = 1) {
+        // Fallback to generateOrderRef() if no shared reference is passed
         const orderRef = sharedOrderRef || generateOrderRef();
         const sessionId = getOrCreateSessionId();
         const filePath = product.file_path || product.file_url || '';
@@ -3114,7 +3115,7 @@ async function createCartOrders(items, customerName, phone) {
         const lineTotal = (product.price || 0) * (qty || 1);
 
         const orderData = {
-            order_ref: orderRef,
+            order_ref: orderRef, // Now guaranteed to be unique per cart item
             customer_name: customerName,
             phone: phone,
             session_id: sessionId,
@@ -3161,10 +3162,14 @@ async function createCartOrders(items, customerName, phone) {
 
     // ── CREATE ORDERS FOR AN ENTIRE CART ──
     async function createCartOrders(items, customerName, phone) {
-        const orderRef = generateOrderRef();
+        // Base reference used to aggregate payments or tracking
+        const parentOrderRef = generateOrderRef(); 
         const orderIds = [];
         let totalAmount = 0;
-        for (const item of items) {
+        
+        // Loop through the array using index to differentiate rows
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
             const productStub = {
                 id: item.id,
                 title: item.title,
@@ -3173,12 +3178,19 @@ async function createCartOrders(items, customerName, phone) {
                 file_path: item.file_path,
                 file_url: item.file_url
             };
-            const { orderId } = await createOrder(productStub, customerName, phone, orderRef, item.qty);
+            
+            // Append the index suffix (e.g., ORD12345-0, ORD12345-1) to bypass unique constraints
+            const individualItemRef = `${parentOrderRef}-${i}`;
+            
+            const { orderId } = await createOrder(productStub, customerName, phone, individualItemRef, item.qty);
             orderIds.push(orderId);
             totalAmount += (item.price || 0) * item.qty;
         }
-        return { orderRef, orderIds, totalAmount };
+        
+        // Return parentOrderRef so M-Pesa or Stripe can use it as the main payment reference
+        return { orderRef: parentOrderRef, orderIds, totalAmount };
     }
+
 
     // ── GENERATE PUBLIC URL ──
     async function generatePublicUrl(filePath, bucketNames = AVAILABLE_BUCKETS) {
