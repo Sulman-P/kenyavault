@@ -2786,121 +2786,118 @@ function generateOrderRef() {
     return orderRef;
 }
 
-// ── CREATE ORDER WITH RETRY ON DUPLICATE ──
-async function createOrder(product, customerName, phone, sharedOrderRef = null, qty = 1, retryCount = 0) {
-    const maxRetries = 3;
-    // If sharedOrderRef is provided, make it unique by adding a suffix
-    let orderRef = sharedOrderRef || generateOrderRef();
-    
-    // If this is a shared order reference (cart checkout), make each item unique
-    if (sharedOrderRef) {
-        const suffix = Math.random().toString(36).substring(2, 5).toUpperCase();
-        orderRef = `${sharedOrderRef}-${suffix}`;
+//// ── HIGH-ENTROPY REFERENCE GENERATOR ──
+    function createGuaranteedUniqueRef(index) {
+        const timestamp = Date.now();
+        // Generates an ultra-random 5-character string (e.g., K7X9Z)
+        const randomSalt = Math.random().toString(36).substring(2, 7).toUpperCase();
+        // Structure: ORD-1718293021-K7X9Z-IDX0
+        return `ORD-${timestamp}-${randomSalt}-IDX${index}`;
     }
-    
-    const sessionId = getOrCreateSessionId();
-    const filePath = product.file_path || product.file_url || '';
-    const fileName = filePath ? filePath.split('/').pop() : `${product.title || 'resource'}.pdf`;
-    const productId = product.id || null;
 
-    let cleanFilePath = filePath;
-    for (const bucket of AVAILABLE_BUCKETS) {
-        if (cleanFilePath.startsWith(`${bucket}/`)) {
-            cleanFilePath = cleanFilePath.replace(`${bucket}/`, '');
-            break;
+    // ── CREATE ORDER ──
+    async function createOrder(product, customerName, phone, guaranteedOrderRef, qty = 1) {
+        const sessionId = getOrCreateSessionId();
+        const filePath = product.file_path || product.file_url || '';
+        const fileName = filePath ? filePath.split('/').pop() : `${product.title || 'resource'}.pdf`;
+        const productId = product.id || null;
+
+        let cleanFilePath = filePath;
+        for (const bucket of AVAILABLE_BUCKETS) {
+            if (cleanFilePath.startsWith(`${bucket}/`)) {
+                cleanFilePath = cleanFilePath.replace(`${bucket}/`, '');
+                break;
+            }
         }
-    }
-    cleanFilePath = cleanFilePath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
-    cleanFilePath = cleanFilePath.replace(/^\/+/, '');
-    if (cleanFilePath && !cleanFilePath.startsWith('resources/')) {
-        cleanFilePath = `resources/${cleanFilePath}`;
-    }
-
-    const isFree = (product.price === 0 || product.price === null || product.price === undefined) || 
-                   product.resource_type === 'free';
-    const lineTotal = (product.price || 0) * (qty || 1);
-
-    const orderData = {
-        order_ref: orderRef,
-        customer_name: customerName,
-        phone: phone,
-        session_id: sessionId,
-        item_title: (qty && qty > 1) ? `${product.title || 'Resource'} (x${qty})` : (product.title || 'Resource'),
-        item_price: product.price || 0,
-        total_amount: lineTotal,
-        status: isFree ? 'completed' : 'pending',
-        payment_status: isFree ? 'completed' : 'pending',
-        resource_id: productId,
-        resource_file_path: cleanFilePath,
-        resource_file_name: fileName,
-        ip_address: await getClientIP(),
-        user_agent: navigator.userAgent,
-        created_at: new Date().toISOString()
-    };
-
-    console.log('📝 Creating order with order_ref:', orderRef);
-    console.log('📝 File path:', cleanFilePath);
-   
-    try {
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
-            method: 'POST',
-            headers: {
-                'apikey': SUPABASE_ANON_KEY,
-                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                'Content-Type': 'application/json',
-                'Prefer': 'return=representation'
-            },
-            body: JSON.stringify(orderData)
-        });
-        
-        // Handle duplicate key error
-        if (response.status === 409 && retryCount < maxRetries) {
-            console.log(`⚠️ Duplicate order_ref detected. Retrying... (${retryCount + 1}/${maxRetries})`);
-            // Generate a new unique reference for the retry
-            const newRef = generateOrderRef();
-            return createOrder(product, customerName, phone, newRef, qty, retryCount + 1);
+        cleanFilePath = cleanFilePath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
+        cleanFilePath = cleanFilePath.replace(/^\/+/, '');
+        if (cleanFilePath && !cleanFilePath.startsWith('resources/')) {
+            cleanFilePath = `resources/${cleanFilePath}`;
         }
-        
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('❌ Order creation error:', errorText);
-            throw new Error(`HTTP ${response.status}: ${errorText}`);
-        }
-        
-        const result = await response.json();
-        const createdOrder = result[0] || result;
-        console.log('✅ Order created:', createdOrder);
-        return { orderRef, orderId: createdOrder.id };
-    } catch (error) {
-        console.error('❌ Order creation failed:', error);
-        throw error;
-    }
-}
 
-// ── CREATE ORDERS FOR AN ENTIRE CART (UPDATED) ──
-async function createCartOrders(items, customerName, phone) {
-    // Create a unique base reference for the cart
-    const baseRef = generateOrderRef();
-    const orderIds = [];
-    let totalAmount = 0;
-    
-    for (const item of items) {
-        const productStub = {
-            id: item.id,
-            title: item.title,
-            price: item.price,
-            resource_type: item.resource_type,
-            file_path: item.file_path,
-            file_url: item.file_url
+        const isFree = (product.price === 0 || product.price === null || product.price === undefined) || 
+                       product.resource_type === 'free';
+        const lineTotal = (product.price || 0) * (qty || 1);
+
+        const orderData = {
+            order_ref: guaranteedOrderRef, // Enforces absolute uniqueness per row entry
+            customer_name: customerName,
+            phone: phone,
+            session_id: sessionId,
+            item_title: (qty && qty > 1) ? `${product.title || 'Resource'} (x${qty})` : (product.title || 'Resource'),
+            item_price: product.price || 0,
+            total_amount: lineTotal,
+            status: isFree ? 'completed' : 'pending',
+            payment_status: isFree ? 'completed' : 'pending',
+            resource_id: productId,
+            resource_file_path: cleanFilePath,
+            resource_file_name: fileName,
+            ip_address: await getClientIP(),
+            user_agent: navigator.userAgent,
+            created_at: new Date().toISOString()
         };
-        
-        // Pass the base reference - each item will get its own unique suffix
-        const { orderId } = await createOrder(productStub, customerName, phone, baseRef, item.qty);
-        orderIds.push(orderId);
-        totalAmount += (item.price || 0) * item.qty;
+
+        console.log('📝 Submitting order schema with unique ref:', guaranteedOrderRef);
+       
+        try {
+            const response = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
+                method: 'POST',
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=representation'
+                },
+                body: JSON.stringify(orderData)
+            });
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('❌ Order creation error:', errorText);
+                throw new Error(`HTTP ${response.status}: ${errorText}`);
+            }
+            const result = await response.json();
+            const createdOrder = result[0] || result;
+            console.log('✅ Order created securely:', createdOrder);
+            return { orderRef: guaranteedOrderRef, orderId: createdOrder.id };
+        } catch (error) {
+            console.error('❌ Order creation failed:', error);
+            throw error;
+        }
     }
-    return { orderRef: baseRef, orderIds, totalAmount };
-}
+
+    // ── CREATE ORDERS FOR AN ENTIRE CART ──
+    async function createCartOrders(items, customerName, phone) {
+        const orderIds = [];
+        let totalAmount = 0;
+        
+        // This acts as the uniform transaction reference for your front-end payment window tracking
+        const globalPaymentTrackingRef = `PAY-${Date.now()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+        
+        console.log(`🚀 Executing batched inserts for ${items.length} item(s)...`);
+
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            const productStub = {
+                id: item.id,
+                title: item.title,
+                price: item.price,
+                resource_type: item.resource_type,
+                file_path: item.file_path,
+                file_url: item.file_url
+            };
+            
+            // Build an instantly dynamic random reference on each cycle iteration
+            const dynamicItemRef = createGuaranteedUniqueRef(i);
+            
+            const { orderId } = await createOrder(productStub, customerName, phone, dynamicItemRef, item.qty);
+            orderIds.push(orderId);
+            totalAmount += (item.price || 0) * item.qty;
+        }
+        
+        // Return globalPaymentTrackingRef to pass cleanly down to line 3624 (initiatePayment)
+        return { orderRef: globalPaymentTrackingRef, orderIds, totalAmount };
+    }
+
 
     // ── CART: PERSISTENCE ──
     function loadCart() {
