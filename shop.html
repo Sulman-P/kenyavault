@@ -4805,6 +4805,44 @@ async function checkOrderPaymentStatus() {
             showToast('⚠️', 'Could not copy link. Please copy manually.', 'error');
         }
     }
+      // ── MISSING PAYMENT CALLBACK PARSER ──
+    async function checkPaymentCallback() {
+        try {
+            const urlParams = new URLSearchParams(window.location.search);
+            const paymentStatus = urlParams.get('payment');
+            const urlOrderRef = urlParams.get('order_ref');
+
+            if (paymentStatus === 'callback' && urlOrderRef) {
+                console.log(`🎯 Redirect callback detected for reference: ${urlOrderRef}`);
+                
+                // Set the global reference variables so polling functions track it properly
+                currentOrderRef = urlOrderRef;
+                localStorage.setItem('pendingOrderRef', urlOrderRef);
+
+                // Open the checkout verification popup interface automatically if hidden
+                if (typeof mpesaVerificationBox !== 'undefined') {
+                    mpesaVerificationBox.classList.add('visible');
+                }
+                if (typeof payPrimaryBtn !== 'undefined') {
+                    payPrimaryBtn.style.display = 'none';
+                }
+
+                showToast('⏳', 'Returning from payment gateway. Verifying order...', 'info');
+                
+                // Immediately check the database status
+                if (typeof checkOrderPaymentStatus === 'function') {
+                    await checkOrderPaymentStatus();
+                }
+                
+                // Kickoff the automated refresh background loop
+                if (typeof startPaymentPolling === 'function') {
+                    startPaymentPolling();
+                }
+            }
+        } catch (error) {
+            console.error('❌ Error handling redirect payment callback:', error);
+        }
+    }
 
     // ── INIT ──
     async function init() {
