@@ -2187,732 +2187,14 @@
     </div>
 </section>
 
-<script>
-    // ── SUPABASE CONFIG ──
-    const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
-
-    // ── GRADE LEVEL DISPLAY ──
-    const LEVEL_DISPLAY = {
-        pp1: 'PP1', pp2: 'PP2',
-        'grade-1': 'Grade 1', 'grade-2': 'Grade 2', 'grade-3': 'Grade 3',
-        'grade-4': 'Grade 4', 'grade-5': 'Grade 5', 'grade-6': 'Grade 6',
-        'grade-7': 'Grade 7', 'grade-8': 'Grade 8', 'grade-9': 'Grade 9',
-        'grade-10': 'Grade 10', 'grade-11': 'Grade 11', 'grade-12': 'Grade 12',
-        'form-1': 'Form 1', 'form-2': 'Form 2', 'form-3': 'Form 3', 'form-4': 'Form 4',
-        college: 'College', tvet: 'TVET', university: 'University'
-    };
-
-    // ── SUBJECT EMOJI MAP ──
-    function getSubjectEmoji(subject) {
-        const map = {
-            mathematics: '📐', english: '📖', kiswahili: '🗣️',
-            'integrated-science': '🔬', 'social-studies': '🌍',
-            'pre-technical': '🔧', agriculture: '🌾',
-            'religious-education': '✝️', 'creative-arts': '🎨',
-            'health-pe': '🏃', biology: '🧬', chemistry: '⚗️',
-            physics: '⚡', business: '💼', 'computer-studies': '💻',
-            engineering: '🔧', law: '⚖️', medicine: '🏥',
-            'personal-growth': '🌱', 'financial-literacy': '💰', leadership: '🏆'
-        };
-        return map[subject?.toLowerCase()] || '📚';
-    }
-
-    // ── FETCH RECENT RESOURCES ──
-    async function fetchRecentResources() {
-        const container = document.getElementById('recentResources');
-        
-        try {
-            console.log('🔍 Fetching recent resources from Supabase...');
-            
-            const response = await fetch(
-                `${SUPABASE_URL}/rest/v1/resources?select=*&order=created_at.desc&limit=5`,
-                {
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                        'Content-Type': 'application/json'
-                    }
-                }
-            );
-
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-
-            const resources = await response.json();
-            console.log(`✅ Loaded ${resources.length} recent resources`);
-
-            if (resources.length === 0) {
-                container.innerHTML = `
-                    <div class="empty-state" style="grid-column:1/-1; text-align:center; padding:40px;">
-                        <span style="font-size:3rem;">📭</span>
-                        <h3 style="color:#9CA3AF; margin-top:12px;">No resources available yet</h3>
-                        <p style="color:#6B7280;">Check back soon for new educational resources!</p>
-                    </div>
-                `;
-                return;
-            }
-
-            // Render resources
-            let html = '';
-            resources.forEach(resource => {
-                html += buildResourceCard(resource);
-            });
-            container.innerHTML = html;
-
-        } catch (error) {
-            console.error('❌ Error fetching recent resources:', error);
-            container.innerHTML = `
-                <div class="empty-state" style="grid-column:1/-1; text-align:center; padding:40px;">
-                    <span style="font-size:3rem;">⚠️</span>
-                    <h3 style="color:#9CA3AF; margin-top:12px;">Failed to load resources</h3>
-                    <p style="color:#6B7280;">${error.message}</p>
-                    <button onclick="fetchRecentResources()" style="margin-top:12px; padding:8px 20px; background:#D4A017; color:#0a1a3a; border:none; border-radius:8px; cursor:pointer; font-weight:700;">
-                        🔄 Retry
-                    </button>
-                </div>
-            `;
-        }
-    }
-
-    // ── BUILD RESOURCE CARD HTML ──
-    function buildResourceCard(resource) {
-        const isFree = (resource.price === 0 || resource.price === null || resource.price === undefined) || 
-                       resource.resource_type === 'free';
-        const priceDisplay = isFree ? 'FREE' : `KES ${resource.price || 0}`;
-        const priceClass = isFree ? 'price free' : 'price';
-        
-        const levelDisplay = LEVEL_DISPLAY[resource.level] || resource.level || 'General';
-        const subjectEmoji = getSubjectEmoji(resource.subject);
-        const subjectDisplay = resource.subject || 'General';
-        
-        // Get resource type badge
-        const resourceType = resource.resource_type || 'resource';
-        const typeBadge = resourceType.replace(/-/g, ' ').toUpperCase();
-        
-        // Get curriculum badge
-        const curriculumBadge = resource.cbc_compliant !== false ? 'CBC' : '8-4-4';
-        
-        // Truncate title if too long
-        const title = resource.title || 'Untitled Resource';
-        const truncatedTitle = title.length > 60 ? title.substring(0, 57) + '...' : title;
-
-        // Get cover image or fallback
-        const coverHTML = resource.cover_image_url ? `
-            <div class="card-img" style="background-image: url('${resource.cover_image_url}'); background-size: cover; background-position: center; min-height: 80px; display: flex; align-items: center; justify-content: center; font-size: 2rem;">
-                <span style="background: rgba(0,0,0,0.3); padding: 8px 12px; border-radius: 8px; backdrop-filter: blur(4px);">${subjectEmoji}</span>
-            </div>
-        ` : `
-            <div class="card-img" style="font-size: 2.5rem; display: flex; align-items: center; justify-content: center; min-height: 80px; background: rgba(212, 160, 23, 0.05);">
-                ${subjectEmoji}
-            </div>
-        `;
-
-        return `
-            <div class="resource-card" data-id="${resource.id}">
-                ${coverHTML}
-                <div class="card-body">
-                    <div class="card-title">${truncatedTitle}</div>
-                    <div class="card-meta">
-                        <span>${subjectEmoji} ${subjectDisplay}</span>
-                        <span>📚 ${levelDisplay}</span>
-                        <span class="badge">${curriculumBadge}</span>
-                        ${resourceType !== 'general' ? `<span class="badge badge-type">${typeBadge}</span>` : ''}
-                    </div>
-                    <div class="card-footer">
-                        <span class="${priceClass}">${priceDisplay}</span>
-                        <button class="btn-add-cart" onclick="handleAddToCart('${resource.id}')" data-id="${resource.id}">
-                            🛒 Add
-                        </button>
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
-    // ── HANDLE ADD TO CART (HOMEPAGE) ──
-    function handleAddToCart(productId) {
-        // Check if we're on the shop page with full cart functionality
-        if (typeof addToCart === 'function') {
-            addToCart(productId);
-            return;
-        }
-
-        // Fallback for homepage - redirect to shop page with the product
-        const btn = event?.target || document.querySelector(`[data-id="${productId}"]`);
-        if (btn) {
-            btn.textContent = '✓ Added!';
-            btn.style.background = '#16a34a';
-            btn.style.color = 'white';
-            setTimeout(() => {
-                btn.textContent = '🛒 Add';
-                btn.style.background = '';
-                btn.style.color = '';
-            }, 2000);
-        }
-
-        // Store the product ID in localStorage for the shop page to pick up
-        try {
-            const pendingCart = JSON.parse(localStorage.getItem('pending_cart_add') || '[]');
-            if (!pendingCart.includes(productId)) {
-                pendingCart.push(productId);
-                localStorage.setItem('pending_cart_add', JSON.stringify(pendingCart));
-            }
-        } catch (e) {
-            console.warn('Could not store pending cart item:', e.message);
-        }
-
-        // Show toast notification
-        showToast('🛒', 'Added to cart! View in shop.', 'success');
-        
-        // Redirect to shop page after a moment
-        setTimeout(() => {
-            if (confirm('Item added to cart! Would you like to view your cart in the shop?')) {
-                window.location.href = '/shop.html';
-            }
-        }, 1500);
-    }
-
-    // ── TOAST NOTIFICATION ──
-    let toastTimeout = null;
-
-    function showToast(icon, message, type = 'success') {
-        // Remove existing toast
-        const existingToast = document.querySelector('.toast-notification');
-        if (existingToast) existingToast.remove();
-        if (toastTimeout) clearTimeout(toastTimeout);
-
-        const toast = document.createElement('div');
-        toast.className = 'toast-notification ' + type;
-        toast.innerHTML = `
-            <span class="toast-icon">${icon}</span>
-            <span class="toast-msg">${message}</span>
-        `;
-        toast.style.cssText = `
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            padding: 12px 20px;
-            border-radius: 10px;
-            background: rgba(10, 26, 58, 0.95);
-            border: 1px solid rgba(212, 160, 23, 0.3);
-            color: #fff;
-            font-size: 0.9rem;
-            z-index: 9999;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-            backdrop-filter: blur(10px);
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            opacity: 0;
-            transform: translateY(20px);
-            transition: all 0.3s ease;
-            max-width: 400px;
-        `;
-        document.body.appendChild(toast);
-
-        setTimeout(() => {
-            toast.style.opacity = '1';
-            toast.style.transform = 'translateY(0)';
-        }, 10);
-
-        toastTimeout = setTimeout(() => {
-            toast.style.opacity = '0';
-            toast.style.transform = 'translateY(20px)';
-            setTimeout(() => toast.remove(), 300);
-        }, 4000);
-    }
-
-    // ── INIT ──
-    document.addEventListener('DOMContentLoaded', function() {
-        // Check if we're on the homepage (has recentResources container)
-        if (document.getElementById('recentResources')) {
-            console.log('📚 Loading recent resources on homepage...');
-            fetchRecentResources();
-            
-            // Refresh every 5 minutes
-            setInterval(fetchRecentResources, 300000);
-        }
-    });
-
-    console.log('✅ Homepage resources loader initialized');
-</script>
-
-<style>
-    /* ── ADDITIONAL STYLES FOR HOMEPAGE RESOURCES ── */
-    .resources-grid-section {
-        padding: 60px 0;
-        background: var(--bg-primary, #0a1a3a);
-    }
-
-    .resources-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-        gap: 24px;
-        margin-top: 30px;
-    }
-
-    .resource-card {
-        background: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 12px;
-        overflow: hidden;
-        transition: all 0.3s ease;
-        backdrop-filter: blur(4px);
-    }
-
-    .resource-card:hover {
-        transform: translateY(-4px);
-        border-color: rgba(212, 160, 23, 0.3);
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-    }
-
-    .card-img {
-        min-height: 80px;
-        padding: 16px;
-        background: rgba(212, 160, 23, 0.05);
-        font-size: 2.5rem;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    }
-
-    .card-body {
-        padding: 16px;
-    }
-
-    .card-title {
-        font-weight: 600;
-        font-size: 0.95rem;
-        margin-bottom: 10px;
-        color: #fff;
-        line-height: 1.4;
-        min-height: 44px;
-    }
-
-    .card-meta {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        font-size: 0.75rem;
-        color: #9CA3AF;
-        margin-bottom: 12px;
-    }
-
-    .card-meta span {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-    }
-
-    .badge {
-        display: inline-block;
-        padding: 2px 10px;
-        border-radius: 12px;
-        font-size: 0.65rem;
-        font-weight: 600;
-        background: rgba(212, 160, 23, 0.15);
-        color: #D4A017;
-        text-transform: uppercase;
-        letter-spacing: 0.3px;
-    }
-
-    .badge-type {
-        background: rgba(59, 130, 246, 0.15);
-        color: #60A5FA;
-    }
-
-    .card-footer {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding-top: 12px;
-        border-top: 1px solid rgba(255, 255, 255, 0.05);
-    }
-
-    .price {
-        font-weight: 700;
-        color: #D4A017;
-        font-size: 1rem;
-    }
-
-    .price.free {
-        color: #4ADE80;
-    }
-
-    .btn-add-cart {
-        padding: 6px 16px;
-        border: 1px solid rgba(212, 160, 23, 0.3);
-        border-radius: 6px;
-        background: transparent;
-        color: #fff;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        font-size: 0.8rem;
-        font-weight: 500;
-    }
-
-    .btn-add-cart:hover {
-        background: rgba(212, 160, 23, 0.15);
-        border-color: #D4A017;
-    }
-
-    .btn-add-cart.added {
-        background: #16a34a;
-        border-color: #16a34a;
-        color: #fff;
-    }
-
-    .loading-spinner {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 12px;
-        color: #9CA3AF;
-    }
-
-    .spin-icon {
-        font-size: 2rem;
-        animation: spin 1s linear infinite;
-    }
-
-    @keyframes spin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
-    }
-
-    .empty-state {
-        text-align: center;
-        padding: 40px;
-        color: #6B7280;
-    }
-
-    .empty-state h3 {
-        color: #9CA3AF;
-        margin: 12px 0 8px;
-    }
-
-    .btn-primary {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        padding: 12px 28px;
-        background: #D4A017;
-        color: #0a1a3a;
-        border: none;
-        border-radius: 8px;
-        font-weight: 700;
-        text-decoration: none;
-        transition: all 0.3s ease;
-        cursor: pointer;
-    }
-
-    .btn-primary:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 20px rgba(212, 160, 23, 0.3);
-    }
-
-    .toast-notification {
-        position: fixed;
-        bottom: 20px;
-        right: 20px;
-        padding: 12px 20px;
-        border-radius: 10px;
-        background: rgba(10, 26, 58, 0.95);
-        border: 1px solid rgba(212, 160, 23, 0.3);
-        color: #fff;
-        font-size: 0.9rem;
-        z-index: 9999;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-        backdrop-filter: blur(10px);
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        opacity: 0;
-        transform: translateY(20px);
-        transition: all 0.3s ease;
-        max-width: 400px;
-    }
-
-    .toast-notification.show {
-        opacity: 1;
-        transform: translateY(0);
-    }
-
-    .toast-notification.success {
-        border-color: #4ADE80;
-    }
-
-    .toast-notification.error {
-        border-color: #F87171;
-    }
-
-    .toast-notification.info {
-        border-color: #60A5FA;
-    }
-
-    @media (max-width: 768px) {
-        .resources-grid {
-            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-            gap: 16px;
-        }
-
-        .card-title {
-            font-size: 0.85rem;
-            min-height: 36px;
-        }
-
-        .resource-card {
-            border-radius: 10px;
-        }
-    }
-
-    @media (max-width: 480px) {
-        .resources-grid {
-            grid-template-columns: 1fr;
-            gap: 14px;
-        }
-
-        .resources-grid-section {
-            padding: 30px 0;
-        }
-    }
-</style>
-
-<!-- ════════════════════════════════════════ -->
-<!-- LEAD MAGNET - FREE WEEKLY RESOURCE -->
-<!-- ════════════════════════════════════════ -->
-<section class="lead-magnet">
-    <div class="container">
-        <div class="lead-content">
-            <h2>📥 Get Your <span>Free Weekly Resource</span></h2>
-            <p>Subscribe to receive a free educational resource every week — lesson plans, practice sheets, study guides, and more. Perfect for teachers, parents, and students.</p>
-        </div>
-        <form class="lead-form" id="leadForm" onsubmit="event.preventDefault(); alert('✅ You\'re subscribed! Check your email for your free resource.'); this.reset();">
-            <div class="form-row">
-                <input type="email" placeholder="Enter your email address" required />
-                <input type="text" placeholder="Your name (optional)" />
-            </div>
-            <button type="submit" class="btn-subscribe">📩 Send My Free Resource</button>
-            <p class="disclaimer">No spam. Unsubscribe anytime. We respect your privacy.</p>
-        </form>
-    </div>
-</section>
-
-<!-- ════════════════════════════════════════ -->
-<!-- EVERGREEN CONTENT SECTION -->
-<!-- ════════════════════════════════════════ -->
-<section class="evergreen-section">
-    <div class="container">
-        <h2 class="section-title">Why KenyaVault Works All Year Round</h2>
-        <p class="section-subtitle">We're not just for exams — we're your partner in continuous learning.</p>
-        <div class="evergreen-grid">
-            <div class="evergreen-card">
-                <span class="ev-icon">🗓️</span>
-                <h3>Not Just Exam Season — Every Day is Learning Day</h3>
-                <p>From lesson planning to homework help, we support you every day of the school year — not just during exam season.</p>
-            </div>
-            <div class="evergreen-card">
-                <span class="ev-icon">📚</span>
-                <h3>Trusted by Teachers, Loved by Parents</h3>
-                <p>Thousands of educators and parents across Kenya rely on KenyaVault for quality, curriculum-aligned resources they can trust.</p>
-            </div>
-            <div class="evergreen-card">
-                <span class="ev-icon">🔄</span>
-                <h3>New Resources Added Weekly</h3>
-                <p>Our library grows every week with fresh content — so you always have access to the latest and most relevant materials.</p>
-            </div>
-        </div>
-    </div>
-</section>
-
-<!-- ════════════════════════════════════════ -->
-<!-- TESTIMONIALS SECTION -->
-<!-- ════════════════════════════════════════ -->
-<section class="testimonials-section">
-    <div class="container">
-        <h2 class="section-title">What Our Community Says</h2>
-        <p class="section-subtitle">Real stories from teachers, parents, and students who use KenyaVault year-round.</p>
-        <div class="testimonials-grid">
-            <div class="testimonial-card">
-                <div class="stars">★★★★★</div>
-                <blockquote>"KenyaVault has been a game-changer for my lesson planning. I use resources from here every term — not just during exams. The quality is consistently excellent."</blockquote>
-                <div class="author">
-                    <div class="avatar">JM</div>
-                    <div>
-                        <div class="name">Jane Mwangi</div>
-                        <div class="role">Grade 7 Teacher, Nairobi</div>
-                    </div>
-                </div>
-            </div>
-            <div class="testimonial-card">
-                <div class="stars">★★★★★</div>
-                <blockquote>"As a parent, I love the weekly practice sheets. They help my child stay on track throughout the year, and the free resources are a huge bonus."</blockquote>
-                <div class="author">
-                    <div class="avatar">DK</div>
-                    <div>
-                        <div class="name">David Kiprop</div>
-                        <div class="role">Parent, Eldoret</div>
-                    </div>
-                </div>
-            </div>
-            <div class="testimonial-card">
-                <div class="stars">★★★★★</div>
-                <blockquote>"The study guides and revision materials are outstanding. I've been using KenyaVault since the start of the year, and my grades have improved significantly."</blockquote>
-                <div class="author">
-                    <div class="avatar">SA</div>
-                    <div>
-                        <div class="name">Sarah Akinyi</div>
-                        <div class="role">Grade 9 Student, Kisumu</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</section>
-
-<!-- ════════════════════════════════════════ -->
-<!-- FAQ SECTION -->
-<!-- ════════════════════════════════════════ -->
-<section class="faq-section" style="background: #fafcff; padding: 60px 0 40px;">
-    <div class="container">
-        <h2 class="section-title" style="color: var(--navy);">Frequently Asked Questions</h2>
-        <p class="section-subtitle" style="margin-bottom: 32px;">Find answers to the most common questions about KenyaVault.</p>
-
-        <div class="faq-grid" style="max-width: 820px; margin: 0 auto;">
-            <div class="faq-item" style="border-bottom: 1px solid var(--border);">
-                <button class="faq-question" style="width: 100%; display: flex; justify-content: space-between; align-items: center; padding: 20px 0; background: transparent; border: none; text-align: left; font-size: 1.1rem; font-weight: 600; color: var(--navy); cursor: pointer; transition: var(--transition); gap: 16px;">
-                    <span>How do I receive my files after paying via M-Pesa?</span>
-                    <span class="faq-icon" style="font-size: 1.4rem; color: var(--gold); transition: transform 0.3s ease; flex-shrink: 0;">+</span>
-                </button>
-                <div class="faq-answer" style="max-height: 0; overflow: hidden; transition: max-height 0.35s ease, padding 0.3s ease; padding: 0 0 0 0; color: var(--muted); line-height: 1.7;">
-                    <p style="padding-bottom: 20px; margin: 0;">After your M-Pesa payment is confirmed, your files are available for <strong>instant download</strong> directly from your KenyaVault account. You'll also receive a <strong>download link via email</strong> within minutes. If you don't see the email, check your spam folder or contact our support.</p>
-                </div>
-            </div>
-            <div class="faq-item" style="border-bottom: 1px solid var(--border);">
-                <button class="faq-question" style="width: 100%; display: flex; justify-content: space-between; align-items: center; padding: 20px 0; background: transparent; border: none; text-align: left; font-size: 1.1rem; font-weight: 600; color: var(--navy); cursor: pointer; transition: var(--transition); gap: 16px;">
-                    <span>Are these materials aligned with the current Kenya CBC and JSS curriculum?</span>
-                    <span class="faq-icon" style="font-size: 1.4rem; color: var(--gold); transition: transform 0.3s ease; flex-shrink: 0;">+</span>
-                </button>
-                <div class="faq-answer" style="max-height: 0; overflow: hidden; transition: max-height 0.35s ease, padding 0.3s ease; padding: 0 0 0 0; color: var(--muted); line-height: 1.7;">
-                    <p style="padding-bottom: 20px; margin: 0;">Yes! All our resources are <strong>carefully reviewed by certified educators</strong> to ensure they follow the <strong>Kenya CBC curriculum design</strong> and Junior Secondary School (JSS) requirements. We regularly update materials to match any changes from KICD and KNEC.</p>
-                </div>
-            </div>
-            <div class="faq-item" style="border-bottom: 1px solid var(--border);">
-                <button class="faq-question" style="width: 100%; display: flex; justify-content: space-between; align-items: center; padding: 20px 0; background: transparent; border: none; text-align: left; font-size: 1.1rem; font-weight: 600; color: var(--navy); cursor: pointer; transition: var(--transition); gap: 16px;">
-                    <span>Can I access and buy resources if I am outside Kenya?</span>
-                    <span class="faq-icon" style="font-size: 1.4rem; color: var(--gold); transition: transform 0.3s ease; flex-shrink: 0;">+</span>
-                </button>
-                <div class="faq-answer" style="max-height: 0; overflow: hidden; transition: max-height 0.35s ease, padding 0.3s ease; padding: 0 0 0 0; color: var(--muted); line-height: 1.7;">
-                    <p style="padding-bottom: 20px; margin: 0;">Absolutely! KenyaVault supports international customers with <strong>USD pricing</strong> and secure payments via <strong>Stripe</strong> and <strong>PayPal</strong>. All resources are digital, so you can download them instantly from anywhere in the world.</p>
-                </div>
-            </div>
-            <div class="faq-item" style="border-bottom: 1px solid var(--border);">
-                <button class="faq-question" style="width: 100%; display: flex; justify-content: space-between; align-items: center; padding: 20px 0; background: transparent; border: none; text-align: left; font-size: 1.1rem; font-weight: 600; color: var(--navy); cursor: pointer; transition: var(--transition); gap: 16px;">
-                    <span>I am a teacher; how do I upload my revision papers and get paid?</span>
-                    <span class="faq-icon" style="font-size: 1.4rem; color: var(--gold); transition: transform 0.3s ease; flex-shrink: 0;">+</span>
-                </button>
-                <div class="faq-answer" style="max-height: 0; overflow: hidden; transition: max-height 0.35s ease, padding 0.3s ease; padding: 0 0 0 0; color: var(--muted); line-height: 1.7;">
-                    <p style="padding-bottom: 20px; margin: 0;">Visit our <a href="/tutor.html" style="color: var(--gold); font-weight: 600;">Become a Creator</a> page to sign up. Once approved, you can upload your resources via the <strong>vendor dashboard</strong>. You earn a commission on each sale, and payments are sent via <strong>M-Pesa</strong> or bank transfer every month.</p>
-                </div>
-            </div>
-            <div class="faq-item" style="border-bottom: 1px solid var(--border);">
-                <button class="faq-question" style="width: 100%; display: flex; justify-content: space-between; align-items: center; padding: 20px 0; background: transparent; border: none; text-align: left; font-size: 1.1rem; font-weight: 600; color: var(--navy); cursor: pointer; transition: var(--transition); gap: 16px;">
-                    <span>How does KenyaVault protect my purchased digital materials from being pirated?</span>
-                    <span class="faq-icon" style="font-size: 1.4rem; color: var(--gold); transition: transform 0.3s ease; flex-shrink: 0;">+</span>
-                </button>
-                <div class="faq-answer" style="max-height: 0; overflow: hidden; transition: max-height 0.35s ease, padding 0.3s ease; padding: 0 0 0 0; color: var(--muted); line-height: 1.7;">
-                    <p style="padding-bottom: 20px; margin: 0;">We use <strong>watermarked PDFs</strong> with your unique buyer information, secure download links that expire after a set time, and <strong>encrypted file storage</strong>. We also actively monitor for unauthorized sharing to protect creators' intellectual property.</p>
-                </div>
-            </div>
-        </div>
-    </div>
-</section>
-
-<!-- ════════════════════════════════════════ -->
-<!-- FOOTER -->
-<!-- ════════════════════════════════════════ -->
-<footer class="footer">
-    <div class="footer-top">
-        <div class="footer-brand">
-            <a class="nav-logo" href="/">Kenya<span>Vault</span></a>
-            <p>Complete educational resources for all levels — Preprimary to University. Made by certified educators.</p>
-            <!-- RESHUFFLE LINK IN FOOTER -->
-            <a href="https://hteupcqc26xmnfk7vrwtpc.streamlit.app/" 
-               target="_blank" 
-               rel="noopener noreferrer" 
-               class="footer-reshuffle-link">
-                <i class="fas fa-robot"></i> Try AI Stream Balancer
-            </a>
-            <div style="margin-top:12px;display:flex;gap:12px;flex-wrap:wrap;">
-                <a href="https://www.tsc.go.ke" target="_blank" style="color:var(--gold-light);font-size:0.8rem;">🏛️ TSC</a>
-                <a href="https://www.knec.ac.ke" target="_blank" style="color:var(--gold-light);font-size:0.8rem;">📋 KNEC</a>
-                <a href="https://kicd.ac.ke" target="_blank" style="color:var(--gold-light);font-size:0.8rem;">📋 KICD</a>
-                <a href="https://www.education.go.ke" target="_blank" style="color:var(--gold-light);font-size:0.8rem;">🏫 MoE</a>
-            </div>
-        </div>
-        <div class="footer-col">
-            <h4>By Grade</h4>
-            <ul>
-                <li><a href="/cbc-resources">CBC Resources</a></li>
-                <li><a href="/lesson-plans">Lesson Plans</a></li>
-                <li><a href="/schemes-of-work">Schemes of Work</a></li>
-                <li><a href="/kjsea-revision">KJSEA Revision</a></li>
-                <li><a href="/kpsea-exams">KPSEA Exams</a></li>
-                <li><a href="/junior-school-resources">Junior School Resources</a></li>
-            </ul>
-        </div>
-        <div class="footer-col">
-            <h4>By Level</h4>
-            <ul>
-                <li><a href="/preprimary-resources">Preprimary</a></li>
-                <li><a href="/primary-school-resources">Primary School</a></li>
-                <li><a href="/junior-school-resources">Junior School</a></li>
-                <li><a href="/senior-school-resources">Senior School</a></li>
-                <li><a href="/tvet-resources">TVET</a></li>
-                <li><a href="/university-resources">University</a></li>
-            </ul>
-        </div>
-        <div class="footer-col">
-            <h4>By Subject</h4>
-            <ul>
-                <li><a href="/mathematics-resources">Mathematics</a></li>
-                <li><a href="/english-resources">English</a></li>
-                <li><a href="/kiswahili-resources">Kiswahili</a></li>
-                <li><a href="/science-resources">Science</a></li>
-                <li><a href="/social-studies-resources">Social Studies</a></li>
-                <li><a href="/creative-arts-resources">Creative Arts</a></li>
-            </ul>
-        </div>
-        <div class="footer-col">
-            <h4>Quick Links</h4>
-            <ul>
-                <li><a href="/about.html">About Us</a></li>
-                <li><a href="/contact.html">Contact</a></li>
-                <li><a href="/tutor.html">Become a Creator</a></li>
-                <li><a href="/terms.html">Terms &amp; Conditions</a></li>
-                <li><a href="/privacy.html">Privacy Policy</a></li>
-                <li><a href="/admin.html" style="color:var(--gold-light);">🔑 Admin Portal</a></li>
-            </ul>
-        </div>
-    </div>
-    <div class="footer-bottom">
-        <span>© 2026 KenyaVault. All rights reserved.</span>
-        <span>Made with ❤️ in Kenya 🇰🇪</span>
-    </div>
-</footer>
-
 <!-- ════════════════════════════════════════ -->
 <!-- JAVASCRIPT -->
 <!-- ════════════════════════════════════════ -->
 <script>
     // ── SUPABASE CONFIG ──
-    const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
-
+    // These are already declared in the first script block above
+    // Do NOT redeclare them here - use the existing ones
+    
     // ── HAMBURGER MENU ──
     const hamburger = document.getElementById('hamburger');
     const navLinks = document.getElementById('navLinks');
@@ -2934,292 +2216,289 @@
                 }
             });
         });
-
-        // ── DOM ELEMENT CHECKS FOR HOMEPAGE ──
-// Wait for DOM to be fully loaded before accessing elements
-document.addEventListener('DOMContentLoaded', function() {
-    // ── HAMBURGER MENU ──
-    const hamburger = document.getElementById('hamburger');
-    if (hamburger) {
-        hamburger.addEventListener('click', function() {
-            const navLinks = document.getElementById('navLinks');
-            if (navLinks) navLinks.classList.toggle('open');
-        });
     }
 
-    // ── KJSEA BANNER ──
-    const kjseaBtn = document.getElementById('kjseaBannerBtn');
-    if (kjseaBtn) {
-        kjseaBtn.addEventListener('click', function() {
-            // Check if setLevel function exists (only on shop page)
-            if (typeof setLevel === 'function') {
-                setLevel('grade-9');
-                const hero = document.querySelector('.shop-hero');
-                if (hero) hero.scrollIntoView({ behavior: 'smooth' });
-            }
-        });
-    }
-
-    // ── PHONE INPUT FORMATTING ──
-    const phoneInput = document.getElementById('phoneInput');
-    if (phoneInput) {
-        phoneInput.addEventListener('input', function() {
-            let val = this.value.replace(/\D/g, '');
-            if (val.length > 12) val = val.substring(0, 12);
-            this.value = val;
-            this.classList.remove('error');
-        });
-    }
-
-    const customerNameInput = document.getElementById('customerName');
-    if (customerNameInput) {
-        customerNameInput.addEventListener('input', function() {
-            this.classList.remove('error');
-        });
-    }
-
-    // ── CLOSE MODALS ON ESCAPE ──
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') {
-            const checkoutModal = document.getElementById('checkoutModal');
-            const successModal = document.getElementById('successModal');
-            const previewModal = document.getElementById('previewModal');
-            const filterSheet = document.getElementById('filterBottomSheet');
-            const cartDrawer = document.getElementById('cartDrawer');
-
-            if (checkoutModal && checkoutModal.classList.contains('open')) {
-                if (typeof closeCheckoutModal === 'function') closeCheckoutModal();
-            }
-            if (successModal && successModal.classList.contains('open')) {
-                if (typeof closeSuccessModal === 'function') closeSuccessModal();
-            }
-            if (previewModal && previewModal.classList.contains('open')) {
-                if (typeof closePreview === 'function') closePreview();
-            }
-            if (filterSheet && filterSheet.classList.contains('open')) {
-                if (typeof toggleMobileFilter === 'function') toggleMobileFilter();
-            }
-            if (cartDrawer && cartDrawer.classList.contains('open')) {
-                if (typeof closeCartDrawer === 'function') closeCartDrawer();
-            }
-        }
-    });
-
-    // ── MODAL OVERLAY CLICKS ──
-    const checkoutModal = document.getElementById('checkoutModal');
-    if (checkoutModal) {
-        checkoutModal.addEventListener('click', function(e) {
-            if (e.target === checkoutModal && typeof closeCheckoutModal === 'function') {
-                closeCheckoutModal();
-            }
-        });
-    }
-
-    const successModal = document.getElementById('successModal');
-    if (successModal) {
-        successModal.addEventListener('click', function(e) {
-            if (e.target === successModal && typeof closeSuccessModal === 'function') {
-                closeSuccessModal();
-            }
-        });
-    }
-
-    const previewModal = document.getElementById('previewModal');
-    if (previewModal) {
-        previewModal.addEventListener('click', function(e) {
-            if (e.target === previewModal && typeof closePreview === 'function') {
-                closePreview();
-            }
-        });
-    }
-
-    // ── LEGAL CONSENT BANNER ──
-    (function() {
-        const CONSENT_KEY = 'kenyavault_consent';
-        const banner = document.getElementById('consentBanner');
-        const checkbox = document.getElementById('consentCheckbox');
-        const acceptBtn = document.getElementById('consentAcceptBtn');
-
-        if (localStorage.getItem(CONSENT_KEY) === 'true') {
-            if (banner) banner.classList.add('hidden');
-            return;
+    // ── DOM ELEMENT CHECKS FOR HOMEPAGE ──
+    document.addEventListener('DOMContentLoaded', function() {
+        // ── HAMBURGER MENU ──
+        const hamburger = document.getElementById('hamburger');
+        if (hamburger) {
+            hamburger.addEventListener('click', function() {
+                const navLinks = document.getElementById('navLinks');
+                if (navLinks) navLinks.classList.toggle('open');
+            });
         }
 
-        if (banner) banner.classList.remove('hidden');
-
-        function updateAcceptButton() {
-            if (checkbox && acceptBtn) {
-                const isChecked = checkbox.checked;
-                acceptBtn.disabled = !isChecked;
-                acceptBtn.style.opacity = isChecked ? '1' : '0.5';
-                acceptBtn.style.pointerEvents = isChecked ? 'auto' : 'none';
-            }
-        }
-
-        if (checkbox) checkbox.addEventListener('change', updateAcceptButton);
-        if (acceptBtn) {
-            acceptBtn.addEventListener('click', function() {
-                if (checkbox && checkbox.checked) {
-                    localStorage.setItem(CONSENT_KEY, 'true');
-                    if (banner) banner.classList.add('hidden');
-                    document.dispatchEvent(new CustomEvent('kenyavaultConsentGiven'));
+        // ── KJSEA BANNER ──
+        const kjseaBtn = document.getElementById('kjseaBannerBtn');
+        if (kjseaBtn) {
+            kjseaBtn.addEventListener('click', function() {
+                if (typeof setLevel === 'function') {
+                    setLevel('grade-9');
+                    const hero = document.querySelector('.shop-hero');
+                    if (hero) hero.scrollIntoView({ behavior: 'smooth' });
                 }
             });
         }
-        updateAcceptButton();
-        if (banner && !localStorage.getItem(CONSENT_KEY)) banner.classList.remove('hidden');
-    })();
 
-    // ── FLOATING DOWNLOAD NOTIFICATIONS ──
-    const downloadData = [
-        { name: 'Solomon Mwangi', location: 'Kisumu', resource: 'Mathematics Grade 7 End Term 2' },
-        { name: 'Grace Akinyi', location: 'Nairobi', resource: 'English Lesson Plans Grade 8' },
-        { name: 'David Ochieng', location: 'Kisii', resource: 'KJSEA Revision Papers 2026' },
-        { name: 'Mary Wanjiru', location: 'Nakuru', resource: 'Integrated Science Grade 9 Notes' },
-        { name: 'James Odhiambo', location: 'Mombasa', resource: 'Social Studies Schemes of Work' },
-        { name: 'Faith Kiprop', location: 'Eldoret', resource: 'Chemistry Form 3 Revision Guide' },
-        { name: 'Peter Njoroge', location: 'Thika', resource: 'Biology KCSE Past Papers' },
-        { name: 'Sarah Muthoni', location: 'Meru', resource: 'Creative Arts Assessment Tools' },
-        { name: 'Michael Otieno', location: 'Kisumu', resource: 'Kiswahili Composition Guide' },
-        { name: 'Jane Wangui', location: 'Nyeri', resource: 'Mathematics Form 4 Revision Kit' },
-        { name: 'Stephen Kipchoge', location: 'Eldoret', resource: 'Physics Practical Workbook' },
-        { name: 'Rose Akoth', location: 'Homa Bay', resource: 'CBC Assessment Rubrics Grade 7' },
-        { name: 'Joseph Kimani', location: 'Nairobi', resource: 'Business Studies Form 3 Notes' },
-        { name: 'Alice Nekesa', location: 'Bungoma', resource: 'History & Government Revision' },
-        { name: 'Daniel Kamau', location: 'Kiambu', resource: 'KJSEA 2026 Prediction Papers' },
-        { name: 'Catherine Wanjiku', location: 'Nakuru', resource: 'Mathematics Grade 8 Schemes of Work' },
-        { name: 'Patrick Odhiambo', location: 'Kisumu', resource: 'Integrated Science Practical Guide' },
-        { name: 'Margaret Akinyi', location: 'Mombasa', resource: 'English Composition Writing Guide' },
-    ];
-
-    function generateNotification() {
-        const data = downloadData[Math.floor(Math.random() * downloadData.length)];
-        const timeAgo = Math.floor(Math.random() * 60) + 1;
-        return { ...data, timeAgo: timeAgo <= 5 ? 'just now' : `${timeAgo} minutes ago`, id: Date.now() + '_' + Math.random().toString(36).substr(2, 6) };
-    }
-
-    function showFloatingNotification() {
-        const container = document.getElementById('notificationContainer');
-        if (!container) return;
-        const data = generateNotification();
-        const existing = container.querySelectorAll('.download-notification');
-        for (const el of existing) {
-            const text = el.querySelector('.notif-text .action')?.textContent || '';
-            if (text.includes(data.name) && text.includes(data.resource)) return;
+        // ── PHONE INPUT FORMATTING ──
+        const phoneInput = document.getElementById('phoneInput');
+        if (phoneInput) {
+            phoneInput.addEventListener('input', function() {
+                let val = this.value.replace(/\D/g, '');
+                if (val.length > 12) val = val.substring(0, 12);
+                this.value = val;
+                this.classList.remove('error');
+            });
         }
-        const notification = document.createElement('div');
-        notification.className = 'download-notification';
-        notification.id = `notif-${data.id}`;
-        notification.innerHTML = `
-            <div class="notif-content">
-                <div class="notif-icon">📥</div>
-                <div class="notif-text">
-                    <span class="name">${data.name}</span>
-                    <span class="action">downloaded <strong>${data.resource}</strong></span>
-                    <span class="location">📍 ${data.location} · ${data.timeAgo}</span>
+
+        const customerNameInput = document.getElementById('customerName');
+        if (customerNameInput) {
+            customerNameInput.addEventListener('input', function() {
+                this.classList.remove('error');
+            });
+        }
+
+        // ── CLOSE MODALS ON ESCAPE ──
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                const checkoutModal = document.getElementById('checkoutModal');
+                const successModal = document.getElementById('successModal');
+                const previewModal = document.getElementById('previewModal');
+                const filterSheet = document.getElementById('filterBottomSheet');
+                const cartDrawer = document.getElementById('cartDrawer');
+
+                if (checkoutModal && checkoutModal.classList.contains('open')) {
+                    if (typeof closeCheckoutModal === 'function') closeCheckoutModal();
+                }
+                if (successModal && successModal.classList.contains('open')) {
+                    if (typeof closeSuccessModal === 'function') closeSuccessModal();
+                }
+                if (previewModal && previewModal.classList.contains('open')) {
+                    if (typeof closePreview === 'function') closePreview();
+                }
+                if (filterSheet && filterSheet.classList.contains('open')) {
+                    if (typeof toggleMobileFilter === 'function') toggleMobileFilter();
+                }
+                if (cartDrawer && cartDrawer.classList.contains('open')) {
+                    if (typeof closeCartDrawer === 'function') closeCartDrawer();
+                }
+            }
+        });
+
+        // ── MODAL OVERLAY CLICKS ──
+        const checkoutModal = document.getElementById('checkoutModal');
+        if (checkoutModal) {
+            checkoutModal.addEventListener('click', function(e) {
+                if (e.target === checkoutModal && typeof closeCheckoutModal === 'function') {
+                    closeCheckoutModal();
+                }
+            });
+        }
+
+        const successModal = document.getElementById('successModal');
+        if (successModal) {
+            successModal.addEventListener('click', function(e) {
+                if (e.target === successModal && typeof closeSuccessModal === 'function') {
+                    closeSuccessModal();
+                }
+            });
+        }
+
+        const previewModal = document.getElementById('previewModal');
+        if (previewModal) {
+            previewModal.addEventListener('click', function(e) {
+                if (e.target === previewModal && typeof closePreview === 'function') {
+                    closePreview();
+                }
+            });
+        }
+
+        // ── LEGAL CONSENT BANNER ──
+        (function() {
+            const CONSENT_KEY = 'kenyavault_consent';
+            const banner = document.getElementById('consentBanner');
+            const checkbox = document.getElementById('consentCheckbox');
+            const acceptBtn = document.getElementById('consentAcceptBtn');
+
+            if (localStorage.getItem(CONSENT_KEY) === 'true') {
+                if (banner) banner.classList.add('hidden');
+                return;
+            }
+
+            if (banner) banner.classList.remove('hidden');
+
+            function updateAcceptButton() {
+                if (checkbox && acceptBtn) {
+                    const isChecked = checkbox.checked;
+                    acceptBtn.disabled = !isChecked;
+                    acceptBtn.style.opacity = isChecked ? '1' : '0.5';
+                    acceptBtn.style.pointerEvents = isChecked ? 'auto' : 'none';
+                }
+            }
+
+            if (checkbox) checkbox.addEventListener('change', updateAcceptButton);
+            if (acceptBtn) {
+                acceptBtn.addEventListener('click', function() {
+                    if (checkbox && checkbox.checked) {
+                        localStorage.setItem(CONSENT_KEY, 'true');
+                        if (banner) banner.classList.add('hidden');
+                        document.dispatchEvent(new CustomEvent('kenyavaultConsentGiven'));
+                    }
+                });
+            }
+            updateAcceptButton();
+            if (banner && !localStorage.getItem(CONSENT_KEY)) banner.classList.remove('hidden');
+        })();
+
+        // ── FLOATING DOWNLOAD NOTIFICATIONS ──
+        const downloadData = [
+            { name: 'Solomon Mwangi', location: 'Kisumu', resource: 'Mathematics Grade 7 End Term 2' },
+            { name: 'Grace Akinyi', location: 'Nairobi', resource: 'English Lesson Plans Grade 8' },
+            { name: 'David Ochieng', location: 'Kisii', resource: 'KJSEA Revision Papers 2026' },
+            { name: 'Mary Wanjiru', location: 'Nakuru', resource: 'Integrated Science Grade 9 Notes' },
+            { name: 'James Odhiambo', location: 'Mombasa', resource: 'Social Studies Schemes of Work' },
+            { name: 'Faith Kiprop', location: 'Eldoret', resource: 'Chemistry Form 3 Revision Guide' },
+            { name: 'Peter Njoroge', location: 'Thika', resource: 'Biology KCSE Past Papers' },
+            { name: 'Sarah Muthoni', location: 'Meru', resource: 'Creative Arts Assessment Tools' },
+            { name: 'Michael Otieno', location: 'Kisumu', resource: 'Kiswahili Composition Guide' },
+            { name: 'Jane Wangui', location: 'Nyeri', resource: 'Mathematics Form 4 Revision Kit' },
+            { name: 'Stephen Kipchoge', location: 'Eldoret', resource: 'Physics Practical Workbook' },
+            { name: 'Rose Akoth', location: 'Homa Bay', resource: 'CBC Assessment Rubrics Grade 7' },
+            { name: 'Joseph Kimani', location: 'Nairobi', resource: 'Business Studies Form 3 Notes' },
+            { name: 'Alice Nekesa', location: 'Bungoma', resource: 'History & Government Revision' },
+            { name: 'Daniel Kamau', location: 'Kiambu', resource: 'KJSEA 2026 Prediction Papers' },
+            { name: 'Catherine Wanjiku', location: 'Nakuru', resource: 'Mathematics Grade 8 Schemes of Work' },
+            { name: 'Patrick Odhiambo', location: 'Kisumu', resource: 'Integrated Science Practical Guide' },
+            { name: 'Margaret Akinyi', location: 'Mombasa', resource: 'English Composition Writing Guide' },
+        ];
+
+        function generateNotification() {
+            const data = downloadData[Math.floor(Math.random() * downloadData.length)];
+            const timeAgo = Math.floor(Math.random() * 60) + 1;
+            return { ...data, timeAgo: timeAgo <= 5 ? 'just now' : `${timeAgo} minutes ago`, id: Date.now() + '_' + Math.random().toString(36).substr(2, 6) };
+        }
+
+        function showFloatingNotification() {
+            const container = document.getElementById('notificationContainer');
+            if (!container) return;
+            const data = generateNotification();
+            const existing = container.querySelectorAll('.download-notification');
+            for (const el of existing) {
+                const text = el.querySelector('.notif-text .action')?.textContent || '';
+                if (text.includes(data.name) && text.includes(data.resource)) return;
+            }
+            const notification = document.createElement('div');
+            notification.className = 'download-notification';
+            notification.id = `notif-${data.id}`;
+            notification.innerHTML = `
+                <div class="notif-content">
+                    <div class="notif-icon">📥</div>
+                    <div class="notif-text">
+                        <span class="name">${data.name}</span>
+                        <span class="action">downloaded <strong>${data.resource}</strong></span>
+                        <span class="location">📍 ${data.location} · ${data.timeAgo}</span>
+                    </div>
+                    <button class="notif-close" onclick="closeNotification('${data.id}')">✕</button>
                 </div>
-                <button class="notif-close" onclick="closeNotification('${data.id}')">✕</button>
-            </div>
-        `;
-        container.appendChild(notification);
-        setTimeout(() => closeNotification(data.id), 6000);
-        while (container.children.length > 3) {
-            const first = container.firstChild;
-            first.classList.add('hiding');
-            setTimeout(() => first.remove(), 500);
-        }
-    }
-
-    window.closeNotification = function(id) {
-        const element = document.getElementById(`notif-${id}`);
-        if (element) {
-            element.classList.add('hiding');
-            setTimeout(() => element.remove(), 500);
-        }
-    };
-
-    let notifInterval;
-    function startNotifications() {
-        setTimeout(showFloatingNotification, 3000);
-        notifInterval = setInterval(showFloatingNotification, 5000 + Math.random() * 7000);
-    }
-
-    // Only start notifications if notification container exists
-    if (document.getElementById('notificationContainer')) {
-        startNotifications();
-    }
-
-    document.addEventListener('visibilitychange', function() {
-        if (document.hidden) { 
-            if (notifInterval) clearInterval(notifInterval); 
-        } else { 
-            if (notifInterval) clearInterval(notifInterval); 
-            startNotifications(); 
-        }
-    });
-
-    document.addEventListener('click', function(e) {
-        if (e.target.closest('.download-notification') && !e.target.closest('.notif-close')) {
-            const notif = e.target.closest('.download-notification');
-            const id = notif.id.replace('notif-', '');
-            if (typeof closeNotification === 'function') {
-                closeNotification(id);
+            `;
+            container.appendChild(notification);
+            setTimeout(() => closeNotification(data.id), 6000);
+            while (container.children.length > 3) {
+                const first = container.firstChild;
+                first.classList.add('hiding');
+                setTimeout(() => first.remove(), 500);
             }
         }
+
+        window.closeNotification = function(id) {
+            const element = document.getElementById(`notif-${id}`);
+            if (element) {
+                element.classList.add('hiding');
+                setTimeout(() => element.remove(), 500);
+            }
+        };
+
+        let notifInterval;
+        function startNotifications() {
+            setTimeout(showFloatingNotification, 3000);
+            notifInterval = setInterval(showFloatingNotification, 5000 + Math.random() * 7000);
+        }
+
+        if (document.getElementById('notificationContainer')) {
+            startNotifications();
+        }
+
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) { 
+                if (notifInterval) clearInterval(notifInterval); 
+            } else { 
+                if (notifInterval) clearInterval(notifInterval); 
+                startNotifications(); 
+            }
+        });
+
+        document.addEventListener('click', function(e) {
+            if (e.target.closest('.download-notification') && !e.target.closest('.notif-close')) {
+                const notif = e.target.closest('.download-notification');
+                const id = notif.id.replace('notif-', '');
+                if (typeof closeNotification === 'function') {
+                    closeNotification(id);
+                }
+            }
+        });
+
+        // ── GLOBAL EXPOSURE ──
+        if (typeof openCheckout === 'function') window.openCheckout = openCheckout;
+        if (typeof closeCheckoutModal === 'function') window.closeCheckoutModal = closeCheckoutModal;
+        if (typeof closeSuccessModal === 'function') window.closeSuccessModal = closeSuccessModal;
+        if (typeof initiatePayment === 'function') window.initiatePayment = initiatePayment;
+        if (typeof openPreview === 'function') window.openPreview = openPreview;
+        if (typeof closePreview === 'function') window.closePreview = closePreview;
+        if (typeof buyFromPreview === 'function') window.buyFromPreview = buyFromPreview;
+        if (typeof resetFilters === 'function') window.resetFilters = resetFilters;
+        if (typeof setLevel === 'function') window.setLevel = setLevel;
+        if (typeof setCurriculum === 'function') window.setCurriculum = setCurriculum;
+        if (typeof toggleCategory === 'function') window.toggleCategory = toggleCategory;
+        if (typeof changePage === 'function') window.changePage = changePage;
+        if (typeof toggleMobileFilter === 'function') window.toggleMobileFilter = toggleMobileFilter;
+        if (typeof mobileSetLevel === 'function') window.mobileSetLevel = mobileSetLevel;
+        if (typeof mobileSetCurriculum === 'function') window.mobileSetCurriculum = mobileSetCurriculum;
+        if (typeof updateSortFromMobile === 'function') window.updateSortFromMobile = updateSortFromMobile;
+        if (typeof applyMobileFilters === 'function') window.applyMobileFilters = applyMobileFilters;
+        if (typeof renderShop === 'function') window.renderShop = renderShop;
+        if (typeof handleSearch === 'function') window.handleSearch = handleSearch;
+        if (typeof clearSearchInput === 'function') window.clearSearchInput = clearSearchInput;
+        if (typeof init === 'function') window.init = init;
+        if (typeof checkOrderPaymentStatus === 'function') window.checkOrderPaymentStatus = checkOrderPaymentStatus;
+        if (typeof stopPaymentPolling === 'function') window.stopPaymentPolling = stopPaymentPolling;
+        if (typeof shareOnWhatsApp === 'function') window.shareOnWhatsApp = shareOnWhatsApp;
+        if (typeof shareOnFacebook === 'function') window.shareOnFacebook = shareOnFacebook;
+        if (typeof shareOnTwitter === 'function') window.shareOnTwitter = shareOnTwitter;
+        if (typeof shareOnTelegram === 'function') window.shareOnTelegram = shareOnTelegram;
+        if (typeof shareOnLinkedIn === 'function') window.shareOnLinkedIn = shareOnLinkedIn;
+        if (typeof copyShareLink === 'function') window.copyShareLink = copyShareLink;
+        if (typeof addToCart === 'function') window.addToCart = addToCart;
+        if (typeof removeFromCart === 'function') window.removeFromCart = removeFromCart;
+        if (typeof updateCartQty === 'function') window.updateCartQty = updateCartQty;
+        if (typeof clearCart === 'function') window.clearCart = clearCart;
+        if (typeof openCartDrawer === 'function') window.openCartDrawer = openCartDrawer;
+        if (typeof closeCartDrawer === 'function') window.closeCartDrawer = closeCartDrawer;
+        if (typeof openCartCheckout === 'function') window.openCartCheckout = openCartCheckout;
+        if (typeof verifyAndCompleteOrder === 'function') window.verifyAndCompleteOrder = verifyAndCompleteOrder;
+
+        if (document.getElementById('productsGrid')) {
+            if (typeof init === 'function') {
+                init();
+                console.log('✅ KenyaVault Shop initialized');
+                console.log('📱 MegaPay Payment URL:', MEGAPAY_PAYMENT_URL);
+                console.log('🔗 Supabase URL:', SUPABASE_URL);
+            }
+        } else {
+            console.log('📥 Download notifications active on homepage!');
+        }
     });
 
-    // ── GLOBAL EXPOSURE ──
-    // Only expose shop-related functions if they exist (on shop page)
-    if (typeof openCheckout === 'function') window.openCheckout = openCheckout;
-    if (typeof closeCheckoutModal === 'function') window.closeCheckoutModal = closeCheckoutModal;
-    if (typeof closeSuccessModal === 'function') window.closeSuccessModal = closeSuccessModal;
-    if (typeof initiatePayment === 'function') window.initiatePayment = initiatePayment;
-    if (typeof openPreview === 'function') window.openPreview = openPreview;
-    if (typeof closePreview === 'function') window.closePreview = closePreview;
-    if (typeof buyFromPreview === 'function') window.buyFromPreview = buyFromPreview;
-    if (typeof resetFilters === 'function') window.resetFilters = resetFilters;
-    if (typeof setLevel === 'function') window.setLevel = setLevel;
-    if (typeof setCurriculum === 'function') window.setCurriculum = setCurriculum;
-    if (typeof toggleCategory === 'function') window.toggleCategory = toggleCategory;
-    if (typeof changePage === 'function') window.changePage = changePage;
-    if (typeof toggleMobileFilter === 'function') window.toggleMobileFilter = toggleMobileFilter;
-    if (typeof mobileSetLevel === 'function') window.mobileSetLevel = mobileSetLevel;
-    if (typeof mobileSetCurriculum === 'function') window.mobileSetCurriculum = mobileSetCurriculum;
-    if (typeof updateSortFromMobile === 'function') window.updateSortFromMobile = updateSortFromMobile;
-    if (typeof applyMobileFilters === 'function') window.applyMobileFilters = applyMobileFilters;
-    if (typeof renderShop === 'function') window.renderShop = renderShop;
-    if (typeof handleSearch === 'function') window.handleSearch = handleSearch;
-    if (typeof clearSearchInput === 'function') window.clearSearchInput = clearSearchInput;
-    if (typeof init === 'function') window.init = init;
-    if (typeof checkOrderPaymentStatus === 'function') window.checkOrderPaymentStatus = checkOrderPaymentStatus;
-    if (typeof stopPaymentPolling === 'function') window.stopPaymentPolling = stopPaymentPolling;
-    if (typeof shareOnWhatsApp === 'function') window.shareOnWhatsApp = shareOnWhatsApp;
-    if (typeof shareOnFacebook === 'function') window.shareOnFacebook = shareOnFacebook;
-    if (typeof shareOnTwitter === 'function') window.shareOnTwitter = shareOnTwitter;
-    if (typeof shareOnTelegram === 'function') window.shareOnTelegram = shareOnTelegram;
-    if (typeof shareOnLinkedIn === 'function') window.shareOnLinkedIn = shareOnLinkedIn;
-    if (typeof copyShareLink === 'function') window.copyShareLink = copyShareLink;
-    if (typeof addToCart === 'function') window.addToCart = addToCart;
-    if (typeof removeFromCart === 'function') window.removeFromCart = removeFromCart;
-    if (typeof updateCartQty === 'function') window.updateCartQty = updateCartQty;
-    if (typeof clearCart === 'function') window.clearCart = clearCart;
-    if (typeof openCartDrawer === 'function') window.openCartDrawer = openCartDrawer;
-    if (typeof closeCartDrawer === 'function') window.closeCartDrawer = closeCartDrawer;
-    if (typeof openCartCheckout === 'function') window.openCartCheckout = openCartCheckout;
-    if (typeof verifyAndCompleteOrder === 'function') window.verifyAndCompleteOrder = verifyAndCompleteOrder;
-
-    // Only initialize shop if on shop page (check for productsGrid)
-    if (document.getElementById('productsGrid')) {
-        if (typeof init === 'function') {
-            init();
-            console.log('✅ KenyaVault Shop initialized');
-            console.log('📱 MegaPay Payment URL:', MEGAPAY_PAYMENT_URL);
-            console.log('🔗 Supabase URL:', SUPABASE_URL);
-        }
-    } else {
-        console.log('📥 Download notifications active on homepage!');
-    }
-});
     // ── AI CHATBOT ──
     const aiKnowledge = {
         'what is cbc': 'CBC (Competency-Based Curriculum) is Kenya\'s current education system that focuses on developing learners\' competencies and skills. It emphasizes 7 core competencies: communication and collaboration, critical thinking and problem solving, creativity and imagination, citizenship, digital literacy, learning to learn, and self-efficacy. KenyaVault provides comprehensive CBC resources for all levels!',
@@ -3241,36 +2520,42 @@ document.addEventListener('DOMContentLoaded', function() {
     const chatInput = document.getElementById('chatInput');
     const chatSendBtn = document.getElementById('chatSendBtn');
 
-    chatbotToggle.addEventListener('click', function() {
-        chatbotWindow.classList.toggle('open');
-        if (chatbotWindow.classList.contains('open')) chatInput.focus();
-    });
+    if (chatbotToggle && chatbotWindow && chatbotClose) {
+        chatbotToggle.addEventListener('click', function() {
+            chatbotWindow.classList.toggle('open');
+            if (chatbotWindow.classList.contains('open') && chatInput) chatInput.focus();
+        });
 
-    chatbotClose.addEventListener('click', function() {
-        chatbotWindow.classList.remove('open');
-    });
+        chatbotClose.addEventListener('click', function() {
+            chatbotWindow.classList.remove('open');
+        });
+    }
 
     window.quickQuestion = function(question) {
-        chatInput.value = question;
-        sendMessage();
+        if (chatInput) {
+            chatInput.value = question;
+            sendMessage();
+        }
     };
 
     function sendMessage() {
+        if (!chatInput) return;
         const message = chatInput.value.trim();
         if (!message) return;
         addMessage(message, 'user');
         chatInput.value = '';
-        chatInput.focus();
+        if (chatInput) chatInput.focus();
         const typingId = addTypingIndicator();
         setTimeout(() => {
             removeTypingIndicator(typingId);
             const response = getAIResponse(message);
             addMessage(response, 'ai');
-            chatMessages.scrollTop = chatMessages.scrollHeight;
+            if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
         }, 800 + Math.random() * 800);
     }
 
     function addMessage(text, sender) {
+        if (!chatMessages) return;
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${sender}`;
         messageDiv.textContent = text;
@@ -3279,6 +2564,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function addTypingIndicator() {
+        if (!chatMessages) return 'typing-' + Date.now();
         const id = 'typing-' + Date.now();
         const typingDiv = document.createElement('div');
         typingDiv.id = id;
@@ -3302,10 +2588,14 @@ document.addEventListener('DOMContentLoaded', function() {
         return `🧑‍🏫 I'm Mwalimu AI, your KenyaVault education assistant! 🎓\n\nI can help you with:\n📚 CBC Curriculum structure and subjects\n🏆 KJSEA 2026 preparation\n📖 KCSE exams and revision\n📐 Mathematics, English, Science, and more\n🌍 Social Studies and History\n📝 Study tips and exam strategies\n🔍 Finding resources on KenyaVault\n💼 Career guidance\n🎓 University and TVET information\n\nWhat would you like to learn more about? I'm here to help! 😊`;
     }
 
-    chatSendBtn.addEventListener('click', sendMessage);
-    chatInput.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') { e.preventDefault(); sendMessage(); }
-    });
+    if (chatSendBtn) {
+        chatSendBtn.addEventListener('click', sendMessage);
+    }
+    if (chatInput) {
+        chatInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); sendMessage(); }
+        });
+    }
 
     console.log('🤖 Mwalimu AI Chatbot loaded successfully!');
     console.log('📥 Download notifications active on homepage!');
@@ -3358,6 +2648,5 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     })();
 </script>
-
 </body>
 </html>
