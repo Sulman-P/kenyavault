@@ -3105,103 +3105,97 @@
         }
     }
 
-    // ── CREATE ORDER ──
-    async function createOrder(product, customerName, phone, sharedOrderRef = null, qty = 1, batchTotal = null) {
-        const orderRef = sharedOrderRef || generateOrderRef();
-        const sessionId = getOrCreateSessionId();
-        const filePath = product.file_path || product.file_url || '';
-        const fileName = filePath ? filePath.split('/').pop() : `${product.title || 'resource'}.pdf`;
-        const productId = product.id || null;
+    // ── CREATE ORDER (FIXED - Removed quantity column) ──
+async function createOrder(product, customerName, phone, sharedOrderRef = null, qty = 1, batchTotal = null) {
+    const orderRef = sharedOrderRef || generateOrderRef();
+    const sessionId = getOrCreateSessionId();
+    const filePath = product.file_path || product.file_url || '';
+    const fileName = filePath ? filePath.split('/').pop() : `${product.title || 'resource'}.pdf`;
+    const productId = product.id || null;
 
-        let cleanFilePath = filePath;
-        for (const bucket of AVAILABLE_BUCKETS) {
-            if (cleanFilePath.startsWith(`${bucket}/`)) {
-                cleanFilePath = cleanFilePath.replace(`${bucket}/`, '');
-                break;
-            }
+    let cleanFilePath = filePath;
+    for (const bucket of AVAILABLE_BUCKETS) {
+        if (cleanFilePath.startsWith(`${bucket}/`)) {
+            cleanFilePath = cleanFilePath.replace(`${bucket}/`, '');
+            break;
         }
-        cleanFilePath = cleanFilePath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
-        cleanFilePath = cleanFilePath.replace(/^\/+/, '');
-        if (cleanFilePath && !cleanFilePath.startsWith('resources/')) {
-            cleanFilePath = `resources/${cleanFilePath}`;
+    }
+    cleanFilePath = cleanFilePath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
+    cleanFilePath = cleanFilePath.replace(/^\/+/, '');
+    if (cleanFilePath && !cleanFilePath.startsWith('resources/')) {
+        cleanFilePath = `resources/${cleanFilePath}`;
+    }
+
+    const isFree = (product.price === 0 || product.price === null || product.price === undefined) || 
+                   product.resource_type === 'free';
+    const lineTotal = (product.price || 0) * (qty || 1);
+    const effectiveTotal = batchTotal !== null ? batchTotal : lineTotal;
+
+    const orderData = {
+        order_ref: orderRef,
+        customer_name: customerName,
+        phone: phone,
+        session_id: sessionId,
+        item_title: (qty && qty > 1) ? `${product.title || 'Resource'} (x${qty})` : (product.title || 'Resource'),
+        item_price: product.price || 0,
+        total_amount: effectiveTotal,
+        status: isFree ? 'completed' : 'pending',
+        payment_status: isFree ? 'completed' : 'pending',
+        resource_id: productId,
+        resource_file_path: cleanFilePath,
+        resource_file_name: fileName,
+        ip_address: await getClientIP(),
+        user_agent: navigator.userAgent,
+        created_at: new Date().toISOString()
+    };
+
+    console.log('📝 Creating order with file path:', cleanFilePath);
+
+    try {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
+            method: 'POST',
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=representation'
+            },
+            body: JSON.stringify(orderData)
+        });
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ Order creation error:', errorText);
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
         }
+        const result = await response.json();
+        const createdOrder = result[0] || result;
+        console.log('✅ Order created:', createdOrder);
+        return { orderRef, orderId: createdOrder.id };
+    } catch (error) {
+        console.error('❌ Order creation failed:', error);
+        throw error;
+    }
+}
 
-        const isFree = (product.price === 0 || product.price === null || product.price === undefined) || 
-                       product.resource_type === 'free';
-        const lineTotal = (product.price || 0) * (qty || 1);
-        // IMPORTANT: total_amount is the FULL order/cart total, the same value on every
-        // row that shares this order_ref — NOT just this line item's price. MegaPay only
-        // sends one payment covering the whole cart, so every row needs to agree on what
-        // "fully paid" means for the underpayment check (see evaluate_orders_payment_status
-        // trigger in the orders table migration) to work correctly.
-        const effectiveTotal = batchTotal !== null ? batchTotal : lineTotal;
-
-        const orderData = {
-            order_ref: orderRef,
-            customer_name: customerName,
-            phone: phone,
-            session_id: sessionId,
-            item_title: (qty && qty > 1) ? `${product.title || 'Resource'} (x${qty})` : (product.title || 'Resource'),
-            item_price: product.price || 0,
-            quantity: qty || 1,
-            total_amount: effectiveTotal,
-            status: isFree ? 'completed' : 'pending',
-            payment_status: isFree ? 'completed' : 'pending',
-            resource_id: productId,
-            resource_file_path: cleanFilePath,
-            resource_file_name: fileName,
-            ip_address: await getClientIP(),
-            user_agent: navigator.userAgent,
-            created_at: new Date().toISOString()
+// ── CREATE ORDERS FOR AN ENTIRE CART (FIXED) ──
+async function createCartOrders(items, customerName, phone) {
+    const orderRef = generateOrderRef();
+    const orderIds = [];
+    const totalAmount = items.reduce((sum, item) => sum + (item.price || 0) * item.qty, 0);
+    for (const item of items) {
+        const productStub = {
+            id: item.id,
+            title: item.title,
+            price: item.price,
+            resource_type: item.resource_type,
+            file_path: item.file_path,
+            file_url: item.file_url
         };
-
-        console.log('📝 Creating order with file path:', cleanFilePath);
-
-        try {
-            const response = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
-                method: 'POST',
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                    'Content-Type': 'application/json',
-                    'Prefer': 'return=representation'
-                },
-                body: JSON.stringify(orderData)
-            });
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error('❌ Order creation error:', errorText);
-                throw new Error(`HTTP ${response.status}: ${errorText}`);
-            }
-            const result = await response.json();
-            const createdOrder = result[0] || result;
-            console.log('✅ Order created:', createdOrder);
-            return { orderRef, orderId: createdOrder.id };
-        } catch (error) {
-            console.error('❌ Order creation failed:', error);
-            throw error;
-        }
+        const { orderId } = await createOrder(productStub, customerName, phone, orderRef, item.qty, totalAmount);
+        orderIds.push(orderId);
     }
-
-    // ── CREATE ORDERS FOR AN ENTIRE CART (shares one order_ref and one total_amount) ──
-    async function createCartOrders(items, customerName, phone) {
-        const orderRef = generateOrderRef();
-        const orderIds = [];
-        const totalAmount = items.reduce((sum, item) => sum + (item.price || 0) * item.qty, 0);
-        for (const item of items) {
-            const productStub = {
-                id: item.id,
-                title: item.title,
-                price: item.price,
-                resource_type: item.resource_type,
-                file_path: item.file_path,
-                file_url: item.file_url
-            };
-            const { orderId } = await createOrder(productStub, customerName, phone, orderRef, item.qty, totalAmount);
-            orderIds.push(orderId);
-        }
-        return { orderRef, orderIds, totalAmount };
-    }
+    return { orderRef, orderIds, totalAmount };
+}
 
     // ── GENERATE PUBLIC URL ──
     async function generatePublicUrl(filePath, bucketNames = AVAILABLE_BUCKETS) {
@@ -3473,90 +3467,83 @@
     // 'paid' once amount_paid >= total_amount for that row — otherwise set it to
     // 'underpaid'. This frontend already understands and displays that 'underpaid'
     // status below; it just needs the webhook to set it.
-    async function checkOrderPaymentStatus() {
-        if (!currentOrderRef && !currentOrderId) {
-            console.log('⚠️ No order to check');
+    // ── CHECK ORDER PAYMENT STATUS (FIXED - Removed amount_paid) ──
+async function checkOrderPaymentStatus() {
+    if (!currentOrderRef && !currentOrderId) {
+        console.log('⚠️ No order to check');
+        return;
+    }
+    try {
+        console.log(`🔍 Checking order: ${currentOrderRef || currentOrderId}`);
+        // Only select columns that exist in your table
+        let query = `${SUPABASE_URL}/rest/v1/orders?select=id,order_ref,payment_status,resource_file_path,delivery_token,mpesa_transaction_id,file_delivered,total_amount`;
+        if (checkoutMode === 'cart' && currentOrderRef) {
+            query += `&order_ref=eq.${currentOrderRef}`;
+        } else if (currentOrderId) {
+            query += `&id=eq.${currentOrderId}`;
+        } else if (currentOrderRef) {
+            query += `&order_ref=eq.${currentOrderRef}`;
+        }
+
+        const response = await fetch(query, {
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            }
+        });
+        if (!response.ok) {
+            console.error('❌ Failed to check order status:', response.status);
             return;
         }
-        try {
-            console.log(`🔍 Checking order: ${currentOrderRef || currentOrderId}`);
-            let query = `${SUPABASE_URL}/rest/v1/orders?select=id,order_ref,payment_status,resource_file_path,delivery_token,mpesa_transaction_id,file_delivered,total_amount,amount_paid`;
-            if (checkoutMode === 'cart' && currentOrderRef) {
-                query += `&order_ref=eq.${currentOrderRef}`;
-            } else if (currentOrderId) {
-                query += `&id=eq.${currentOrderId}`;
-            } else if (currentOrderRef) {
-                query += `&order_ref=eq.${currentOrderRef}`;
-            }
-
-            const response = await fetch(query, {
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                }
-            });
-            if (!response.ok) {
-                console.error('❌ Failed to check order status:', response.status);
-                return;
-            }
-            const orders = await response.json();
-            if (orders.length === 0) {
-                console.log('⚠️ Order not found');
-                return;
-            }
-
-            // Any row explicitly marked underpaid blocks the whole batch.
-            const underpaidRow = orders.find(o => o.payment_status === 'underpaid');
-            if (underpaidRow) {
-                stopPaymentPolling();
-                const totalPaid = orders.reduce((s, o) => s + (Number(o.amount_paid) || 0), 0);
-                showUnderpaymentWarning(checkoutExpectedTotal, totalPaid);
-                showToast('⚠️', 'Partial payment received — balance still due', 'error');
-                return;
-            }
-
-            const allPaid = orders.every(o => o.payment_status === 'paid' || o.payment_status === 'completed');
-
-            if (allPaid) {
-                console.log('✅ Payment confirmed! Auto-downloading...');
-                stopPaymentPolling();
-                const orderRefFound = orders[0].order_ref;
-                const orderIdsFound = orders.map(o => o.id);
-                currentOrderId = orderIdsFound[0];
-                currentOrderRef = orderRefFound;
-                checkoutOrderIds = orderIdsFound;
-
-                const verifyLabel = document.querySelector('.verify-label');
-                const verifySub = document.querySelector('.verify-sub');
-                if (verifyLabel) verifyLabel.textContent = '✅ Payment Confirmed!';
-                if (verifySub) {
-                    verifySub.innerHTML = `
-                        <strong>🎉 Your payment has been confirmed!</strong><br>
-                        Transaction ID: <strong>${orders[0].mpesa_transaction_id || 'N/A'}</strong><br>
-                        Your file${orderIdsFound.length > 1 ? 's are' : ' is'} being downloaded automatically.
-                        <br><br>
-                        <span style="color:#16a34a;">✓ M-Pesa STK Push successful</span>
-                    `;
-                }
-                showToast('✅', 'Payment confirmed! Downloading...', 'success');
-                if (orderIdsFound.length > 1) {
-                    await downloadAllForOrderRef(orderRefFound, orderIdsFound);
-                } else {
-                    await downloadPremiumResource(orderIdsFound[0]);
-                }
-                showSuccess(orderRefFound, phoneInput.value);
-                if (checkoutMode === 'cart') {
-                    clearCart();
-                }
-                setTimeout(() => {
-                    mpesaVerificationBox.classList.remove('visible');
-                    closeCheckoutModal();
-                }, 3000);
-            }
-        } catch (error) {
-            console.error('❌ Payment status check error:', error);
+        const orders = await response.json();
+        if (orders.length === 0) {
+            console.log('⚠️ Order not found');
+            return;
         }
+
+        // Check if all orders are paid or completed
+        const allPaid = orders.every(o => o.payment_status === 'paid' || o.payment_status === 'completed');
+
+        if (allPaid) {
+            console.log('✅ Payment confirmed! Auto-downloading...');
+            stopPaymentPolling();
+            const orderRefFound = orders[0].order_ref;
+            const orderIdsFound = orders.map(o => o.id);
+            currentOrderId = orderIdsFound[0];
+            currentOrderRef = orderRefFound;
+            checkoutOrderIds = orderIdsFound;
+
+            const verifyLabel = document.querySelector('.verify-label');
+            const verifySub = document.querySelector('.verify-sub');
+            if (verifyLabel) verifyLabel.textContent = '✅ Payment Confirmed!';
+            if (verifySub) {
+                verifySub.innerHTML = `
+                    <strong>🎉 Your payment has been confirmed!</strong><br>
+                    Transaction ID: <strong>${orders[0].mpesa_transaction_id || 'N/A'}</strong><br>
+                    Your file${orderIdsFound.length > 1 ? 's are' : ' is'} being downloaded automatically.
+                    <br><br>
+                    <span style="color:#16a34a;">✓ M-Pesa STK Push successful</span>
+                `;
+            }
+            showToast('✅', 'Payment confirmed! Downloading...', 'success');
+            if (orderIdsFound.length > 1) {
+                await downloadAllForOrderRef(orderRefFound, orderIdsFound);
+            } else {
+                await downloadPremiumResource(orderIdsFound[0]);
+            }
+            showSuccess(orderRefFound, phoneInput.value);
+            if (checkoutMode === 'cart') {
+                clearCart();
+            }
+            setTimeout(() => {
+                mpesaVerificationBox.classList.remove('visible');
+                closeCheckoutModal();
+            }, 3000);
+        }
+    } catch (error) {
+        console.error('❌ Payment status check error:', error);
     }
+}
 
     // ── START PAYMENT POLLING ──
     function startPaymentPolling() {
