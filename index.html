@@ -2572,6 +2572,554 @@
 <script>
     'use strict';
 
-    // ── SUPABASE CONFIG (declared exactly once) ──
+    // ── SUPABASE CONFIG ──
     const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJl
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
+
+    // ── GRADE LEVEL DISPLAY ──
+    const LEVEL_DISPLAY = {
+        pp1: 'PP1', pp2: 'PP2',
+        'grade-1': 'Grade 1', 'grade-2': 'Grade 2', 'grade-3': 'Grade 3',
+        'grade-4': 'Grade 4', 'grade-5': 'Grade 5', 'grade-6': 'Grade 6',
+        'grade-7': 'Grade 7', 'grade-8': 'Grade 8', 'grade-9': 'Grade 9',
+        'grade-10': 'Grade 10', 'grade-11': 'Grade 11', 'grade-12': 'Grade 12',
+        'form-1': 'Form 1', 'form-2': 'Form 2', 'form-3': 'Form 3', 'form-4': 'Form 4',
+        college: 'College', tvet: 'TVET', university: 'University'
+    };
+
+    // ── SUBJECT EMOJI MAP ──
+    function getSubjectEmoji(subject) {
+        const map = {
+            mathematics: '📐', english: '📖', kiswahili: '🗣️',
+            'integrated-science': '🔬', 'social-studies': '🌍',
+            'pre-technical': '🔧', agriculture: '🌾',
+            'religious-education': '✝️', 'creative-arts': '🎨',
+            'health-pe': '🏃', biology: '🧬', chemistry: '⚗️',
+            physics: '⚡', business: '💼', 'computer-studies': '💻',
+            engineering: '🔧', law: '⚖️', medicine: '🏥',
+            'personal-growth': '🌱', 'financial-literacy': '💰', leadership: '🏆'
+        };
+        return map[subject?.toLowerCase()] || '📚';
+    }
+
+    // ── FETCH RECENT RESOURCES ──
+    async function fetchRecentResources() {
+        const container = document.getElementById('recentResources');
+        if (!container) return;
+
+        try {
+            console.log('🔍 Fetching recent resources from Supabase...');
+
+            const response = await fetch(
+                `${SUPABASE_URL}/rest/v1/resources?select=*&order=created_at.desc&limit=6`,
+                {
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                        'Content-Type': 'application/json'
+                    }
+                }
+            );
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const resources = await response.json();
+            console.log(`✅ Loaded ${resources.length} recent resources`);
+
+            if (resources.length === 0) {
+                container.innerHTML = `
+                    <div class="resources-empty-state">
+                        <span class="icon">📭</span>
+                        <h3 style="color:var(--muted);">No resources available yet</h3>
+                        <p style="color:var(--muted);font-size:0.9rem;">Check back soon for new educational resources!</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = '';
+            resources.forEach(resource => {
+                html += buildResourceCard(resource);
+            });
+            container.innerHTML = html;
+
+        } catch (error) {
+            console.error('❌ Error fetching recent resources:', error);
+            container.innerHTML = `
+                <div class="resources-error-state">
+                    <span class="icon">⚠️</span>
+                    <h3 style="color:var(--muted);">Failed to load resources</h3>
+                    <p style="color:var(--muted);font-size:0.9rem;">${error.message}</p>
+                    <button onclick="fetchRecentResources()" style="margin-top:12px; padding:8px 20px; background:var(--gold); color:var(--navy); border:none; border-radius:8px; cursor:pointer; font-weight:700;">
+                        🔄 Retry
+                    </button>
+                </div>
+            `;
+        }
+    }
+
+    // ── BUILD RESOURCE CARD HTML ──
+    function buildResourceCard(resource) {
+        const isFree = (resource.price === 0 || resource.price === null || resource.price === undefined) ||
+                       resource.resource_type === 'free';
+        const priceDisplay = isFree ? 'FREE' : `KES ${resource.price || 0}`;
+        const priceClass = isFree ? 'price free' : 'price';
+
+        const levelDisplay = LEVEL_DISPLAY[resource.level] || resource.level || 'General';
+        const subjectEmoji = getSubjectEmoji(resource.subject);
+        const subjectDisplay = resource.subject || 'General';
+
+        const resourceType = resource.resource_type || 'resource';
+        const typeBadge = resourceType.replace(/-/g, ' ').toUpperCase();
+
+        const curriculumBadge = resource.cbc_compliant !== false ? 'CBC' : '8-4-4';
+
+        const title = resource.title || 'Untitled Resource';
+        const truncatedTitle = title.length > 55 ? title.substring(0, 52) + '...' : title;
+
+        const coverHTML = resource.cover_image_url ? `
+            <div class="card-img" style="background-image: url('${resource.cover_image_url}'); background-size: cover; background-position: center;">
+                <span class="new-ribbon">🆕 New</span>
+                <span style="background:rgba(0,0,0,0.3);padding:8px 16px;border-radius:8px;backdrop-filter:blur(4px);font-size:2rem;">${subjectEmoji}</span>
+            </div>
+        ` : `
+            <div class="card-img" style="font-size:2.8rem;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg, var(--gold-pale), var(--surface));">
+                <span class="new-ribbon">🆕 New</span>
+                ${subjectEmoji}
+            </div>
+        `;
+
+        return `
+            <div class="resource-card" data-id="${resource.id}">
+                ${coverHTML}
+                <div class="card-body">
+                    <div class="card-title">${truncatedTitle}</div>
+                    <div class="card-meta">
+                        <span>${subjectEmoji} ${subjectDisplay}</span>
+                        <span>📚 ${levelDisplay}</span>
+                        <span class="badge">${curriculumBadge}</span>
+                        ${resourceType !== 'general' ? `<span class="badge badge-type">${typeBadge}</span>` : ''}
+                    </div>
+                    <div class="card-footer">
+                        <span class="${priceClass}">${priceDisplay}</span>
+                        <button class="btn-add-cart" onclick="handleAddToCart('${resource.id}')" data-id="${resource.id}">
+                            🛒 Add
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    // ── HANDLE ADD TO CART ──
+    function handleAddToCart(productId) {
+        const btn = event?.target || document.querySelector(`[data-id="${productId}"]`);
+        if (btn) {
+            btn.textContent = '✓ Added!';
+            btn.classList.add('added');
+            btn.style.animation = 'none';
+            setTimeout(() => {
+                btn.textContent = '🛒 Add';
+                btn.classList.remove('added');
+                btn.style.animation = '';
+            }, 2000);
+        }
+
+        try {
+            const pendingCart = JSON.parse(localStorage.getItem('pending_cart_add') || '[]');
+            if (!pendingCart.includes(productId)) {
+                pendingCart.push(productId);
+                localStorage.setItem('pending_cart_add', JSON.stringify(pendingCart));
+            }
+        } catch (e) {
+            console.warn('Could not store pending cart item:', e.message);
+        }
+
+        showToast('🛒', 'Added to cart! View in shop.', 'success');
+
+        setTimeout(() => {
+            if (confirm('Item added to cart! Would you like to view your cart in the shop?')) {
+                window.location.href = '/shop.html';
+            }
+        }, 1500);
+    }
+
+    // ── TOAST NOTIFICATION ──
+    let toastTimeout = null;
+
+    function showToast(icon, message, type = 'success') {
+        const existingToast = document.querySelector('.toast-notification');
+        if (existingToast) existingToast.remove();
+        if (toastTimeout) clearTimeout(toastTimeout);
+
+        const toast = document.createElement('div');
+        toast.className = 'toast-notification ' + type;
+        toast.innerHTML = `
+            <span class="toast-icon">${icon}</span>
+            <span class="toast-msg">${message}</span>
+        `;
+        toast.style.cssText = `
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            border-radius: 10px;
+            background: rgba(10, 26, 58, 0.95);
+            border: 1px solid rgba(212, 160, 23, 0.3);
+            color: #fff;
+            font-size: 0.9rem;
+            z-index: 9999;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+            backdrop-filter: blur(10px);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.3s ease;
+            max-width: 400px;
+        `;
+        document.body.appendChild(toast);
+
+        setTimeout(() => {
+            toast.style.opacity = '1';
+            toast.style.transform = 'translateY(0)';
+        }, 10);
+
+        toastTimeout = setTimeout(() => {
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateY(20px)';
+            setTimeout(() => toast.remove(), 300);
+        }, 4000);
+    }
+
+    // ── HAMBURGER MENU ──
+    const hamburger = document.getElementById('hamburger');
+    const navLinks = document.getElementById('navLinks');
+
+    if (hamburger && navLinks) {
+        hamburger.addEventListener('click', function(e) {
+            e.stopPropagation();
+            const isOpen = navLinks.classList.toggle('active');
+            hamburger.classList.toggle('active');
+            hamburger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        });
+
+        navLinks.querySelectorAll('a').forEach(function(link) {
+            link.addEventListener('click', function() {
+                if (window.innerWidth <= 900) {
+                    navLinks.classList.remove('active');
+                    hamburger.classList.remove('active');
+                    hamburger.setAttribute('aria-expanded', 'false');
+                }
+            });
+        });
+    }
+
+    // ── AI CHATBOT ──
+    const aiKnowledge = {
+        'what is cbc': 'CBC (Competency-Based Curriculum) is Kenya\'s current education system that focuses on developing learners\' competencies and skills. It emphasizes 7 core competencies: communication and collaboration, critical thinking and problem solving, creativity and imagination, citizenship, digital literacy, learning to learn, and self-efficacy. KenyaVault provides comprehensive CBC resources for all levels!',
+        'cbc structure': 'The CBC structure has 3 levels:\n📚 Early Years Education: Pre-primary 1-2 & Grade 1-3\n📚 Middle School: Grade 4-6 (KPSEA at Grade 6)\n📚 Senior School: Grade 7-9 (KJSEA at Grade 9)\n\nVisit KenyaVault Shop for CBC resources for all levels!',
+        'what is kjsea': 'KJSEA (Kenya Junior School Education Assessment) is the national examination for Grade 9 learners under the CBC system. It replaces the previous KCPE and assesses competencies across all learning areas. Find KJSEA resources on KenyaVault!',
+        'kjsea 2026': 'KJSEA 2026 is scheduled for November 2026. Grade 9 students should start early preparation using quality revision materials, past papers, and practice exams. KenyaVault offers comprehensive KJSEA revision resources!',
+        'kenyavault': 'KenyaVault is Kenya\'s #1 education resource hub! 📚 We provide:\n• CBC resources for all levels\n• Lesson plans and schemes of work\n• KJSEA 2026 revision materials\n• KCSE past papers and revision\n• Resources for teachers and students\n• Free and premium educational content\n\nVisit our shop to access all resources! 🚀',
+        'resources': 'KenyaVault offers a wide range of educational resources:\n📚 KJSEA 2026 revision materials\n📚 CBC lesson plans and schemes of work\n📚 KCSE past papers and marking schemes\n📚 Mathematics, English, and Science resources\n📚 Integrated Science practical guides\n📚 Social Studies and History materials\n\nCheck out our shop for all resources! 🛒',
+        'shop': 'You can find all KenyaVault resources in our shop! Visit /shop.html to browse:\n• Premium resources for all levels\n• Free resources\n• KJSEA 2026 materials\n• Lesson plans and schemes of work\n• Past papers and revision materials\n• Resources by subject and grade level\n\nStart browsing now! 🛒',
+        'hello': 'Hello! 👋 I\'m Mwalimu AI, your KenyaVault education assistant. I can help you with CBC, KJSEA, KCSE, study tips, resources, and career guidance. What would you like to know? 😊',
+        'hi': 'Habari! 👋 I\'m Mwalimu AI, your KenyaVault education assistant. I\'m here to help you with:\n• CBC curriculum questions\n• KJSEA & KCSE preparation\n• Subject-specific help\n• Finding resources on KenyaVault\n• Career guidance\n• Education news\n\nWhat can I help you with today? 😊',
+        'help': 'I\'m here to help! 🎓 You can ask me about:\n• CBC Curriculum and structure\n• KJSEA 2026 preparation\n• KCSE exams\n• Mathematics, English, Science\n• Social Studies, History\n• Study tips and exam strategies\n• KenyaVault resources\n• Career guidance\n• University and TVET information\n\nJust type your question! 💬',
+    };
+
+    const chatbotToggle = document.getElementById('chatbotToggle');
+    const chatbotWindow = document.getElementById('chatbotWindow');
+    const chatbotClose = document.getElementById('chatbotClose');
+    const chatMessages = document.getElementById('chatMessages');
+    const chatInput = document.getElementById('chatInput');
+    const chatSendBtn = document.getElementById('chatSendBtn');
+
+    if (chatbotToggle && chatbotWindow && chatbotClose) {
+        chatbotToggle.addEventListener('click', function() {
+            chatbotWindow.classList.toggle('open');
+            if (chatbotWindow.classList.contains('open') && chatInput) chatInput.focus();
+        });
+
+        chatbotClose.addEventListener('click', function() {
+            chatbotWindow.classList.remove('open');
+        });
+    }
+
+    window.quickQuestion = function(question) {
+        if (chatInput) {
+            chatInput.value = question;
+            sendMessage();
+        }
+    };
+
+    function sendMessage() {
+        if (!chatInput) return;
+        const message = chatInput.value.trim();
+        if (!message) return;
+        addMessage(message, 'user');
+        chatInput.value = '';
+        if (chatInput) chatInput.focus();
+        const typingId = addTypingIndicator();
+        setTimeout(() => {
+            removeTypingIndicator(typingId);
+            const response = getAIResponse(message);
+            addMessage(response, 'ai');
+            if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
+        }, 800 + Math.random() * 800);
+    }
+
+    function addMessage(text, sender) {
+        if (!chatMessages) return;
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${sender}`;
+        messageDiv.textContent = text;
+        chatMessages.appendChild(messageDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function addTypingIndicator() {
+        if (!chatMessages) return 'typing-' + Date.now();
+        const id = 'typing-' + Date.now();
+        const typingDiv = document.createElement('div');
+        typingDiv.id = id;
+        typingDiv.className = 'message ai';
+        typingDiv.innerHTML = `<span class="typing"></span><span class="typing"></span><span class="typing"></span>`;
+        chatMessages.appendChild(typingDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+        return id;
+    }
+
+    function removeTypingIndicator(id) {
+        const element = document.getElementById(id);
+        if (element) element.remove();
+    }
+
+    function getAIResponse(question) {
+        const q = question.toLowerCase().trim();
+        for (const [key, value] of Object.entries(aiKnowledge)) {
+            if (q === key || q.includes(key) || key.includes(q)) return value;
+        }
+        return `🧑‍🏫 I'm Mwalimu AI, your KenyaVault education assistant! 🎓\n\nI can help you with:\n📚 CBC Curriculum structure and subjects\n🏆 KJSEA 2026 preparation\n📖 KCSE exams and revision\n📐 Mathematics, English, Science, and more\n🌍 Social Studies and History\n📝 Study tips and exam strategies\n🔍 Finding resources on KenyaVault\n💼 Career guidance\n🎓 University and TVET information\n\nWhat would you like to learn more about? I'm here to help! 😊`;
+    }
+
+    if (chatSendBtn) {
+        chatSendBtn.addEventListener('click', sendMessage);
+    }
+    if (chatInput) {
+        chatInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); sendMessage(); }
+        });
+    }
+
+    console.log('🤖 Mwalimu AI Chatbot loaded successfully!');
+
+    // ── FAQ ACCORDION ──
+    (function() {
+        const faqItems = document.querySelectorAll('.faq-item');
+        faqItems.forEach(function(item) {
+            const questionBtn = item.querySelector('.faq-question');
+            const answer = item.querySelector('.faq-answer');
+            const icon = item.querySelector('.faq-icon');
+            if (questionBtn && answer) {
+                questionBtn.addEventListener('click', function() {
+                    faqItems.forEach(function(otherItem) {
+                        if (otherItem !== item) {
+                            const otherAnswer = otherItem.querySelector('.faq-answer');
+                            const otherIcon = otherItem.querySelector('.faq-icon');
+                            if (otherAnswer) {
+                                otherAnswer.style.maxHeight = '0';
+                                otherAnswer.style.padding = '0';
+                            }
+                            if (otherIcon) {
+                                otherIcon.textContent = '+';
+                                otherIcon.style.transform = 'rotate(0deg)';
+                            }
+                        }
+                    });
+                    const isOpen = answer.style.maxHeight && answer.style.maxHeight !== '0px';
+                    if (isOpen) {
+                        answer.style.maxHeight = '0';
+                        answer.style.padding = '0';
+                        if (icon) {
+                            icon.textContent = '+';
+                            icon.style.transform = 'rotate(0deg)';
+                        }
+                    } else {
+                        answer.style.maxHeight = '0';
+                        answer.style.padding = '0';
+                        void answer.offsetHeight;
+                        const contentHeight = answer.scrollHeight + 20;
+                        answer.style.maxHeight = contentHeight + 'px';
+                        answer.style.padding = '0 0 10px 0';
+                        if (icon) {
+                            icon.textContent = '−';
+                            icon.style.transform = 'rotate(180deg)';
+                        }
+                    }
+                });
+            }
+        });
+    })();
+
+    // ── FLOATING DOWNLOAD NOTIFICATIONS ──
+    const downloadData = [
+        { name: 'Solomon Mwangi', location: 'Kisumu', resource: 'Mathematics Grade 7 End Term 2' },
+        { name: 'Grace Akinyi', location: 'Nairobi', resource: 'English Lesson Plans Grade 8' },
+        { name: 'David Ochieng', location: 'Kisii', resource: 'KJSEA Revision Papers 2026' },
+        { name: 'Mary Wanjiru', location: 'Nakuru', resource: 'Integrated Science Grade 9 Notes' },
+        { name: 'James Odhiambo', location: 'Mombasa', resource: 'Social Studies Schemes of Work' },
+        { name: 'Faith Kiprop', location: 'Eldoret', resource: 'Chemistry Form 3 Revision Guide' },
+        { name: 'Peter Njoroge', location: 'Thika', resource: 'Biology KCSE Past Papers' },
+        { name: 'Sarah Muthoni', location: 'Meru', resource: 'Creative Arts Assessment Tools' },
+        { name: 'Michael Otieno', location: 'Kisumu', resource: 'Kiswahili Composition Guide' },
+        { name: 'Jane Wangui', location: 'Nyeri', resource: 'Mathematics Form 4 Revision Kit' },
+        { name: 'Stephen Kipchoge', location: 'Eldoret', resource: 'Physics Practical Workbook' },
+        { name: 'Rose Akoth', location: 'Homa Bay', resource: 'CBC Assessment Rubrics Grade 7' },
+        { name: 'Joseph Kimani', location: 'Nairobi', resource: 'Business Studies Form 3 Notes' },
+        { name: 'Alice Nekesa', location: 'Bungoma', resource: 'History & Government Revision' },
+        { name: 'Daniel Kamau', location: 'Kiambu', resource: 'KJSEA 2026 Prediction Papers' },
+        { name: 'Catherine Wanjiku', location: 'Nakuru', resource: 'Mathematics Grade 8 Schemes of Work' },
+        { name: 'Patrick Odhiambo', location: 'Kisumu', resource: 'Integrated Science Practical Guide' },
+        { name: 'Margaret Akinyi', location: 'Mombasa', resource: 'English Composition Writing Guide' },
+    ];
+
+    function generateNotification() {
+        const data = downloadData[Math.floor(Math.random() * downloadData.length)];
+        const timeAgo = Math.floor(Math.random() * 60) + 1;
+        return { ...data, timeAgo: timeAgo <= 5 ? 'just now' : `${timeAgo} minutes ago`, id: Date.now() + '_' + Math.random().toString(36).substr(2, 6) };
+    }
+
+    function showFloatingNotification() {
+        const container = document.getElementById('notificationContainer');
+        if (!container) return;
+        const data = generateNotification();
+        const existing = container.querySelectorAll('.download-notification');
+        for (const el of existing) {
+            const text = el.querySelector('.notif-text .action')?.textContent || '';
+            if (text.includes(data.name) && text.includes(data.resource)) return;
+        }
+        const notification = document.createElement('div');
+        notification.className = 'download-notification';
+        notification.id = `notif-${data.id}`;
+        notification.innerHTML = `
+            <div class="notif-content">
+                <div class="notif-icon">📥</div>
+                <div class="notif-text">
+                    <span class="name">${data.name}</span>
+                    <span class="action">downloaded <strong>${data.resource}</strong></span>
+                    <span class="location">📍 ${data.location} · ${data.timeAgo}</span>
+                </div>
+                <button class="notif-close" onclick="closeNotification('${data.id}')">✕</button>
+            </div>
+        `;
+        container.appendChild(notification);
+        setTimeout(() => closeNotification(data.id), 6000);
+        while (container.children.length > 3) {
+            const first = container.firstChild;
+            first.classList.add('hiding');
+            setTimeout(() => first.remove(), 500);
+        }
+    }
+
+    window.closeNotification = function(id) {
+        const element = document.getElementById(`notif-${id}`);
+        if (element) {
+            element.classList.add('hiding');
+            setTimeout(() => element.remove(), 500);
+        }
+    };
+
+    let notifInterval;
+    function startNotifications() {
+        setTimeout(showFloatingNotification, 3000);
+        notifInterval = setInterval(showFloatingNotification, 5000 + Math.random() * 7000);
+    }
+
+    if (document.getElementById('notificationContainer')) {
+        startNotifications();
+    }
+
+    document.addEventListener('visibilitychange', function() {
+        if (document.hidden) {
+            if (notifInterval) clearInterval(notifInterval);
+        } else {
+            if (notifInterval) clearInterval(notifInterval);
+            startNotifications();
+        }
+    });
+
+    // ── LEGAL CONSENT BANNER ──
+    (function() {
+        const CONSENT_KEY = 'kenyavault_consent';
+        const banner = document.getElementById('consentBanner');
+        const checkbox = document.getElementById('consentCheckbox');
+        const acceptBtn = document.getElementById('consentAcceptBtn');
+
+        if (localStorage.getItem(CONSENT_KEY) === 'true') {
+            if (banner) banner.classList.add('hidden');
+            return;
+        }
+
+        if (banner) banner.classList.remove('hidden');
+
+        function updateAcceptButton() {
+            if (checkbox && acceptBtn) {
+                const isChecked = checkbox.checked;
+                acceptBtn.disabled = !isChecked;
+                acceptBtn.style.opacity = isChecked ? '1' : '0.5';
+                acceptBtn.style.pointerEvents = isChecked ? 'auto' : 'none';
+            }
+        }
+
+        if (checkbox) checkbox.addEventListener('change', updateAcceptButton);
+        if (acceptBtn) {
+            acceptBtn.addEventListener('click', function() {
+                if (checkbox && checkbox.checked) {
+                    localStorage.setItem(CONSENT_KEY, 'true');
+                    if (banner) banner.classList.add('hidden');
+                    document.dispatchEvent(new CustomEvent('kenyavaultConsentGiven'));
+                }
+            });
+        }
+        updateAcceptButton();
+        if (banner && !localStorage.getItem(CONSENT_KEY)) banner.classList.remove('hidden');
+    })();
+
+    // ── INIT ──
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('🚀 KenyaVault Homepage loaded successfully!');
+
+        // Load recent resources
+        if (document.getElementById('recentResources')) {
+            fetchRecentResources();
+            // Refresh every 5 minutes
+            setInterval(fetchRecentResources, 300000);
+        }
+
+        // Apply dark mode based on system preference
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.body.classList.add('dark');
+        }
+
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
+            if (e.matches) {
+                document.body.classList.add('dark');
+            } else {
+                document.body.classList.remove('dark');
+            }
+        });
+
+        console.log('📱 MegaPay Payment URL:', 'https://megapay.co.ke/tags/S1Zzyjs');
+        console.log('🔗 Supabase URL:', SUPABASE_URL);
+        console.log('📥 Download notifications active on homepage!');
+    });
+
+    console.log('✅ KenyaVault Homepage script initialized.');
+</script>
+</body>
+</html>
