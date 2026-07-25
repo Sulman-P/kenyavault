@@ -917,6 +917,10 @@
             border-color: #D4A017;
             background: rgba(212, 160, 23, 0.05);
         }
+        .drop-zone.dragover {
+            border-color: #D4A017;
+            background: rgba(212, 160, 23, 0.1);
+        }
         .cover-preview-img {
             max-width: 100px;
             max-height: 100px;
@@ -1173,6 +1177,28 @@
             .stat-grid { grid-template-columns: 1fr; }
             .sidebar { width: 90%; }
         }
+
+        /* ── FILE TYPE BADGE ── */
+        .file-type-badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            background: #e5e7eb;
+            color: #4b5563;
+        }
+        .dark .file-type-badge {
+            background: #374151;
+            color: #9ca3af;
+        }
+        .file-type-badge.pdf { background: #fee2e2; color: #dc2626; }
+        .file-type-badge.doc { background: #dbeafe; color: #2563eb; }
+        .file-type-badge.ppt { background: #fef3c7; color: #d97706; }
+        .file-type-badge.image { background: #dcfce7; color: #16a34a; }
+        .file-type-badge.video { background: #f3e8ff; color: #7c3aed; }
+        .file-type-badge.zip { background: #e5e7eb; color: #4b5563; }
+        .file-type-badge.other { background: #f3f4f6; color: #6b7280; }
     </style>
 </head>
 <body>
@@ -2930,7 +2956,7 @@
             );
         }
 
-        // ── UPLOAD TAB ──
+        // ── UPLOAD TAB (UPDATED: ALL FILE TYPES SUPPORTED) ──
         function UploadTab() {
             const { showNotification, refreshData } = useTutor();
             const tutorId = sessionStorage.getItem('tutor_id');
@@ -2957,15 +2983,49 @@
             const fileInputRef = useRef(null);
             const coverInputRef = useRef(null);
 
+            // ── FILE TYPE DETECTION ──
+            const getFileTypeBadge = (file) => {
+                if (!file) return 'other';
+                const type = file.type;
+                const ext = file.name.split('.').pop().toLowerCase();
+                if (type === 'application/pdf' || ext === 'pdf') return 'pdf';
+                if (type.includes('word') || ext === 'doc' || ext === 'docx') return 'doc';
+                if (type.includes('presentation') || ext === 'ppt' || ext === 'pptx') return 'ppt';
+                if (type.startsWith('image/')) return 'image';
+                if (type.startsWith('video/')) return 'video';
+                if (ext === 'zip' || ext === 'rar' || ext === '7z') return 'zip';
+                return 'other';
+            };
+
+            const getFileTypeLabel = (file) => {
+                const type = getFileTypeBadge(file);
+                const labels = {
+                    pdf: '📄 PDF Document',
+                    doc: '📝 Word Document',
+                    ppt: '📊 Presentation',
+                    image: '🖼️ Image',
+                    video: '🎬 Video',
+                    zip: '📦 Archive',
+                    other: '📎 Other File'
+                };
+                return labels[type] || labels.other;
+            };
+
+            const getFileTypeBadgeClass = (file) => {
+                return 'file-type-badge ' + getFileTypeBadge(file);
+            };
+
+            // ── HANDLE FILE SELECT (NO RESTRICTIONS) ──
             const handleFileSelect = (e) => {
                 const file = e.target.files[0];
-                if (file && file.type === 'application/pdf') {
+                if (file) {
+                    // Allow any file type - no restrictions
                     setSelectedFile(file);
-                } else {
-                    showNotification('Please select a PDF file', 'error');
+                    showNotification(`✅ ${file.name} selected (${(file.size / 1024 / 1024).toFixed(2)} MB)`, 'success');
                 }
             };
 
+            // ── HANDLE COVER SELECT ──
             const handleCoverSelect = (e) => {
                 const file = e.target.files[0];
                 if (file && file.type.startsWith('image/')) {
@@ -2973,14 +3033,38 @@
                     const reader = new FileReader();
                     reader.onload = (e) => setCoverPreview(e.target.result);
                     reader.readAsDataURL(file);
-                } else {
-                    showNotification('Please select an image file', 'error');
+                } else if (file) {
+                    showNotification('Please select an image file for the cover.', 'error');
                 }
             };
 
+            // ── DRAG & DROP ──
+            const handleDrop = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const file = e.dataTransfer.files[0];
+                if (file) {
+                    setSelectedFile(file);
+                    showNotification(`✅ ${file.name} selected (${(file.size / 1024 / 1024).toFixed(2)} MB)`, 'success');
+                }
+            };
+
+            const handleDragOver = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                e.currentTarget.classList.add('dragover');
+            };
+
+            const handleDragLeave = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                e.currentTarget.classList.remove('dragover');
+            };
+
+            // ── HANDLE UPLOAD (ANY FILE TYPE) ──
             const handleUpload = async () => {
                 if (!title || !price || !level || !subject || !selectedFile) {
-                    showNotification('Please fill all required fields and select a PDF', 'error');
+                    showNotification('Please fill all required fields and select a file', 'error');
                     return;
                 }
 
@@ -2994,7 +3078,8 @@
 
                 try {
                     const fileExt = selectedFile.name.split('.').pop();
-                    const filePath = `resources/${level}/${subject}/${Date.now()}.${fileExt}`;
+                    const safeFileName = `${Date.now()}.${fileExt}`;
+                    const filePath = `resources/${level}/${subject}/${safeFileName}`;
                     setProgress(30);
 
                     const uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/kenyavault-resources/${filePath}`, {
@@ -3003,7 +3088,10 @@
                         body: selectedFile
                     });
 
-                    if (!uploadRes.ok) throw new Error('PDF upload failed');
+                    if (!uploadRes.ok) {
+                        const errorText = await uploadRes.text();
+                        throw new Error(`File upload failed: ${uploadRes.status} - ${errorText}`);
+                    }
                     setProgress(60);
 
                     const fileUrl = `${SUPABASE_URL}/storage/v1/object/public/kenyavault-resources/${filePath}`;
@@ -3035,6 +3123,9 @@
                         curriculum: curriculum,
                         pricing_tier: pricingTier,
                         file_url: fileUrl,
+                        file_name: selectedFile.name,
+                        file_size: selectedFile.size,
+                        file_type: selectedFile.type || 'application/octet-stream',
                         cover_image_url: coverUrl,
                         published,
                         is_free: isFree,
@@ -3060,11 +3151,15 @@
                         body: JSON.stringify(resourceData)
                     });
 
-                    if (!saveRes.ok) throw new Error('Failed to save resource');
+                    if (!saveRes.ok) {
+                        const errorText = await saveRes.text();
+                        throw new Error(`Failed to save resource: ${saveRes.status} - ${errorText}`);
+                    }
 
                     setProgress(100);
-                    showNotification('Resource uploaded successfully! It will be reviewed by admin.', 'success');
+                    showNotification(`✅ Resource "${title}" uploaded successfully! It will be reviewed by admin.`, 'success');
 
+                    // Reset form
                     setTitle('');
                     setPrice(30);
                     setLevel('');
@@ -3081,7 +3176,7 @@
 
                 } catch (e) {
                     console.error('Upload error:', e);
-                    showNotification('Upload failed: ' + e.message, 'error');
+                    showNotification('❌ Upload failed: ' + e.message, 'error');
                 }
                 setUploading(false);
                 setProgress(0);
@@ -3091,10 +3186,17 @@
                 <div className="content-card">
                     <div className="card-header">
                         <h3>📤 Upload Resource</h3>
+                        <span style={{ fontSize: '0.75rem', color: '#6b7280' }}>
+                            <i className="fas fa-check-circle text-green-500"></i> All file types supported
+                        </span>
                     </div>
 
                     <p style={{ color: '#6b7280', marginBottom: '16px' }}>
                         Upload your resource for review. You'll earn <strong style={{ color: '#D4A017' }}>80%</strong> of each sale once approved.
+                        <br />
+                        <span style={{ fontSize: '0.8rem', color: '#9ca3af' }}>
+                            ✅ Supports: PDF, Word, Excel, PowerPoint, Images, Video, Audio, ZIP archives, and more.
+                        </span>
                     </p>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -3145,7 +3247,7 @@
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                         <div>
-                            <label className="form-label">Pages</label>
+                            <label className="form-label">Pages (if applicable)</label>
                             <input type="number" value={pages} onChange={(e) => setPages(e.target.value)} className="form-input" min="1" />
                         </div>
                         <div>
@@ -3172,20 +3274,40 @@
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                         <div>
-                            <label className="form-label">PDF File <span className="req">*</span></label>
-                            <div className="drop-zone" onClick={() => fileInputRef.current?.click()}>
-                                <div style={{ fontSize: '2rem', marginBottom: '8px' }}>📄</div>
-                                <p style={{ fontSize: '0.9rem', color: '#6b7280' }}>Click or drag to upload PDF</p>
-                                <p style={{ fontSize: '0.8rem', color: '#9ca3af' }}>Max size: 20 MB</p>
-                                <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept=".pdf" className="hidden" />
+                            <label className="form-label">File <span className="req">*</span></label>
+                            <div 
+                                className="drop-zone" 
+                                onClick={() => fileInputRef.current?.click()}
+                                onDrop={handleDrop}
+                                onDragOver={handleDragOver}
+                                onDragLeave={handleDragLeave}
+                            >
+                                <div style={{ fontSize: '2rem', marginBottom: '8px' }}>📎</div>
+                                <p style={{ fontSize: '0.9rem', color: '#6b7280' }}>Click or drag to upload any file</p>
+                                <p style={{ fontSize: '0.8rem', color: '#9ca3af' }}>
+                                    Supports: PDF, Word, Excel, PPT, Images, Video, ZIP, and more
+                                </p>
+                                <p style={{ fontSize: '0.75rem', color: '#9ca3af' }}>Max size: 50 MB</p>
+                                <input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" />
                             </div>
-                            {selectedFile && <div className="mt-2 p-2 bg-green-50 dark:bg-green-900/20 rounded-lg text-sm text-green-600 dark:text-green-400">✅ {selectedFile.name}</div>}
+                            {selectedFile && (
+                                <div className="mt-2 p-2 bg-green-50 dark:bg-green-900/20 rounded-lg text-sm text-green-600 dark:text-green-400 flex items-center gap-2 flex-wrap">
+                                    <span>✅ {selectedFile.name}</span>
+                                    <span className={getFileTypeBadgeClass(selectedFile)}>
+                                        {getFileTypeLabel(selectedFile)}
+                                    </span>
+                                    <span style={{ fontSize: '0.7rem', color: '#6b7280' }}>
+                                        ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
+                                    </span>
+                                </div>
+                            )}
                         </div>
                         <div>
-                            <label className="form-label">Cover Image</label>
+                            <label className="form-label">Cover Image (optional)</label>
                             <div className="drop-zone" onClick={() => coverInputRef.current?.click()}>
                                 <div style={{ fontSize: '2rem', marginBottom: '8px' }}>🖼️</div>
                                 <p style={{ fontSize: '0.9rem', color: '#6b7280' }}>Click to upload cover image</p>
+                                <p style={{ fontSize: '0.8rem', color: '#9ca3af' }}>JPG, PNG, GIF, WebP</p>
                                 <input type="file" ref={coverInputRef} onChange={handleCoverSelect} accept="image/*" className="hidden" />
                             </div>
                             {coverPreview && <img src={coverPreview} alt="Cover preview" className="cover-preview-img" />}
