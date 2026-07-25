@@ -2956,392 +2956,471 @@
             );
         }
 
-        // ── UPLOAD TAB (UPDATED: ALL FILE TYPES SUPPORTED) ──
-        function UploadTab() {
-            const { showNotification, refreshData } = useTutor();
-            const tutorId = sessionStorage.getItem('tutor_id');
-            const [title, setTitle] = useState('');
-            const [price, setPrice] = useState(30);
-            const [level, setLevel] = useState('');
-            const [subject, setSubject] = useState('');
-            const [description, setDescription] = useState('');
-            const [pages, setPages] = useState('');
-            const [pricingTier, setPricingTier] = useState('single');
-            const [selectedFile, setSelectedFile] = useState(null);
-            const [selectedCover, setSelectedCover] = useState(null);
-            const [coverPreview, setCoverPreview] = useState(null);
-            const [uploading, setUploading] = useState(false);
-            const [progress, setProgress] = useState(0);
-            const [published, setPublished] = useState(true);
-            const [isFree, setIsFree] = useState(false);
-            const [resourceType, setResourceType] = useState('lesson-plan');
-            const [curriculum, setCurriculum] = useState('cbc');
-            const [kicdAligned, setKicdAligned] = useState(true);
-            const [cbcCompliant, setCbcCompliant] = useState(true);
-            const [teacherReviewed, setTeacherReviewed] = useState(true);
+        // ── UPLOAD TAB (FIXED: ALL FILE TYPES SUPPORTED) ──
+function UploadTab() {
+    const { showNotification, refreshData } = useTutor();
+    const tutorId = sessionStorage.getItem('tutor_id');
+    const [title, setTitle] = useState('');
+    const [price, setPrice] = useState(30);
+    const [level, setLevel] = useState('');
+    const [subject, setSubject] = useState('');
+    const [description, setDescription] = useState('');
+    const [pages, setPages] = useState('');
+    const [pricingTier, setPricingTier] = useState('single');
+    const [selectedFile, setSelectedFile] = useState(null);
+    const [selectedCover, setSelectedCover] = useState(null);
+    const [coverPreview, setCoverPreview] = useState(null);
+    const [uploading, setUploading] = useState(false);
+    const [progress, setProgress] = useState(0);
+    const [published, setPublished] = useState(true);
+    const [isFree, setIsFree] = useState(false);
+    const [resourceType, setResourceType] = useState('lesson-plan');
+    const [curriculum, setCurriculum] = useState('cbc');
+    const [kicdAligned, setKicdAligned] = useState(true);
+    const [cbcCompliant, setCbcCompliant] = useState(true);
+    const [teacherReviewed, setTeacherReviewed] = useState(true);
 
-            const fileInputRef = useRef(null);
-            const coverInputRef = useRef(null);
+    const fileInputRef = useRef(null);
+    const coverInputRef = useRef(null);
 
-            // ── FILE TYPE DETECTION ──
-            const getFileTypeBadge = (file) => {
-                if (!file) return 'other';
-                const type = file.type;
-                const ext = file.name.split('.').pop().toLowerCase();
-                if (type === 'application/pdf' || ext === 'pdf') return 'pdf';
-                if (type.includes('word') || ext === 'doc' || ext === 'docx') return 'doc';
-                if (type.includes('presentation') || ext === 'ppt' || ext === 'pptx') return 'ppt';
-                if (type.startsWith('image/')) return 'image';
-                if (type.startsWith('video/')) return 'video';
-                if (ext === 'zip' || ext === 'rar' || ext === '7z') return 'zip';
-                return 'other';
-            };
+    // ── FILE TYPE DETECTION ──
+    const getFileTypeBadge = (file) => {
+        if (!file) return 'other';
+        const type = file.type;
+        const ext = file.name.split('.').pop().toLowerCase();
+        if (type === 'application/pdf' || ext === 'pdf') return 'pdf';
+        if (type.includes('word') || ext === 'doc' || ext === 'docx') return 'doc';
+        if (type.includes('presentation') || ext === 'ppt' || ext === 'pptx') return 'ppt';
+        if (type.includes('excel') || ext === 'xls' || ext === 'xlsx') return 'excel';
+        if (type.startsWith('image/')) return 'image';
+        if (type.startsWith('video/')) return 'video';
+        if (type.startsWith('audio/')) return 'audio';
+        if (ext === 'zip' || ext === 'rar' || ext === '7z') return 'zip';
+        return 'other';
+    };
 
-            const getFileTypeLabel = (file) => {
-                const type = getFileTypeBadge(file);
-                const labels = {
-                    pdf: '📄 PDF Document',
-                    doc: '📝 Word Document',
-                    ppt: '📊 Presentation',
-                    image: '🖼️ Image',
-                    video: '🎬 Video',
-                    zip: '📦 Archive',
-                    other: '📎 Other File'
-                };
-                return labels[type] || labels.other;
-            };
+    const getFileTypeLabel = (file) => {
+        const type = getFileTypeBadge(file);
+        const labels = {
+            pdf: '📄 PDF Document',
+            doc: '📝 Word Document',
+            excel: '📊 Excel Spreadsheet',
+            ppt: '📊 Presentation',
+            image: '🖼️ Image',
+            video: '🎬 Video',
+            audio: '🎵 Audio',
+            zip: '📦 Archive',
+            other: '📎 Other File'
+        };
+        return labels[type] || labels.other;
+    };
 
-            const getFileTypeBadgeClass = (file) => {
-                return 'file-type-badge ' + getFileTypeBadge(file);
-            };
+    const getFileTypeBadgeClass = (file) => {
+        return 'file-type-badge ' + getFileTypeBadge(file);
+    };
 
-            // ── HANDLE FILE SELECT (NO RESTRICTIONS) ──
-            const handleFileSelect = (e) => {
-                const file = e.target.files[0];
-                if (file) {
-                    // Allow any file type - no restrictions
-                    setSelectedFile(file);
-                    showNotification(`✅ ${file.name} selected (${(file.size / 1024 / 1024).toFixed(2)} MB)`, 'success');
-                }
-            };
+    // ── GET CORRECT MIME TYPE FOR UPLOAD ──
+    const getCorrectMimeType = (file) => {
+        const ext = file.name.split('.').pop().toLowerCase();
+        const mimeTypes = {
+            'pdf': 'application/pdf',
+            'doc': 'application/msword',
+            'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'xls': 'application/vnd.ms-excel',
+            'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'ppt': 'application/vnd.ms-powerpoint',
+            'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'png': 'image/png',
+            'gif': 'image/gif',
+            'webp': 'image/webp',
+            'mp4': 'video/mp4',
+            'mp3': 'audio/mpeg',
+            'wav': 'audio/wav',
+            'zip': 'application/zip',
+            'rar': 'application/vnd.rar',
+            '7z': 'application/x-7z-compressed',
+            'txt': 'text/plain',
+            'rtf': 'application/rtf',
+        };
+        return mimeTypes[ext] || file.type || 'application/octet-stream';
+    };
 
-            // ── HANDLE COVER SELECT ──
-            const handleCoverSelect = (e) => {
-                const file = e.target.files[0];
-                if (file && file.type.startsWith('image/')) {
-                    setSelectedCover(file);
-                    const reader = new FileReader();
-                    reader.onload = (e) => setCoverPreview(e.target.result);
-                    reader.readAsDataURL(file);
-                } else if (file) {
-                    showNotification('Please select an image file for the cover.', 'error');
-                }
-            };
+    // ── HANDLE FILE SELECT ──
+    const handleFileSelect = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            // Check file size (50MB max)
+            if (file.size > 50 * 1024 * 1024) {
+                showNotification('⚠️ File too large. Maximum size is 50MB.', 'error');
+                return;
+            }
+            setSelectedFile(file);
+            showNotification(`✅ ${file.name} selected (${(file.size / 1024 / 1024).toFixed(2)} MB)`, 'success');
+        }
+    };
 
-            // ── DRAG & DROP ──
-            const handleDrop = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const file = e.dataTransfer.files[0];
-                if (file) {
-                    setSelectedFile(file);
-                    showNotification(`✅ ${file.name} selected (${(file.size / 1024 / 1024).toFixed(2)} MB)`, 'success');
-                }
-            };
+    // ── HANDLE COVER SELECT ──
+    const handleCoverSelect = (e) => {
+        const file = e.target.files[0];
+        if (file && file.type.startsWith('image/')) {
+            setSelectedCover(file);
+            const reader = new FileReader();
+            reader.onload = (e) => setCoverPreview(e.target.result);
+            reader.readAsDataURL(file);
+        } else if (file) {
+            showNotification('Please select an image file for the cover.', 'error');
+        }
+    };
 
-            const handleDragOver = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                e.currentTarget.classList.add('dragover');
-            };
+    // ── DRAG & DROP ──
+    const handleDrop = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const file = e.dataTransfer.files[0];
+        if (file) {
+            if (file.size > 50 * 1024 * 1024) {
+                showNotification('⚠️ File too large. Maximum size is 50MB.', 'error');
+                return;
+            }
+            setSelectedFile(file);
+            showNotification(`✅ ${file.name} selected (${(file.size / 1024 / 1024).toFixed(2)} MB)`, 'success');
+        }
+    };
 
-            const handleDragLeave = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                e.currentTarget.classList.remove('dragover');
-            };
+    const handleDragOver = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.currentTarget.classList.add('dragover');
+    };
 
-            // ── HANDLE UPLOAD (ANY FILE TYPE) ──
-            const handleUpload = async () => {
-                if (!title || !price || !level || !subject || !selectedFile) {
-                    showNotification('Please fill all required fields and select a file', 'error');
-                    return;
-                }
+    const handleDragLeave = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.currentTarget.classList.remove('dragover');
+    };
 
-                if (!tutorId) {
-                    showNotification('You must be logged in to upload', 'error');
-                    return;
-                }
+    // ── HANDLE UPLOAD (ANY FILE TYPE) ──
+    const handleUpload = async () => {
+        if (!title || !price || !level || !subject || !selectedFile) {
+            showNotification('Please fill all required fields and select a file', 'error');
+            return;
+        }
 
-                setUploading(true);
-                setProgress(10);
+        if (!tutorId) {
+            showNotification('You must be logged in to upload', 'error');
+            return;
+        }
 
-                try {
-                    const fileExt = selectedFile.name.split('.').pop();
-                    const safeFileName = `${Date.now()}.${fileExt}`;
-                    const filePath = `resources/${level}/${subject}/${safeFileName}`;
-                    setProgress(30);
+        setUploading(true);
+        setProgress(10);
 
-                    const uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/kenyavault-resources/${filePath}`, {
+        try {
+            const fileExt = selectedFile.name.split('.').pop().toLowerCase();
+            const safeFileName = `${Date.now()}.${fileExt}`;
+            const filePath = `resources/${level}/${subject}/${safeFileName}`;
+            setProgress(30);
+
+            // Get the correct MIME type
+            const mimeType = getCorrectMimeType(selectedFile);
+            console.log(`📤 Uploading ${selectedFile.name} with MIME type: ${mimeType}`);
+
+            // Create a new Blob with the correct MIME type
+            const blob = new Blob([selectedFile], { type: mimeType });
+            const fileToUpload = new File([blob], selectedFile.name, { type: mimeType });
+
+            const uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/kenyavault-resources/${filePath}`, {
+                method: 'POST',
+                headers: { 
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'Content-Type': mimeType
+                },
+                body: fileToUpload
+            });
+
+            if (!uploadRes.ok) {
+                const errorText = await uploadRes.text();
+                console.error('Upload error response:', errorText);
+                
+                // Try alternative upload method without Content-Type header
+                if (uploadRes.status === 400 || uploadRes.status === 415) {
+                    console.log('🔄 Retrying upload with FormData...');
+                    const formData = new FormData();
+                    formData.append('file', selectedFile);
+                    
+                    const retryRes = await fetch(`${SUPABASE_URL}/storage/v1/object/kenyavault-resources/${filePath}`, {
                         method: 'POST',
-                        headers: { 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
-                        body: selectedFile
-                    });
-
-                    if (!uploadRes.ok) {
-                        const errorText = await uploadRes.text();
-                        throw new Error(`File upload failed: ${uploadRes.status} - ${errorText}`);
-                    }
-                    setProgress(60);
-
-                    const fileUrl = `${SUPABASE_URL}/storage/v1/object/public/kenyavault-resources/${filePath}`;
-
-                    let coverUrl = null;
-                    if (selectedCover) {
-                        const coverExt = selectedCover.name.split('.').pop();
-                        const coverPath = `covers/${level}/${subject}/${Date.now()}.${coverExt}`;
-                        const coverRes = await fetch(`${SUPABASE_URL}/storage/v1/object/kenyavault-resources/${coverPath}`, {
-                            method: 'POST',
-                            headers: { 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
-                            body: selectedCover
-                        });
-                        if (coverRes.ok) {
-                            coverUrl = `${SUPABASE_URL}/storage/v1/object/public/kenyavault-resources/${coverPath}`;
-                        }
-                    }
-
-                    setProgress(80);
-
-                    const resourceData = {
-                        title,
-                        price: isFree ? 0 : parseInt(price),
-                        level,
-                        subject,
-                        description,
-                        pages: parseInt(pages) || 0,
-                        resource_type: resourceType,
-                        curriculum: curriculum,
-                        pricing_tier: pricingTier,
-                        file_url: fileUrl,
-                        file_name: selectedFile.name,
-                        file_size: selectedFile.size,
-                        file_type: selectedFile.type || 'application/octet-stream',
-                        cover_image_url: coverUrl,
-                        published,
-                        is_free: isFree,
-                        kicd_aligned: kicdAligned,
-                        cbc_compliant: cbcCompliant,
-                        teacher_reviewed: teacherReviewed,
-                        tutor_id: tutorId,
-                        tutor_name: sessionStorage.getItem('tutor_name') || 'Tutor',
-                        status: published ? 'pending_review' : 'draft',
-                        download_count: 0,
-                        total_earnings: 0,
-                        created_at: new Date().toISOString()
-                    };
-
-                    const saveRes = await fetch(`${SUPABASE_URL}/rest/v1/resources`, {
-                        method: 'POST',
-                        headers: {
-                            'apikey': SUPABASE_ANON_KEY,
-                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                            'Content-Type': 'application/json',
-                            'Prefer': 'return=minimal'
+                        headers: { 
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
                         },
-                        body: JSON.stringify(resourceData)
+                        body: formData
                     });
-
-                    if (!saveRes.ok) {
-                        const errorText = await saveRes.text();
-                        throw new Error(`Failed to save resource: ${saveRes.status} - ${errorText}`);
+                    
+                    if (!retryRes.ok) {
+                        const retryError = await retryRes.text();
+                        throw new Error(`Upload failed: ${retryRes.status} - ${retryError}`);
                     }
-
-                    setProgress(100);
-                    showNotification(`✅ Resource "${title}" uploaded successfully! It will be reviewed by admin.`, 'success');
-
-                    // Reset form
-                    setTitle('');
-                    setPrice(30);
-                    setLevel('');
-                    setSubject('');
-                    setDescription('');
-                    setPages('');
-                    setSelectedFile(null);
-                    setSelectedCover(null);
-                    setCoverPreview(null);
-                    if (fileInputRef.current) fileInputRef.current.value = '';
-                    if (coverInputRef.current) coverInputRef.current.value = '';
-
-                    refreshData();
-
-                } catch (e) {
-                    console.error('Upload error:', e);
-                    showNotification('❌ Upload failed: ' + e.message, 'error');
+                } else {
+                    throw new Error(`File upload failed: ${uploadRes.status} - ${errorText}`);
                 }
-                setUploading(false);
-                setProgress(0);
+            }
+            setProgress(60);
+
+            const fileUrl = `${SUPABASE_URL}/storage/v1/object/public/kenyavault-resources/${filePath}`;
+
+            let coverUrl = null;
+            if (selectedCover) {
+                const coverExt = selectedCover.name.split('.').pop();
+                const coverPath = `covers/${level}/${subject}/${Date.now()}.${coverExt}`;
+                const coverRes = await fetch(`${SUPABASE_URL}/storage/v1/object/kenyavault-resources/${coverPath}`, {
+                    method: 'POST',
+                    headers: { 
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                        'Content-Type': selectedCover.type
+                    },
+                    body: selectedCover
+                });
+                if (coverRes.ok) {
+                    coverUrl = `${SUPABASE_URL}/storage/v1/object/public/kenyavault-resources/${coverPath}`;
+                }
+            }
+
+            setProgress(80);
+
+            const resourceData = {
+                title,
+                price: isFree ? 0 : parseInt(price),
+                level,
+                subject,
+                description,
+                pages: parseInt(pages) || 0,
+                resource_type: resourceType,
+                curriculum: curriculum,
+                pricing_tier: pricingTier,
+                file_url: fileUrl,
+                file_name: selectedFile.name,
+                file_size: selectedFile.size,
+                file_type: selectedFile.type || 'application/octet-stream',
+                cover_image_url: coverUrl,
+                published,
+                is_free: isFree,
+                kicd_aligned: kicdAligned,
+                cbc_compliant: cbcCompliant,
+                teacher_reviewed: teacherReviewed,
+                tutor_id: tutorId,
+                tutor_name: sessionStorage.getItem('tutor_name') || 'Tutor',
+                status: published ? 'pending_review' : 'draft',
+                download_count: 0,
+                total_earnings: 0,
+                created_at: new Date().toISOString()
             };
 
-            return (
-                <div className="content-card">
-                    <div className="card-header">
-                        <h3>📤 Upload Resource</h3>
-                        <span style={{ fontSize: '0.75rem', color: '#6b7280' }}>
-                            <i className="fas fa-check-circle text-green-500"></i> All file types supported
-                        </span>
+            const saveRes = await fetch(`${SUPABASE_URL}/rest/v1/resources`, {
+                method: 'POST',
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=minimal'
+                },
+                body: JSON.stringify(resourceData)
+            });
+
+            if (!saveRes.ok) {
+                const errorText = await saveRes.text();
+                throw new Error(`Failed to save resource: ${saveRes.status} - ${errorText}`);
+            }
+
+            setProgress(100);
+            showNotification(`✅ Resource "${title}" uploaded successfully! It will be reviewed by admin.`, 'success');
+
+            // Reset form
+            setTitle('');
+            setPrice(30);
+            setLevel('');
+            setSubject('');
+            setDescription('');
+            setPages('');
+            setSelectedFile(null);
+            setSelectedCover(null);
+            setCoverPreview(null);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+            if (coverInputRef.current) coverInputRef.current.value = '';
+
+            refreshData();
+
+        } catch (e) {
+            console.error('Upload error:', e);
+            showNotification('❌ Upload failed: ' + e.message, 'error');
+        }
+        setUploading(false);
+        setProgress(0);
+    };
+
+    return (
+        <div className="content-card">
+            <div className="card-header">
+                <h3>📤 Upload Resource</h3>
+                <span style={{ fontSize: '0.75rem', color: '#6b7280' }}>
+                    <i className="fas fa-check-circle text-green-500"></i> All file types supported
+                </span>
+            </div>
+
+            <p style={{ color: '#6b7280', marginBottom: '16px' }}>
+                Upload your resource for review. You'll earn <strong style={{ color: '#D4A017' }}>80%</strong> of each sale once approved.
+                <br />
+                <span style={{ fontSize: '0.8rem', color: '#9ca3af' }}>
+                    ✅ Supports: PDF, Word (.doc, .docx), Excel, PowerPoint, Images, Video, Audio, ZIP archives, and more.
+                    <br />
+                    📏 Max file size: <strong>50 MB</strong>
+                </span>
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label className="form-label">Resource Title <span className="req">*</span></label>
+                    <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} className="form-input" placeholder="e.g. Grade 7 Mathematics Notes" />
+                </div>
+                <div>
+                    <label className="form-label">Price (KES) <span className="req">*</span></label>
+                    <input type="number" value={price} onChange={(e) => setPrice(e.target.value)} className="form-input" min="0" disabled={isFree} />
+                    <label className="flex items-center gap-2 mt-1 text-sm text-gray-600 dark:text-gray-400">
+                        <input type="checkbox" checked={isFree} onChange={(e) => setIsFree(e.target.checked)} /> This is a free resource
+                    </label>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label className="form-label">Grade Level <span className="req">*</span></label>
+                    <select value={level} onChange={(e) => setLevel(e.target.value)} className="form-input">
+                        <option value="">Select level...</option>
+                        {LEVELS.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
+                    </select>
+                </div>
+                <div>
+                    <label className="form-label">Subject <span className="req">*</span></label>
+                    <select value={subject} onChange={(e) => setSubject(e.target.value)} className="form-input">
+                        <option value="">Select subject...</option>
+                        {SUBJECTS.map(s => <option key={s} value={s}>{s.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>)}
+                    </select>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label className="form-label">Resource Type <span className="req">*</span></label>
+                    <select value={resourceType} onChange={(e) => setResourceType(e.target.value)} className="form-input">
+                        {RESOURCE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                    </select>
+                </div>
+                <div>
+                    <label className="form-label">Curriculum Alignment <span className="req">*</span></label>
+                    <select value={curriculum} onChange={(e) => setCurriculum(e.target.value)} className="form-input">
+                        {CURRICULUMS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                    </select>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div>
+                    <label className="form-label">Pages (if applicable)</label>
+                    <input type="number" value={pages} onChange={(e) => setPages(e.target.value)} className="form-input" min="1" />
+                </div>
+                <div>
+                    <label className="form-label">Pricing Tier</label>
+                    <select value={pricingTier} onChange={(e) => setPricingTier(e.target.value)} className="form-input">
+                        <option value="single">Single Paper</option>
+                        <option value="bundle">Subject Bundle</option>
+                        <option value="holiday-homework">Holiday Assignment</option>
+                        <option value="termly">Termly Set</option>
+                        <option value="kjsea">KJSEA Package</option>
+                        <option value="free">Free Resource</option>
+                    </select>
+                </div>
+                <div className="flex items-center gap-4 pt-6">
+                    <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                        <input type="checkbox" checked={published} onChange={(e) => setPublished(e.target.checked)} /> Publish now
+                    </label>
+                </div>
+            </div>
+
+            <div className="mb-4">
+                <label className="form-label">Description</label>
+                <textarea value={description} onChange={(e) => setDescription(e.target.value)} className="form-input" rows="3" placeholder="Brief description of the resource..." />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label className="form-label">File <span className="req">*</span></label>
+                    <div 
+                        className="drop-zone" 
+                        onClick={() => fileInputRef.current?.click()}
+                        onDrop={handleDrop}
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                    >
+                        <div style={{ fontSize: '2rem', marginBottom: '8px' }}>📎</div>
+                        <p style={{ fontSize: '0.9rem', color: '#6b7280' }}>Click or drag to upload any file</p>
+                        <p style={{ fontSize: '0.8rem', color: '#9ca3af' }}>
+                            Supports: PDF, Word, Excel, PPT, Images, Video, ZIP, and more
+                        </p>
+                        <p style={{ fontSize: '0.75rem', color: '#9ca3af' }}>Max size: 50 MB</p>
+                        <input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" />
                     </div>
-
-                    <p style={{ color: '#6b7280', marginBottom: '16px' }}>
-                        Upload your resource for review. You'll earn <strong style={{ color: '#D4A017' }}>80%</strong> of each sale once approved.
-                        <br />
-                        <span style={{ fontSize: '0.8rem', color: '#9ca3af' }}>
-                            ✅ Supports: PDF, Word, Excel, PowerPoint, Images, Video, Audio, ZIP archives, and more.
-                        </span>
-                    </p>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                        <div>
-                            <label className="form-label">Resource Title <span className="req">*</span></label>
-                            <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} className="form-input" placeholder="e.g. Grade 7 Mathematics Notes" />
-                        </div>
-                        <div>
-                            <label className="form-label">Price (KES) <span className="req">*</span></label>
-                            <input type="number" value={price} onChange={(e) => setPrice(e.target.value)} className="form-input" min="0" disabled={isFree} />
-                            <label className="flex items-center gap-2 mt-1 text-sm text-gray-600 dark:text-gray-400">
-                                <input type="checkbox" checked={isFree} onChange={(e) => setIsFree(e.target.checked)} /> This is a free resource
-                            </label>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                        <div>
-                            <label className="form-label">Grade Level <span className="req">*</span></label>
-                            <select value={level} onChange={(e) => setLevel(e.target.value)} className="form-input">
-                                <option value="">Select level...</option>
-                                {LEVELS.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
-                            </select>
-                        </div>
-                        <div>
-                            <label className="form-label">Subject <span className="req">*</span></label>
-                            <select value={subject} onChange={(e) => setSubject(e.target.value)} className="form-input">
-                                <option value="">Select subject...</option>
-                                {SUBJECTS.map(s => <option key={s} value={s}>{s.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>)}
-                            </select>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                        <div>
-                            <label className="form-label">Resource Type <span className="req">*</span></label>
-                            <select value={resourceType} onChange={(e) => setResourceType(e.target.value)} className="form-input">
-                                {RESOURCE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                            </select>
-                        </div>
-                        <div>
-                            <label className="form-label">Curriculum Alignment <span className="req">*</span></label>
-                            <select value={curriculum} onChange={(e) => setCurriculum(e.target.value)} className="form-input">
-                                {CURRICULUMS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                            </select>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                        <div>
-                            <label className="form-label">Pages (if applicable)</label>
-                            <input type="number" value={pages} onChange={(e) => setPages(e.target.value)} className="form-input" min="1" />
-                        </div>
-                        <div>
-                            <label className="form-label">Pricing Tier</label>
-                            <select value={pricingTier} onChange={(e) => setPricingTier(e.target.value)} className="form-input">
-                                <option value="single">Single Paper</option>
-                                <option value="bundle">Subject Bundle</option>
-                                <option value="termly">Termly Set</option>
-                                <option value="kjsea">KJSEA Package</option>
-                                <option value="free">Free Resource</option>
-                            </select>
-                        </div>
-                        <div className="flex items-center gap-4 pt-6">
-                            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                                <input type="checkbox" checked={published} onChange={(e) => setPublished(e.target.checked)} /> Publish now
-                            </label>
-                        </div>
-                    </div>
-
-                    <div className="mb-4">
-                        <label className="form-label">Description</label>
-                        <textarea value={description} onChange={(e) => setDescription(e.target.value)} className="form-input" rows="3" placeholder="Brief description of the resource..." />
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                        <div>
-                            <label className="form-label">File <span className="req">*</span></label>
-                            <div 
-                                className="drop-zone" 
-                                onClick={() => fileInputRef.current?.click()}
-                                onDrop={handleDrop}
-                                onDragOver={handleDragOver}
-                                onDragLeave={handleDragLeave}
-                            >
-                                <div style={{ fontSize: '2rem', marginBottom: '8px' }}>📎</div>
-                                <p style={{ fontSize: '0.9rem', color: '#6b7280' }}>Click or drag to upload any file</p>
-                                <p style={{ fontSize: '0.8rem', color: '#9ca3af' }}>
-                                    Supports: PDF, Word, Excel, PPT, Images, Video, ZIP, and more
-                                </p>
-                                <p style={{ fontSize: '0.75rem', color: '#9ca3af' }}>Max size: 50 MB</p>
-                                <input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" />
-                            </div>
-                            {selectedFile && (
-                                <div className="mt-2 p-2 bg-green-50 dark:bg-green-900/20 rounded-lg text-sm text-green-600 dark:text-green-400 flex items-center gap-2 flex-wrap">
-                                    <span>✅ {selectedFile.name}</span>
-                                    <span className={getFileTypeBadgeClass(selectedFile)}>
-                                        {getFileTypeLabel(selectedFile)}
-                                    </span>
-                                    <span style={{ fontSize: '0.7rem', color: '#6b7280' }}>
-                                        ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
-                                    </span>
-                                </div>
-                            )}
-                        </div>
-                        <div>
-                            <label className="form-label">Cover Image (optional)</label>
-                            <div className="drop-zone" onClick={() => coverInputRef.current?.click()}>
-                                <div style={{ fontSize: '2rem', marginBottom: '8px' }}>🖼️</div>
-                                <p style={{ fontSize: '0.9rem', color: '#6b7280' }}>Click to upload cover image</p>
-                                <p style={{ fontSize: '0.8rem', color: '#9ca3af' }}>JPG, PNG, GIF, WebP</p>
-                                <input type="file" ref={coverInputRef} onChange={handleCoverSelect} accept="image/*" className="hidden" />
-                            </div>
-                            {coverPreview && <img src={coverPreview} alt="Cover preview" className="cover-preview-img" />}
-                        </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-4 mb-4">
-                        <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                            <input type="checkbox" checked={kicdAligned} onChange={(e) => setKicdAligned(e.target.checked)} /> KICD Aligned
-                        </label>
-                        <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                            <input type="checkbox" checked={cbcCompliant} onChange={(e) => setCbcCompliant(e.target.checked)} /> CBC Compliant
-                        </label>
-                        <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                            <input type="checkbox" checked={teacherReviewed} onChange={(e) => setTeacherReviewed(e.target.checked)} /> Teacher Reviewed
-                        </label>
-                    </div>
-
-                    {uploading && (
-                        <div>
-                            <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400 mb-1">
-                                <span>Uploading...</span>
-                                <span>{progress}%</span>
-                            </div>
-                            <div className="progress-track"><div id="uploadBar" style={{ width: progress + '%' }}></div></div>
+                    {selectedFile && (
+                        <div className="mt-2 p-2 bg-green-50 dark:bg-green-900/20 rounded-lg text-sm text-green-600 dark:text-green-400 flex items-center gap-2 flex-wrap">
+                            <span>✅ {selectedFile.name}</span>
+                            <span className={getFileTypeBadgeClass(selectedFile)}>
+                                {getFileTypeLabel(selectedFile)}
+                            </span>
+                            <span style={{ fontSize: '0.7rem', color: '#6b7280' }}>
+                                ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
+                            </span>
                         </div>
                     )}
-
-                    <button onClick={handleUpload} disabled={uploading} className="btn-gold" style={{ width: 'auto', marginTop: '8px' }}>
-                        {uploading ? '⏳ Uploading...' : '⬆️ Upload Resource'}
-                    </button>
                 </div>
-            );
-        }
+                <div>
+                    <label className="form-label">Cover Image (optional)</label>
+                    <div className="drop-zone" onClick={() => coverInputRef.current?.click()}>
+                        <div style={{ fontSize: '2rem', marginBottom: '8px' }}>🖼️</div>
+                        <p style={{ fontSize: '0.9rem', color: '#6b7280' }}>Click to upload cover image</p>
+                        <p style={{ fontSize: '0.8rem', color: '#9ca3af' }}>JPG, PNG, GIF, WebP</p>
+                        <input type="file" ref={coverInputRef} onChange={handleCoverSelect} accept="image/*" className="hidden" />
+                    </div>
+                    {coverPreview && <img src={coverPreview} alt="Cover preview" className="cover-preview-img" />}
+                </div>
+            </div>
+
+            <div className="flex flex-wrap gap-4 mb-4">
+                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <input type="checkbox" checked={kicdAligned} onChange={(e) => setKicdAligned(e.target.checked)} /> KICD Aligned
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <input type="checkbox" checked={cbcCompliant} onChange={(e) => setCbcCompliant(e.target.checked)} /> CBC Compliant
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <input type="checkbox" checked={teacherReviewed} onChange={(e) => setTeacherReviewed(e.target.checked)} /> Teacher Reviewed
+                </label>
+            </div>
+
+            {uploading && (
+                <div>
+                    <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400 mb-1">
+                        <span>Uploading...</span>
+                        <span>{progress}%</span>
+                    </div>
+                    <div className="progress-track"><div id="uploadBar" style={{ width: progress + '%' }}></div></div>
+                </div>
+            )}
+
+            <button onClick={handleUpload} disabled={uploading} className="btn-gold" style={{ width: 'auto', marginTop: '8px' }}>
+                {uploading ? '⏳ Uploading...' : '⬆️ Upload Resource'}
+            </button>
+        </div>
+    );
+}
 
         // ────────────────────────────────────────────────
         // MAIN APP
