@@ -158,6 +158,8 @@
         .status-badge.suspended { background: #fee2e2; color: #991b1b; }
         .status-badge.draft { background: #f3f4f6; color: #6b7280; }
         .status-badge.active { background: #dbeafe; color: #1e40af; }
+        .status-badge.inactive { background: #f3f4f6; color: #6b7280; }
+        .status-badge.expired { background: #fee2e2; color: #991b1b; }
         .dark .status-badge.pending { background: #78350f; color: #fbbf24; }
         .dark .status-badge.confirmed { background: #1e3a5f; color: #60a5fa; }
         .dark .status-badge.live { background: #064e3b; color: #34d399; }
@@ -168,6 +170,8 @@
         .dark .status-badge.suspended { background: #7f1d1d; color: #f87171; }
         .dark .status-badge.draft { background: #374151; color: #9ca3af; }
         .dark .status-badge.active { background: #1e3a5f; color: #60a5fa; }
+        .dark .status-badge.inactive { background: #374151; color: #9ca3af; }
+        .dark .status-badge.expired { background: #7f1d1d; color: #f87171; }
 
         .stat-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(160px,1fr)); gap:16px; margin-bottom:24px; }
         .stat-card { background:#fff; border-radius:12px; padding:16px 20px; border:1px solid #e5e7eb; transition:all .2s; }
@@ -183,7 +187,7 @@
 
         .content-card { background:#fff; border-radius:12px; padding:20px; border:1px solid #e5e7eb; margin-bottom:20px; }
         .dark .content-card { background:#1f2937; border-color:#374151; }
-        .content-card .card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding-bottom:10px; border-bottom:1px solid #e5e7eb; }
+        .content-card .card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding-bottom:10px; border-bottom:1px solid #e5e7eb; flex-wrap:wrap; gap:8px; }
         .dark .content-card .card-header { border-color:#374151; }
         .content-card .card-header h3 { font-weight:700; font-size:1rem; color:#1f2937; }
         .dark .content-card .card-header h3 { color:#fff; }
@@ -213,11 +217,6 @@
         tr:hover td { background:#f9fafb; }
         .dark tr:hover td { background:#1f2937; }
 
-        .new-order-flash { animation:flashRow 1s ease 3; }
-        @keyframes flashRow { 0%,100%{background:transparent}50%{background:rgba(212,160,23,0.1)} }
-        .dark .new-order-flash { animation:flashRowDark 1s ease 3; }
-        @keyframes flashRowDark { 0%,100%{background:transparent}50%{background:rgba(212,160,23,0.15)} }
-
         .toast-container { position:fixed; bottom:20px; right:20px; z-index:99999; max-width:380px; width:100%; }
         .toast-item { background:white; border-radius:12px; padding:14px 18px; box-shadow:0 8px 32px rgba(0,0,0,0.15); border-left:4px solid #7C3AED; margin-bottom:8px; animation:slideInRight 0.4s cubic-bezier(0.34,1.56,0.64,1); }
         .dark .toast-item { background:#1f2937; }
@@ -241,7 +240,7 @@
 
         .modal-overlay { position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.5); backdrop-filter:blur(4px); display:none; align-items:center; justify-content:center; padding:20px; }
         .modal-overlay.open { display:flex; }
-        .modal-box { background:white; border-radius:16px; padding:24px; max-width:700px; width:100%; max-height:90vh; overflow-y:auto; }
+        .modal-box { background:white; border-radius:16px; padding:24px; max-width:800px; width:100%; max-height:90vh; overflow-y:auto; }
         .dark .modal-box { background:#1f2937; }
 
         .timeframe-toggle { display:flex; gap:4px; background:#f3f4f6; border-radius:8px; padding:4px; border:1px solid #e5e7eb; }
@@ -441,6 +440,19 @@
             background: #064e3b;
             color: #34d399;
         }
+
+        /* Learner specific styles */
+        .learner-avatar-sm {
+            width: 28px; height: 28px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 0.7rem; color: white;
+        }
+        .learner-avatar-sm.gold { background: #D4A017; }
+        .learner-avatar-sm.green { background: #16a34a; }
+        .learner-avatar-sm.blue { background: #3b82f6; }
+        .learner-avatar-sm.purple { background: #7c3aed; }
+        .learner-avatar-sm.red { background: #dc2626; }
+        .learner-avatar-sm.orange { background: #f59e0b; }
     </style>
 </head>
 <body>
@@ -460,6 +472,7 @@
 
         const adminModules = [
             { id: 'dashboard', icon: 'fa-chart-pie', label: 'Dashboard' },
+            { id: 'learners', icon: 'fa-user-graduate', label: 'Learners' },
             { id: 'resources', icon: 'fa-book', label: 'Resources' },
             { id: 'tutors', icon: 'fa-users', label: 'Tutors' },
             { id: 'orders', icon: 'fa-shopping-bag', label: 'Orders' },
@@ -484,6 +497,7 @@
             const [resources, setResources] = useState([]);
             const [classes, setClasses] = useState([]);
             const [payments, setPayments] = useState([]);
+            const [learners, setLearners] = useState([]);
             const [toast, setToast] = useState(null);
             const [newOrderIds, setNewOrderIds] = useState([]);
             const [pendingOrderCount, setPendingOrderCount] = useState(0);
@@ -559,7 +573,6 @@
                     });
                     if (res.ok) {
                         const data = await res.json();
-                        // Parse cart_items if present
                         const parsedData = data.map(order => {
                             if (order.cart_items && typeof order.cart_items === 'string') {
                                 try {
@@ -578,10 +591,24 @@
                 } catch (e) { console.error('Load orders error:', e); setOrders([]); setPendingOrderCount(0); }
             };
 
+            const loadLearners = async () => {
+                try {
+                    const res = await fetch(`${SUPABASE_URL}/rest/v1/learner_accounts?select=*&order=created_at.desc`, {
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        setLearners(data || []);
+                        return data;
+                    }
+                } catch (e) { console.error('Load learners error:', e); setLearners([]); }
+            };
+
             const loadData = async () => {
                 setLoading(true);
                 try {
                     await loadOrders();
+                    await loadLearners();
                     const [rRes, tRes, cRes, pRes] = await Promise.all([
                         fetch(`${SUPABASE_URL}/rest/v1/resources?select=*&order=created_at.desc`, { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` } }),
                         fetch(`${SUPABASE_URL}/rest/v1/tutors?select=*`, { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` } }),
@@ -677,6 +704,7 @@
                     currentModule, setCurrentModule, isAuthenticated, authLoading, authError,
                     login, logout, loading, tutors, setTutors, orders, setOrders,
                     resources, setResources, classes, setClasses, payments, setPayments,
+                    learners, setLearners, loadLearners,
                     toast, showToast, loadData, loadOrders, newOrderIds, setNewOrderIds,
                     pendingOrderCount, setPendingOrderCount, isMobile,
                     newsItems, addNewsItem, updateNewsItem, deleteNewsItem, togglePinNews,
@@ -804,7 +832,7 @@
 
         // ── DASHBOARD ──
         function DashboardModule() {
-            const { orders, resources, tutors, classes, pendingOrderCount, darkMode } = useApp();
+            const { orders, resources, tutors, classes, learners, pendingOrderCount, darkMode } = useApp();
             const chartRef = useRef(null);
 
             const prepareDailyData = useCallback(() => {
@@ -903,15 +931,17 @@
             const totalRevenue = orders.reduce((s, o) => s + (o.total_amount || 0), 0);
             const activeTutors = tutors.filter(t => t.status === 'active').length;
             const liveClasses = classes.filter(c => c.is_live === true).length;
+            const activeLearners = learners.filter(l => l.is_active !== false).length;
+            const learnersWithSub = learners.filter(l => l.subscription_tier && l.subscription_tier !== 'free' && l.subscription_tier !== 'pending').length;
 
             return (
                 <div className="space-y-6 fade-in">
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         {[
                             { label: 'Total Revenue', value: 'KES ' + totalRevenue.toLocaleString(), icon: '💰' },
                             { label: 'Pending Orders', value: pendingOrderCount || 0, icon: '⏳' },
                             { label: 'Active Tutors', value: activeTutors || 0, icon: '🧑‍🏫' },
-                            { label: 'Live Classes', value: liveClasses || 0, icon: '📹' },
+                            { label: 'Active Learners', value: activeLearners || 0, icon: '👨‍🎓' },
                         ].map((stat, i) => (
                             <div key={i} className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
                                 <div className="flex items-center justify-between">
@@ -923,13 +953,6 @@
                         ))}
                     </div>
 
-                    <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
-                        <h3 className="font-semibold text-gray-800 dark:text-white mb-2">📈 Daily Earnings Overview</h3>
-                        <div className="chart-container">
-                            <canvas id="earningsChart"></canvas>
-                        </div>
-                    </div>
-
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
                             <div className="flex items-center justify-between"><span className="text-sm text-gray-500 dark:text-gray-400">Total Orders</span><span className="text-2xl font-bold text-blue-600">{orders.length}</span></div>
@@ -938,12 +961,395 @@
                             <div className="flex items-center justify-between"><span className="text-sm text-gray-500 dark:text-gray-400">Total Resources</span><span className="text-2xl font-bold text-green-600">{resources.length}</span></div>
                         </div>
                         <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
-                            <div className="flex items-center justify-between"><span className="text-sm text-gray-500 dark:text-gray-400">Confirmed Orders</span><span className="text-2xl font-bold text-purple-600">{orders.filter(o => o.payment_status === 'confirmed').length}</span></div>
+                            <div className="flex items-center justify-between"><span className="text-sm text-gray-500 dark:text-gray-400">Subscribed Learners</span><span className="text-2xl font-bold text-purple-600">{learnersWithSub}</span></div>
                         </div>
                         <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
                             <div className="flex items-center justify-between"><span className="text-sm text-gray-500 dark:text-gray-400">Total Classes</span><span className="text-2xl font-bold text-amber-600">{classes.length}</span></div>
                         </div>
                     </div>
+
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <h3 className="font-semibold text-gray-800 dark:text-white mb-2">📈 Daily Earnings Overview</h3>
+                        <div className="chart-container">
+                            <canvas id="earningsChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ── LEARNERS MODULE ──
+        function LearnersModule() {
+            const { learners, setLearners, loadLearners, showToast } = useApp();
+            const [filter, setFilter] = useState('all');
+            const [searchTerm, setSearchTerm] = useState('');
+            const [selectedLearner, setSelectedLearner] = useState(null);
+            const [showLearnerModal, setShowLearnerModal] = useState(false);
+            const [showEditModal, setShowEditModal] = useState(false);
+            const [editFormData, setEditFormData] = useState({ full_name: '', email: '', grade_level: '', school_name: '', parent_phone: '', subscription_tier: '', is_active: true });
+
+            useEffect(() => {
+                loadLearners();
+            }, []);
+
+            const getSubscriptionStatus = (learner) => {
+                if (!learner) return 'inactive';
+                if (learner.subscription_tier === 'free' || !learner.subscription_tier) return 'inactive';
+                if (learner.subscription_tier === 'pending') return 'pending';
+                if (!learner.subscription_expiry) return 'inactive';
+                const expiry = new Date(learner.subscription_expiry);
+                if (expiry <= new Date()) return 'expired';
+                return 'active';
+            };
+
+            const getSubscriptionLabel = (status) => {
+                const map = {
+                    'active': '✅ Active',
+                    'pending': '⏳ Pending',
+                    'expired': '❌ Expired',
+                    'inactive': '⚪ Inactive'
+                };
+                return map[status] || '⚪ Inactive';
+            };
+
+            const getDaysRemaining = (learner) => {
+                if (!learner || !learner.subscription_expiry) return 0;
+                const expiry = new Date(learner.subscription_expiry);
+                const now = new Date();
+                const diff = expiry - now;
+                return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+            };
+
+            const toggleLearnerStatus = async (learner) => {
+                const newStatus = !learner.is_active;
+                if (!confirm(`${newStatus ? 'Activate' : 'Deactivate'} learner ${learner.full_name}?`)) return;
+                try {
+                    await fetch(`${SUPABASE_URL}/rest/v1/learner_accounts?id=eq.${learner.id}`, {
+                        method: 'PATCH',
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ is_active: newStatus })
+                    });
+                    showToast(`✅ Learner ${newStatus ? 'activated' : 'deactivated'}`);
+                    loadLearners();
+                } catch (e) { showToast('❌ Failed to update status', 'error'); }
+            };
+
+            const openLearnerDetails = (learner) => {
+                setSelectedLearner(learner);
+                setShowLearnerModal(true);
+            };
+
+            const closeLearnerDetails = () => {
+                setShowLearnerModal(false);
+                setSelectedLearner(null);
+            };
+
+            const openEditModal = (learner) => {
+                setSelectedLearner(learner);
+                setEditFormData({
+                    full_name: learner.full_name || '',
+                    email: learner.email || '',
+                    grade_level: learner.grade_level || '',
+                    school_name: learner.school_name || '',
+                    parent_phone: learner.parent_phone || '',
+                    subscription_tier: learner.subscription_tier || 'free',
+                    is_active: learner.is_active !== false
+                });
+                setShowEditModal(true);
+            };
+
+            const closeEditModal = () => {
+                setShowEditModal(false);
+                setSelectedLearner(null);
+            };
+
+            const handleEditSave = async () => {
+                if (!selectedLearner) return;
+                try {
+                    await fetch(`${SUPABASE_URL}/rest/v1/learner_accounts?id=eq.${selectedLearner.id}`, {
+                        method: 'PATCH',
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            full_name: editFormData.full_name,
+                            grade_level: editFormData.grade_level,
+                            school_name: editFormData.school_name,
+                            parent_phone: editFormData.parent_phone,
+                            subscription_tier: editFormData.subscription_tier,
+                            is_active: editFormData.is_active,
+                            updated_at: new Date().toISOString()
+                        })
+                    });
+                    showToast('✅ Learner updated');
+                    closeEditModal();
+                    loadLearners();
+                } catch (e) { showToast('❌ Update failed', 'error'); }
+            };
+
+            const getAvatarColor = (name) => {
+                const colors = ['gold', 'green', 'blue', 'purple', 'red', 'orange'];
+                const index = (name || '').length % colors.length;
+                return colors[index] || 'gold';
+            };
+
+            const filteredLearners = learners.filter(l => {
+                if (searchTerm) {
+                    const s = searchTerm.toLowerCase();
+                    if (!(l.full_name || '').toLowerCase().includes(s) && 
+                        !(l.email || '').toLowerCase().includes(s) && 
+                        !(l.school_name || '').toLowerCase().includes(s)) return false;
+                }
+                if (filter === 'active') return l.is_active !== false;
+                if (filter === 'inactive') return l.is_active === false;
+                if (filter === 'subscribed') {
+                    const status = getSubscriptionStatus(l);
+                    return status === 'active';
+                }
+                if (filter === 'pending') {
+                    const status = getSubscriptionStatus(l);
+                    return status === 'pending';
+                }
+                if (filter === 'expired') {
+                    const status = getSubscriptionStatus(l);
+                    return status === 'expired';
+                }
+                return true;
+            });
+
+            const totalLearners = learners.length;
+            const activeLearners = learners.filter(l => l.is_active !== false).length;
+            const subscribedLearners = learners.filter(l => getSubscriptionStatus(l) === 'active').length;
+            const pendingSubs = learners.filter(l => getSubscriptionStatus(l) === 'pending').length;
+
+            return (
+                <div className="space-y-6 fade-in">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                            <p className="text-sm text-gray-500">Total Learners</p>
+                            <p className="text-2xl font-bold text-blue-600">{totalLearners}</p>
+                        </div>
+                        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                            <p className="text-sm text-gray-500">Active</p>
+                            <p className="text-2xl font-bold text-green-600">{activeLearners}</p>
+                        </div>
+                        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                            <p className="text-sm text-gray-500">Subscribed</p>
+                            <p className="text-2xl font-bold text-purple-600">{subscribedLearners}</p>
+                        </div>
+                        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                            <p className="text-sm text-gray-500">Pending Subscription</p>
+                            <p className="text-2xl font-bold text-amber-600">{pendingSubs}</p>
+                        </div>
+                    </div>
+
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <div className="card-header">
+                            <h3>👨‍🎓 Learner Management</h3>
+                            <button onClick={() => loadLearners()} className="btn-gold px-4 py-2 rounded-lg text-sm">🔄 Refresh</button>
+                        </div>
+                        
+                        <div className="flex flex-wrap gap-3 mb-4">
+                            <button onClick={() => setFilter('all')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'all' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>All</button>
+                            <button onClick={() => setFilter('active')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'active' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>✅ Active</button>
+                            <button onClick={() => setFilter('inactive')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'inactive' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>⛔ Inactive</button>
+                            <button onClick={() => setFilter('subscribed')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'subscribed' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>💳 Subscribed</button>
+                            <button onClick={() => setFilter('pending')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'pending' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>⏳ Pending</button>
+                            <button onClick={() => setFilter('expired')} className={`px-3 py-1 rounded-lg text-sm ${filter === 'expired' ? 'bg-[#D4A017] text-[#0a1a3a]' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>❌ Expired</button>
+                        </div>
+
+                        <div className="mb-4">
+                            <input type="text" placeholder="🔍 Search by name, email, or school..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" />
+                        </div>
+
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead className="bg-gray-50 dark:bg-gray-700/50">
+                                    <tr>
+                                        <th className="px-4 py-2 text-left">Learner</th>
+                                        <th className="px-4 py-2 text-left">Email</th>
+                                        <th className="px-4 py-2 text-left">Grade</th>
+                                        <th className="px-4 py-2 text-left">School</th>
+                                        <th className="px-4 py-2 text-left">Subscription</th>
+                                        <th className="px-4 py-2 text-left">Status</th>
+                                        <th className="px-4 py-2 text-left">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filteredLearners.map(l => {
+                                        const status = getSubscriptionStatus(l);
+                                        const daysLeft = getDaysRemaining(l);
+                                        const avatarColor = getAvatarColor(l.full_name);
+                                        return (
+                                            <tr key={l.id} className="border-t border-gray-100 dark:border-gray-700">
+                                                <td className="px-4 py-2">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className={`learner-avatar-sm ${avatarColor}`}>
+                                                            {(l.full_name || 'L').charAt(0).toUpperCase()}
+                                                        </div>
+                                                        <span className="font-medium">{l.full_name || 'N/A'}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{l.email || '—'}</td>
+                                                <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{l.grade_level || '—'}</td>
+                                                <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{l.school_name || '—'}</td>
+                                                <td className="px-4 py-2">
+                                                    <span className={`status-badge ${status}`}>
+                                                        {getSubscriptionLabel(status)}
+                                                        {status === 'active' && ` (${daysLeft}d)`}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-2">
+                                                    <span className={`status-badge ${l.is_active !== false ? 'active' : 'inactive'}`}>
+                                                        {l.is_active !== false ? '✅ Active' : '⛔ Inactive'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-2">
+                                                    <div className="flex gap-2 flex-wrap">
+                                                        <button onClick={() => openLearnerDetails(l)} className="px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded">📋</button>
+                                                        <button onClick={() => openEditModal(l)} className="px-2 py-1 text-xs bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded">✏️</button>
+                                                        <button onClick={() => toggleLearnerStatus(l)} className={`px-2 py-1 text-xs rounded ${l.is_active !== false ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400' : 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'}`}>
+                                                            {l.is_active !== false ? '⏸️' : '▶️'}
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                            {filteredLearners.length === 0 && (
+                                <p className="text-center text-gray-500 py-8">No learners found matching your filters.</p>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Learner Details Modal */}
+                    {showLearnerModal && selectedLearner && (
+                        <div className="modal-overlay open" onClick={closeLearnerDetails}>
+                            <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="text-xl font-bold text-gray-800 dark:text-white">👨‍🎓 Learner Details</h3>
+                                    <button onClick={closeLearnerDetails} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-xl">✕</button>
+                                </div>
+                                
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4">
+                                        <div className="text-xs text-gray-500 dark:text-gray-400">Full Name</div>
+                                        <div className="font-semibold text-gray-800 dark:text-white">{selectedLearner.full_name || 'N/A'}</div>
+                                    </div>
+                                    <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4">
+                                        <div className="text-xs text-gray-500 dark:text-gray-400">Email</div>
+                                        <div className="font-semibold text-gray-800 dark:text-white">{selectedLearner.email || 'N/A'}</div>
+                                    </div>
+                                    <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4">
+                                        <div className="text-xs text-gray-500 dark:text-gray-400">Grade Level</div>
+                                        <div className="font-semibold text-gray-800 dark:text-white">{selectedLearner.grade_level || 'N/A'}</div>
+                                    </div>
+                                    <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4">
+                                        <div className="text-xs text-gray-500 dark:text-gray-400">School</div>
+                                        <div className="font-semibold text-gray-800 dark:text-white">{selectedLearner.school_name || 'N/A'}</div>
+                                    </div>
+                                    <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4">
+                                        <div className="text-xs text-gray-500 dark:text-gray-400">Parent/Guardian Phone</div>
+                                        <div className="font-semibold text-gray-800 dark:text-white">{selectedLearner.parent_phone || 'N/A'}</div>
+                                    </div>
+                                    <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4">
+                                        <div className="text-xs text-gray-500 dark:text-gray-400">Subscription</div>
+                                        <div className="font-semibold">
+                                            <span className={`status-badge ${getSubscriptionStatus(selectedLearner)}`}>
+                                                {getSubscriptionLabel(getSubscriptionStatus(selectedLearner))}
+                                                {getSubscriptionStatus(selectedLearner) === 'active' && ` (${getDaysRemaining(selectedLearner)} days left)`}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4">
+                                        <div className="text-xs text-gray-500 dark:text-gray-400">Status</div>
+                                        <div className="font-semibold">
+                                            <span className={`status-badge ${selectedLearner.is_active !== false ? 'active' : 'inactive'}`}>
+                                                {selectedLearner.is_active !== false ? '✅ Active' : '⛔ Inactive'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4">
+                                        <div className="text-xs text-gray-500 dark:text-gray-400">Joined</div>
+                                        <div className="font-semibold text-gray-800 dark:text-white">
+                                            {selectedLearner.created_at ? new Date(selectedLearner.created_at).toLocaleDateString() : 'N/A'}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-3 mt-6">
+                                    <button onClick={closeLearnerDetails} className="btn-gold px-6 py-2 rounded-lg font-semibold">Close</button>
+                                    <button onClick={() => { closeLearnerDetails(); openEditModal(selectedLearner); }} className="px-6 py-2 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg font-semibold">✏️ Edit</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Edit Learner Modal */}
+                    {showEditModal && selectedLearner && (
+                        <div className="modal-overlay open" onClick={closeEditModal}>
+                            <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+                                <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-4">✏️ Edit Learner</h3>
+                                
+                                <div className="space-y-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Full Name</label>
+                                            <input type="text" value={editFormData.full_name} onChange={(e) => setEditFormData({...editFormData, full_name: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
+                                            <input type="email" value={editFormData.email} onChange={(e) => setEditFormData({...editFormData, email: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Grade Level</label>
+                                            <select value={editFormData.grade_level} onChange={(e) => setEditFormData({...editFormData, grade_level: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
+                                                <option value="">Select grade...</option>
+                                                <option value="grade-1">Grade 1</option><option value="grade-2">Grade 2</option>
+                                                <option value="grade-3">Grade 3</option><option value="grade-4">Grade 4</option>
+                                                <option value="grade-5">Grade 5</option><option value="grade-6">Grade 6</option>
+                                                <option value="grade-7">Grade 7</option><option value="grade-8">Grade 8</option>
+                                                <option value="grade-9">Grade 9</option><option value="grade-10">Grade 10</option>
+                                                <option value="grade-11">Grade 11</option><option value="grade-12">Grade 12</option>
+                                                <option value="form-1">Form 1</option><option value="form-2">Form 2</option>
+                                                <option value="form-3">Form 3</option><option value="form-4">Form 4</option>
+                                                <option value="college">College</option><option value="tvet">TVET</option><option value="university">University</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">School Name</label>
+                                            <input type="text" value={editFormData.school_name} onChange={(e) => setEditFormData({...editFormData, school_name: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Parent/Guardian Phone</label>
+                                            <input type="tel" value={editFormData.parent_phone} onChange={(e) => setEditFormData({...editFormData, parent_phone: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Subscription Tier</label>
+                                            <select value={editFormData.subscription_tier} onChange={(e) => setEditFormData({...editFormData, subscription_tier: e.target.value})} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
+                                                <option value="free">Free</option>
+                                                <option value="pending">Pending</option>
+                                                <option value="monthly">Monthly</option>
+                                                <option value="quarterly">Quarterly</option>
+                                                <option value="half-yearly">Half Yearly</option>
+                                                <option value="yearly">Yearly</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                                            <input type="checkbox" checked={editFormData.is_active} onChange={(e) => setEditFormData({...editFormData, is_active: e.target.checked})} className="w-4 h-4 accent-[#D4A017]" />
+                                            <span className="text-sm font-medium">Active Account</span>
+                                        </label>
+                                    </div>
+                                    <div className="flex gap-3">
+                                        <button onClick={handleEditSave} className="btn-gold px-6 py-2 rounded-lg font-semibold">💾 Save Changes</button>
+                                        <button onClick={closeEditModal} className="px-6 py-2 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-semibold">Cancel</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         }
@@ -1262,12 +1668,11 @@
             );
         }
 
-        // ── ORDERS WITH DETAIL VIEW ──
+        // ── ORDERS ──
         function OrdersModule() {
-            const { orders, loadOrders, showToast, newOrderIds, pendingOrderCount, setPendingOrderCount, openOrderDetails } = useApp();
+            const { orders, loadOrders, showToast, newOrderIds, pendingOrderCount, openOrderDetails } = useApp();
             const [filter, setFilter] = useState('all');
             const [loadingOrderId, setLoadingOrderId] = useState(null);
-            const [expandedOrderId, setExpandedOrderId] = useState(null);
             const [searchTerm, setSearchTerm] = useState('');
 
             useEffect(() => {
@@ -1329,12 +1734,10 @@
             const pendingRevenue = orders.filter(o => isPending(o)).reduce((s, o) => s + (o.total_amount || 0), 0);
             const confirmedRevenue = orders.filter(o => o.payment_status === 'confirmed' || o.status === 'confirmed').reduce((s, o) => s + (o.total_amount || 0), 0);
 
-            // Helper to check if order has cart items
             const hasCartItems = (order) => {
                 return order.cart_items && Array.isArray(order.cart_items) && order.cart_items.length > 0;
             };
 
-            // Helper to get item count
             const getItemCount = (order) => {
                 if (hasCartItems(order)) {
                     return order.cart_items.reduce((sum, item) => sum + (item.quantity || 1), 0);
@@ -1405,38 +1808,16 @@
                                                 </td>
                                                 <td className="px-4 py-2">
                                                     <div className="flex gap-2 flex-wrap">
-                                                        <button 
-                                                            onClick={() => openOrderDetails(o)} 
-                                                            className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg text-xs hover:bg-blue-200 transition"
-                                                        >
-                                                            📋 Details
-                                                        </button>
+                                                        <button onClick={() => openOrderDetails(o)} className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg text-xs hover:bg-blue-200 transition">📋 Details</button>
                                                         {pending && (
                                                             <>
-                                                                <button 
-                                                                    onClick={() => handleConfirmOrder(o)} 
-                                                                    disabled={loadingOrderId === o.id}
-                                                                    className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg text-xs hover:bg-green-200 transition disabled:opacity-50"
-                                                                >
-                                                                    {loadingOrderId === o.id ? '⏳' : '✅ Confirm'}
-                                                                </button>
-                                                                <button 
-                                                                    onClick={() => handleRejectOrder(o)} 
-                                                                    className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg text-xs hover:bg-red-200 transition"
-                                                                >
-                                                                    ❌ Reject
-                                                                </button>
+                                                                <button onClick={() => handleConfirmOrder(o)} disabled={loadingOrderId === o.id} className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg text-xs hover:bg-green-200 transition disabled:opacity-50">{loadingOrderId === o.id ? '⏳' : '✅ Confirm'}</button>
+                                                                <button onClick={() => handleRejectOrder(o)} className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg text-xs hover:bg-red-200 transition">❌ Reject</button>
                                                             </>
                                                         )}
-                                                        {(o.payment_status === 'confirmed' || o.status === 'confirmed') && (
-                                                            <span className="text-xs text-green-600 dark:text-green-400">✅ Confirmed</span>
-                                                        )}
-                                                        {(o.payment_status === 'paid' || o.payment_status === 'completed') && (
-                                                            <span className="text-xs text-blue-600 dark:text-blue-400">💳 Paid</span>
-                                                        )}
-                                                        {(o.payment_status === 'cancelled' || o.payment_status === 'rejected') && (
-                                                            <span className="text-xs text-red-600 dark:text-red-400">✗ Cancelled</span>
-                                                        )}
+                                                        {(o.payment_status === 'confirmed' || o.status === 'confirmed') && <span className="text-xs text-green-600 dark:text-green-400">✅ Confirmed</span>}
+                                                        {(o.payment_status === 'paid' || o.payment_status === 'completed') && <span className="text-xs text-blue-600 dark:text-blue-400">💳 Paid</span>}
+                                                        {(o.payment_status === 'cancelled' || o.payment_status === 'rejected') && <span className="text-xs text-red-600 dark:text-red-400">✗ Cancelled</span>}
                                                     </div>
                                                 </td>
                                             </tr>
@@ -1447,7 +1828,6 @@
                         </div>
                     </div>
 
-                    {/* Order Details Modal */}
                     <OrderDetailsModal />
                 </div>
             );
@@ -1455,7 +1835,7 @@
 
         // ── ORDER DETAILS MODAL ──
         function OrderDetailsModal() {
-            const { selectedOrder, showOrderModal, closeOrderDetails, darkMode } = useApp();
+            const { selectedOrder, showOrderModal, closeOrderDetails } = useApp();
 
             if (!showOrderModal || !selectedOrder) return null;
 
@@ -1463,180 +1843,80 @@
             const isCart = order.cart_items && Array.isArray(order.cart_items) && order.cart_items.length > 0;
             const cartItems = isCart ? order.cart_items : [];
             const itemCount = isCart ? cartItems.reduce((sum, item) => sum + (item.quantity || 1), 0) : 1;
-            
-            // Calculate subtotal
-            const subtotal = isCart 
-                ? cartItems.reduce((sum, item) => sum + (item.price || 0) * (item.quantity || 1), 0)
-                : (order.item_price || order.total_amount || 0);
-            
+            const subtotal = isCart ? cartItems.reduce((sum, item) => sum + (item.price || 0) * (item.quantity || 1), 0) : (order.item_price || order.total_amount || 0);
             const total = order.total_amount || subtotal;
+
+            const getStatusBadge = (status) => {
+                const map = { 'pending': 'pending', 'pending_verification': 'pending', 'confirmed': 'confirmed', 'paid': 'paid', 'completed': 'paid', 'cancelled': 'rejected', 'rejected': 'rejected' };
+                return map[status] || 'pending';
+            };
+            const getStatusLabel = (status) => {
+                const map = { 'pending': '⏳ Pending', 'pending_verification': '⏳ Pending Approval', 'confirmed': '✅ Confirmed', 'paid': '✅ Paid', 'completed': '✅ Paid', 'cancelled': '❌ Cancelled', 'rejected': '❌ Rejected' };
+                return map[status] || '⏳ Pending';
+            };
 
             return (
                 <div className="modal-overlay open" onClick={closeOrderDetails}>
                     <div className="modal-box" onClick={(e) => e.stopPropagation()}>
                         <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-xl font-bold text-gray-800 dark:text-white">
-                                📋 Order Details
-                            </h3>
-                            <button 
-                                onClick={closeOrderDetails} 
-                                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-xl"
-                            >
-                                ✕
-                            </button>
+                            <h3 className="text-xl font-bold text-gray-800 dark:text-white">📋 Order Details</h3>
+                            <button onClick={closeOrderDetails} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-xl">✕</button>
                         </div>
 
-                        {/* Order Info */}
                         <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 mb-4">
                             <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <div className="text-xs text-gray-500 dark:text-gray-400">Order Reference</div>
-                                    <div className="font-semibold text-gray-800 dark:text-white">#{order.order_ref || order.id.slice(0,8).toUpperCase()}</div>
-                                </div>
-                                <div>
-                                    <div className="text-xs text-gray-500 dark:text-gray-400">Status</div>
-                                    <span className={`status-badge ${getStatusBadge(order.payment_status || order.status)}`}>
-                                        {getStatusLabel(order.payment_status || order.status)}
-                                    </span>
-                                </div>
-                                <div>
-                                    <div className="text-xs text-gray-500 dark:text-gray-400">Customer</div>
-                                    <div className="font-semibold text-gray-800 dark:text-white">{order.customer_name || 'N/A'}</div>
-                                </div>
-                                <div>
-                                    <div className="text-xs text-gray-500 dark:text-gray-400">Phone</div>
-                                    <div className="font-semibold text-gray-800 dark:text-white">{order.phone || 'N/A'}</div>
-                                </div>
-                                <div>
-                                    <div className="text-xs text-gray-500 dark:text-gray-400">Order Type</div>
-                                    <span className={`order-badge ${isCart ? 'cart' : 'single'}`}>
-                                        {isCart ? '🛒 Cart Order' : '📄 Single Item'}
-                                    </span>
-                                </div>
-                                <div>
-                                    <div className="text-xs text-gray-500 dark:text-gray-400">Item Count</div>
-                                    <div className="font-semibold text-gray-800 dark:text-white">{itemCount} item{itemCount > 1 ? 's' : ''}</div>
-                                </div>
-                                <div>
-                                    <div className="text-xs text-gray-500 dark:text-gray-400">Date</div>
-                                    <div className="font-semibold text-gray-800 dark:text-white">
-                                        {order.created_at ? new Date(order.created_at).toLocaleString() : 'N/A'}
-                                    </div>
-                                </div>
-                                <div>
-                                    <div className="text-xs text-gray-500 dark:text-gray-400">Payment Method</div>
-                                    <div className="font-semibold text-gray-800 dark:text-white">
-                                        {order.payment_method || 'STK Push'}
-                                    </div>
-                                </div>
+                                <div><div className="text-xs text-gray-500 dark:text-gray-400">Order Reference</div><div className="font-semibold text-gray-800 dark:text-white">#{order.order_ref || order.id.slice(0,8).toUpperCase()}</div></div>
+                                <div><div className="text-xs text-gray-500 dark:text-gray-400">Status</div><span className={`status-badge ${getStatusBadge(order.payment_status || order.status)}`}>{getStatusLabel(order.payment_status || order.status)}</span></div>
+                                <div><div className="text-xs text-gray-500 dark:text-gray-400">Customer</div><div className="font-semibold text-gray-800 dark:text-white">{order.customer_name || 'N/A'}</div></div>
+                                <div><div className="text-xs text-gray-500 dark:text-gray-400">Phone</div><div className="font-semibold text-gray-800 dark:text-white">{order.phone || 'N/A'}</div></div>
+                                <div><div className="text-xs text-gray-500 dark:text-gray-400">Order Type</div><span className={`order-badge ${isCart ? 'cart' : 'single'}`}>{isCart ? '🛒 Cart Order' : '📄 Single Item'}</span></div>
+                                <div><div className="text-xs text-gray-500 dark:text-gray-400">Item Count</div><div className="font-semibold text-gray-800 dark:text-white">{itemCount} item{itemCount > 1 ? 's' : ''}</div></div>
+                                <div><div className="text-xs text-gray-500 dark:text-gray-400">Date</div><div className="font-semibold text-gray-800 dark:text-white">{order.created_at ? new Date(order.created_at).toLocaleString() : 'N/A'}</div></div>
+                                <div><div className="text-xs text-gray-500 dark:text-gray-400">Payment Method</div><div className="font-semibold text-gray-800 dark:text-white">{order.payment_method || 'STK Push'}</div></div>
                             </div>
                         </div>
 
-                        {/* Cart Items */}
                         <div className="mb-4">
-                            <h4 className="font-semibold text-gray-800 dark:text-white mb-2">
-                                {isCart ? '🛒 Cart Items' : '📄 Item Details'}
-                            </h4>
-                            
+                            <h4 className="font-semibold text-gray-800 dark:text-white mb-2">{isCart ? '🛒 Cart Items' : '📄 Item Details'}</h4>
                             {isCart ? (
                                 <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                                    <div className="cart-item-row header">
-                                        <div>Item</div>
-                                        <div>Qty</div>
-                                        <div>Price</div>
-                                        <div>Total</div>
-                                        <div></div>
-                                    </div>
+                                    <div className="cart-item-row header"><div>Item</div><div>Qty</div><div>Price</div><div>Total</div><div></div></div>
                                     {cartItems.map((item, index) => (
                                         <div key={index} className="cart-item-row">
                                             <div className="item-title">{item.title || 'Unknown Item'}</div>
                                             <div>{item.quantity || 1}</div>
                                             <div className="item-price">KES {item.price || 0}</div>
                                             <div className="item-total">KES {(item.price || 0) * (item.quantity || 1)}</div>
-                                            <div>
-                                                {item.subject && (
-                                                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                                                        {item.subject}
-                                                    </span>
-                                                )}
-                                            </div>
+                                            <div>{item.subject && <span className="text-xs text-gray-500 dark:text-gray-400">{item.subject}</span>}</div>
                                         </div>
                                     ))}
                                 </div>
                             ) : (
                                 <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4">
-                                    <div className="order-detail-item">
-                                        <span className="order-detail-label">Item Title</span>
-                                        <span className="order-detail-value">{order.item_title || 'N/A'}</span>
-                                    </div>
-                                    {order.resource_id && (
-                                        <div className="order-detail-item">
-                                            <span className="order-detail-label">Resource ID</span>
-                                            <span className="order-detail-value">{order.resource_id}</span>
-                                        </div>
-                                    )}
-                                    {order.resource_file_name && (
-                                        <div className="order-detail-item">
-                                            <span className="order-detail-label">File Name</span>
-                                            <span className="order-detail-value">{order.resource_file_name}</span>
-                                        </div>
-                                    )}
+                                    <div className="order-detail-item"><span className="order-detail-label">Item Title</span><span className="order-detail-value">{order.item_title || 'N/A'}</span></div>
+                                    {order.resource_id && <div className="order-detail-item"><span className="order-detail-label">Resource ID</span><span className="order-detail-value">{order.resource_id}</span></div>}
                                 </div>
                             )}
                         </div>
 
-                        {/* Order Summary */}
                         <div className="order-summary-box">
-                            <div className="order-summary-row">
-                                <span className="summary-label">Subtotal</span>
-                                <span className="summary-value">KES {subtotal.toLocaleString()}</span>
-                            </div>
-                            {isCart && cartItems.length > 0 && (
-                                <div className="order-summary-row">
-                                    <span className="summary-label">Items</span>
-                                    <span className="summary-value">{itemCount} item{itemCount > 1 ? 's' : ''}</span>
-                                </div>
-                            )}
-                            <div className="order-summary-row total">
-                                <span className="summary-label">Total</span>
-                                <span className="summary-value">KES {total.toLocaleString()}</span>
-                            </div>
+                            <div className="order-summary-row"><span className="summary-label">Subtotal</span><span className="summary-value">KES {subtotal.toLocaleString()}</span></div>
+                            {isCart && cartItems.length > 0 && <div className="order-summary-row"><span className="summary-label">Items</span><span className="summary-value">{itemCount} item{itemCount > 1 ? 's' : ''}</span></div>}
+                            <div className="order-summary-row total"><span className="summary-label">Total</span><span className="summary-value">KES {total.toLocaleString()}</span></div>
                         </div>
 
-                        {/* Transaction Info */}
                         {(order.mpesa_transaction_id || order.transaction_id || order.mpesa_receipt) && (
                             <div className="mt-4 bg-green-50 dark:bg-green-900/20 rounded-lg p-4 border border-green-200 dark:border-green-800">
                                 <h4 className="font-semibold text-green-700 dark:text-green-400 mb-2">💳 Payment Details</h4>
-                                {order.mpesa_transaction_id && (
-                                    <div className="order-detail-item">
-                                        <span className="order-detail-label">Transaction ID</span>
-                                        <span className="order-detail-value text-green-700 dark:text-green-400">{order.mpesa_transaction_id}</span>
-                                    </div>
-                                )}
-                                {order.transaction_id && (
-                                    <div className="order-detail-item">
-                                        <span className="order-detail-label">Transaction ID</span>
-                                        <span className="order-detail-value text-green-700 dark:text-green-400">{order.transaction_id}</span>
-                                    </div>
-                                )}
-                                {order.mpesa_receipt && (
-                                    <div className="order-detail-item">
-                                        <span className="order-detail-label">M-Pesa Receipt</span>
-                                        <span className="order-detail-value text-green-700 dark:text-green-400">{order.mpesa_receipt}</span>
-                                    </div>
-                                )}
+                                {order.mpesa_transaction_id && <div className="order-detail-item"><span className="order-detail-label">Transaction ID</span><span className="order-detail-value text-green-700 dark:text-green-400">{order.mpesa_transaction_id}</span></div>}
+                                {order.transaction_id && <div className="order-detail-item"><span className="order-detail-label">Transaction ID</span><span className="order-detail-value text-green-700 dark:text-green-400">{order.transaction_id}</span></div>}
+                                {order.mpesa_receipt && <div className="order-detail-item"><span className="order-detail-label">M-Pesa Receipt</span><span className="order-detail-value text-green-700 dark:text-green-400">{order.mpesa_receipt}</span></div>}
                             </div>
                         )}
 
                         <div className="flex gap-3 mt-4">
-                            <button onClick={closeOrderDetails} className="btn-gold px-6 py-2 rounded-lg font-semibold">
-                                Close
-                            </button>
-                            {order.file_delivered && (
-                                <span className="px-4 py-2 bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-400 rounded-lg font-semibold">
-                                    ✅ File Delivered
-                                </span>
-                            )}
+                            <button onClick={closeOrderDetails} className="btn-gold px-6 py-2 rounded-lg font-semibold">Close</button>
+                            {order.file_delivered && <span className="px-4 py-2 bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-400 rounded-lg font-semibold">✅ File Delivered</span>}
                         </div>
                     </div>
                 </div>
@@ -1932,6 +2212,7 @@
             const { currentModule } = useApp();
             const map = {
                 dashboard: <DashboardModule />,
+                learners: <LearnersModule />,
                 resources: <ResourcesModule />,
                 tutors: <TutorsModule />,
                 orders: <OrdersModule />,
@@ -1957,17 +2238,6 @@
                     <PendingAlert />
                 </div>
             );
-        }
-
-        // Helper functions for status badges in modal
-        function getStatusBadge(status) {
-            const map = { 'pending': 'pending', 'pending_verification': 'pending', 'confirmed': 'confirmed', 'paid': 'paid', 'completed': 'paid', 'cancelled': 'rejected', 'rejected': 'rejected' };
-            return map[status] || 'pending';
-        }
-
-        function getStatusLabel(status) {
-            const map = { 'pending': '⏳ Pending', 'pending_verification': '⏳ Pending Approval', 'confirmed': '✅ Confirmed', 'paid': '✅ Paid', 'completed': '✅ Paid', 'cancelled': '❌ Cancelled', 'rejected': '❌ Rejected' };
-            return map[status] || '⏳ Pending';
         }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
