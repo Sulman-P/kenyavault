@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Learner Account — KenyaVault</title>
+    
+    <!-- Load React and ReactDOM from CDN -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700;800&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
@@ -1076,11 +1082,49 @@
             from { transform: translateX(100%); opacity: 0; }
             to { transform: translateX(0); opacity: 1; }
         }
+
+        /* Loading spinner */
+        .loading-spinner {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background: var(--off-white);
+        }
+        .loading-spinner .spinner-content {
+            text-align: center;
+        }
+        .loading-spinner .spinner-icon {
+            font-size: 3rem;
+            margin-bottom: 16px;
+            animation: bounce 1s ease-in-out infinite;
+        }
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
     </style>
 </head>
 <body>
 
-    <div id="root"></div>
+    <div id="root">
+        <div class="loading-spinner">
+            <div class="spinner-content">
+                <div class="spinner-icon">📚</div>
+                <div style="font-size: 1.2rem; font-weight: 600; color: var(--text);">Loading KenyaVault...</div>
+                <div style="margin-top: 12px; width: 200px; height: 4px; background: var(--surface); border-radius: 99px; overflow: hidden; margin: 12px auto;">
+                    <div style="width: 50%; height: 100%; background: var(--gold); border-radius: 99px; animation: pulse 1.5s ease-in-out infinite;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        @keyframes pulse {
+            0%, 100% { transform: translateX(-50%); }
+            50% { transform: translateX(50%); }
+        }
+    </style>
 
     <script type="text/babel">
         const { useState, useEffect, createContext, useContext } = React;
@@ -1118,7 +1162,13 @@
         const LearnerContext = createContext(null);
 
         function LearnerProvider({ children }) {
-            const [isLoggedIn, setIsLoggedIn] = useState(() => sessionStorage.getItem('learner_id') !== null);
+            const [isLoggedIn, setIsLoggedIn] = useState(() => {
+                try {
+                    return sessionStorage.getItem('learner_id') !== null;
+                } catch (e) {
+                    return false;
+                }
+            });
             const [learner, setLearner] = useState(null);
             const [resources, setResources] = useState([]);
             const [progress, setProgress] = useState([]);
@@ -1139,8 +1189,11 @@
 
             useEffect(() => {
                 const learnerId = sessionStorage.getItem('learner_id');
-                if (learnerId) loadLearnerData(learnerId);
-                else setLoading(false);
+                if (learnerId) {
+                    loadLearnerData(learnerId);
+                } else {
+                    setLoading(false);
+                }
             }, []);
 
             const showNotification = (msg, type = 'success') => {
@@ -1152,6 +1205,7 @@
             const isSubscriptionActive = (learnerData) => {
                 if (!learnerData) return false;
                 if (learnerData.subscription_tier === 'free' || !learnerData.subscription_tier) return false;
+                if (learnerData.subscription_tier === 'pending') return false;
                 if (!learnerData.subscription_expiry) return false;
                 const expiry = new Date(learnerData.subscription_expiry);
                 return expiry > new Date();
@@ -1161,6 +1215,7 @@
             const getSubscriptionStatus = (learnerData) => {
                 if (!learnerData) return 'inactive';
                 if (learnerData.subscription_tier === 'free' || !learnerData.subscription_tier) return 'inactive';
+                if (learnerData.subscription_tier === 'pending') return 'pending';
                 if (!learnerData.subscription_expiry) return 'inactive';
                 const expiry = new Date(learnerData.subscription_expiry);
                 if (expiry <= new Date()) return 'expired';
@@ -1639,7 +1694,7 @@
 
         // ── AUTH PAGE ──
         function AuthPage() {
-            const { setIsLoggedIn, setLearner, showNotification, loadLearnerData, addDebug, debugInfo, SUBSCRIPTION_PLANS, updateSubscription } = useLearner();
+            const { setIsLoggedIn, setLearner, showNotification, loadLearnerData, addDebug, debugInfo, SUBSCRIPTION_PLANS } = useLearner();
             const [isLogin, setIsLogin] = useState(true);
             const [email, setEmail] = useState('');
             const [password, setPassword] = useState('');
@@ -1763,7 +1818,7 @@
                         grade_level: gradeLevel,
                         school_name: schoolName || '',
                         parent_phone: parentPhone || '',
-                        subscription_tier: 'pending', // Pending until payment
+                        subscription_tier: 'pending',
                         subscription_expiry: null,
                         is_active: true,
                         created_at: new Date().toISOString(),
@@ -2188,7 +2243,6 @@
                 isSubscriptionActive,
                 getSubscriptionStatus,
                 getSubscriptionDaysRemaining,
-                updateSubscription,
                 SUBSCRIPTION_PLANS,
                 showNotification,
                 isProcessing,
@@ -2493,16 +2547,6 @@
             const favoriteCount = favorites.length;
             const unreadNotifications = notifications.filter(n => !n.is_read).length;
 
-            const getStatus = (resourceId) => {
-                const p = progress.find(p => p.resource_id === resourceId);
-                return p?.status || 'not_started';
-            };
-
-            const getProgressPercent = (resourceId) => {
-                const p = progress.find(p => p.resource_id === resourceId);
-                return p?.progress_percentage || 0;
-            };
-
             // Get recent resources
             const recentResources = resources.slice(0, 5);
 
@@ -2549,9 +2593,6 @@
                                             <span>📚 {resource.level}</span>
                                             <span>📖 {resource.subject}</span>
                                             <span>📄 {resource.type || 'Resource'}</span>
-                                            {getStatus(resource.id) === 'completed' && <span className="status-badge completed">✅ Completed</span>}
-                                            {getStatus(resource.id) === 'in_progress' && <span className="status-badge in-progress">📖 In Progress</span>}
-                                            {getStatus(resource.id) === 'not_started' && <span className="status-badge not-started">⏳ Not Started</span>}
                                         </div>
                                     </div>
                                     <div className="actions">
@@ -2578,7 +2619,10 @@
                             <button 
                                 className="btn-gold" 
                                 style={{ width: 'auto', padding: '10px 24px' }}
-                                onClick={() => document.querySelector('.subscribe-btn')?.click()}
+                                onClick={() => {
+                                    const subscribeBtn = document.querySelector('.subscribe-btn');
+                                    if (subscribeBtn) subscribeBtn.click();
+                                }}
                             >
                                 💳 Subscribe Now
                             </button>
@@ -2605,16 +2649,6 @@
                 const matchesSubject = filterSubject ? r.subject === filterSubject : true;
                 return matchesSearch && matchesLevel && matchesSubject;
             });
-
-            const getStatus = (resourceId) => {
-                const p = progress.find(p => p.resource_id === resourceId);
-                return p?.status || 'not_started';
-            };
-
-            const getProgressPercent = (resourceId) => {
-                const p = progress.find(p => p.resource_id === resourceId);
-                return p?.progress_percentage || 0;
-            };
 
             const isFavorited = (resourceId) => {
                 return favorites.some(f => f.resource_id === resourceId);
@@ -2670,9 +2704,6 @@
                                         <span>📚 {resource.level}</span>
                                         <span>📖 {resource.subject}</span>
                                         <span>📄 {resource.type || 'Resource'}</span>
-                                        {getStatus(resource.id) === 'completed' && <span className="status-badge completed">✅ Completed</span>}
-                                        {getStatus(resource.id) === 'in_progress' && <span className="status-badge in-progress">📖 In Progress</span>}
-                                        {getStatus(resource.id) === 'not_started' && <span className="status-badge not-started">⏳ Not Started</span>}
                                     </div>
                                 </div>
                                 <div className="actions">
@@ -2846,7 +2877,10 @@
                             <button 
                                 className="btn-gold" 
                                 style={{ width: 'auto', padding: '10px 24px' }}
-                                onClick={() => document.querySelector('.subscribe-btn')?.click()}
+                                onClick={() => {
+                                    const subscribeBtn = document.querySelector('.subscribe-btn');
+                                    if (subscribeBtn) subscribeBtn.click();
+                                }}
                             >
                                 💳 Subscribe Now
                             </button>
@@ -3048,11 +3082,11 @@
 
             if (loading) {
                 return (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: 'var(--off-white)' }}>
-                        <div style={{ textAlign: 'center' }}>
-                            <div style={{ fontSize: '2rem', marginBottom: '16px' }}>📚</div>
-                            <div style={{ fontSize: '1.2rem', fontWeight: '600', color: 'var(--text)' }}>Loading...</div>
-                            <div style={{ marginTop: '8px', width: '200px', height: '4px', background: 'var(--surface)', borderRadius: '99px', overflow: 'hidden', margin: '12px auto' }}>
+                    <div className="loading-spinner">
+                        <div className="spinner-content">
+                            <div className="spinner-icon">📚</div>
+                            <div style={{ fontSize: '1.2rem', fontWeight: '600', color: 'var(--text)' }}>Loading KenyaVault...</div>
+                            <div style={{ marginTop: '12px', width: '200px', height: '4px', background: 'var(--surface)', borderRadius: '99px', overflow: 'hidden', margin: '12px auto' }}>
                                 <div style={{ width: '50%', height: '100%', background: 'var(--gold)', borderRadius: '99px', animation: 'pulse 1.5s ease-in-out infinite' }}></div>
                             </div>
                         </div>
@@ -3069,22 +3103,24 @@
         }
 
         // ── RENDER ──
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(
-            <LearnerProvider>
-                <App />
-            </LearnerProvider>
-        );
-
-        // Add keyframe animation for loading
-        const style = document.createElement('style');
-        style.textContent = `
-            @keyframes pulse {
-                0%, 100% { transform: translateX(-50%); }
-                50% { transform: translateX(50%); }
-            }
-        `;
-        document.head.appendChild(style);
+        try {
+            const root = ReactDOM.createRoot(document.getElementById('root'));
+            root.render(
+                <LearnerProvider>
+                    <App />
+                </LearnerProvider>
+            );
+        } catch (error) {
+            console.error('Render error:', error);
+            document.getElementById('root').innerHTML = `
+                <div style="padding: 40px; text-align: center; background: #fef2f2; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                    <div style="font-size: 3rem; margin-bottom: 16px;">⚠️</div>
+                    <h2 style="color: #dc2626; margin-bottom: 8px;">Something went wrong</h2>
+                    <p style="color: #4a5a7a; max-width: 500px;">${error.message}</p>
+                    <button onclick="location.reload()" style="margin-top: 20px; padding: 10px 24px; background: var(--gold); color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer;">Refresh Page</button>
+                </div>
+            `;
+        }
     </script>
 </body>
 </html>
