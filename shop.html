@@ -3340,156 +3340,390 @@
         }
     }
 
-    // ── DOWNLOAD CART ORDER FILES ──
-    async function downloadCartOrderFiles(order) {
-        try {
-            console.log('📥 Starting secure download for cart order:', order.order_ref);
-            showToast('⏳', 'Preparing your downloads...', 'info');
+   // ── DOWNLOAD CART ORDER FILES (FIXED) ──
+async function downloadCartOrderFiles(order) {
+    try {
+        console.log('📥 Starting secure download for cart order:', order.order_ref);
+        showToast('⏳', 'Preparing your downloads...', 'info');
 
-            let cartItems = order.cart_items;
-            if (typeof cartItems === 'string') {
-                try {
-                    cartItems = JSON.parse(cartItems);
-                } catch (e) {
-                    cartItems = [];
-                }
+        let cartItems = order.cart_items;
+        if (typeof cartItems === 'string') {
+            try {
+                cartItems = JSON.parse(cartItems);
+            } catch (e) {
+                cartItems = [];
             }
-
-            if (!cartItems || cartItems.length === 0) {
-                showToast('⚠️', 'No items found in cart', 'error');
-                return;
-            }
-
-            let successCount = 0;
-            for (const item of cartItems) {
-                try {
-                    const product = allResources.find(r => r.id === item.id);
-                    if (product) {
-                        const filePath = product.file_path || product.file_url || '';
-                        let cleanPath = filePath;
-                        for (const bucket of AVAILABLE_BUCKETS) {
-                            if (cleanPath.startsWith(`${bucket}/`)) {
-                                cleanPath = cleanPath.replace(`${bucket}/`, '');
-                                break;
-                            }
-                        }
-                        cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
-                        cleanPath = cleanPath.replace(/^\/+/, '');
-                        if (cleanPath && !cleanPath.startsWith('resources/')) {
-                            cleanPath = `resources/${cleanPath}`;
-                        }
-
-                        const downloadUrl = await generatePublicUrl(cleanPath, item.title);
-                        if (downloadUrl) {
-                            const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-                            if (isMobile) {
-                                try {
-                                    const response = await fetch(downloadUrl);
-                                    if (response.ok) {
-                                        const blob = await response.blob();
-                                        const blobUrl = window.URL.createObjectURL(blob);
-                                        const link = document.createElement('a');
-                                        link.href = blobUrl;
-                                        link.download = product.file_name || `${item.title}.pdf`;
-                                        document.body.appendChild(link);
-                                        link.click();
-                                        document.body.removeChild(link);
-                                        window.URL.revokeObjectURL(blobUrl);
-                                        successCount++;
-                                    } else {
-                                        downloadWithIframe(downloadUrl);
-                                        successCount++;
-                                    }
-                                } catch (e) {
-                                    console.warn('Fetch download failed, using iframe:', e.message);
-                                    downloadWithIframe(downloadUrl);
-                                    successCount++;
-                                }
-                            } else {
-                                window.open(downloadUrl, '_blank');
-                                successCount++;
-                            }
-                            await new Promise(res => setTimeout(res, 600));
-                        }
-                    } else {
-                        console.warn('⚠️ Product not found for item:', item.id);
-                    }
-                } catch (e) {
-                    console.error('❌ Failed to download item:', item.title, e);
-                }
-            }
-
-            if (successCount > 0) {
-                showToast('📥', `${successCount} of ${cartItems.length} file(s) downloaded!`, 'success');
-            } else {
-                showToast('⚠️', 'Could not download files. Please contact support.', 'error');
-            }
-            return successCount;
-        } catch (error) {
-            console.error('❌ Cart download error:', error);
-            showToast('❌', 'Failed to download: ' + error.message, 'error');
-            return 0;
         }
-    }
 
-    function downloadWithIframe(url) {
+        if (!cartItems || cartItems.length === 0) {
+            showToast('⚠️', 'No items found in cart', 'error');
+            return;
+        }
+
+        let successCount = 0;
+        for (const item of cartItems) {
+            try {
+                const product = allResources.find(r => r.id === item.id);
+                if (product) {
+                    const filePath = product.file_path || product.file_url || '';
+                    let cleanPath = filePath;
+                    for (const bucket of AVAILABLE_BUCKETS) {
+                        if (cleanPath.startsWith(`${bucket}/`)) {
+                            cleanPath = cleanPath.replace(`${bucket}/`, '');
+                            break;
+                        }
+                    }
+                    cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
+                    cleanPath = cleanPath.replace(/^\/+/, '');
+                    if (cleanPath && !cleanPath.startsWith('resources/')) {
+                        cleanPath = `resources/${cleanPath}`;
+                    }
+
+                    const fileName = product.file_name || `${item.title || 'resource'}.pdf`;
+                    const downloadUrl = await generatePublicUrl(cleanPath, fileName);
+                    
+                    if (downloadUrl) {
+                        console.log('📄 Downloading:', fileName);
+                        
+                        // Use a direct download approach that works for all devices
+                        const success = await forceDownloadFile(downloadUrl, fileName);
+                        if (success) {
+                            successCount++;
+                        }
+                        await new Promise(res => setTimeout(res, 800));
+                    } else {
+                        console.warn('⚠️ No download URL generated for:', item.title);
+                    }
+                } else {
+                    console.warn('⚠️ Product not found for item:', item.id);
+                }
+            } catch (e) {
+                console.error('❌ Failed to download item:', item.title, e);
+            }
+        }
+
+        if (successCount > 0) {
+            showToast('📥', `${successCount} of ${cartItems.length} file(s) downloaded!`, 'success');
+        } else {
+            showToast('⚠️', 'Could not download files. Please contact support.', 'error');
+        }
+        return successCount;
+    } catch (error) {
+        console.error('❌ Cart download error:', error);
+        showToast('❌', 'Failed to download: ' + error.message, 'error');
+        return 0;
+    }
+}
+
+// ── FORCE DOWNLOAD FILE (NEW) ──
+async function forceDownloadFile(url, fileName) {
+    try {
+        // Method 1: Use fetch to get the file as a blob with proper MIME type
+        console.log('📥 Fetching file for download:', fileName);
+        
+        const response = await fetch(url, {
+            headers: {
+                'Accept': 'application/pdf,application/octet-stream,*/*'
+            }
+        });
+        
+        if (!response.ok) {
+            console.warn('⚠️ Fetch failed, falling back to direct download');
+            return fallbackDownload(url, fileName);
+        }
+        
+        // Get the blob with proper type
+        const blob = await response.blob();
+        
+        // Check if it's a valid PDF (starts with %PDF)
+        const isPDF = await isPDFBlob(blob);
+        
+        let finalBlob = blob;
+        let mimeType = blob.type || 'application/pdf';
+        
+        // If the blob isn't recognized as PDF, create a new one with correct type
+        if (!isPDF) {
+            console.warn('⚠️ File may not be PDF, checking content...');
+            // Try to force it as PDF
+            finalBlob = new Blob([blob], { type: 'application/pdf' });
+        }
+        
+        // Create a download link
+        const blobUrl = window.URL.createObjectURL(finalBlob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = fileName || 'document.pdf';
+        link.target = '_blank';
+        
+        // Append to body, click, and remove
+        document.body.appendChild(link);
+        link.click();
+        
+        // Clean up after a delay
+        setTimeout(() => {
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(blobUrl);
+        }, 1000);
+        
+        return true;
+        
+    } catch (error) {
+        console.error('❌ Force download failed:', error);
+        return fallbackDownload(url, fileName);
+    }
+}
+
+// ── FALLBACK DOWNLOAD (USES IFRAME OR WINDOW) ──
+function fallbackDownload(url, fileName) {
+    try {
+        console.log('📥 Using fallback download method for:', fileName);
+        
+        // Create a hidden iframe for download
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.src = url;
+        document.body.appendChild(iframe);
+        
+        // Show a notification
+        showToast('📥', 'Download started. Check your downloads folder.', 'success');
+        
+        // Clean up after 10 seconds
+        setTimeout(() => {
+            if (iframe.parentNode) {
+                iframe.parentNode.removeChild(iframe);
+            }
+        }, 10000);
+        
+        return true;
+    } catch (error) {
+        console.error('❌ Fallback download failed:', error);
+        
+        // Last resort: open in new window
         try {
-            const iframe = document.createElement('iframe');
-            iframe.style.display = 'none';
-            iframe.src = url;
-            document.body.appendChild(iframe);
-            showToast('📥', 'Download should start shortly.', 'success');
-            setTimeout(() => { if (iframe.parentNode) iframe.parentNode.removeChild(iframe); }, 10000);
-        } catch (e) {
-            console.warn('Iframe download failed:', e.message);
             window.open(url, '_blank');
             showToast('📥', 'Download should start in new tab.', 'success');
+            return true;
+        } catch (e) {
+            console.error('❌ All download methods failed:', e);
+            showToast('❌', 'Download failed. Please try again or contact support.', 'error');
+            return false;
         }
     }
+}
 
-    // ── GENERATE PUBLIC URL WITH FORCED DOWNLOAD ──
-    async function generatePublicUrl(filePath, fileName = 'resource.pdf') {
-        if (!filePath) {
-            console.error('❌ No file path provided');
-            return null;
-        }
-        console.log('🔍 Generating public URL for:', filePath);
+// ── CHECK IF BLOB IS A VALID PDF ──
+async function isPDFBlob(blob) {
+    try {
+        // Read first 4 bytes to check for PDF signature
+        const arrayBuffer = await blob.slice(0, 5).arrayBuffer();
+        const uint8Array = new Uint8Array(arrayBuffer);
+        const signature = String.fromCharCode(...uint8Array);
+        return signature.startsWith('%PDF');
+    } catch (error) {
+        console.warn('⚠️ Could not check PDF signature:', error);
+        return false;
+    }
+}
 
-        const pathVariations = [];
-        let decoded = filePath;
-        try { decoded = decodeURIComponent(filePath); } catch (e) {}
-        const fileNameOnly = decoded.split('/').pop();
-        pathVariations.push(decoded);
-        if (decoded.startsWith('resources/')) {
-            pathVariations.push(decoded.replace('resources/', ''));
-        }
-        if (!decoded.startsWith('resources/')) {
-            pathVariations.push(`resources/${decoded}`);
-        }
-        if (fileNameOnly && fileNameOnly !== decoded) {
-            pathVariations.push(fileNameOnly);
-        }
-
-        for (const bucket of AVAILABLE_BUCKETS) {
-            for (const path of pathVariations) {
-                try {
-                    const cleanPath = path.replace(/\/+/g, '/').replace(/^\/+/, '');
-                    const pathSegments = cleanPath.split('/').map(s => encodeURIComponent(s));
-                    const encodedPath = pathSegments.join('/');
-                    // Add the download parameter to force attachment
-                    const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${encodedPath}?download=${encodeURIComponent(fileName)}`;
-                    console.log(`🔍 Trying public URL: bucket=${bucket}, path=${cleanPath}`);
-                    const response = await fetch(publicUrl, { method: 'HEAD' });
-                    if (response.ok) {
-                        console.log(`✅ Public URL found: ${publicUrl}`);
-                        return publicUrl;
-                    }
-                } catch (e) {}
-            }
-        }
-        console.error('❌ No public URL could be generated for:', filePath);
+// ── GENERATE PUBLIC URL WITH PROPER HEADERS ──
+async function generatePublicUrl(filePath, fileName = 'resource.pdf') {
+    if (!filePath) {
+        console.error('❌ No file path provided');
         return null;
     }
+    console.log('🔍 Generating public URL for:', filePath);
+
+    const pathVariations = [];
+    let decoded = filePath;
+    try { decoded = decodeURIComponent(filePath); } catch (e) {}
+    const fileNameOnly = decoded.split('/').pop();
+    pathVariations.push(decoded);
+    if (decoded.startsWith('resources/')) {
+        pathVariations.push(decoded.replace('resources/', ''));
+    }
+    if (!decoded.startsWith('resources/')) {
+        pathVariations.push(`resources/${decoded}`);
+    }
+    if (fileNameOnly && fileNameOnly !== decoded) {
+        pathVariations.push(fileNameOnly);
+    }
+
+    // Also try the exact file path as-is
+    if (filePath !== decoded) {
+        pathVariations.push(filePath);
+    }
+
+    for (const bucket of AVAILABLE_BUCKETS) {
+        for (const path of pathVariations) {
+            try {
+                const cleanPath = path.replace(/\/+/g, '/').replace(/^\/+/, '');
+                const pathSegments = cleanPath.split('/').map(s => encodeURIComponent(s));
+                const encodedPath = pathSegments.join('/');
+                
+                // Try with download parameter first
+                const downloadUrl = `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${encodedPath}?download=${encodeURIComponent(fileName || 'document.pdf')}`;
+                console.log(`🔍 Trying: bucket=${bucket}, path=${cleanPath}`);
+                
+                // Verify the file exists with HEAD request
+                const response = await fetch(downloadUrl, { 
+                    method: 'HEAD',
+                    headers: {
+                        'Accept': 'application/pdf,application/octet-stream,*/*'
+                    }
+                });
+                
+                if (response.ok) {
+                    console.log(`✅ Found file: ${downloadUrl}`);
+                    return downloadUrl;
+                }
+                
+                // Try without download parameter as fallback
+                const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${encodedPath}`;
+                const response2 = await fetch(publicUrl, { 
+                    method: 'HEAD',
+                    headers: {
+                        'Accept': 'application/pdf,application/octet-stream,*/*'
+                    }
+                });
+                
+                if (response2.ok) {
+                    console.log(`✅ Found file (no download param): ${publicUrl}`);
+                    return publicUrl;
+                }
+            } catch (e) {
+                console.warn(`⚠️ Failed to check ${bucket}/${path}:`, e.message);
+            }
+        }
+    }
+    
+    console.error('❌ No public URL could be generated for:', filePath);
+    return null;
+}
+
+// ── UPDATE THE DOWNLOAD FUNCTION FOR FREE RESOURCES ──
+// Replace the downloadFreeResource function with this updated version
+
+async function downloadFreeResource(product) {
+    const phone = phoneInput.value.trim().replace(/\s/g, '');
+    const customerName = customerNameInput.value.trim();
+
+    if (!customerName) {
+        customerNameInput.classList.add('error');
+        showToast('⚠️', 'Please enter your full name', 'error');
+        customerNameInput.focus();
+        return;
+    }
+    customerNameInput.classList.remove('error');
+
+    if (!phone || phone.length < 9) {
+        phoneInput.classList.add('error');
+        showToast('⚠️', 'Please enter a valid phone number', 'error');
+        phoneInput.focus();
+        return;
+    }
+    phoneInput.classList.remove('error');
+
+    const verifyBtn = document.querySelector('.btn-verify-order');
+    if (verifyBtn) {
+        verifyBtn.disabled = true;
+        verifyBtn.classList.add('loading');
+    }
+
+    try {
+        showToast('⏳', 'Preparing your free download...', 'info');
+        const { orderRef, orderId } = await createOrder(product, customerName, phone);
+        currentOrderRef = orderRef;
+        currentOrderId = orderId;
+
+        let filePath = product.file_path || product.file_url || '';
+        let cleanPath = filePath;
+        for (const bucket of AVAILABLE_BUCKETS) {
+            if (cleanPath.startsWith(`${bucket}/`)) {
+                cleanPath = cleanPath.replace(`${bucket}/`, '');
+                break;
+            }
+        }
+        cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
+        cleanPath = cleanPath.replace(/^\/+/, '');
+        if (cleanPath && !cleanPath.startsWith('resources/')) {
+            cleanPath = `resources/${cleanPath}`;
+        }
+
+        const fileName = product.file_name || 'resource.pdf';
+        const downloadUrl = await generatePublicUrl(cleanPath, fileName);
+        
+        if (downloadUrl) {
+            // Update download counts
+            try {
+                await fetch(`${SUPABASE_URL}/rest/v1/orders?id=eq.${orderId}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        download_count: 1,
+                        file_delivered: true,
+                        last_download_at: new Date().toISOString()
+                    })
+                });
+                
+                if (product.id) {
+                    const resourceRes = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${product.id}&select=download_count`, {
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                        }
+                    });
+                    if (resourceRes.ok) {
+                        const resources = await resourceRes.json();
+                        if (resources.length > 0) {
+                            const currentCount = resources[0].download_count || 0;
+                            const newCount = currentCount + 1;
+                            await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${product.id}`, {
+                                method: 'PATCH',
+                                headers: {
+                                    'apikey': SUPABASE_ANON_KEY,
+                                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    download_count: newCount,
+                                    updated_at: new Date().toISOString()
+                                })
+                            });
+                            const resourceIndex = allResources.findIndex(r => r.id === product.id);
+                            if (resourceIndex !== -1) {
+                                allResources[resourceIndex].download_count = newCount;
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn('⚠️ Could not update download counts:', e.message);
+            }
+
+            // Force download the file
+            await forceDownloadFile(downloadUrl, fileName);
+            
+            setTimeout(() => closeCheckoutModal(), 2000);
+        } else {
+            showToast('⚠️', 'Resource file not found. Please contact support.', 'error');
+        }
+    } catch (error) {
+        console.error('❌ Free download error:', error);
+        showToast('❌', 'Failed to download: ' + error.message, 'error');
+    }
+    if (verifyBtn) {
+        setTimeout(() => {
+            verifyBtn.disabled = false;
+            verifyBtn.classList.remove('loading');
+        }, 3000);
+    }
+}
 
     // ── CART FUNCTIONS ──
     function loadCart() {
