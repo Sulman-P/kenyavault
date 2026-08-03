@@ -3486,28 +3486,53 @@
         }
     }
 
-    // ── CHECK IF DEVICE IS MOBILE ──
+    // ── ENHANCED MOBILE DETECTION ──
     function isMobileDevice() {
-        return /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        // Check multiple ways to detect mobile
+        const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+        
+        // Check for mobile user agent
+        const mobileUA = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|webOS|Windows Phone/i.test(userAgent);
+        
+        // Check screen size
+        const isSmallScreen = window.innerWidth < 768;
+        
+        // Check for touch support
+        const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        
+        // Check for mobile-specific features
+        const isMobile = mobileUA || (isSmallScreen && hasTouch);
+        
+        console.log('📱 Mobile detection:', { mobileUA, isSmallScreen, hasTouch, isMobile });
+        
+        return isMobile;
     }
 
-    // ── MOBILE DOWNLOAD METHOD ──
+    // ── ENHANCED MOBILE DOWNLOAD METHOD ──
     async function mobileDownload(url, fileName) {
+        console.log('📱 Starting mobile download for:', fileName);
+        
+        // Method 1: Try to open in new window (works on most mobile browsers)
         try {
-            // Method 1: Try to open in new window (works on some mobile browsers)
             const newWindow = window.open(url, '_blank');
             if (newWindow) {
                 showToast('📥', 'Download started. Check your downloads folder.', 'success');
                 return true;
             }
-            
-            // Method 2: Create a hidden link and trigger click
+        } catch (e) {
+            console.log('Method 1 failed:', e.message);
+        }
+        
+        // Method 2: Create a hidden link and trigger click (works on Safari mobile)
+        try {
             const link = document.createElement('a');
             link.href = url;
             link.download = fileName || 'document.pdf';
             link.target = '_blank';
             link.style.display = 'none';
             document.body.appendChild(link);
+            
+            // Trigger click
             link.click();
             
             setTimeout(() => {
@@ -3516,29 +3541,54 @@
             
             showToast('📥', 'Download started. Check your downloads folder.', 'success');
             return true;
-            
-        } catch (error) {
-            console.error('❌ Mobile download failed:', error);
-            
-            // Method 3: Use iframe as last resort
-            try {
+        } catch (e) {
+            console.log('Method 2 failed:', e.message);
+        }
+        
+        // Method 3: Use iframe with blob URL (works on most browsers)
+        try {
+            const response = await fetch(url);
+            if (response.ok) {
+                const blob = await response.blob();
+                const blobUrl = window.URL.createObjectURL(blob);
+                
+                // Create iframe with blob URL
                 const iframe = document.createElement('iframe');
                 iframe.style.display = 'none';
-                iframe.src = url;
+                iframe.src = blobUrl;
                 document.body.appendChild(iframe);
                 
-                setTimeout(() => {
-                    if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
-                }, 10000);
+                // Force download via link
+                const link = document.createElement('a');
+                link.href = blobUrl;
+                link.download = fileName || 'document.pdf';
+                document.body.appendChild(link);
+                link.click();
                 
-                showToast('📥', 'Download should start shortly.', 'success');
+                setTimeout(() => {
+                    document.body.removeChild(link);
+                    document.body.removeChild(iframe);
+                    window.URL.revokeObjectURL(blobUrl);
+                }, 3000);
+                
+                showToast('📥', 'Download started. Check your downloads folder.', 'success');
                 return true;
-            } catch (e) {
-                console.error('❌ All mobile download methods failed:', e);
-                showToast('❌', 'Download failed. Please check your downloads folder or contact support.', 'error');
-                return false;
             }
+        } catch (e) {
+            console.log('Method 3 failed:', e.message);
         }
+        
+        // Method 4: Open in current window (last resort)
+        try {
+            window.location.href = url;
+            showToast('📥', 'Redirecting to download...', 'success');
+            return true;
+        } catch (e) {
+            console.log('Method 4 failed:', e.message);
+        }
+        
+        showToast('❌', 'Download failed. Please try again or contact support.', 'error');
+        return false;
     }
 
     // ── FORCE DOWNLOAD FILE (MOBILE OPTIMIZED) ──
@@ -3546,9 +3596,9 @@
         try {
             console.log('📥 Fetching file for download:', fileName);
             
-            // If it's a mobile device, use a different approach
+            // If it's a mobile device, use enhanced mobile download
             if (isMobileDevice()) {
-                console.log('📱 Mobile device detected, using mobile download method');
+                console.log('📱 Mobile device detected, using enhanced mobile download');
                 return await mobileDownload(url, fileName);
             }
             
@@ -4363,9 +4413,9 @@
                 if (!popupWindow || popupWindow.closed || typeof popupWindow.closed === 'undefined') {
                     // If popup is blocked, redirect to the payment page
                     showToast('📱', 'Redirecting to MegaPay...', 'info');
-                    window.location.href = payUrl;
-                    // Store the return URL to come back after payment
+                    // Store current URL to return after payment
                     localStorage.setItem('returnAfterPayment', window.location.href);
+                    window.location.href = payUrl;
                     return;
                 } else {
                     showToast('📱', 'MegaPay opened. Check your phone for M-Pesa PIN prompt.', 'success');
