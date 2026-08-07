@@ -258,7 +258,7 @@
 
         .modal-overlay { position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.5); backdrop-filter:blur(4px); display:none; align-items:center; justify-content:center; padding:20px; }
         .modal-overlay.open { display:flex; }
-        .modal-box { background:white; border-radius:16px; padding:24px; max-width:800px; width:100%; max-height:90vh; overflow-y:auto; }
+        .modal-box { background:white; border-radius:16px; padding:24px; max-width:900px; width:100%; max-height:90vh; overflow-y:auto; }
         .dark .modal-box { background:#1f2937; }
 
         .timeframe-toggle { display:flex; gap:4px; background:#f3f4f6; border-radius:8px; padding:4px; border:1px solid #e5e7eb; }
@@ -428,6 +428,80 @@
         .tutor-stat-card .stat-number.blue { color: #3b82f6; }
         .tutor-stat-card .stat-number.red { color: #dc2626; }
         .tutor-stat-card .stat-number.purple { color: #7c3aed; }
+
+        /* ── PROMO LINK GENERATOR STYLES ── */
+        .category-summary-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin: 12px 0;
+        }
+        .category-summary-card {
+            background: #f8fafc;
+            border-radius: 10px;
+            padding: 14px 16px;
+            border: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .dark .category-summary-card { background: #1f2937; border-color: #374151; }
+        .category-summary-card .cat-name { font-weight: 600; font-size: 0.9rem; color: #1f2937; }
+        .dark .category-summary-card .cat-name { color: #e5e7eb; }
+        .category-summary-card .cat-count { font-weight: 700; font-size: 1.1rem; color: #D4A017; }
+        .category-summary-card .cat-icon { font-size: 1.2rem; margin-right: 6px; }
+
+        .generated-links-container {
+            margin-top: 16px;
+            padding: 16px;
+            background: #f0fdf4;
+            border-radius: 10px;
+            border: 1px solid #bbf7d0;
+        }
+        .dark .generated-links-container { background: #064e3b; border-color: #34d399; }
+        .generated-link-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 12px;
+            border-bottom: 1px solid rgba(0,0,0,0.05);
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .dark .generated-link-item { border-bottom-color: rgba(255,255,255,0.05); }
+        .generated-link-item:last-child { border-bottom: none; }
+        .generated-link-item .link-title { font-weight: 600; font-size: 0.85rem; color: #1f2937; }
+        .dark .generated-link-item .link-title { color: #e5e7eb; }
+        .generated-link-item .link-url { font-size: 0.8rem; color: #2563eb; word-break: break-all; }
+        .dark .generated-link-item .link-url { color: #60a5fa; }
+        .generated-link-item .copy-btn {
+            padding: 4px 12px;
+            border-radius: 6px;
+            background: #D4A017;
+            color: #0a1a3a;
+            border: none;
+            font-weight: 600;
+            font-size: 0.7rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .generated-link-item .copy-btn:hover { background: #FCD34D; }
+
+        .promo-message-box {
+            margin-top: 12px;
+            padding: 14px 16px;
+            background: #fef3c7;
+            border-radius: 8px;
+            border: 1px solid #fcd34d;
+            font-size: 0.85rem;
+            color: #92400e;
+            line-height: 1.6;
+        }
+        .dark .promo-message-box { background: #78350f; border-color: #fbbf24; color: #fbbf24; }
+
+        @media (max-width: 600px) {
+            .category-summary-grid { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
@@ -452,6 +526,7 @@
             { id: 'tutors', icon: 'fa-users', label: 'Tutors' },
             { id: 'orders', icon: 'fa-shopping-bag', label: 'Orders' },
             { id: 'finance', icon: 'fa-coins', label: 'Finance' },
+            { id: 'promote', icon: 'fa-bullhorn', label: 'Promote' },
             { id: 'settings', icon: 'fa-gear', label: 'Settings' },
         ];
 
@@ -1868,6 +1943,354 @@
             );
         }
 
+        // ── PROMOTE MODULE ──
+        function PromoteModule() {
+            const { resources, showToast } = useApp();
+            const [selectedCategories, setSelectedCategories] = useState({
+                'lesson-plan': true,
+                'scheme-work': true,
+                'revision-paper': true,
+                'exam-paper': true
+            });
+            const [campaignSource, setCampaignSource] = useState('whatsapp');
+            const [trackingSlug, setTrackingSlug] = useState('');
+            const [couponCode, setCouponCode] = useState('');
+            const [generatedLinks, setGeneratedLinks] = useState([]);
+            const [showModal, setShowModal] = useState(false);
+            const [generating, setGenerating] = useState(false);
+
+            const categoryLabels = {
+                'lesson-plan': '📝 Lesson Plans',
+                'scheme-work': '📋 Schemes of Work',
+                'revision-paper': '📖 Revision Papers',
+                'exam-paper': '📊 Exam Papers'
+            };
+
+            const categoryIcons = {
+                'lesson-plan': '📝',
+                'scheme-work': '📋',
+                'revision-paper': '📖',
+                'exam-paper': '📊'
+            };
+
+            const sourceLabels = {
+                'whatsapp': 'WhatsApp',
+                'telegram': 'Telegram',
+                'facebook': 'Facebook',
+                'email': 'Email'
+            };
+
+            const promoMessages = {
+                'whatsapp': "📚 *KenyaVault Academy* — Your trusted source for KICD-aligned educational resources! 🎓\n\n📖 *What's included:*\n✅ Schemes of Work & Lesson Plans\n✅ Revision & Exam Papers\n✅ Interactive & Audio Lessons\n✅ Instant download via M-PESA\n\n🔗 *Get your resources here:* ",
+                'telegram': "📚 *KenyaVault Academy* — KICD-aligned CBC resources! 🎓\n\n📖 *Features:*\n• Schemes of Work & Lesson Plans\n• Revision & Exam Papers\n• Interactive & Audio Lessons\n• Instant M-PESA download\n\n🔗 *Access now:* ",
+                'facebook': "📚 KenyaVault Academy — Your trusted source for KICD-aligned CBC resources! 🎓\n\n📖 What's included:\n✅ Schemes of Work & Lesson Plans\n✅ Revision & Exam Papers\n✅ Interactive & Audio Lessons\n✅ Instant download via M-PESA\n\n🔗 Get your resources here: ",
+                'email': "📚 KenyaVault Academy — Your Trusted Education Partner 🇰🇪\n\nDear Educator,\n\nWe're excited to share KenyaVault Academy's comprehensive collection of KICD-aligned CBC resources! 🎓\n\n📖 Our Resources Include:\n• Schemes of Work & Lesson Plans\n• Revision Papers & Exam Papers\n• Interactive & Audio Lessons\n• Instant download via M-PESA\n\n🔗 Access your resources: "
+            };
+
+            const getCategoryResources = (category) => {
+                const catMap = {
+                    'lesson-plan': ['lesson-plan', 'lesson plan'],
+                    'scheme-work': ['scheme-work', 'scheme of work'],
+                    'revision-paper': ['revision-paper', 'revision paper', 'revision'],
+                    'exam-paper': ['exam-paper', 'exam paper', 'exam']
+                };
+                const keywords = catMap[category] || [category];
+                return resources.filter(r => {
+                    const type = (r.resource_type || r.type || '').toLowerCase().replace(/\s+/g, '-');
+                    return keywords.some(k => type.includes(k) || type === k);
+                });
+            };
+
+            const getCategoryCount = (category) => {
+                return getCategoryResources(category).length;
+            };
+
+            const getTotalSelected = () => {
+                let total = 0;
+                Object.keys(selectedCategories).forEach(cat => {
+                    if (selectedCategories[cat]) total += getCategoryCount(cat);
+                });
+                return total;
+            };
+
+            const toggleCategory = (category) => {
+                setSelectedCategories(prev => ({
+                    ...prev,
+                    [category]: !prev[category]
+                }));
+            };
+
+            const generateLinks = () => {
+                const baseUrl = window.location.origin;
+                const selected = Object.keys(selectedCategories).filter(cat => selectedCategories[cat]);
+                
+                if (selected.length === 0) {
+                    showToast('⚠️ Please select at least one category', 'error');
+                    return;
+                }
+
+                setGenerating(true);
+                const links = [];
+                const timestamp = Date.now();
+
+                selected.forEach(cat => {
+                    const count = getCategoryCount(cat);
+                    if (count === 0) return;
+
+                    const slug = trackingSlug || cat.replace('-', '_');
+                    const source = campaignSource;
+                    const couponParam = couponCode ? `&coupon=${encodeURIComponent(couponCode)}` : '';
+                    const url = `${baseUrl}/shop.html?category=${cat}&utm_source=${source}&utm_medium=promo&utm_campaign=${slug}&ref=kv_promo${couponParam}`;
+                    
+                    const shortCode = `KV-${source.toUpperCase()}-${cat.slice(0, 3).toUpperCase()}-${timestamp.toString().slice(-4)}`;
+                    
+                    const message = promoMessages[source] || promoMessages.whatsapp;
+                    const fullMessage = `${message}${url}`;
+
+                    links.push({
+                        category: cat,
+                        label: categoryLabels[cat] || cat,
+                        count: count,
+                        url: url,
+                        shortCode: shortCode,
+                        message: fullMessage
+                    });
+                });
+
+                setGeneratedLinks(links);
+                setGenerating(false);
+                showToast(`✅ ${links.length} promo links generated!`, 'success');
+            };
+
+            const copyToClipboard = async (text) => {
+                try {
+                    await navigator.clipboard.writeText(text);
+                    showToast('📋 Copied to clipboard!', 'success');
+                } catch (err) {
+                    // Fallback
+                    const textarea = document.createElement('textarea');
+                    textarea.value = text;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                    showToast('📋 Copied to clipboard!', 'success');
+                }
+            };
+
+            const copyAllLinks = () => {
+                const text = generatedLinks.map(l => 
+                    `${l.label} (${l.count} resources)\n${l.url}\n`
+                ).join('\n');
+                copyToClipboard(text);
+            };
+
+            const copyFullMessage = (index) => {
+                const link = generatedLinks[index];
+                if (link) copyToClipboard(link.message);
+            };
+
+            const openModal = () => setShowModal(true);
+            const closeModal = () => {
+                setShowModal(false);
+                // Don't reset generated links so user can review
+            };
+
+            return (
+                <div className="space-y-6 fade-in">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <div className="flex justify-between items-center">
+                            <h3 className="text-lg font-semibold">📢 Bulk Promotion Link Generator</h3>
+                            <button onClick={openModal} className="btn-gold px-6 py-2 rounded-lg text-sm">
+                                <i className="fas fa-link mr-2"></i> Generate Promo Links
+                            </button>
+                        </div>
+                        <p className="text-gray-500 dark:text-gray-400 text-sm mt-2">
+                            Create optimized tracking links for selected resource categories to share on Kenyan social channels.
+                        </p>
+                    </div>
+
+                    {generatedLinks.length > 0 && (
+                        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="text-lg font-semibold">🔗 Generated Promo Links</h3>
+                                <div className="flex gap-2">
+                                    <button onClick={copyAllLinks} className="btn-sm blue">
+                                        📋 Copy All
+                                    </button>
+                                    <button onClick={() => setGeneratedLinks([])} className="btn-sm red">
+                                        Clear
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="generated-links-container">
+                                {generatedLinks.map((link, index) => (
+                                    <div key={index} className="generated-link-item">
+                                        <div className="flex-1 min-w-0">
+                                            <div className="link-title">{link.label} <span className="text-sm text-gray-500">({link.count} resources)</span></div>
+                                            <div className="link-url text-sm truncate">{link.url}</div>
+                                            <div className="text-xs text-gray-400">Code: {link.shortCode}</div>
+                                        </div>
+                                        <div className="flex gap-2 flex-wrap">
+                                            <button onClick={() => copyToClipboard(link.url)} className="copy-btn">
+                                                📋 Copy Link
+                                            </button>
+                                            <button onClick={() => copyFullMessage(index)} className="copy-btn" style={{background: '#7C3AED', color: '#fff'}}>
+                                                💬 Copy Message
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Marketing message preview */}
+                            <div className="promo-message-box mt-3">
+                                <strong>📱 Recommended message for {sourceLabels[campaignSource]}:</strong>
+                                <br />
+                                {generatedLinks.length > 0 && (
+                                    <div className="mt-2 text-sm">
+                                        {generatedLinks.map(l => (
+                                            <div key={l.category} className="mb-2 p-2 bg-white/50 dark:bg-gray-800/50 rounded-lg">
+                                                <span className="font-semibold">{l.label}:</span> {l.url}
+                                            </div>
+                                        ))}
+                                        <div className="mt-2 p-2 bg-[#D4A017]/10 rounded-lg border border-[#D4A017]/20">
+                                            <span className="font-semibold">💡 Tip:</span> Share these links in WhatsApp groups, Telegram channels, and Facebook communities. 
+                                            Use the KenyaVault brand name and emphasize the KICD-aligned, instant download features.
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Modal */}
+                    {showModal && (
+                        <div className="modal-overlay open" onClick={closeModal}>
+                            <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex justify-between items-center mb-4">
+                                    <h2 className="text-xl font-bold text-gray-800 dark:text-white">Generate Promo Links for Selected Categories</h2>
+                                    <button onClick={closeModal} className="text-gray-500 hover:text-gray-700 text-2xl">✕</button>
+                                </div>
+
+                                <div className="mb-6">
+                                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                                        Select the resource categories you want to promote. Links will be generated with tracking parameters 
+                                        for each selected category, grouped by resource type.
+                                    </p>
+                                </div>
+
+                                <div className="category-summary-grid">
+                                    {Object.keys(selectedCategories).map(cat => {
+                                        const count = getCategoryCount(cat);
+                                        const label = categoryLabels[cat] || cat;
+                                        const icon = categoryIcons[cat] || '📄';
+                                        return (
+                                            <div 
+                                                key={cat} 
+                                                className={`category-summary-card cursor-pointer ${selectedCategories[cat] ? 'border-[#D4A017]' : 'opacity-50'}`}
+                                                onClick={() => toggleCategory(cat)}
+                                            >
+                                                <div>
+                                                    <span className="cat-icon">{icon}</span>
+                                                    <span className="cat-name">{label}</span>
+                                                    <span className="text-xs text-gray-400 ml-2">({count} resources)</span>
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                    <span className="cat-count">{count}</span>
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={selectedCategories[cat]} 
+                                                        onChange={() => toggleCategory(cat)}
+                                                        className="w-4 h-4 accent-[#D4A017]"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    />
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+
+                                <div className="mt-4 text-sm text-gray-500 dark:text-gray-400">
+                                    Total selected: <span className="font-bold text-[#D4A017]">{getTotalSelected()}</span> resources
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                            Campaign Source <span className="text-red-500">*</span>
+                                        </label>
+                                        <select 
+                                            value={campaignSource} 
+                                            onChange={(e) => setCampaignSource(e.target.value)}
+                                            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                                        >
+                                            <option value="whatsapp">📱 WhatsApp</option>
+                                            <option value="telegram">✈️ Telegram</option>
+                                            <option value="facebook">📘 Facebook</option>
+                                            <option value="email">✉️ Email</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                            Tracking Slug (optional)
+                                        </label>
+                                        <input 
+                                            type="text" 
+                                            value={trackingSlug} 
+                                            onChange={(e) => setTrackingSlug(e.target.value)}
+                                            placeholder="e.g., cbc2026"
+                                            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                                        />
+                                        <span className="text-xs text-gray-400">Helps identify campaign in analytics</span>
+                                    </div>
+                                </div>
+
+                                <div className="mt-4">
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                        Coupon Code (optional)
+                                    </label>
+                                    <input 
+                                        type="text" 
+                                        value={couponCode} 
+                                        onChange={(e) => setCouponCode(e.target.value)}
+                                        placeholder="e.g., VAULT20"
+                                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                                    />
+                                    <span className="text-xs text-gray-400">Add a discount code to encourage purchases</span>
+                                </div>
+
+                                <div className="mt-6 flex gap-3">
+                                    <button 
+                                        onClick={generateLinks} 
+                                        disabled={generating || getTotalSelected() === 0}
+                                        className="btn-gold px-6 py-2 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {generating ? '⏳ Generating...' : '🔗 Generate Links'}
+                                    </button>
+                                    <button onClick={closeModal} className="px-6 py-2 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-semibold">
+                                        Cancel
+                                    </button>
+                                </div>
+
+                                {getTotalSelected() === 0 && (
+                                    <p className="text-red-500 text-sm mt-2">⚠️ Please select at least one category</p>
+                                )}
+
+                                {generatedLinks.length > 0 && !generating && (
+                                    <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                                        <p className="text-sm text-green-700 dark:text-green-400">
+                                            ✅ {generatedLinks.length} links generated! Links are also available in the main panel below.
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
         // ── SETTINGS MODULE ──
         function SettingsModule() {
             const { darkMode, toggleDarkMode, showToast } = useApp();
@@ -1933,6 +2356,7 @@
                 tutors: <TutorsModule />,
                 orders: <OrdersModule />,
                 finance: <FinanceModule />,
+                promote: <PromoteModule />,
                 settings: <SettingsModule />,
             };
             return map[currentModule] || <DashboardModule />;
