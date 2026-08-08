@@ -330,6 +330,33 @@
             }
         }
 
+        /* DateTime display in topbar */
+        .topbar-datetime {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: #4a5f7a;
+            background: #f0f4fa;
+            padding: 4px 14px;
+            border-radius: 40px;
+            border: 1px solid #e6edf5;
+            white-space: nowrap;
+        }
+        .dark .topbar-datetime {
+            color: #9ca3af;
+            background: #1f2937;
+            border-color: #374151;
+        }
+        .topbar-datetime i {
+            font-size: 0.8rem;
+            color: #6b7f99;
+        }
+        .dark .topbar-datetime i {
+            color: #6b7f99;
+        }
+
         .main-content {
             flex: 1;
             min-height: 100vh;
@@ -925,6 +952,13 @@
             .live-indicator {
                 padding: 4px 8px;
             }
+            .topbar-datetime {
+                font-size: 0.65rem;
+                padding: 2px 10px;
+            }
+            .topbar-datetime .datetime-label {
+                display: none;
+            }
             .stat-grid {
                 grid-template-columns: 1fr 1fr;
                 gap: 10px;
@@ -949,6 +983,10 @@
             }
             .stat-grid {
                 grid-template-columns: 1fr;
+            }
+            .topbar-datetime {
+                font-size: 0.6rem;
+                padding: 2px 8px;
             }
         }
         .fade-in {
@@ -1260,6 +1298,15 @@
                 orders: 0,
                 revenue: 0
             });
+            const [currentDateTime, setCurrentDateTime] = useState(new Date());
+
+            // ── REAL-TIME CLOCK ──
+            useEffect(() => {
+                const timer = setInterval(() => {
+                    setCurrentDateTime(new Date());
+                }, 1000);
+                return () => clearInterval(timer);
+            }, []);
 
             // Apply dark mode class to html element
             useEffect(() => {
@@ -1581,7 +1628,8 @@
                     openOrderDetails,
                     closeOrderDetails,
                     statsData,
-                    loadStats
+                    loadStats,
+                    currentDateTime
                 }}>
                     {children}
                 </AppContext.Provider>
@@ -1717,8 +1765,28 @@
 
         // ── TOPBAR ──
         function Topbar() {
-            const { darkMode, toggleDarkMode, toggleSidebar, currentModule } = useApp();
+            const { darkMode, toggleDarkMode, toggleSidebar, currentModule, currentDateTime } = useApp();
             const currentMod = adminModules.find(m => m.id === currentModule) || adminModules[0];
+
+            // Format date and time
+            const formatDate = (date) => {
+                return date.toLocaleDateString('en-KE', {
+                    weekday: 'short',
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric'
+                });
+            };
+
+            const formatTime = (date) => {
+                return date.toLocaleTimeString('en-KE', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: true
+                });
+            };
+
             return (
                 <header className="topbar">
                     <div className="topbar-left">
@@ -1726,6 +1794,13 @@
                         <span className="topbar-title">{currentMod.label}</span>
                     </div>
                     <div className="topbar-actions">
+                        <div className="topbar-datetime">
+                            <i className="fas fa-calendar-alt"></i>
+                            <span className="datetime-label">{formatDate(currentDateTime)}</span>
+                            <span style={{ margin: '0 4px', opacity: 0.3 }}>|</span>
+                            <i className="fas fa-clock"></i>
+                            <span>{formatTime(currentDateTime)}</span>
+                        </div>
                         <span className="live-indicator"><span className="dot"></span><span className="label">Live</span></span>
                         <button onClick={toggleDarkMode}><i className={`fas ${darkMode ? 'fa-sun' : 'fa-moon'}`}></i></button>
                         <div className="topbar-avatar">A</div>
@@ -1883,8 +1958,7 @@
                         <div
                         className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
                             <div className="flex items-center justify-between">
-                                <div
-                                className="w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-xl">
+                                <div                                className="w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-xl">
                                     📹</div>
                             </div>
                             <p className="text-2xl font-bold text-gray-800 dark:text-white mt-2">{liveClasses || 0}</p>
@@ -3399,7 +3473,8 @@
                                         setAuditData({ ...auditData, notes: e.target.value })}
                                     className="w-full px-4 py-2 border rounded-lg dark:bg-gray-700" rows="2"></textarea>
                                     <div className="flex gap-3">
-                                        <button onClick={saveAudit} className="btn-gold px-6 py-2 rounded-lg">💾 Save                                            Audit</button>
+                                        <button onClick={saveAudit} className="btn-gold px-6 py-2 rounded-lg">💾 Save
+                                            Audit</button>
                                         <button onClick={() => setShowAuditModal(false)}
                                         className="px-6 py-2 bg-gray-200 dark:bg-gray-600 rounded-lg">Cancel</button>
                                     </div>
