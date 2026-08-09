@@ -1011,12 +1011,11 @@
 
     <script>
         // ─── SUPABASE CONFIG ───
-        // Using the same config as the original working version
-        const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
+        const SB_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
+        const SB_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
 
-        // ─── SUPABASE CLIENT ───
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        // ─── SUPABASE CLIENT ─── (using a unique name to avoid conflicts)
+        const sbClient = window.supabase.createClient(SB_URL, SB_ANON_KEY);
 
         // ─── HELPERS ───
         const LEVELS = [
@@ -1646,7 +1645,7 @@
             state.loading = true;
             state.debugInfo = [];
             try {
-                const { data: { session }, error } = await supabase.auth.getSession();
+                const { data: { session }, error } = await sbClient.auth.getSession();
                 if (error) throw error;
 
                 if (!session) {
@@ -1661,7 +1660,7 @@
                 const userId = session.user.id;
                 addDebug(`Auth user: ${userId}`, 'info');
 
-                const { data: tutorData, error: tutorError } = await supabase
+                const { data: tutorData, error: tutorError } = await sbClient
                     .from('tutors')
                     .select('*')
                     .eq('user_id', userId)
@@ -1676,14 +1675,14 @@
                 }
 
                 if (!tutorData) {
-                    const { data: emailMatch, error: emailError } = await supabase
+                    const { data: emailMatch, error: emailError } = await sbClient
                         .from('tutors')
                         .select('*')
                         .eq('email', session.user.email)
                         .maybeSingle();
 
                     if (emailMatch && !emailError) {
-                        await supabase
+                        await sbClient
                             .from('tutors')
                             .update({ user_id: userId })
                             .eq('id', emailMatch.id);
@@ -1719,7 +1718,7 @@
         // ─── LOAD TUTOR DATA ───
         async function loadTutorData(tutorId) {
             try {
-                const { data: resources, error: rErr } = await supabase
+                const { data: resources, error: rErr } = await sbClient
                     .from('resources')
                     .select('*')
                     .eq('tutor_id', tutorId);
@@ -1727,7 +1726,7 @@
                 if (rErr) throw rErr;
                 state.resources = resources || [];
 
-                const { data: orders, error: oErr } = await supabase
+                const { data: orders, error: oErr } = await sbClient
                     .from('orders')
                     .select('*')
                     .eq('tutor_id', tutorId);
@@ -1735,7 +1734,7 @@
                 if (oErr) throw oErr;
                 state.orders = orders || [];
 
-                const { data: classes, error: cErr } = await supabase
+                const { data: classes, error: cErr } = await sbClient
                     .from('classes')
                     .select('*')
                     .eq('tutor_id', tutorId);
@@ -1752,7 +1751,7 @@
         // ─── LOGIN ───
         async function handleLogin(phone, password) {
             try {
-                const { data: tutors, error: findErr } = await supabase
+                const { data: tutors, error: findErr } = await sbClient
                     .from('tutors')
                     .select('*')
                     .eq('phone', phone);
@@ -1772,11 +1771,11 @@
                 let authUser = null;
                 if (tutor.user_id) {
                     try {
-                        const { data: user, error: userErr } = await supabase.auth.admin.getUserById(tutor.user_id);
+                        const { data: user, error: userErr } = await sbClient.auth.admin.getUserById(tutor.user_id);
                         if (!userErr && user) {
                             authUser = user;
                         } else {
-                            const { data: newUser, error: createErr } = await supabase.auth.signUp({
+                            const { data: newUser, error: createErr } = await sbClient.auth.signUp({
                                 email: tutor.email || `${phone}@kenyavault.co.ke`,
                                 password: password,
                                 phone: phone,
@@ -1784,10 +1783,10 @@
                             });
                             if (createErr) throw createErr;
                             authUser = newUser.user;
-                            await supabase.from('tutors').update({ user_id: authUser.id }).eq('id', tutor.id);
+                            await sbClient.from('tutors').update({ user_id: authUser.id }).eq('id', tutor.id);
                         }
                     } catch (e) {
-                        const { data: newUser, error: createErr } = await supabase.auth.signUp({
+                        const { data: newUser, error: createErr } = await sbClient.auth.signUp({
                             email: tutor.email || `${phone}@kenyavault.co.ke`,
                             password: password,
                             phone: phone,
@@ -1795,10 +1794,10 @@
                         });
                         if (createErr) throw createErr;
                         authUser = newUser.user;
-                        await supabase.from('tutors').update({ user_id: authUser.id }).eq('id', tutor.id);
+                        await sbClient.from('tutors').update({ user_id: authUser.id }).eq('id', tutor.id);
                     }
                 } else {
-                    const { data: newUser, error: createErr } = await supabase.auth.signUp({
+                    const { data: newUser, error: createErr } = await sbClient.auth.signUp({
                         email: tutor.email || `${phone}@kenyavault.co.ke`,
                         password: password,
                         phone: phone,
@@ -1806,16 +1805,16 @@
                     });
                     if (createErr) throw createErr;
                     authUser = newUser.user;
-                    await supabase.from('tutors').update({ user_id: authUser.id }).eq('id', tutor.id);
+                    await sbClient.from('tutors').update({ user_id: authUser.id }).eq('id', tutor.id);
                 }
 
-                const { error: signInErr } = await supabase.auth.signInWithPassword({
+                const { error: signInErr } = await sbClient.auth.signInWithPassword({
                     phone: phone,
                     password: password
                 });
 
                 if (signInErr) {
-                    const { error: emailErr } = await supabase.auth.signInWithPassword({
+                    const { error: emailErr } = await sbClient.auth.signInWithPassword({
                         email: tutor.email || `${phone}@kenyavault.co.ke`,
                         password: password
                     });
@@ -1833,7 +1832,7 @@
         // ─── SIGNUP ───
         async function handleSignup(data) {
             try {
-                const { data: existing, error: existErr } = await supabase
+                const { data: existing, error: existErr } = await sbClient
                     .from('tutors')
                     .select('id')
                     .eq('phone', data.phone);
@@ -1843,7 +1842,7 @@
                     return { success: false, message: 'A tutor with this phone already exists.' };
                 }
 
-                const { data: authData, error: authErr } = await supabase.auth.signUp({
+                const { data: authData, error: authErr } = await sbClient.auth.signUp({
                     email: data.email,
                     password: data.password,
                     phone: data.phone,
@@ -1869,13 +1868,13 @@
                     created_at: new Date().toISOString()
                 };
 
-                const { error: insertErr } = await supabase
+                const { error: insertErr } = await sbClient
                     .from('tutors')
                     .insert(tutorData);
 
                 if (insertErr) throw insertErr;
 
-                await supabase.auth.signInWithPassword({
+                await sbClient.auth.signInWithPassword({
                     phone: data.phone,
                     password: data.password
                 });
@@ -1890,7 +1889,7 @@
 
         // ─── LOGOUT ───
         async function handleLogout() {
-            await supabase.auth.signOut();
+            await sbClient.auth.signOut();
             state.session = null;
             state.tutor = null;
             state.resources = [];
@@ -1985,14 +1984,14 @@
                 barEl.style.width = '30%';
                 textEl.textContent = '30%';
 
-                const uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/kenyavault-resources/${filePath}`, {
+                const uploadRes = await fetch(`${SB_URL}/storage/v1/object/kenyavault-resources/${filePath}`, {
                     method: 'POST',
-                    headers: { 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+                    headers: { 'Authorization': `Bearer ${SB_ANON_KEY}` },
                     body: selectedFile
                 });
 
                 if (!uploadRes.ok) throw new Error('PDF upload failed');
-                const fileUrl = `${SUPABASE_URL}/storage/v1/object/public/kenyavault-resources/${filePath}`;
+                const fileUrl = `${SB_URL}/storage/v1/object/public/kenyavault-resources/${filePath}`;
 
                 barEl.style.width = '60%';
                 textEl.textContent = '60%';
@@ -2001,13 +2000,13 @@
                 if (selectedCover) {
                     const coverExt = selectedCover.name.split('.').pop();
                     const coverPath = `covers/${level}/${subject}/${Date.now()}.${coverExt}`;
-                    const coverRes = await fetch(`${SUPABASE_URL}/storage/v1/object/kenyavault-resources/${coverPath}`, {
+                    const coverRes = await fetch(`${SB_URL}/storage/v1/object/kenyavault-resources/${coverPath}`, {
                         method: 'POST',
-                        headers: { 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+                        headers: { 'Authorization': `Bearer ${SB_ANON_KEY}` },
                         body: selectedCover
                     });
                     if (coverRes.ok) {
-                        coverUrl = `${SUPABASE_URL}/storage/v1/object/public/kenyavault-resources/${coverPath}`;
+                        coverUrl = `${SB_URL}/storage/v1/object/public/kenyavault-resources/${coverPath}`;
                     }
                 }
 
@@ -2032,11 +2031,11 @@
                     created_at: new Date().toISOString()
                 };
 
-                const saveRes = await fetch(`${SUPABASE_URL}/rest/v1/resources`, {
+                const saveRes = await fetch(`${SB_URL}/rest/v1/resources`, {
                     method: 'POST',
                     headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                        'apikey': SB_ANON_KEY,
+                        'Authorization': `Bearer ${SB_ANON_KEY}`,
                         'Content-Type': 'application/json',
                         'Prefer': 'return=minimal'
                     },
@@ -2104,14 +2103,14 @@
                 barEl.style.width = '30%';
                 textEl.textContent = '30%';
 
-                const uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/kenyavault-resources/${filePath}`, {
+                const uploadRes = await fetch(`${SB_URL}/storage/v1/object/kenyavault-resources/${filePath}`, {
                     method: 'POST',
-                    headers: { 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+                    headers: { 'Authorization': `Bearer ${SB_ANON_KEY}` },
                     body: selectedFile
                 });
 
                 if (!uploadRes.ok) throw new Error('PDF upload failed');
-                const fileUrl = `${SUPABASE_URL}/storage/v1/object/public/kenyavault-resources/${filePath}`;
+                const fileUrl = `${SB_URL}/storage/v1/object/public/kenyavault-resources/${filePath}`;
 
                 barEl.style.width = '60%';
                 textEl.textContent = '60%';
@@ -2120,13 +2119,13 @@
                 if (selectedCover) {
                     const coverExt = selectedCover.name.split('.').pop();
                     const coverPath = `covers/${level}/${subject}/${Date.now()}.${coverExt}`;
-                    const coverRes = await fetch(`${SUPABASE_URL}/storage/v1/object/kenyavault-resources/${coverPath}`, {
+                    const coverRes = await fetch(`${SB_URL}/storage/v1/object/kenyavault-resources/${coverPath}`, {
                         method: 'POST',
-                        headers: { 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+                        headers: { 'Authorization': `Bearer ${SB_ANON_KEY}` },
                         body: selectedCover
                     });
                     if (coverRes.ok) {
-                        coverUrl = `${SUPABASE_URL}/storage/v1/object/public/kenyavault-resources/${coverPath}`;
+                        coverUrl = `${SB_URL}/storage/v1/object/public/kenyavault-resources/${coverPath}`;
                     }
                 }
 
@@ -2151,11 +2150,11 @@
                     created_at: new Date().toISOString()
                 };
 
-                const saveRes = await fetch(`${SUPABASE_URL}/rest/v1/resources`, {
+                const saveRes = await fetch(`${SB_URL}/rest/v1/resources`, {
                     method: 'POST',
                     headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                        'apikey': SB_ANON_KEY,
+                        'Authorization': `Bearer ${SB_ANON_KEY}`,
                         'Content-Type': 'application/json',
                         'Prefer': 'return=minimal'
                     },
@@ -2196,9 +2195,9 @@
         async function deleteResource(id) {
             if (!confirm('Delete this resource permanently?')) return;
             try {
-                const res = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${id}`, {
+                const res = await fetch(`${SB_URL}/rest/v1/resources?id=eq.${id}`, {
                     method: 'DELETE',
-                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+                    headers: { 'apikey': SB_ANON_KEY, 'Authorization': `Bearer ${SB_ANON_KEY}` }
                 });
                 if (res.ok) {
                     showToast('Resource deleted', 'success');
@@ -2230,11 +2229,11 @@
             }
 
             try {
-                const res = await fetch(`${SUPABASE_URL}/rest/v1/tutors?id=eq.${tutorId}`, {
+                const res = await fetch(`${SB_URL}/rest/v1/tutors?id=eq.${tutorId}`, {
                     method: 'PATCH',
                     headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                        'apikey': SB_ANON_KEY,
+                        'Authorization': `Bearer ${SB_ANON_KEY}`,
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({ password: newPass })
