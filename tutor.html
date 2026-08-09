@@ -1010,12 +1010,12 @@
     <div id="app"></div>
 
     <script>
-        // ─── SUPABASE CONFIG ───
+        // ─── SUPABASE CONFIG (Using the exact same values from working old tutor.html) ───
         const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
 
         // ─── SUPABASE CLIENT ───
-        const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         // ─── HELPERS ───
         const LEVELS = [
@@ -1645,7 +1645,7 @@
             state.loading = true;
             state.debugInfo = [];
             try {
-                const { data: { session }, error } = await sbClient.auth.getSession();
+                const { data: { session }, error } = await supabase.auth.getSession();
                 if (error) throw error;
 
                 if (!session) {
@@ -1660,7 +1660,7 @@
                 const userId = session.user.id;
                 addDebug(`Auth user: ${userId}`, 'info');
 
-                const { data: tutorData, error: tutorError } = await sbClient
+                const { data: tutorData, error: tutorError } = await supabase
                     .from('tutors')
                     .select('*')
                     .eq('user_id', userId)
@@ -1675,14 +1675,14 @@
                 }
 
                 if (!tutorData) {
-                    const { data: emailMatch, error: emailError } = await sbClient
+                    const { data: emailMatch, error: emailError } = await supabase
                         .from('tutors')
                         .select('*')
                         .eq('email', session.user.email)
                         .maybeSingle();
 
                     if (emailMatch && !emailError) {
-                        await sbClient
+                        await supabase
                             .from('tutors')
                             .update({ user_id: userId })
                             .eq('id', emailMatch.id);
@@ -1718,7 +1718,7 @@
         // ─── LOAD TUTOR DATA ───
         async function loadTutorData(tutorId) {
             try {
-                const { data: resources, error: rErr } = await sbClient
+                const { data: resources, error: rErr } = await supabase
                     .from('resources')
                     .select('*')
                     .eq('tutor_id', tutorId);
@@ -1726,7 +1726,7 @@
                 if (rErr) throw rErr;
                 state.resources = resources || [];
 
-                const { data: orders, error: oErr } = await sbClient
+                const { data: orders, error: oErr } = await supabase
                     .from('orders')
                     .select('*')
                     .eq('tutor_id', tutorId);
@@ -1734,7 +1734,7 @@
                 if (oErr) throw oErr;
                 state.orders = orders || [];
 
-                const { data: classes, error: cErr } = await sbClient
+                const { data: classes, error: cErr } = await supabase
                     .from('classes')
                     .select('*')
                     .eq('tutor_id', tutorId);
@@ -1751,7 +1751,7 @@
         // ─── LOGIN ───
         async function handleLogin(phone, password) {
             try {
-                const { data: tutors, error: findErr } = await sbClient
+                const { data: tutors, error: findErr } = await supabase
                     .from('tutors')
                     .select('*')
                     .eq('phone', phone);
@@ -1771,11 +1771,11 @@
                 let authUser = null;
                 if (tutor.user_id) {
                     try {
-                        const { data: user, error: userErr } = await sbClient.auth.admin.getUserById(tutor.user_id);
+                        const { data: user, error: userErr } = await supabase.auth.admin.getUserById(tutor.user_id);
                         if (!userErr && user) {
                             authUser = user;
                         } else {
-                            const { data: newUser, error: createErr } = await sbClient.auth.signUp({
+                            const { data: newUser, error: createErr } = await supabase.auth.signUp({
                                 email: tutor.email || `${phone}@kenyavault.co.ke`,
                                 password: password,
                                 phone: phone,
@@ -1783,10 +1783,10 @@
                             });
                             if (createErr) throw createErr;
                             authUser = newUser.user;
-                            await sbClient.from('tutors').update({ user_id: authUser.id }).eq('id', tutor.id);
+                            await supabase.from('tutors').update({ user_id: authUser.id }).eq('id', tutor.id);
                         }
                     } catch (e) {
-                        const { data: newUser, error: createErr } = await sbClient.auth.signUp({
+                        const { data: newUser, error: createErr } = await supabase.auth.signUp({
                             email: tutor.email || `${phone}@kenyavault.co.ke`,
                             password: password,
                             phone: phone,
@@ -1794,10 +1794,10 @@
                         });
                         if (createErr) throw createErr;
                         authUser = newUser.user;
-                        await sbClient.from('tutors').update({ user_id: authUser.id }).eq('id', tutor.id);
+                        await supabase.from('tutors').update({ user_id: authUser.id }).eq('id', tutor.id);
                     }
                 } else {
-                    const { data: newUser, error: createErr } = await sbClient.auth.signUp({
+                    const { data: newUser, error: createErr } = await supabase.auth.signUp({
                         email: tutor.email || `${phone}@kenyavault.co.ke`,
                         password: password,
                         phone: phone,
@@ -1805,16 +1805,16 @@
                     });
                     if (createErr) throw createErr;
                     authUser = newUser.user;
-                    await sbClient.from('tutors').update({ user_id: authUser.id }).eq('id', tutor.id);
+                    await supabase.from('tutors').update({ user_id: authUser.id }).eq('id', tutor.id);
                 }
 
-                const { error: signInErr } = await sbClient.auth.signInWithPassword({
+                const { error: signInErr } = await supabase.auth.signInWithPassword({
                     phone: phone,
                     password: password
                 });
 
                 if (signInErr) {
-                    const { error: emailErr } = await sbClient.auth.signInWithPassword({
+                    const { error: emailErr } = await supabase.auth.signInWithPassword({
                         email: tutor.email || `${phone}@kenyavault.co.ke`,
                         password: password
                     });
@@ -1832,7 +1832,7 @@
         // ─── SIGNUP ───
         async function handleSignup(data) {
             try {
-                const { data: existing, error: existErr } = await sbClient
+                const { data: existing, error: existErr } = await supabase
                     .from('tutors')
                     .select('id')
                     .eq('phone', data.phone);
@@ -1842,7 +1842,7 @@
                     return { success: false, message: 'A tutor with this phone already exists.' };
                 }
 
-                const { data: authData, error: authErr } = await sbClient.auth.signUp({
+                const { data: authData, error: authErr } = await supabase.auth.signUp({
                     email: data.email,
                     password: data.password,
                     phone: data.phone,
@@ -1868,13 +1868,13 @@
                     created_at: new Date().toISOString()
                 };
 
-                const { error: insertErr } = await sbClient
+                const { error: insertErr } = await supabase
                     .from('tutors')
                     .insert(tutorData);
 
                 if (insertErr) throw insertErr;
 
-                await sbClient.auth.signInWithPassword({
+                await supabase.auth.signInWithPassword({
                     phone: data.phone,
                     password: data.password
                 });
@@ -1889,7 +1889,7 @@
 
         // ─── LOGOUT ───
         async function handleLogout() {
-            await sbClient.auth.signOut();
+            await supabase.auth.signOut();
             state.session = null;
             state.tutor = null;
             state.resources = [];
