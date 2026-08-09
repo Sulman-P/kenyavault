@@ -4198,52 +4198,57 @@
 
     // ── SHOP RENDER FUNCTIONS ──
     function renderShop() {
-        const filtered = getFilteredAndSortedResources();
-        
-        if (filtered.length === 0) {
-            if (productsGrid) {
-                productsGrid.innerHTML = `
-                    <div class="kv-empty" style="grid-column:1/-1;">
-                        <span class="empty-icon">🔍</span>
-                        <h3>${allResources.length === 0 ? 'No resources found' : 'No resources match your filters'}</h3>
-                        <p>${allResources.length === 0 ? 'Please upload resources via the admin panel.' : 'Try adjusting your search or filters above.'}</p>
-                        ${allResources.length === 0 ? `
-                            <button onclick="init()" style="margin-top:12px;padding:8px 20px;background:var(--kv-gold);color:var(--kv-navy);border:none;border-radius:var(--kv-radius);cursor:pointer;font-weight:700;font-family:var(--kv-font);">🔄 Reload</button>
-                        ` : `
-                            <button onclick="resetFilters()" style="margin-top:12px;padding:8px 20px;background:var(--kv-gold);color:var(--kv-navy);border:none;border-radius:var(--kv-radius);cursor:pointer;font-weight:700;font-family:var(--kv-font);">Reset Filters</button>
-                        `}
-                    </div>
-                `;
-            }
-            if (productCount) productCount.textContent = '0';
-            if (pagination) pagination.style.display = 'none';
-            return;
+    console.log('🔄 Rendering shop...');
+    console.log('📚 All resources count:', allResources.length);
+    
+    const filtered = getFilteredAndSortedResources();
+    console.log('📊 Filtered count:', filtered.length);
+    
+    // Update sidebar counts FIRST (before rendering products)
+    updateSidebarCounts();
+    
+    if (filtered.length === 0) {
+        if (productsGrid) {
+            productsGrid.innerHTML = `
+                <div class="kv-empty" style="grid-column:1/-1;">
+                    <span class="empty-icon">🔍</span>
+                    <h3>${allResources.length === 0 ? 'No resources found' : 'No resources match your filters'}</h3>
+                    <p>${allResources.length === 0 ? 'Please upload resources via the admin panel.' : 'Try adjusting your search or filters above.'}</p>
+                    ${allResources.length === 0 ? `
+                        <button onclick="init()" style="margin-top:12px;padding:8px 20px;background:var(--kv-gold);color:var(--kv-navy);border:none;border-radius:var(--kv-radius);cursor:pointer;font-weight:700;font-family:var(--kv-font);">🔄 Reload</button>
+                    ` : `
+                        <button onclick="resetFilters()" style="margin-top:12px;padding:8px 20px;background:var(--kv-gold);color:var(--kv-navy);border:none;border-radius:var(--kv-radius);cursor:pointer;font-weight:700;font-family:var(--kv-font);">Reset Filters</button>
+                    `}
+                </div>
+            `;
         }
-
-        const totalPages = Math.ceil(filtered.length / itemsPerPage);
-        if (currentPage > totalPages) currentPage = totalPages;
-        if (currentPage < 1) currentPage = 1;
-
-        const start = (currentPage - 1) * itemsPerPage;
-        const end = Math.min(start + itemsPerPage, filtered.length);
-        const pageItems = filtered.slice(start, end);
-
-        let html = '';
-        pageItems.forEach(r => { html += buildCardHTML(r); });
-        if (productsGrid) productsGrid.innerHTML = html;
-        if (productCount) productCount.textContent = filtered.length;
-
-        updateSidebarCounts();
-
-        if (totalPages > 1) {
-            if (pagination) pagination.style.display = 'flex';
-            if (pageInfo) pageInfo.textContent = 'Page ' + currentPage + ' of ' + totalPages;
-            if (prevPage) prevPage.disabled = currentPage === 1;
-            if (nextPage) nextPage.disabled = currentPage === totalPages;
-        } else {
-            if (pagination) pagination.style.display = 'none';
-        }
+        if (productCount) productCount.textContent = '0';
+        if (pagination) pagination.style.display = 'none';
+        return;
     }
+
+    const totalPages = Math.ceil(filtered.length / itemsPerPage);
+    if (currentPage > totalPages) currentPage = totalPages;
+    if (currentPage < 1) currentPage = 1;
+
+    const start = (currentPage - 1) * itemsPerPage;
+    const end = Math.min(start + itemsPerPage, filtered.length);
+    const pageItems = filtered.slice(start, end);
+
+    let html = '';
+    pageItems.forEach(r => { html += buildCardHTML(r); });
+    if (productsGrid) productsGrid.innerHTML = html;
+    if (productCount) productCount.textContent = filtered.length;
+
+    if (totalPages > 1) {
+        if (pagination) pagination.style.display = 'flex';
+        if (pageInfo) pageInfo.textContent = 'Page ' + currentPage + ' of ' + totalPages;
+        if (prevPage) prevPage.disabled = currentPage === 1;
+        if (nextPage) nextPage.disabled = currentPage === totalPages;
+    } else {
+        if (pagination) pagination.style.display = 'none';
+    }
+}
 
     function getFilteredAndSortedResources() {
         let filtered = allResources.slice();
@@ -4371,32 +4376,89 @@
         return map[subject?.toLowerCase()] || '#4B5563';
     }
 
-    // ── UPDATE SIDEBAR COUNTS ──
-    function updateSidebarCounts() {
-        const levels = ['pp1', 'pp2', 'grade-1', 'grade-2', 'grade-3', 'grade-4', 'grade-5', 'grade-6', 
-                       'grade-7', 'grade-8', 'grade-9', 'grade-10', 'grade-11', 'grade-12',
-                       'form-1', 'form-2', 'form-3', 'form-4', 'college', 'tvet', 'university'];
-        
-        levels.forEach(level => {
-            const count = allResources.filter(r => r.level === level).length;
-            const id = level.replace('-', '').replace('grade-', 'g').replace('form-', 'f');
-            const el = document.getElementById(id + 'Count');
-            if (el) el.textContent = count;
-        });
-        
-        const totalEl = document.getElementById('totalCount');
-        if (totalEl) totalEl.textContent = allResources.length;
-        
-        const categories = ['lesson-plan', 'scheme-work', 'revision-paper', 'exam-paper'];
-        categories.forEach(cat => {
-            const count = allResources.filter(r => {
-                const type = (r.resource_type || r.category || r.type || '').toLowerCase().replace(/\s+/g, '-');
-                return type === cat;
-            }).length;
-            const el = document.getElementById('cat' + cat.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(''));
-            if (el) el.textContent = count;
-        });
+    // ── UPDATE SIDEBAR COUNTS (FIXED) ──
+function updateSidebarCounts() {
+    console.log('📊 Updating sidebar counts...');
+    console.log('📚 Total resources:', allResources.length);
+    
+    // Define all levels with their display IDs
+    const levelMap = {
+        'pp1': 'pp1Count',
+        'pp2': 'pp2Count',
+        'grade-1': 'g1Count',
+        'grade-2': 'g2Count',
+        'grade-3': 'g3Count',
+        'grade-4': 'g4Count',
+        'grade-5': 'g5Count',
+        'grade-6': 'g6Count',
+        'grade-7': 'g7Count',
+        'grade-8': 'g8Count',
+        'grade-9': 'g9Count',
+        'grade-10': 'g10Count',
+        'grade-11': 'g11Count',
+        'grade-12': 'g12Count',
+        'form-1': 'f1Count',
+        'form-2': 'f2Count',
+        'form-3': 'f3Count',
+        'form-4': 'f4Count',
+        'college': 'collegeCount',
+        'tvet': 'tvetCount',
+        'university': 'universityCount'
+    };
+
+    // Count resources by level
+    const counts = {};
+    Object.keys(levelMap).forEach(level => {
+        counts[level] = 0;
+    });
+
+    // Count each resource
+    allResources.forEach(r => {
+        const level = r.level || r.grade_level || r.grade || '';
+        if (level && counts.hasOwnProperty(level)) {
+            counts[level]++;
+        } else if (level) {
+            // Log any levels that don't match the map
+            console.log('⚠️ Unknown level found:', level, 'for resource:', r.title);
+        }
+    });
+
+    // Update the DOM elements
+    let totalCount = 0;
+    Object.keys(levelMap).forEach(level => {
+        const elementId = levelMap[level];
+        const el = document.getElementById(elementId);
+        if (el) {
+            el.textContent = counts[level] || 0;
+            totalCount += counts[level] || 0;
+            console.log(`✅ ${level}: ${counts[level] || 0} resources`);
+        } else {
+            console.warn(`⚠️ Element not found: ${elementId}`);
+        }
+    });
+
+    // Update total count
+    const totalEl = document.getElementById('totalCount');
+    if (totalEl) {
+        totalEl.textContent = allResources.length;
+        console.log(`✅ Total: ${allResources.length} resources`);
     }
+
+    // Update category counts
+    const categories = ['lesson-plan', 'scheme-work', 'revision-paper', 'exam-paper'];
+    categories.forEach(cat => {
+        const count = allResources.filter(r => {
+            const type = r.resource_type || r.category || r.type || '';
+            const typeClean = type.toLowerCase().replace(/\s+/g, '-');
+            return typeClean === cat;
+        }).length;
+        const el = document.getElementById('cat' + cat.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(''));
+        if (el) {
+            el.textContent = count;
+            console.log(`✅ ${cat}: ${count} resources`);
+        }
+    });
+}
 
     // ── FILTER FUNCTIONS ──
     function resetFilters() {
@@ -4628,23 +4690,38 @@
         if (banner && !localStorage.getItem(CONSENT_KEY)) banner.classList.remove('hidden');
     })();
 
-    // ── INIT ──
-    async function init() {
-        try {
-            if (productsGrid) {
-                productsGrid.innerHTML = `
-                    <div class="kv-loading">
-                        <span class="spin-icon">⏳</span>
-                        Loading resources...
-                        <div style="margin-top:4px;font-size:0.8rem;color:var(--kv-muted);">Please wait as we search the best resources..</div>
-                    </div>
-                `;
-            }
-            
-            allResources = await fetchResources();
-            loadCart();
-            renderCartDrawer();
-            renderShop();
+   // Add this in init() after fetching resources
+async function init() {
+    try {
+        if (productsGrid) {
+            productsGrid.innerHTML = `
+                <div class="kv-loading">
+                    <span class="spin-icon">⏳</span>
+                    Loading resources...
+                    <div style="margin-top:4px;font-size:0.8rem;color:var(--kv-muted);">Please wait as we search the best resources..</div>
+                </div>
+            `;
+        }
+        
+        allResources = await fetchResources();
+        
+        // DEBUG: Log all unique levels
+        const uniqueLevels = new Set();
+        allResources.forEach(r => {
+            const level = r.level || r.grade_level || r.grade || 'unknown';
+            uniqueLevels.add(level);
+        });
+        console.log('🔍 Unique levels in resources:', Array.from(uniqueLevels));
+        
+        loadCart();
+        renderCartDrawer();
+        renderShop();
+        
+        // ... rest of init
+    } catch (error) {
+        // ... error handling
+    }
+}
             
             const urlParams = new URLSearchParams(window.location.search);
             const levelParam = urlParams.get('level');
