@@ -885,6 +885,51 @@
         .toast-notification.success {
             background: var(--kv-green);
         }
+        .toast-notification.info {
+            background: #3B82F6;
+        }
+
+        /* Progress */
+        .progress-track {
+            width: 100%;
+            height: 6px;
+            background: var(--kv-border);
+            border-radius: 99px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+        .dark .progress-track {
+            background: #374151;
+        }
+        #uploadBar,
+        #uploadBar2 {
+            height: 100%;
+            background: var(--kv-gold);
+            transition: width 0.3s ease;
+            border-radius: 99px;
+        }
+
+        .drop-zone {
+            border: 2px dashed var(--kv-border);
+            border-radius: var(--kv-radius-sm);
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .dark .drop-zone {
+            border-color: #4b5563;
+        }
+        .drop-zone:hover {
+            border-color: var(--kv-gold);
+            background: rgba(212, 160, 23, 0.05);
+        }
+        .cover-preview-img {
+            max-width: 100px;
+            max-height: 100px;
+            border-radius: var(--kv-radius-sm);
+            margin-top: 8px;
+        }
 
         /* Responsive */
         @media (max-width: 1200px) {
@@ -959,58 +1004,19 @@
         .text-green {
             color: var(--kv-green-light);
         }
-
-        /* Progress bar for upload */
-        .progress-track {
-            width: 100%;
-            height: 6px;
-            background: var(--kv-border);
-            border-radius: 99px;
-            overflow: hidden;
-            margin-top: 8px;
-        }
-        .dark .progress-track {
-            background: #374151;
-        }
-        #uploadBar {
-            height: 100%;
-            background: var(--kv-gold);
-            transition: width 0.3s ease;
-            border-radius: 99px;
-        }
-
-        /* Drop zone */
-        .drop-zone {
-            border: 2px dashed var(--kv-border);
-            border-radius: var(--kv-radius-sm);
-            padding: 20px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-        .dark .drop-zone {
-            border-color: #4b5563;
-        }
-        .drop-zone:hover {
-            border-color: var(--kv-gold);
-            background: rgba(212, 160, 23, 0.05);
-        }
-        .cover-preview-img {
-            max-width: 100px;
-            max-height: 100px;
-            border-radius: var(--kv-radius-sm);
-            margin-top: 8px;
-        }
     </style>
 </head>
 <body>
     <div id="app"></div>
 
     <script>
+        // ─── SUPABASE CONFIG ───
+        // Using the same config as the original working version
+        const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
+
         // ─── SUPABASE CLIENT ───
-        const SB_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
-        const SB_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
-        const supabaseClient = window.supabase.createClient(SB_URL, SB_ANON_KEY);
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         // ─── HELPERS ───
         const LEVELS = [
@@ -1115,14 +1121,12 @@
         }
 
         function renderDashboard() {
-            const { tutor, resources, orders, classes } = state;
+            const { tutor, resources, orders } = state;
             const totalDownloads = resources.reduce((sum, r) => sum + (r.download_count || 0), 0);
             const totalEarnings = orders.reduce((sum, o) => sum + (o.tutor_share || Math.round((o.total_amount || o.item_price || 0) * 0.8)), 0);
             const totalSales = orders.length;
-            const pendingEarnings = orders.filter(o => o.status === 'pending' || o.status === 'pending_verification').reduce((sum, o) => sum + (o.tutor_share || 0), 0);
-            const paidOut = tutor?.total_paid_out || 0;
 
-            // Monthly chart data (last 6 months)
+            // Monthly chart data
             const now = new Date();
             const months = [];
             const monthlyData = [];
@@ -1210,7 +1214,7 @@
         }
 
         function renderTabContent() {
-            const { tutor, resources, orders, classes } = state;
+            const { tutor, resources, orders } = state;
             const totalDownloads = resources.reduce((sum, r) => sum + (r.download_count || 0), 0);
             const totalEarnings = orders.reduce((sum, o) => sum + (o.tutor_share || Math.round((o.total_amount || o.item_price || 0) * 0.8)), 0);
             const totalSales = orders.length;
@@ -1239,7 +1243,6 @@
             switch (state.activeTab) {
                 case 'dashboard':
                     return `
-                        <!-- Stats -->
                         <div class="stats-grid">
                             <div class="stat-card">
                                 <div class="stat-icon">📚</div>
@@ -1263,7 +1266,6 @@
                             </div>
                         </div>
 
-                        <!-- Revenue -->
                         <div class="revenue-section">
                             <div class="revenue-header">
                                 <h2><i class="fas fa-chart-simple"></i> Revenue Overview</h2>
@@ -1296,7 +1298,6 @@
                             </div>
                         </div>
 
-                        <!-- Upload + Resources -->
                         <div class="action-grid">
                             <div class="upload-card">
                                 <h3><i class="fas fa-cloud-upload-alt"></i> Upload Resource</h3>
@@ -1645,7 +1646,7 @@
             state.loading = true;
             state.debugInfo = [];
             try {
-                const { data: { session }, error } = await supabaseClient.auth.getSession();
+                const { data: { session }, error } = await supabase.auth.getSession();
                 if (error) throw error;
 
                 if (!session) {
@@ -1660,7 +1661,7 @@
                 const userId = session.user.id;
                 addDebug(`Auth user: ${userId}`, 'info');
 
-                const { data: tutorData, error: tutorError } = await supabaseClient
+                const { data: tutorData, error: tutorError } = await supabase
                     .from('tutors')
                     .select('*')
                     .eq('user_id', userId)
@@ -1675,14 +1676,14 @@
                 }
 
                 if (!tutorData) {
-                    const { data: emailMatch, error: emailError } = await supabaseClient
+                    const { data: emailMatch, error: emailError } = await supabase
                         .from('tutors')
                         .select('*')
                         .eq('email', session.user.email)
                         .maybeSingle();
 
                     if (emailMatch && !emailError) {
-                        await supabaseClient
+                        await supabase
                             .from('tutors')
                             .update({ user_id: userId })
                             .eq('id', emailMatch.id);
@@ -1718,7 +1719,7 @@
         // ─── LOAD TUTOR DATA ───
         async function loadTutorData(tutorId) {
             try {
-                const { data: resources, error: rErr } = await supabaseClient
+                const { data: resources, error: rErr } = await supabase
                     .from('resources')
                     .select('*')
                     .eq('tutor_id', tutorId);
@@ -1726,7 +1727,7 @@
                 if (rErr) throw rErr;
                 state.resources = resources || [];
 
-                const { data: orders, error: oErr } = await supabaseClient
+                const { data: orders, error: oErr } = await supabase
                     .from('orders')
                     .select('*')
                     .eq('tutor_id', tutorId);
@@ -1734,7 +1735,7 @@
                 if (oErr) throw oErr;
                 state.orders = orders || [];
 
-                const { data: classes, error: cErr } = await supabaseClient
+                const { data: classes, error: cErr } = await supabase
                     .from('classes')
                     .select('*')
                     .eq('tutor_id', tutorId);
@@ -1751,7 +1752,7 @@
         // ─── LOGIN ───
         async function handleLogin(phone, password) {
             try {
-                const { data: tutors, error: findErr } = await supabaseClient
+                const { data: tutors, error: findErr } = await supabase
                     .from('tutors')
                     .select('*')
                     .eq('phone', phone);
@@ -1771,11 +1772,11 @@
                 let authUser = null;
                 if (tutor.user_id) {
                     try {
-                        const { data: user, error: userErr } = await supabaseClient.auth.admin.getUserById(tutor.user_id);
+                        const { data: user, error: userErr } = await supabase.auth.admin.getUserById(tutor.user_id);
                         if (!userErr && user) {
                             authUser = user;
                         } else {
-                            const { data: newUser, error: createErr } = await supabaseClient.auth.signUp({
+                            const { data: newUser, error: createErr } = await supabase.auth.signUp({
                                 email: tutor.email || `${phone}@kenyavault.co.ke`,
                                 password: password,
                                 phone: phone,
@@ -1783,10 +1784,10 @@
                             });
                             if (createErr) throw createErr;
                             authUser = newUser.user;
-                            await supabaseClient.from('tutors').update({ user_id: authUser.id }).eq('id', tutor.id);
+                            await supabase.from('tutors').update({ user_id: authUser.id }).eq('id', tutor.id);
                         }
                     } catch (e) {
-                        const { data: newUser, error: createErr } = await supabaseClient.auth.signUp({
+                        const { data: newUser, error: createErr } = await supabase.auth.signUp({
                             email: tutor.email || `${phone}@kenyavault.co.ke`,
                             password: password,
                             phone: phone,
@@ -1794,10 +1795,10 @@
                         });
                         if (createErr) throw createErr;
                         authUser = newUser.user;
-                        await supabaseClient.from('tutors').update({ user_id: authUser.id }).eq('id', tutor.id);
+                        await supabase.from('tutors').update({ user_id: authUser.id }).eq('id', tutor.id);
                     }
                 } else {
-                    const { data: newUser, error: createErr } = await supabaseClient.auth.signUp({
+                    const { data: newUser, error: createErr } = await supabase.auth.signUp({
                         email: tutor.email || `${phone}@kenyavault.co.ke`,
                         password: password,
                         phone: phone,
@@ -1805,16 +1806,16 @@
                     });
                     if (createErr) throw createErr;
                     authUser = newUser.user;
-                    await supabaseClient.from('tutors').update({ user_id: authUser.id }).eq('id', tutor.id);
+                    await supabase.from('tutors').update({ user_id: authUser.id }).eq('id', tutor.id);
                 }
 
-                const { error: signInErr } = await supabaseClient.auth.signInWithPassword({
+                const { error: signInErr } = await supabase.auth.signInWithPassword({
                     phone: phone,
                     password: password
                 });
 
                 if (signInErr) {
-                    const { error: emailErr } = await supabaseClient.auth.signInWithPassword({
+                    const { error: emailErr } = await supabase.auth.signInWithPassword({
                         email: tutor.email || `${phone}@kenyavault.co.ke`,
                         password: password
                     });
@@ -1832,7 +1833,7 @@
         // ─── SIGNUP ───
         async function handleSignup(data) {
             try {
-                const { data: existing, error: existErr } = await supabaseClient
+                const { data: existing, error: existErr } = await supabase
                     .from('tutors')
                     .select('id')
                     .eq('phone', data.phone);
@@ -1842,7 +1843,7 @@
                     return { success: false, message: 'A tutor with this phone already exists.' };
                 }
 
-                const { data: authData, error: authErr } = await supabaseClient.auth.signUp({
+                const { data: authData, error: authErr } = await supabase.auth.signUp({
                     email: data.email,
                     password: data.password,
                     phone: data.phone,
@@ -1868,13 +1869,13 @@
                     created_at: new Date().toISOString()
                 };
 
-                const { error: insertErr } = await supabaseClient
+                const { error: insertErr } = await supabase
                     .from('tutors')
                     .insert(tutorData);
 
                 if (insertErr) throw insertErr;
 
-                await supabaseClient.auth.signInWithPassword({
+                await supabase.auth.signInWithPassword({
                     phone: data.phone,
                     password: data.password
                 });
@@ -1889,7 +1890,7 @@
 
         // ─── LOGOUT ───
         async function handleLogout() {
-            await supabaseClient.auth.signOut();
+            await supabase.auth.signOut();
             state.session = null;
             state.tutor = null;
             state.resources = [];
@@ -1902,7 +1903,6 @@
         // ─── UPLOAD FUNCTIONS ───
         let selectedFile = null;
         let selectedCover = null;
-        let coverPreview = null;
 
         function handleFileSelect(e) {
             const file = e.target.files[0];
@@ -1985,14 +1985,14 @@
                 barEl.style.width = '30%';
                 textEl.textContent = '30%';
 
-                const uploadRes = await fetch(`${SB_URL}/storage/v1/object/kenyavault-resources/${filePath}`, {
+                const uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/kenyavault-resources/${filePath}`, {
                     method: 'POST',
-                    headers: { 'Authorization': `Bearer ${SB_ANON_KEY}` },
+                    headers: { 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
                     body: selectedFile
                 });
 
                 if (!uploadRes.ok) throw new Error('PDF upload failed');
-                const fileUrl = `${SB_URL}/storage/v1/object/public/kenyavault-resources/${filePath}`;
+                const fileUrl = `${SUPABASE_URL}/storage/v1/object/public/kenyavault-resources/${filePath}`;
 
                 barEl.style.width = '60%';
                 textEl.textContent = '60%';
@@ -2001,13 +2001,13 @@
                 if (selectedCover) {
                     const coverExt = selectedCover.name.split('.').pop();
                     const coverPath = `covers/${level}/${subject}/${Date.now()}.${coverExt}`;
-                    const coverRes = await fetch(`${SB_URL}/storage/v1/object/kenyavault-resources/${coverPath}`, {
+                    const coverRes = await fetch(`${SUPABASE_URL}/storage/v1/object/kenyavault-resources/${coverPath}`, {
                         method: 'POST',
-                        headers: { 'Authorization': `Bearer ${SB_ANON_KEY}` },
+                        headers: { 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
                         body: selectedCover
                     });
                     if (coverRes.ok) {
-                        coverUrl = `${SB_URL}/storage/v1/object/public/kenyavault-resources/${coverPath}`;
+                        coverUrl = `${SUPABASE_URL}/storage/v1/object/public/kenyavault-resources/${coverPath}`;
                     }
                 }
 
@@ -2032,11 +2032,11 @@
                     created_at: new Date().toISOString()
                 };
 
-                const saveRes = await fetch(`${SB_URL}/rest/v1/resources`, {
+                const saveRes = await fetch(`${SUPABASE_URL}/rest/v1/resources`, {
                     method: 'POST',
                     headers: {
-                        'apikey': SB_ANON_KEY,
-                        'Authorization': `Bearer ${SB_ANON_KEY}`,
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
                         'Content-Type': 'application/json',
                         'Prefer': 'return=minimal'
                     },
@@ -2050,7 +2050,6 @@
 
                 showToast('Resource uploaded successfully! It will be reviewed by admin.', 'success');
 
-                // Reset form
                 document.getElementById('uploadTitle').value = '';
                 document.getElementById('uploadSubject').value = '';
                 document.getElementById('uploadLevel').value = '';
@@ -2105,14 +2104,14 @@
                 barEl.style.width = '30%';
                 textEl.textContent = '30%';
 
-                const uploadRes = await fetch(`${SB_URL}/storage/v1/object/kenyavault-resources/${filePath}`, {
+                const uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/kenyavault-resources/${filePath}`, {
                     method: 'POST',
-                    headers: { 'Authorization': `Bearer ${SB_ANON_KEY}` },
+                    headers: { 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
                     body: selectedFile
                 });
 
                 if (!uploadRes.ok) throw new Error('PDF upload failed');
-                const fileUrl = `${SB_URL}/storage/v1/object/public/kenyavault-resources/${filePath}`;
+                const fileUrl = `${SUPABASE_URL}/storage/v1/object/public/kenyavault-resources/${filePath}`;
 
                 barEl.style.width = '60%';
                 textEl.textContent = '60%';
@@ -2121,13 +2120,13 @@
                 if (selectedCover) {
                     const coverExt = selectedCover.name.split('.').pop();
                     const coverPath = `covers/${level}/${subject}/${Date.now()}.${coverExt}`;
-                    const coverRes = await fetch(`${SB_URL}/storage/v1/object/kenyavault-resources/${coverPath}`, {
+                    const coverRes = await fetch(`${SUPABASE_URL}/storage/v1/object/kenyavault-resources/${coverPath}`, {
                         method: 'POST',
-                        headers: { 'Authorization': `Bearer ${SB_ANON_KEY}` },
+                        headers: { 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
                         body: selectedCover
                     });
                     if (coverRes.ok) {
-                        coverUrl = `${SB_URL}/storage/v1/object/public/kenyavault-resources/${coverPath}`;
+                        coverUrl = `${SUPABASE_URL}/storage/v1/object/public/kenyavault-resources/${coverPath}`;
                     }
                 }
 
@@ -2152,11 +2151,11 @@
                     created_at: new Date().toISOString()
                 };
 
-                const saveRes = await fetch(`${SB_URL}/rest/v1/resources`, {
+                const saveRes = await fetch(`${SUPABASE_URL}/rest/v1/resources`, {
                     method: 'POST',
                     headers: {
-                        'apikey': SB_ANON_KEY,
-                        'Authorization': `Bearer ${SB_ANON_KEY}`,
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
                         'Content-Type': 'application/json',
                         'Prefer': 'return=minimal'
                     },
@@ -2197,9 +2196,9 @@
         async function deleteResource(id) {
             if (!confirm('Delete this resource permanently?')) return;
             try {
-                const res = await fetch(`${SB_URL}/rest/v1/resources?id=eq.${id}`, {
+                const res = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=eq.${id}`, {
                     method: 'DELETE',
-                    headers: { 'apikey': SB_ANON_KEY, 'Authorization': `Bearer ${SB_ANON_KEY}` }
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
                 });
                 if (res.ok) {
                     showToast('Resource deleted', 'success');
@@ -2231,11 +2230,11 @@
             }
 
             try {
-                const res = await fetch(`${SB_URL}/rest/v1/tutors?id=eq.${tutorId}`, {
+                const res = await fetch(`${SUPABASE_URL}/rest/v1/tutors?id=eq.${tutorId}`, {
                     method: 'PATCH',
                     headers: {
-                        'apikey': SB_ANON_KEY,
-                        'Authorization': `Bearer ${SB_ANON_KEY}`,
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({ password: newPass })
@@ -2257,8 +2256,8 @@
             if (existing) existing.remove();
 
             const toast = document.createElement('div');
-            toast.className = `toast-notification show ${type === 'error' ? 'error' : 'success'}`;
-            toast.innerHTML = `<span>${type === 'error' ? '❌' : '✅'}</span><span>${msg}</span>`;
+            toast.className = `toast-notification show ${type === 'error' ? 'error' : type === 'info' ? 'info' : 'success'}`;
+            toast.innerHTML = `<span>${type === 'error' ? '❌' : type === 'info' ? 'ℹ️' : '✅'}</span><span>${msg}</span>`;
             document.body.appendChild(toast);
 
             setTimeout(() => {
