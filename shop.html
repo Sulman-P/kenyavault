@@ -3288,33 +3288,52 @@
         return null;
     }
 
-    // ── CREATE DOWNLOAD TOKENS (server-issued via Edge Function) ──
-    async function createDownloadTokensForOrder(orderRef, orderIds) {
-        try {
-            const response = await fetch(`${SUPABASE_URL}/functions/v1/create-download-tokens`, {
-                method: 'POST',
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ order_ref: orderRef, order_ids: orderIds })
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error('❌ Failed to create download tokens:', errorText);
-                return [];
-            }
-
-            const result = await response.json();
-            return result.tokens || [];
-        } catch (error) {
-            console.error('❌ Download token creation error:', error);
+    // ── CREATE DOWNLOAD TOKENS ──
+async function createDownloadTokensForOrder(orderRef, orderIds) {
+    try {
+        // Validate inputs
+        if (!orderRef) {
+            console.error('❌ orderRef is required');
             return [];
         }
-    }
+        if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
+            console.error('❌ orderIds must be a non-empty array');
+            return [];
+        }
 
+        const requestBody = {
+            order_ref: orderRef,
+            order_ids: orderIds
+        };
+
+        console.log('📤 Sending request:', requestBody);
+
+        const response = await fetch(`${SUPABASE_URL}/functions/v1/create-download-tokens`, {
+            method: 'POST',
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestBody)
+        });
+
+        console.log('📥 Response status:', response.status);
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ Failed to create download tokens:', errorText);
+            return [];
+        }
+
+        const result = await response.json();
+        console.log('✅ Tokens created:', result);
+        return result.tokens || [];
+    } catch (error) {
+        console.error('❌ Download token creation error:', error);
+        return [];
+    }
+}
     // ── SECURE DOWNLOAD RESOURCE ──
     async function secureDownloadResource(orderId, resourceId, token) {
         try {
