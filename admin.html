@@ -1,1985 +1,2672 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Admin Dashboard — Kenyavault Academy</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js">
-    </script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.min.js">
-    </script>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-        }
-
-        body {
-            background: #f4f7fc;
-            display: flex;
-            min-height: 100vh;
-        }
-
-        /* ========== LOGIN OVERLAY ========== */
-        .login-overlay {
-            position: fixed;
-            inset: 0;
-            background: linear-gradient(135deg, #0a1a3a 0%, #1a2a5a 50%, #2a3a6a 100%);
-            z-index: 99999;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
-        .login-overlay.active {
-            display: flex;
-        }
-        .login-box {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 24px;
-            padding: 48px 40px;
-            max-width: 420px;
-            width: 100%;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-        }
-        .login-box h2 {
-            color: #fff;
-            font-size: 28px;
-            font-weight: 700;
-            margin-bottom: 8px;
-        }
-        .login-box .subtitle {
-            color: rgba(255, 255, 255, 0.6);
-            font-size: 14px;
-            margin-bottom: 28px;
-        }
-        .login-box .brand {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 28px;
-        }
-        .login-box .brand-icon {
-            width: 48px;
-            height: 48px;
-            background: #d4a017;
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 800;
-            font-size: 20px;
-            color: #0a1a3a;
-        }
-        .login-box .brand-text {
-            color: #fff;
-            font-size: 22px;
-            font-weight: 700;
-        }
-        .login-box .brand-text span {
-            color: #d4a017;
-        }
-        .login-box input {
-            width: 100%;
-            padding: 14px 18px;
-            background: rgba(255, 255, 255, 0.06);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            border-radius: 12px;
-            color: #fff;
-            font-size: 15px;
-            transition: 0.2s;
-            margin-bottom: 16px;
-        }
-        .login-box input::placeholder {
-            color: rgba(255, 255, 255, 0.4);
-        }
-        .login-box input:focus {
-            outline: none;
-            border-color: #d4a017;
-            box-shadow: 0 0 0 3px rgba(212, 160, 23, 0.2);
-        }
-        .login-box .login-btn {
-            width: 100%;
-            padding: 14px;
-            background: #d4a017;
-            border: none;
-            border-radius: 12px;
-            color: #0a1a3a;
-            font-size: 16px;
-            font-weight: 700;
-            cursor: pointer;
-            transition: 0.2s;
-        }
-        .login-box .login-btn:hover {
-            background: #fcd34d;
-            transform: translateY(-1px);
-        }
-        .login-box .login-btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-        .login-box .error-msg {
-            color: #f87171;
-            font-size: 14px;
-            margin-bottom: 12px;
-            text-align: center;
-            background: rgba(220, 38, 38, 0.15);
-            padding: 8px 12px;
-            border-radius: 8px;
-        }
-
-        /* ========== SIDEBAR ========== */
-        .sidebar {
-            width: 260px;
-            background: #0b1a33;
-            color: #e6edf5;
-            display: flex;
-            flex-direction: column;
-            padding: 28px 16px 24px;
-            position: sticky;
-            top: 0;
-            height: 100vh;
-            overflow-y: auto;
-            flex-shrink: 0;
-            box-shadow: 2px 0 12px rgba(0, 0, 0, 0.06);
-        }
-
-        .sidebar-brand {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 32px;
-            padding-left: 6px;
-        }
-
-        .sidebar-brand i {
-            font-size: 28px;
-            color: #4facfe;
-        }
-
-        .sidebar-brand span {
-            font-weight: 600;
-            font-size: 20px;
-            letter-spacing: -0.3px;
-            color: white;
-        }
-
-        .sidebar-nav {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-            flex: 1;
-        }
-
-        .sidebar-nav a {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-            padding: 12px 16px;
-            border-radius: 12px;
-            color: #b6c9e0;
-            text-decoration: none;
-            font-size: 15px;
-            font-weight: 450;
-            transition: 0.2s;
-            cursor: pointer;
-        }
-
-        .sidebar-nav a i {
-            width: 20px;
-            font-size: 16px;
-            text-align: center;
-        }
-
-        .sidebar-nav a:hover {
-            background: #1f3450;
-            color: white;
-        }
-
-        .sidebar-nav a.active {
-            background: #1f3450;
-            color: white;
-            font-weight: 500;
-            box-shadow: inset 4px 0 0 #4facfe;
-        }
-
-        .sidebar-nav a .badge {
-            margin-left: auto;
-            background: rgba(212, 160, 23, 0.2);
-            color: #f5d76e;
-            font-size: 0.6rem;
-            padding: 2px 10px;
-            border-radius: 40px;
-            font-weight: 600;
-        }
-
-        .sidebar-nav a .badge.danger {
-            background: rgba(220, 38, 38, 0.2);
-            color: #f87171;
-        }
-
-        .sidebar-nav .logout {
-            margin-top: 20px;
-            border-top: 1px solid #223a5a;
-            padding-top: 18px;
-        }
-
-        /* ========== MAIN ========== */
-        .main {
-            flex: 1;
-            padding: 24px 32px 40px;
-            overflow-x: auto;
-        }
-
-        .topbar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 28px;
-        }
-
-        .topbar h1 {
-            font-size: 26px;
-            font-weight: 600;
-            color: #0b1a33;
-            letter-spacing: -0.4px;
-        }
-        .topbar h1 small {
-            font-weight: 400;
-            font-size: 0.9rem;
-            color: #6b7f99;
-            margin-left: 10px;
-        }
-
-        .topbar-actions {
-            display: flex;
-            gap: 20px;
-            align-items: center;
-        }
-
-        .topbar-actions .live-badge {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 0.7rem;
-            font-weight: 600;
-            color: #0b7e4b;
-            background: #e0f5ec;
-            padding: 4px 14px;
-            border-radius: 40px;
-        }
-
-        .topbar-actions .live-badge .dot {
-            width: 7px;
-            height: 7px;
-            background: #0b7e4b;
-            border-radius: 50%;
-            animation: pulse-dot 2s infinite;
-        }
-
-        .topbar-actions .topbar-datetime {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 0.75rem;
-            font-weight: 500;
-            color: #4a5f7a;
-            background: #f0f4fa;
-            padding: 4px 14px;
-            border-radius: 40px;
-            border: 1px solid #e6edf5;
-            white-space: nowrap;
-        }
-
-        .topbar-actions .topbar-datetime i {
-            font-size: 0.8rem;
-            color: #6b7f99;
-        }
-
-        .topbar-actions i {
-            font-size: 20px;
-            color: #3f5570;
-            cursor: default;
-        }
-
-        .topbar-actions .avatar {
-            width: 40px;
-            height: 40px;
-            background: #0b1a33;
-            border-radius: 40px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-weight: 600;
-        }
-
-        @keyframes pulse-dot {
-            0%,
-            100% {
-                opacity: 1;
-            }
-            50% {
-                opacity: 0.3;
-            }
-        }
-
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-            gap: 20px;
-            margin-bottom: 32px;
-        }
-
-        .stat-card {
-            background: white;
-            border-radius: 20px;
-            padding: 20px 16px;
-            box-shadow: 0 4px 12px rgba(0, 20, 40, 0.04);
-            transition: 0.2s;
-            border: 1px solid #eef3f9;
-        }
-
-        .stat-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 24px rgba(0, 20, 40, 0.06);
-        }
-
-        .stat-label {
-            font-size: 14px;
-            font-weight: 500;
-            color: #5d738b;
-            letter-spacing: 0.3px;
-            text-transform: uppercase;
-            margin-bottom: 6px;
-        }
-
-        .stat-number {
-            font-size: 32px;
-            font-weight: 700;
-            color: #0b1a33;
-            letter-spacing: -0.5px;
-        }
-
-        .stat-sub {
-            font-size: 13px;
-            color: #6d859e;
-            margin-top: 6px;
-        }
-
-        .stat-sub .up {
-            color: #0b7e4b;
-        }
-        .stat-sub .down {
-            color: #b33630;
-        }
-
-        .module-container {
-            display: none;
-        }
-        .module-container.active {
-            display: block;
-        }
-
-        .charts-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 24px;
-            margin-bottom: 32px;
-        }
-
-        .chart-card {
-            background: white;
-            border-radius: 20px;
-            padding: 20px 18px 18px;
-            border: 1px solid #eef3f9;
-            box-shadow: 0 4px 12px rgba(0, 20, 40, 0.02);
-        }
-
-        .chart-card h3 {
-            font-size: 16px;
-            font-weight: 600;
-            color: #1d3147;
-            margin-bottom: 14px;
-        }
-
-        .chart-card canvas {
-            max-height: 160px;
-            max-width: 100%;
-        }
-
-        .table-section {
-            background: white;
-            border-radius: 24px;
-            padding: 20px 20px 8px;
-            border: 1px solid #eef3f9;
-            box-shadow: 0 4px 12px rgba(0, 20, 40, 0.02);
-        }
-
-        .table-header {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 18px;
-            gap: 12px;
-        }
-
-        .table-header .left {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-
-        .table-header input {
-            padding: 10px 16px;
-            border: 1px solid #dce5ef;
-            border-radius: 40px;
-            font-size: 14px;
-            background: #f8fafd;
-            width: 220px;
-            outline: none;
-            transition: 0.2s;
-        }
-
-        .table-header input:focus {
-            border-color: #4facfe;
-            background: white;
-        }
-
-        .table-header .filters {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-
-        .filter-badge {
-            background: #f0f4fa;
-            padding: 6px 16px;
-            border-radius: 40px;
-            font-size: 13px;
-            font-weight: 500;
-            color: #1d3147;
-            cursor: pointer;
-            border: none;
-            font-family: 'Inter', sans-serif;
-            transition: 0.15s;
-        }
-
-        .filter-badge.active {
-            background: #4facfe;
-            color: white;
-        }
-
-        .filter-badge:hover:not(.active) {
-            background: #e6edf5;
-        }
-
-        .table-wrapper {
-            overflow-x: auto;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 14px;
-        }
-
-        th {
-            text-align: left;
-            padding: 14px 12px 12px 0;
-            color: #3f5570;
-            font-weight: 600;
-            border-bottom: 1px solid #e9eef4;
-            letter-spacing: 0.3px;
-            font-size: 12px;
-            text-transform: uppercase;
-        }
-
-        td {
-            padding: 14px 12px 14px 0;
-            border-bottom: 1px solid #f0f4fa;
-            color: #1d3147;
-        }
-
-        .status {
-            display: inline-block;
-            padding: 4px 14px;
-            border-radius: 40px;
-            font-size: 12px;
-            font-weight: 600;
-            letter-spacing: 0.3px;
-        }
-
-        .status-success {
-            background: #e0f5ec;
-            color: #0b7e4b;
-        }
-        .status-pending {
-            background: #fff3d6;
-            color: #b26b0a;
-        }
-        .status-info {
-            background: #dceaff;
-            color: #1e4b7c;
-        }
-        .status-error {
-            background: #ffe6e5;
-            color: #b33630;
-        }
-        .status-warning {
-            background: #fef3c7;
-            color: #92400e;
-        }
-        .status-underpaid {
-            background: #fef3c7;
-            color: #b26b0a;
-        }
-        .status-overpaid {
-            background: #dbeafe;
-            color: #1e40af;
-        }
-
-        .action-icons i {
-            margin: 0 6px;
-            color: #6f8aa8;
-            cursor: pointer;
-            font-size: 15px;
-            transition: 0.15s;
-        }
-
-        .action-icons i:hover {
-            color: #0b1a33;
-        }
-
-        .pagination {
-            display: flex;
-            justify-content: flex-end;
-            align-items: center;
-            gap: 6px;
-            padding: 18px 0 8px;
-            font-size: 14px;
-        }
-
-        .pagination span {
-            padding: 6px 14px;
-            border-radius: 30px;
-            background: #f0f4fa;
-            color: #1d3147;
-            font-weight: 500;
-            cursor: pointer;
-        }
-
-        .pagination .active-page {
-            background: #0b1a33;
-            color: white;
-        }
-
-        .toast-container {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            z-index: 99999;
-            max-width: 380px;
-            width: 100%;
-        }
-        .toast-item {
-            background: white;
-            border-radius: 12px;
-            padding: 14px 18px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
-            border-left: 4px solid #0b7e4b;
-            margin-bottom: 8px;
-            animation: slideInRight 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-        }
-        .toast-item .toast-title {
-            font-weight: 600;
-            font-size: 0.85rem;
-            color: #1f2937;
-        }
-        .toast-item .toast-msg {
-            font-size: 0.8rem;
-            color: #6b7280;
-        }
-        @keyframes slideInRight {
-            from {
-                opacity: 0;
-                transform: translateX(40px);
-            }
-            to {
-                opacity: 1;
-                transform: translateX(0);
-            }
-        }
-
-        .error-banner {
-            background: #fee2e2;
-            border: 1px solid #fca5a5;
-            border-radius: 12px;
-            padding: 16px 20px;
-            margin-bottom: 16px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            color: #991b1b;
-        }
-        .error-banner i {
-            font-size: 20px;
-        }
-        .error-banner .error-details {
-            font-size: 14px;
-            flex: 1;
-        }
-        .error-banner .error-details strong {
-            display: block;
-            font-size: 15px;
-        }
-
-        @media (max-width: 820px) {
-            .sidebar {
-                width: 200px;
-                padding: 20px 12px;
-            }
-            .main {
-                padding: 20px 16px;
-            }
-            .charts-row {
-                grid-template-columns: 1fr;
-            }
-            .stats-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
-            .table-header {
-                flex-direction: column;
-                align-items: stretch;
-            }
-            .table-header input {
-                width: 100%;
-            }
-            .topbar-actions .topbar-datetime .datetime-label {
-                display: none;
-            }
-        }
-
-        @media (max-width: 640px) {
-            .sidebar {
-                display: none;
-            }
-            .main {
-                padding: 16px;
-            }
-            .stats-grid {
-                grid-template-columns: 1fr 1fr;
-                gap: 12px;
-            }
-            .stat-number {
-                font-size: 26px;
-            }
-            .topbar h1 {
-                font-size: 1.2rem;
-            }
-            .topbar h1 small {
-                display: none;
-            }
-            .topbar-actions .topbar-datetime {
-                font-size: 0.65rem;
-                padding: 2px 10px;
-            }
-            .topbar-actions .topbar-datetime .datetime-label {
-                display: none;
-            }
-
-            .table-wrapper table,
-            .table-wrapper thead,
-            .table-wrapper tbody,
-            .table-wrapper th,
-            .table-wrapper td,
-            .table-wrapper tr {
-                display: block;
-            }
-            .table-wrapper thead {
-                display: none;
-            }
-            .table-wrapper tr {
-                border: 1px solid #e6edf5;
-                border-radius: 20px;
-                padding: 16px 14px;
-                margin-bottom: 16px;
-                background: white;
-                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.02);
-            }
-            .table-wrapper td {
-                display: flex;
-                justify-content: space-between;
-                padding: 8px 0;
-                border: none;
-                border-bottom: 1px solid #f0f4fa;
-                font-size: 14px;
-            }
-            .table-wrapper td:last-child {
-                border-bottom: none;
-            }
-            .table-wrapper td::before {
-                content: attr(data-label);
-                font-weight: 600;
-                color: #3f5570;
-                font-size: 12px;
-                text-transform: uppercase;
-            }
-            .action-icons {
-                justify-content: flex-end;
-            }
-        }
-
-        .text-muted {
-            color: #6d859e;
-        }
-        .mt-1 {
-            margin-top: 6px;
-        }
-        .loading-shimmer {
-            opacity: 0.6;
-            animation: pulse 1.5s ease-in-out infinite;
-        }
-        @keyframes pulse {
-            0% {
-                opacity: 0.6;
-            }
-            50% {
-                opacity: 1;
-            }
-            100% {
-                opacity: 0.6;
-            }
-        }
-
-        .btn-gold {
-            background: #d4a017;
-            color: #0a1a3a;
-            padding: 8px 20px;
-            border: none;
-            border-radius: 8px;
-            font-weight: 700;
-            font-size: 0.8rem;
-            transition: all 0.2s;
-            cursor: pointer;
-        }
-        .btn-gold:hover {
-            background: #fcd34d;
-            transform: translateY(-1px);
-        }
-
-        .drop-zone {
-            border: 2px dashed #d1d5db;
-            border-radius: 12px;
-            padding: 30px 20px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.2s;
-            background: #f9fafb;
-            margin-bottom: 16px;
-        }
-        .drop-zone:hover {
-            border-color: #4facfe;
-            background: rgba(79, 172, 254, 0.04);
-        }
-        .drop-zone .icon {
-            font-size: 36px;
-            color: #6b7f99;
-            margin-bottom: 8px;
-        }
-        .drop-zone .text {
-            color: #6b7f99;
-            font-size: 14px;
-        }
-        .drop-zone .text strong {
-            color: #0b1a33;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Dashboard — Kenyavault Academy</title>
+  <!-- Font & Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+  <!-- Supabase JS -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.min.js">
+  </script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background: #f4f7fc;
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* ========== LOGIN OVERLAY ========== */
+    .login-overlay {
+      position: fixed;
+      inset: 0;
+      background: linear-gradient(135deg, #0a1a3a 0%, #1a2a5a 50%, #2a3a6a 100%);
+      z-index: 99999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .login-overlay.active {
+      display: flex;
+    }
+    .login-box {
+      background: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 24px;
+      padding: 48px 40px;
+      max-width: 420px;
+      width: 100%;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    }
+    .login-box h2 {
+      color: #fff;
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .login-box .subtitle {
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 14px;
+      margin-bottom: 28px;
+    }
+    .login-box .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+    .login-box .brand-icon {
+      width: 48px;
+      height: 48px;
+      background: #d4a017;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 20px;
+      color: #0a1a3a;
+    }
+    .login-box .brand-text {
+      color: #fff;
+      font-size: 22px;
+      font-weight: 700;
+    }
+    .login-box .brand-text span {
+      color: #d4a017;
+    }
+    .login-box input {
+      width: 100%;
+      padding: 14px 18px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      color: #fff;
+      font-size: 15px;
+      transition: 0.2s;
+      margin-bottom: 16px;
+    }
+    .login-box input::placeholder {
+      color: rgba(255, 255, 255, 0.4);
+    }
+    .login-box input:focus {
+      outline: none;
+      border-color: #d4a017;
+      box-shadow: 0 0 0 3px rgba(212, 160, 23, 0.2);
+    }
+    .login-box .login-btn {
+      width: 100%;
+      padding: 14px;
+      background: #d4a017;
+      border: none;
+      border-radius: 12px;
+      color: #0a1a3a;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    .login-box .login-btn:hover {
+      background: #fcd34d;
+      transform: translateY(-1px);
+    }
+    .login-box .login-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .login-box .error-msg {
+      color: #f87171;
+      font-size: 14px;
+      margin-bottom: 12px;
+      text-align: center;
+      background: rgba(220, 38, 38, 0.15);
+      padding: 8px 12px;
+      border-radius: 8px;
+    }
+    .login-box .theme-toggle {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: rgba(255, 255, 255, 0.1);
+      border: none;
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 18px;
+    }
+
+    /* ========== SIDEBAR ========== */
+    .sidebar {
+      width: 260px;
+      background: #0b1a33;
+      color: #e6edf5;
+      display: flex;
+      flex-direction: column;
+      padding: 28px 16px 24px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      flex-shrink: 0;
+      box-shadow: 2px 0 12px rgba(0, 0, 0, 0.06);
+    }
+
+    .sidebar-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 32px;
+      padding-left: 6px;
+    }
+
+    .sidebar-brand i {
+      font-size: 28px;
+      color: #4facfe;
+    }
+
+    .sidebar-brand span {
+      font-weight: 600;
+      font-size: 20px;
+      letter-spacing: -0.3px;
+      color: white;
+    }
+
+    .sidebar-nav {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      flex: 1;
+    }
+
+    .sidebar-nav a {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 12px 16px;
+      border-radius: 12px;
+      color: #b6c9e0;
+      text-decoration: none;
+      font-size: 15px;
+      font-weight: 450;
+      transition: 0.2s;
+      cursor: pointer;
+    }
+
+    .sidebar-nav a i {
+      width: 20px;
+      font-size: 16px;
+      text-align: center;
+    }
+
+    .sidebar-nav a:hover {
+      background: #1f3450;
+      color: white;
+    }
+
+    .sidebar-nav a.active {
+      background: #1f3450;
+      color: white;
+      font-weight: 500;
+      box-shadow: inset 4px 0 0 #4facfe;
+    }
+
+    .sidebar-nav a .badge {
+      margin-left: auto;
+      background: rgba(212, 160, 23, 0.2);
+      color: #f5d76e;
+      font-size: 0.6rem;
+      padding: 2px 10px;
+      border-radius: 40px;
+      font-weight: 600;
+    }
+
+    .sidebar-nav a .badge.danger {
+      background: rgba(220, 38, 38, 0.2);
+      color: #f87171;
+    }
+
+    .sidebar-nav .logout {
+      margin-top: 20px;
+      border-top: 1px solid #223a5a;
+      padding-top: 18px;
+    }
+
+    /* ========== MAIN ========== */
+    .main {
+      flex: 1;
+      padding: 24px 32px 40px;
+      overflow-x: auto;
+    }
+
+    /* header */
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 28px;
+    }
+
+    .topbar h1 {
+      font-size: 26px;
+      font-weight: 600;
+      color: #0b1a33;
+      letter-spacing: -0.4px;
+    }
+    .topbar h1 small {
+      font-weight: 400;
+      font-size: 0.9rem;
+      color: #6b7f99;
+      margin-left: 10px;
+    }
+
+    .topbar-actions {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+    }
+
+    .topbar-actions .live-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: #0b7e4b;
+      background: #e0f5ec;
+      padding: 4px 14px;
+      border-radius: 40px;
+    }
+
+    .topbar-actions .live-badge .dot {
+      width: 7px;
+      height: 7px;
+      background: #0b7e4b;
+      border-radius: 50%;
+      animation: pulse-dot 2s infinite;
+    }
+
+    .topbar-actions .topbar-datetime {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: #4a5f7a;
+      background: #f0f4fa;
+      padding: 4px 14px;
+      border-radius: 40px;
+      border: 1px solid #e6edf5;
+      white-space: nowrap;
+    }
+
+    .topbar-actions .topbar-datetime i {
+      font-size: 0.8rem;
+      color: #6b7f99;
+    }
+
+    .topbar-actions i {
+      font-size: 20px;
+      color: #3f5570;
+      cursor: default;
+    }
+
+    .topbar-actions .avatar {
+      width: 40px;
+      height: 40px;
+      background: #0b1a33;
+      border-radius: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 600;
+    }
+
+    @keyframes pulse-dot {
+      0%,
+      100% {
+        opacity: 1;
+      }
+      50% {
+        opacity: 0.3;
+      }
+    }
+
+    /* ========== STATS CARDS ========== */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 20px;
+      margin-bottom: 32px;
+    }
+
+    .stat-card {
+      background: white;
+      border-radius: 20px;
+      padding: 20px 16px;
+      box-shadow: 0 4px 12px rgba(0, 20, 40, 0.04);
+      transition: 0.2s;
+      border: 1px solid #eef3f9;
+    }
+
+    .stat-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 24px rgba(0, 20, 40, 0.06);
+    }
+
+    .stat-label {
+      font-size: 14px;
+      font-weight: 500;
+      color: #5d738b;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .stat-number {
+      font-size: 32px;
+      font-weight: 700;
+      color: #0b1a33;
+      letter-spacing: -0.5px;
+    }
+
+    .stat-sub {
+      font-size: 13px;
+      color: #6d859e;
+      margin-top: 6px;
+    }
+
+    .stat-sub .up {
+      color: #0b7e4b;
+    }
+    .stat-sub .down {
+      color: #b33630;
+    }
+
+    /* ========== MODULE CONTAINERS ========== */
+    .module-container {
+      display: none;
+    }
+    .module-container.active {
+      display: block;
+    }
+
+    /* ========== CHARTS ROW ========== */
+    .charts-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin-bottom: 32px;
+    }
+
+    .chart-card {
+      background: white;
+      border-radius: 20px;
+      padding: 20px 18px 18px;
+      border: 1px solid #eef3f9;
+      box-shadow: 0 4px 12px rgba(0, 20, 40, 0.02);
+    }
+
+    .chart-card h3 {
+      font-size: 16px;
+      font-weight: 600;
+      color: #1d3147;
+      margin-bottom: 14px;
+    }
+
+    .chart-card canvas {
+      max-height: 160px;
+      max-width: 100%;
+    }
+
+    /* ========== TABLE ========== */
+    .table-section {
+      background: white;
+      border-radius: 24px;
+      padding: 20px 20px 8px;
+      border: 1px solid #eef3f9;
+      box-shadow: 0 4px 12px rgba(0, 20, 40, 0.02);
+    }
+
+    .table-header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 18px;
+      gap: 12px;
+    }
+
+    .table-header .left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .table-header input {
+      padding: 10px 16px;
+      border: 1px solid #dce5ef;
+      border-radius: 40px;
+      font-size: 14px;
+      background: #f8fafd;
+      width: 220px;
+      outline: none;
+      transition: 0.2s;
+    }
+
+    .table-header input:focus {
+      border-color: #4facfe;
+      background: white;
+    }
+
+    .table-header .filters {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .filter-badge {
+      background: #f0f4fa;
+      padding: 6px 16px;
+      border-radius: 40px;
+      font-size: 13px;
+      font-weight: 500;
+      color: #1d3147;
+      cursor: pointer;
+      border: none;
+      font-family: 'Inter', sans-serif;
+      transition: 0.15s;
+    }
+
+    .filter-badge.active {
+      background: #4facfe;
+      color: white;
+    }
+
+    .filter-badge:hover:not(.active) {
+      background: #e6edf5;
+    }
+
+    .table-wrapper {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    th {
+      text-align: left;
+      padding: 14px 12px 12px 0;
+      color: #3f5570;
+      font-weight: 600;
+      border-bottom: 1px solid #e9eef4;
+      letter-spacing: 0.3px;
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    td {
+      padding: 14px 12px 14px 0;
+      border-bottom: 1px solid #f0f4fa;
+      color: #1d3147;
+    }
+
+    .status {
+      display: inline-block;
+      padding: 4px 14px;
+      border-radius: 40px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+
+    .status-success {
+      background: #e0f5ec;
+      color: #0b7e4b;
+    }
+    .status-pending {
+      background: #fff3d6;
+      color: #b26b0a;
+    }
+    .status-info {
+      background: #dceaff;
+      color: #1e4b7c;
+    }
+    .status-error {
+      background: #ffe6e5;
+      color: #b33630;
+    }
+    .status-warning {
+      background: #fef3c7;
+      color: #92400e;
+    }
+    .status-underpaid {
+      background: #fef3c7;
+      color: #b26b0a;
+    }
+    .status-overpaid {
+      background: #dbeafe;
+      color: #1e40af;
+    }
+
+    .action-icons i {
+      margin: 0 6px;
+      color: #6f8aa8;
+      cursor: pointer;
+      font-size: 15px;
+      transition: 0.15s;
+    }
+
+    .action-icons i:hover {
+      color: #0b1a33;
+    }
+
+    .pagination {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 6px;
+      padding: 18px 0 8px;
+      font-size: 14px;
+    }
+
+    .pagination span {
+      padding: 6px 14px;
+      border-radius: 30px;
+      background: #f0f4fa;
+      color: #1d3147;
+      font-weight: 500;
+      cursor: pointer;
+    }
+
+    .pagination .active-page {
+      background: #0b1a33;
+      color: white;
+    }
+
+    /* ========== TOAST ========== */
+    .toast-container {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 99999;
+      max-width: 380px;
+      width: 100%;
+    }
+    .toast-item {
+      background: white;
+      border-radius: 12px;
+      padding: 14px 18px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+      border-left: 4px solid #0b7e4b;
+      margin-bottom: 8px;
+      animation: slideInRight 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .toast-item .toast-title {
+      font-weight: 600;
+      font-size: 0.85rem;
+      color: #1f2937;
+    }
+    .toast-item .toast-msg {
+      font-size: 0.8rem;
+      color: #6b7280;
+    }
+    @keyframes slideInRight {
+      from {
+        opacity: 0;
+        transform: translateX(40px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
+    /* ========== DROP ZONE ========== */
+    .drop-zone {
+      border: 2px dashed #d1d5db;
+      border-radius: 12px;
+      padding: 30px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: #f9fafb;
+      margin-bottom: 16px;
+    }
+    .drop-zone:hover {
+      border-color: #4facfe;
+      background: rgba(79, 172, 254, 0.04);
+    }
+    .drop-zone .icon {
+      font-size: 36px;
+      color: #6b7f99;
+      margin-bottom: 8px;
+    }
+    .drop-zone .text {
+      color: #6b7f99;
+      font-size: 14px;
+    }
+    .drop-zone .text strong {
+      color: #0b1a33;
+    }
+
+    /* ========== SETTINGS ========== */
+    .settings-section {
+      padding: 16px 0;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .settings-section:last-child {
+      border-bottom: none;
+    }
+    .settings-section .section-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #0b1a33;
+      margin-bottom: 12px;
+    }
+    .settings-section .setting-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 8px 0;
+    }
+    .settings-section .setting-row label {
+      min-width: 140px;
+      font-size: 14px;
+      color: #4a5f7a;
+    }
+    .settings-section .setting-row input,
+    .settings-section .setting-row select {
+      flex: 1;
+      padding: 10px 14px;
+      border: 1px solid #dce5ef;
+      border-radius: 8px;
+      font-size: 14px;
+      background: #f8fafd;
+      outline: none;
+      transition: 0.2s;
+      max-width: 300px;
+    }
+    .settings-section .setting-row input:focus,
+    .settings-section .setting-row select:focus {
+      border-color: #4facfe;
+      background: white;
+    }
+    .settings-section .setting-row input[type="checkbox"] {
+      width: 20px;
+      height: 20px;
+      accent-color: #4facfe;
+      flex: 0;
+    }
+
+    /* ========== WITHDRAWALS ========== */
+    .withdrawal-card {
+      background: #f8fafd;
+      border-radius: 12px;
+      padding: 16px 20px;
+      border: 1px solid #eef3f9;
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .withdrawal-card .info {
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+    .withdrawal-card .info .label {
+      font-size: 12px;
+      color: #6b7f99;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+    .withdrawal-card .info .value {
+      font-size: 15px;
+      font-weight: 600;
+      color: #0b1a33;
+    }
+    .withdrawal-card .actions {
+      display: flex;
+      gap: 8px;
+    }
+    .withdrawal-card .actions button {
+      padding: 6px 16px;
+      border-radius: 8px;
+      border: none;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      transition: 0.15s;
+    }
+    .withdrawal-card .actions .approve {
+      background: #e0f5ec;
+      color: #0b7e4b;
+    }
+    .withdrawal-card .actions .approve:hover {
+      background: #b8e6d4;
+    }
+    .withdrawal-card .actions .reject {
+      background: #ffe6e5;
+      color: #b33630;
+    }
+    .withdrawal-card .actions .reject:hover {
+      background: #fcc;
+    }
+
+    /* ========== CURRENCY TOGGLE ========== */
+    .currency-toggle {
+      display: flex;
+      gap: 4px;
+      background: #f0f4fa;
+      border-radius: 8px;
+      padding: 4px;
+      border: 1px solid #e6edf5;
+    }
+    .currency-toggle button {
+      padding: 4px 12px;
+      border-radius: 6px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: #6b7f99;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .currency-toggle button:hover {
+      color: #1f2937;
+    }
+    .currency-toggle button.active {
+      background: #d4a017;
+      color: #0a1a3a;
+    }
+    .dark .currency-toggle {
+      background: #1f2937;
+      border-color: #374151;
+    }
+    .dark .currency-toggle button {
+      color: #9ca3af;
+    }
+    .dark .currency-toggle button:hover {
+      color: #f3f4f6;
+    }
+    .dark .currency-toggle button.active {
+      background: #d4a017;
+      color: #0a1a3a;
+    }
+
+    /* ========== RESPONSIVE ========== */
+    @media (max-width: 820px) {
+      .sidebar {
+        width: 200px;
+        padding: 20px 12px;
+      }
+      .main {
+        padding: 20px 16px;
+      }
+      .charts-row {
+        grid-template-columns: 1fr;
+      }
+      .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .table-header {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .table-header input {
+        width: 100%;
+      }
+      .topbar-actions .topbar-datetime .datetime-label {
+        display: none;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .sidebar {
+        display: none;
+      }
+      .main {
+        padding: 16px;
+      }
+      .stats-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      .stat-number {
+        font-size: 26px;
+      }
+      .topbar h1 {
+        font-size: 1.2rem;
+      }
+      .topbar h1 small {
+        display: none;
+      }
+      .topbar-actions .topbar-datetime {
+        font-size: 0.65rem;
+        padding: 2px 10px;
+      }
+      .topbar-actions .topbar-datetime .datetime-label {
+        display: none;
+      }
+
+      .table-wrapper table,
+      .table-wrapper thead,
+      .table-wrapper tbody,
+      .table-wrapper th,
+      .table-wrapper td,
+      .table-wrapper tr {
+        display: block;
+      }
+      .table-wrapper thead {
+        display: none;
+      }
+      .table-wrapper tr {
+        border: 1px solid #e6edf5;
+        border-radius: 20px;
+        padding: 16px 14px;
+        margin-bottom: 16px;
+        background: white;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.02);
+      }
+      .table-wrapper td {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px 0;
+        border: none;
+        border-bottom: 1px solid #f0f4fa;
+        font-size: 14px;
+      }
+      .table-wrapper td:last-child {
+        border-bottom: none;
+      }
+      .table-wrapper td::before {
+        content: attr(data-label);
+        font-weight: 600;
+        color: #3f5570;
+        font-size: 12px;
+        text-transform: uppercase;
+      }
+      .action-icons {
+        justify-content: flex-end;
+      }
+      .withdrawal-card {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .withdrawal-card .info {
+        flex-direction: column;
+        gap: 8px;
+      }
+      .settings-section .setting-row {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .settings-section .setting-row input,
+      .settings-section .setting-row select {
+        max-width: 100%;
+      }
+    }
+
+    .text-muted {
+      color: #6d859e;
+    }
+    .mt-1 {
+      margin-top: 6px;
+    }
+    .loading-shimmer {
+      opacity: 0.6;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0% {
+        opacity: 0.6;
+      }
+      50% {
+        opacity: 1;
+      }
+      100% {
+        opacity: 0.6;
+      }
+    }
+
+    .btn-gold {
+      background: #d4a017;
+      color: #0a1a3a;
+      padding: 8px 20px;
+      border: none;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 0.8rem;
+      transition: all 0.2s;
+      cursor: pointer;
+    }
+    .btn-gold:hover {
+      background: #fcd34d;
+      transform: translateY(-1px);
+    }
+    .btn-sm {
+      padding: 4px 12px;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 0.7rem;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-sm.green {
+      background: #dcfce7;
+      color: #16a34a;
+    }
+    .btn-sm.red {
+      background: #fee2e2;
+      color: #dc2626;
+    }
+    .btn-sm.blue {
+      background: #dbeafe;
+      color: #2563eb;
+    }
+    .btn-sm:hover {
+      transform: translateY(-1px);
+    }
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      background: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-overlay.open {
+      display: flex;
+    }
+    .modal-box {
+      background: white;
+      border-radius: 16px;
+      padding: 24px;
+      max-width: 600px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    .modal-box h3 {
+      font-size: 20px;
+      font-weight: 700;
+      color: #0b1a33;
+      margin-bottom: 16px;
+    }
+    .modal-box input,
+    .modal-box select,
+    .modal-box textarea {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid #dce5ef;
+      border-radius: 8px;
+      font-size: 14px;
+      margin-bottom: 12px;
+      font-family: 'Inter', sans-serif;
+    }
+    .modal-box input:focus,
+    .modal-box select:focus,
+    .modal-box textarea:focus {
+      outline: none;
+      border-color: #4facfe;
+    }
+    .modal-box .modal-actions {
+      display: flex;
+      gap: 12px;
+      margin-top: 8px;
+    }
+    .modal-box .modal-actions button {
+      padding: 10px 24px;
+      border-radius: 8px;
+      border: none;
+      font-weight: 600;
+      cursor: pointer;
+      transition: 0.15s;
+    }
+    .modal-box .modal-actions .primary {
+      background: #d4a017;
+      color: #0a1a3a;
+    }
+    .modal-box .modal-actions .primary:hover {
+      background: #fcd34d;
+    }
+    .modal-box .modal-actions .secondary {
+      background: #f0f4fa;
+      color: #1d3147;
+    }
+    .modal-box .modal-actions .secondary:hover {
+      background: #e6edf5;
+    }
+
+    /* Currency symbol in table */
+    .currency-symbol {
+      font-weight: 600;
+      color: #0b1a33;
+    }
+    .dark .currency-symbol {
+      color: #f3f4f6;
+    }
+  </style>
 </head>
 <body>
-    <!-- LOGIN OVERLAY -->
-    <div class="login-overlay active" id="loginOverlay">
-        <div class="login-box">
-            <div class="brand">
-                <div class="brand-icon">KV</div>
-                <div class="brand-text">Kenya<span>Vault</span></div>
-            </div>
-            <h2>Admin Login</h2>
-            <p class="subtitle">Sign in to manage your platform</p>
-            <div id="loginError" class="error-msg" style="display:none;"></div>
-            <form id="loginForm" onsubmit="handleLogin(event)">
-                <input type="text" id="loginEmail" placeholder="Email / Username" value="adminnexalearn@gmail.com" required />
-                <input type="password" id="loginPassword" placeholder="Password" value="KenyaVault2026" required />
-                <button type="submit" class="login-btn" id="loginBtn">🔑 Sign In</button>
-            </form>
+  <!-- LOGIN OVERLAY -->
+  <div class="login-overlay active" id="loginOverlay">
+    <div class="login-box">
+      <button class="theme-toggle" onclick="toggleTheme()">🌙</button>
+      <div class="brand">
+        <div class="brand-icon">KV</div>
+        <div class="brand-text">Kenya<span>Vault</span></div>
+      </div>
+      <h2>Admin Login</h2>
+      <p class="subtitle">Sign in to manage your platform</p>
+      <div id="loginError" class="error-msg" style="display:none;"></div>
+      <form id="loginForm" onsubmit="handleLogin(event)">
+        <input type="text" id="loginEmail" placeholder="Email / Username" value="adminnexalearn@gmail.com" required />
+        <input type="password" id="loginPassword" placeholder="Password" value="KenyaVault2026" required />
+        <button type="submit" class="login-btn" id="loginBtn">🔑 Sign In</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <i class="fas fa-shield-alt"></i>
+      <span>Kenyavault</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="#" class="active" data-module="dashboard"><i class="fas fa-th-large"></i> Dashboard</a>
+      <a href="#" data-module="orders"><i class="fas fa-shopping-cart"></i> Orders <span class="badge danger" id="pendingBadge">0</span></a>
+      <a href="#" data-module="resources"><i class="fas fa-folder-open"></i> Resources</a>
+      <a href="#" data-module="tutors"><i class="fas fa-chalkboard-teacher"></i> Tutors</a>
+      <a href="#" data-module="classes"><i class="fas fa-video"></i> Classes</a>
+      <a href="#" data-module="categories"><i class="fas fa-tags"></i> Categories</a>
+      <a href="#" data-module="subjects"><i class="fas fa-book-open"></i> Subjects</a>
+      <a href="#" data-module="withdrawals"><i class="fas fa-hand-holding-usd"></i> Withdrawals <span class="badge danger" id="withdrawalBadge">0</span></a>
+      <a href="#" data-module="settings"><i class="fas fa-cog"></i> Settings</a>
+      <a href="#" class="logout" id="logoutBtn"><i class="fas fa-sign-out-alt"></i> Logout</a>
+    </nav>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main">
+    <!-- top bar -->
+    <div class="topbar">
+      <h1 id="pageTitle">Dashboard <small>overview</small></h1>
+      <div class="topbar-actions">
+        <div class="currency-toggle" id="currencyToggle">
+          <button class="active" data-currency="KES">KES</button>
+          <button data-currency="USD">USD</button>
+          <button data-currency="EUR">EUR</button>
         </div>
+        <div class="topbar-datetime">
+          <i class="fas fa-calendar-alt"></i>
+          <span class="datetime-label" id="dateDisplay"></span>
+          <span style="margin:0 4px;opacity:0.3;">|</span>
+          <i class="fas fa-clock"></i>
+          <span id="timeDisplay"></span>
+        </div>
+        <span class="live-badge"><span class="dot"></span> Live</span>
+        <i class="fas fa-bell"></i>
+        <i class="fas fa-envelope"></i>
+        <div class="avatar" id="userAvatar">AK</div>
+      </div>
     </div>
 
-    <!-- SIDEBAR -->
-    <aside class="sidebar" id="sidebar">
-        <div class="sidebar-brand">
-            <i class="fas fa-shield-alt"></i>
-            <span>Kenyavault</span>
+    <!-- DASHBOARD MODULE -->
+    <div class="module-container active" id="module-dashboard">
+      <div class="stats-grid" id="statsGrid">
+        <div class="stat-card loading-shimmer"><div class="stat-label">Total Orders</div><div class="stat-number" id="statOrders">—</div><div class="stat-sub">Loading...</div></div>
+        <div class="stat-card loading-shimmer"><div class="stat-label">Paid</div><div class="stat-number" id="statPaid">—</div><div class="stat-sub">Loading...</div></div>
+        <div class="stat-card loading-shimmer"><div class="stat-label">Pending</div><div class="stat-number" id="statPending">—</div><div class="stat-sub">Loading...</div></div>
+        <div class="stat-card loading-shimmer"><div class="stat-label">Failed</div><div class="stat-number" id="statFailed">—</div><div class="stat-sub">Loading...</div></div>
+        <div class="stat-card loading-shimmer"><div class="stat-label">Revenue</div><div class="stat-number" id="statRevenue">—</div><div class="stat-sub">Loading...</div></div>
+        <div class="stat-card loading-shimmer"><div class="stat-label">Total Users</div><div class="stat-number" id="statUsers">—</div><div class="stat-sub">Loading...</div></div>
+      </div>
+
+      <div class="charts-row">
+        <div class="chart-card"><h3>Sales (weekly)</h3><canvas id="salesChart" width="200" height="120"></canvas></div>
+        <div class="chart-card"><h3>Payment Status Distribution</h3><canvas id="paymentChart" width="200" height="120"></canvas></div>
+      </div>
+
+      <div class="table-section">
+        <div class="table-header">
+          <div class="left">
+            <input type="text" placeholder="Search orders..." id="tableSearch" />
+            <div class="filters">
+              <span class="filter-badge active" data-filter="all">All</span>
+              <span class="filter-badge" data-filter="paid">Paid</span>
+              <span class="filter-badge" data-filter="pending">Pending</span>
+              <span class="filter-badge" data-filter="failed">Failed</span>
+              <span class="filter-badge" data-filter="underpaid">Underpaid</span>
+              <span class="filter-badge" data-filter="overpaid">Overpaid</span>
+            </div>
+          </div>
+          <div><span class="filter-badge" id="exportBtn"><i class="fas fa-download"></i> Export</span></div>
         </div>
-        <nav class="sidebar-nav">
-            <a href="#" class="active" data-module="dashboard"><i class="fas fa-th-large"></i> Dashboard</a>
-            <a href="#" data-module="orders"><i class="fas fa-shopping-cart"></i> Orders <span class="badge danger" id="pendingBadge">0</span></a>
-            <a href="#" data-module="resources"><i class="fas fa-folder-open"></i> Resources</a>
-            <a href="#" data-module="tutors"><i class="fas fa-chalkboard-teacher"></i> Tutors</a>
-            <a href="#" data-module="classes"><i class="fas fa-video"></i> Classes</a>
-            <a href="#" data-module="settings"><i class="fas fa-cog"></i> Settings</a>
-            <a href="#" class="logout" id="logoutBtn"><i class="fas fa-sign-out-alt"></i> Logout</a>
-        </nav>
-    </aside>
-
-    <!-- MAIN -->
-    <main class="main">
-        <div class="topbar">
-            <h1 id="pageTitle">Dashboard <small>overview</small></h1>
-            <div class="topbar-actions">
-                <div class="topbar-datetime">
-                    <i class="fas fa-calendar-alt"></i>
-                    <span class="datetime-label" id="dateDisplay"></span>
-                    <span style="margin:0 4px;opacity:0.3;">|</span>
-                    <i class="fas fa-clock"></i>
-                    <span id="timeDisplay"></span>
-                </div>
-                <span class="live-badge"><span class="dot"></span> Live</span>
-                <i class="fas fa-bell"></i>
-                <i class="fas fa-envelope"></i>
-                <div class="avatar" id="userAvatar">AK</div>
-            </div>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Order Ref</th><th>Customer</th><th>Amount</th><th>Paid</th><th>Status</th><th>Payment Method</th><th>Actions</th></tr></thead>
+            <tbody id="tableBody"><tr><td colspan="7" style="text-align:center;padding:30px;color:#6d859e;">Loading...</td></tr></tbody>
+          </table>
         </div>
-
-        <!-- DASHBOARD MODULE -->
-        <div class="module-container active" id="module-dashboard">
-            <div class="stats-grid" id="statsGrid">
-                <div class="stat-card loading-shimmer"><div class="stat-label">Total Orders</div><div class="stat-number" id="statOrders">—</div><div class="stat-sub">Loading...</div></div>
-                <div class="stat-card loading-shimmer"><div class="stat-label">Paid</div><div class="stat-number" id="statPaid">—</div><div class="stat-sub">Loading...</div></div>
-                <div class="stat-card loading-shimmer"><div class="stat-label">Pending</div><div class="stat-number" id="statPending">—</div><div class="stat-sub">Loading...</div></div>
-                <div class="stat-card loading-shimmer"><div class="stat-label">Failed</div><div class="stat-number" id="statFailed">—</div><div class="stat-sub">Loading...</div></div>
-                <div class="stat-card loading-shimmer"><div class="stat-label">Revenue</div><div class="stat-number" id="statRevenue">—</div><div class="stat-sub">Loading...</div></div>
-                <div class="stat-card loading-shimmer"><div class="stat-label">Total Users</div><div class="stat-number" id="statUsers">—</div><div class="stat-sub">Loading...</div></div>
-            </div>
-
-            <div class="charts-row">
-                <div class="chart-card"><h3>Sales (weekly)</h3><canvas id="salesChart" width="200" height="120"></canvas></div>
-                <div class="chart-card"><h3>Payment Status Distribution</h3><canvas id="paymentChart" width="200" height="120"></canvas></div>
-            </div>
-
-            <div class="table-section">
-                <div class="table-header">
-                    <div class="left">
-                        <input type="text" placeholder="Search orders..." id="tableSearch" />
-                        <div class="filters">
-                            <span class="filter-badge active" data-filter="all">All</span>
-                            <span class="filter-badge" data-filter="paid">Paid</span>
-                            <span class="filter-badge" data-filter="pending">Pending</span>
-                            <span class="filter-badge" data-filter="failed">Failed</span>
-                            <span class="filter-badge" data-filter="underpaid">Underpaid</span>
-                            <span class="filter-badge" data-filter="overpaid">Overpaid</span>
-                        </div>
-                    </div>
-                    <div><span class="filter-badge" id="exportBtn"><i class="fas fa-download"></i> Export</span></div>
-                </div>
-                <div class="table-wrapper">
-                    <table>
-                        <thead><tr><th>Order Ref</th><th>Customer</th><th>Amount</th><th>Paid</th><th>Status</th><th>Payment Method</th><th>Actions</th></tr></thead>
-                        <tbody id="tableBody"><tr><td colspan="7" style="text-align:center;padding:30px;color:#6d859e;">Loading...</td></tr></tbody>
-                    </table>
-                </div>
-                <div class="pagination">
-                    <span id="prevPage"><i class="fas fa-chevron-left"></i></span>
-                    <span class="active-page" data-page="1">1</span>
-                    <span data-page="2">2</span>
-                    <span data-page="3">3</span>
-                    <span>…</span>
-                    <span data-page="8">8</span>
-                    <span id="nextPage"><i class="fas fa-chevron-right"></i></span>
-                </div>
-            </div>
+        <div class="pagination">
+          <span id="prevPage"><i class="fas fa-chevron-left"></i></span>
+          <span class="active-page" data-page="1">1</span>
+          <span data-page="2">2</span>
+          <span data-page="3">3</span>
+          <span>…</span>
+          <span data-page="8">8</span>
+          <span id="nextPage"><i class="fas fa-chevron-right"></i></span>
         </div>
+      </div>
+    </div>
 
-        <!-- ORDERS MODULE -->
-        <div class="module-container" id="module-orders">
-            <div class="table-section">
-                <div class="table-header">
-                    <div class="left">
-                        <input type="text" placeholder="Search orders..." id="ordersSearch" />
-                        <div class="filters">
-                            <span class="filter-badge active" data-filter="all">All</span>
-                            <span class="filter-badge" data-filter="paid">Paid</span>
-                            <span class="filter-badge" data-filter="pending">Pending</span>
-                            <span class="filter-badge" data-filter="failed">Failed</span>
-                            <span class="filter-badge" data-filter="underpaid">Underpaid</span>
-                            <span class="filter-badge" data-filter="overpaid">Overpaid</span>
-                        </div>
-                    </div>
-                    <div><span class="filter-badge" id="ordersExportBtn"><i class="fas fa-download"></i> Export</span></div>
-                </div>
-                <div class="table-wrapper">
-                    <table>
-                        <thead><tr><th>Order Ref</th><th>Customer</th><th>Amount</th><th>Paid</th><th>Status</th><th>Payment Method</th><th>Actions</th></tr></thead>
-                        <tbody id="ordersTableBody"><tr><td colspan="7" style="text-align:center;padding:30px;color:#6d859e;">Loading...</td></tr></tbody>
-                    </table>
-                </div>
+    <!-- ORDERS MODULE -->
+    <div class="module-container" id="module-orders">
+      <div style="background:white;border-radius:20px;padding:20px;border:1px solid #eef3f9;">
+        <div class="table-header">
+          <div class="left">
+            <input type="text" placeholder="Search orders..." id="ordersSearch" />
+            <div class="filters">
+              <span class="filter-badge active" data-filter="all">All</span>
+              <span class="filter-badge" data-filter="paid">Paid</span>
+              <span class="filter-badge" data-filter="pending">Pending</span>
+              <span class="filter-badge" data-filter="failed">Failed</span>
+              <span class="filter-badge" data-filter="underpaid">Underpaid</span>
+              <span class="filter-badge" data-filter="overpaid">Overpaid</span>
             </div>
+          </div>
+          <div><span class="filter-badge" id="ordersExportBtn"><i class="fas fa-download"></i> Export</span></div>
         </div>
-
-        <!-- RESOURCES MODULE -->
-        <div class="module-container" id="module-resources">
-            <div style="background:white;border-radius:20px;padding:24px;border:1px solid #eef3f9;margin-bottom:24px;">
-                <h3 style="font-size:18px;font-weight:600;margin-bottom:16px;">📤 Upload New Resource</h3>
-                <form id="uploadForm">
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
-                        <input type="text" id="resTitle" placeholder="Title *" required />
-                        <select id="resSubject" required><option value="">Subject</option>
-                            <option value="mathematics">Mathematics</option><option value="english">English</option>
-                            <option value="kiswahili">Kiswahili</option><option value="science">Integrated Science</option>
-                            <option value="social-studies">Social Studies</option><option value="creative-arts">Creative Arts</option>
-                            <option value="business-studies">Business Studies</option><option value="religious-education">Religious Education</option>
-                            <option value="computer-studies">Computer Studies</option><option value="chemistry">Chemistry</option>
-                            <option value="physics">Physics</option><option value="Biology">Biology</option><option value="geography">Geography</option>
-                            <option value="History-citizenship">History & Citizenship</option><option value="pretechnical-studies">Pretechnical Studies</option>
-                            <option value="tvet">TVET</option><option value="college">College</option><option value="university">University</option>
-                        </select>
-                        <select id="resLevel" required><option value="">Level</option>
-                            <option value="pp1">PP1</option><option value="pp2">PP2</option><option value="grade-1">Grade 1</option>
-                            <option value="grade-2">Grade 2</option><option value="grade-3">Grade 3</option><option value="grade-4">Grade 4</option>
-                            <option value="grade-5">Grade 5</option><option value="grade-6">Grade 6</option><option value="grade-7">Grade 7</option>
-                            <option value="grade-8">Grade 8</option><option value="grade-9">Grade 9</option><option value="grade-10">Grade 10</option>
-                            <option value="grade-11">Grade 11</option><option value="grade-12">Grade 12</option><option value="form-1">Form 1</option>
-                            <option value="form-2">Form 2</option><option value="form-3">Form 3</option><option value="form-4">Form 4</option>
-                            <option value="college">College</option><option value="tvet">TVET</option><option value="university">University</option>
-                        </select>
-                        <select id="resType"><option value="lesson-plan">Lesson Plan</option><option value="scheme-work">Scheme of Work</option>
-                            <option value="revision-paper">Revision Paper</option><option value="cbc-portfolio">CBC Portfolio</option>
-                            <option value="exam-paper">Exam Paper</option>
-                        </select>
-                        <input type="number" id="resPrice" placeholder="Price (KES)" min="0" value="0" />
-                        <select id="resCurriculum"><option value="cbc">CBC</option><option value="8-4-4">8-4-4</option></select>
-                    </div>
-                    <div class="drop-zone" onclick="document.getElementById('fileInput').click()">
-                        <input type="file" id="fileInput" style="display:none;" accept=".pdf,.docx,.pptx" />
-                        <div class="icon">📄</div>
-                        <div class="text" id="fileLabel">Click to upload or drag & drop <strong>PDF, DOCX, PPTX</strong></div>
-                    </div>
-                    <button type="submit" class="btn-gold">📤 Upload Resource</button>
-                </form>
-            </div>
-            <div style="background:white;border-radius:20px;padding:20px;border:1px solid #eef3f9;">
-                <h3 style="font-size:18px;font-weight:600;margin-bottom:16px;">📚 Resource Inventory</h3>
-                <div class="table-wrapper">
-                    <table>
-                        <thead><tr><th>Title</th><th>Subject</th><th>Level</th><th>Price</th><th>Status</th><th>Actions</th></tr></thead>
-                        <tbody id="resourcesTableBody"><tr><td colspan="6" style="text-align:center;padding:20px;color:#6d859e;">Loading...</td></tr></tbody>
-                    </table>
-                </div>
-            </div>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Order Ref</th><th>Customer</th><th>Amount</th><th>Paid</th><th>Status</th><th>Payment Method</th><th>Actions</th></tr></thead>
+            <tbody id="ordersTableBody"><tr><td colspan="7" style="text-align:center;padding:30px;color:#6d859e;">Loading...</td></tr></tbody>
+          </table>
         </div>
+      </div>
+    </div>
 
-        <!-- TUTORS MODULE -->
-        <div class="module-container" id="module-tutors">
-            <div style="background:white;border-radius:20px;padding:24px;border:1px solid #eef3f9;margin-bottom:24px;">
-                <h3 style="font-size:18px;font-weight:600;margin-bottom:16px;">🧑‍🏫 Add New Tutor</h3>
-                <form id="tutorForm" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-                    <input type="text" id="tutorName" placeholder="Full Name *" required />
-                    <input type="email" id="tutorEmail" placeholder="Email *" required />
-                    <input type="tel" id="tutorPhone" placeholder="Phone" />
-                    <select id="tutorSpecialization" required><option value="">Specialization *</option>
-                        <option value="mathematics">Mathematics</option><option value="english">English</option>
-                        <option value="kiswahili">Kiswahili</option><option value="science">Integrated Science</option>
-                        <option value="social-studies">Social Studies</option><option value="creative-arts">Creative Arts</option>
-                        <option value="business-studies">Business Studies</option><option value="religious-education">Religious Education</option>
-                        <option value="computer-studies">Computer Studies</option><option value="chemistry">Chemistry</option>
-                        <option value="physics">Physics</option><option value="Biology">Biology</option><option value="geography">Geography</option>
-                        <option value="History-citizenship">History & Citizenship</option><option value="pretechnical-studies">Pretechnical Studies</option>
-                        <option value="tvet">TVET</option><option value="college">College</option><option value="university">University</option>
-                    </select>
-                    <div style="grid-column:span 2;"><button type="submit" class="btn-gold">➕ Add Tutor</button></div>
-                </form>
-            </div>
-            <div style="background:white;border-radius:20px;padding:20px;border:1px solid #eef3f9;">
-                <h3 style="font-size:18px;font-weight:600;margin-bottom:16px;">📋 Tutor Roster</h3>
-                <div class="table-wrapper">
-                    <table>
-                        <thead><tr><th>Name</th><th>Email</th><th>Specialization</th><th>Status</th><th>Actions</th></tr></thead>
-                        <tbody id="tutorsTableBody"><tr><td colspan="5" style="text-align:center;padding:20px;color:#6d859e;">Loading...</td></tr></tbody>
-                    </table>
-                </div>
-            </div>
+    <!-- RESOURCES MODULE -->
+    <div class="module-container" id="module-resources">
+      <div style="background:white;border-radius:20px;padding:24px;border:1px solid #eef3f9;margin-bottom:24px;">
+        <h3 style="font-size:18px;font-weight:600;margin-bottom:16px;">📤 Upload New Resource</h3>
+        <form id="uploadForm">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+            <input type="text" id="resTitle" placeholder="Title *" required />
+            <select id="resSubject" required><option value="">Subject</option>
+              <option value="mathematics">Mathematics</option><option value="english">English</option>
+              <option value="kiswahili">Kiswahili</option><option value="science">Integrated Science</option>
+              <option value="social-studies">Social Studies</option><option value="creative-arts">Creative Arts</option>
+              <option value="business-studies">Business Studies</option><option value="religious-education">Religious Education</option>
+              <option value="computer-studies">Computer Studies</option><option value="chemistry">Chemistry</option>
+              <option value="physics">Physics</option><option value="Biology">Biology</option><option value="geography">Geography</option>
+              <option value="History-citizenship">History & Citizenship</option><option value="pretechnical-studies">Pretechnical Studies</option>
+              <option value="tvet">TVET</option><option value="college">College</option><option value="university">University</option>
+            </select>
+            <select id="resLevel" required><option value="">Level</option>
+              <option value="pp1">PP1</option><option value="pp2">PP2</option><option value="grade-1">Grade 1</option>
+              <option value="grade-2">Grade 2</option><option value="grade-3">Grade 3</option><option value="grade-4">Grade 4</option>
+              <option value="grade-5">Grade 5</option><option value="grade-6">Grade 6</option><option value="grade-7">Grade 7</option>
+              <option value="grade-8">Grade 8</option><option value="grade-9">Grade 9</option><option value="grade-10">Grade 10</option>
+              <option value="grade-11">Grade 11</option><option value="grade-12">Grade 12</option><option value="form-1">Form 1</option>
+              <option value="form-2">Form 2</option><option value="form-3">Form 3</option><option value="form-4">Form 4</option>
+              <option value="college">College</option><option value="tvet">TVET</option><option value="university">University</option>
+            </select>
+            <select id="resType"><option value="lesson-plan">Lesson Plan</option><option value="scheme-work">Scheme of Work</option>
+              <option value="revision-paper">Revision Paper</option><option value="cbc-portfolio">CBC Portfolio</option>
+              <option value="exam-paper">Exam Paper</option>
+            </select>
+            <input type="number" id="resPrice" placeholder="Price (KES)" min="0" value="0" />
+            <select id="resCurriculum"><option value="cbc">CBC</option><option value="8-4-4">8-4-4</option></select>
+          </div>
+          <div class="drop-zone" onclick="document.getElementById('fileInput').click()">
+            <input type="file" id="fileInput" style="display:none;" accept=".pdf,.docx,.pptx" />
+            <div class="icon">📄</div>
+            <div class="text" id="fileLabel">Click to upload or drag & drop <strong>PDF, DOCX, PPTX</strong></div>
+          </div>
+          <button type="submit" class="btn-gold">📤 Upload Resource</button>
+        </form>
+      </div>
+      <div style="background:white;border-radius:20px;padding:20px;border:1px solid #eef3f9;">
+        <h3 style="font-size:18px;font-weight:600;margin-bottom:16px;">📚 Resource Inventory</h3>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Title</th><th>Subject</th><th>Level</th><th>Price</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="resourcesTableBody"><tr><td colspan="6" style="text-align:center;padding:20px;color:#6d859e;">Loading...</td></tr></tbody>
+          </table>
         </div>
+      </div>
+    </div>
 
-        <!-- CLASSES MODULE -->
-        <div class="module-container" id="module-classes">
-            <div style="background:white;border-radius:20px;padding:24px;border:1px solid #eef3f9;margin-bottom:24px;">
-                <h3 style="font-size:18px;font-weight:600;margin-bottom:16px;">📹 Create New Class</h3>
-                <form id="classForm" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-                    <input type="text" id="classTitle" placeholder="Class Title *" required />
-                    <select id="classTutor" required><option value="">Select Tutor *</option></select>
-                    <input type="text" id="classSubject" placeholder="Subject" />
-                    <input type="datetime-local" id="classDateTime" required />
-                    <input type="number" id="classDuration" placeholder="Duration (minutes)" value="60" />
-                    <input type="number" id="classMaxStudents" placeholder="Max Students" value="50" />
-                    <input type="url" id="classMeetingLink" placeholder="Meeting Link (Zoom/Google Meet)" style="grid-column:span 2;" />
-                    <div style="grid-column:span 2;display:flex;gap:16px;align-items:center;">
-                        <label><input type="checkbox" id="classIsLive" /> Start immediately (live)</label>
-                    </div>
-                    <div style="grid-column:span 2;"><button type="submit" class="btn-gold">🚀 Create Class</button></div>
-                </form>
-            </div>
-            <div style="background:white;border-radius:20px;padding:20px;border:1px solid #eef3f9;">
-                <h3 style="font-size:18px;font-weight:600;margin-bottom:16px;">📋 Classes</h3>
-                <div class="table-wrapper">
-                    <table>
-                        <thead><tr><th>Title</th><th>Tutor</th><th>Date/Time</th><th>Status</th><th>Actions</th></tr></thead>
-                        <tbody id="classesTableBody"><tr><td colspan="5" style="text-align:center;padding:20px;color:#6d859e;">Loading...</td></tr></tbody>
-                    </table>
-                </div>
-            </div>
+    <!-- TUTORS MODULE -->
+    <div class="module-container" id="module-tutors">
+      <div style="background:white;border-radius:20px;padding:24px;border:1px solid #eef3f9;margin-bottom:24px;">
+        <h3 style="font-size:18px;font-weight:600;margin-bottom:16px;">🧑‍🏫 Add New Tutor</h3>
+        <form id="tutorForm" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <input type="text" id="tutorName" placeholder="Full Name *" required />
+          <input type="email" id="tutorEmail" placeholder="Email *" required />
+          <input type="tel" id="tutorPhone" placeholder="Phone" />
+          <select id="tutorSpecialization" required><option value="">Specialization *</option>
+            <option value="mathematics">Mathematics</option><option value="english">English</option>
+            <option value="kiswahili">Kiswahili</option><option value="science">Integrated Science</option>
+            <option value="social-studies">Social Studies</option><option value="creative-arts">Creative Arts</option>
+            <option value="business-studies">Business Studies</option><option value="religious-education">Religious Education</option>
+            <option value="computer-studies">Computer Studies</option><option value="chemistry">Chemistry</option>
+            <option value="physics">Physics</option><option value="Biology">Biology</option><option value="geography">Geography</option>
+            <option value="History-citizenship">History & Citizenship</option><option value="pretechnical-studies">Pretechnical Studies</option>
+            <option value="tvet">TVET</option><option value="college">College</option><option value="university">University</option>
+          </select>
+          <div style="grid-column:span 2;"><button type="submit" class="btn-gold">➕ Add Tutor</button></div>
+        </form>
+      </div>
+      <div style="background:white;border-radius:20px;padding:20px;border:1px solid #eef3f9;">
+        <h3 style="font-size:18px;font-weight:600;margin-bottom:16px;">📋 Tutor Roster</h3>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Name</th><th>Email</th><th>Specialization</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="tutorsTableBody"><tr><td colspan="5" style="text-align:center;padding:20px;color:#6d859e;">Loading...</td></tr></tbody>
+          </table>
         </div>
+      </div>
+    </div>
 
-        <!-- SETTINGS MODULE -->
-        <div class="module-container" id="module-settings">
-            <div style="background:white;border-radius:20px;padding:24px;border:1px solid #eef3f9;max-width:800px;">
-                <h3 style="font-size:20px;font-weight:700;margin-bottom:20px;">⚙️ System Settings</h3>
-                <form id="settingsForm">
-                    <div style="padding:16px 0;border-bottom:1px solid #e5e7eb;">
-                        <div style="font-size:14px;font-weight:600;color:#0b1a33;margin-bottom:12px;">General Settings</div>
-                        <div style="display:flex;align-items:center;gap:16px;padding:8px 0;">
-                            <label style="min-width:140px;font-size:14px;color:#4a5f7a;">Site Name</label>
-                            <input type="text" id="settingSiteName" value="KenyaVault" style="flex:1;padding:10px 14px;border:1px solid #dce5ef;border-radius:8px;font-size:14px;max-width:300px;" />
-                        </div>
-                        <div style="display:flex;align-items:center;gap:16px;padding:8px 0;">
-                            <label style="min-width:140px;font-size:14px;color:#4a5f7a;">Tagline</label>
-                            <input type="text" id="settingTagline" value="Complete Education Resources" style="flex:1;padding:10px 14px;border:1px solid #dce5ef;border-radius:8px;font-size:14px;max-width:300px;" />
-                        </div>
-                    </div>
-                    <div style="padding:16px 0;border-bottom:1px solid #e5e7eb;">
-                        <div style="font-size:14px;font-weight:600;color:#0b1a33;margin-bottom:12px;">Payment Settings</div>
-                        <div style="display:flex;align-items:center;gap:16px;padding:8px 0;">
-                            <label style="min-width:140px;font-size:14px;color:#4a5f7a;">Currency</label>
-                            <select id="settingCurrency" style="flex:1;padding:10px 14px;border:1px solid #dce5ef;border-radius:8px;font-size:14px;max-width:300px;">
-                                <option value="KES">KES</option><option value="USD">USD</option><option value="EUR">EUR</option>
-                            </select>
-                        </div>
-                        <div style="display:flex;align-items:center;gap:16px;padding:8px 0;">
-                            <label style="min-width:140px;font-size:14px;color:#4a5f7a;">Tutor Payout (%)</label>
-                            <input type="number" id="settingPayout" value="80" min="0" max="100" style="flex:1;padding:10px 14px;border:1px solid #dce5ef;border-radius:8px;font-size:14px;max-width:300px;" />
-                        </div>
-                    </div>
-                    <div style="padding:16px 0;border-bottom:1px solid #e5e7eb;">
-                        <div style="font-size:14px;font-weight:600;color:#0b1a33;margin-bottom:12px;">Notifications</div>
-                        <div style="display:flex;align-items:center;gap:16px;padding:8px 0;">
-                            <label style="min-width:140px;font-size:14px;color:#4a5f7a;">Email Notifications</label>
-                            <input type="checkbox" id="settingEmailNotif" checked style="width:20px;height:20px;accent-color:#4facfe;" />
-                        </div>
-                        <div style="display:flex;align-items:center;gap:16px;padding:8px 0;">
-                            <label style="min-width:140px;font-size:14px;color:#4a5f7a;">Order Notifications</label>
-                            <input type="checkbox" id="settingOrderNotif" checked style="width:20px;height:20px;accent-color:#4facfe;" />
-                        </div>
-                    </div>
-                    <div style="padding:16px 0;">
-                        <div style="font-size:14px;font-weight:600;color:#0b1a33;margin-bottom:12px;">Regional</div>
-                        <div style="display:flex;align-items:center;gap:16px;padding:8px 0;">
-                            <label style="min-width:140px;font-size:14px;color:#4a5f7a;">Timezone</label>
-                            <select id="settingTimezone" style="flex:1;padding:10px 14px;border:1px solid #dce5ef;border-radius:8px;font-size:14px;max-width:300px;">
-                                <option value="Africa/Nairobi">Africa/Nairobi (EAT)</option>
-                                <option value="Africa/Lagos">Africa/Lagos (WAT)</option>
-                                <option value="UTC">UTC</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div style="margin-top:20px;display:flex;gap:12px;">
-                        <button type="submit" class="btn-gold">💾 Save Settings</button>
-                        <button type="button" style="padding:8px 20px;border-radius:8px;border:none;font-weight:600;cursor:pointer;background:#fee2e2;color:#b33630;" onclick="resetSettings()">Reset to Default</button>
-                    </div>
-                </form>
-            </div>
+    <!-- CLASSES MODULE -->
+    <div class="module-container" id="module-classes">
+      <div style="background:white;border-radius:20px;padding:24px;border:1px solid #eef3f9;margin-bottom:24px;">
+        <h3 style="font-size:18px;font-weight:600;margin-bottom:16px;">📹 Create New Class</h3>
+        <form id="classForm" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <input type="text" id="classTitle" placeholder="Class Title *" required />
+          <select id="classTutor" required><option value="">Select Tutor *</option></select>
+          <input type="text" id="classSubject" placeholder="Subject" />
+          <input type="datetime-local" id="classDateTime" required />
+          <input type="number" id="classDuration" placeholder="Duration (minutes)" value="60" />
+          <input type="number" id="classMaxStudents" placeholder="Max Students" value="50" />
+          <input type="url" id="classMeetingLink" placeholder="Meeting Link (Zoom/Google Meet)" style="grid-column:span 2;" />
+          <div style="grid-column:span 2;display:flex;gap:16px;align-items:center;">
+            <label><input type="checkbox" id="classIsLive" /> Start immediately (live)</label>
+          </div>
+          <div style="grid-column:span 2;"><button type="submit" class="btn-gold">🚀 Create Class</button></div>
+        </form>
+      </div>
+      <div style="background:white;border-radius:20px;padding:20px;border:1px solid #eef3f9;">
+        <h3 style="font-size:18px;font-weight:600;margin-bottom:16px;">📋 Classes</h3>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Title</th><th>Tutor</th><th>Date/Time</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="classesTableBody"><tr><td colspan="5" style="text-align:center;padding:20px;color:#6d859e;">Loading...</td></tr></tbody>
+          </table>
         </div>
-    </main>
-
-    <div class="toast-container" id="toastContainer"></div>
-
-    <script>
-        // ============================================================
-        // 1. SUPABASE CONFIG
-        // ============================================================
-        const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
-        const SUPABASE_ANON_KEY =
-            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-        // ============================================================
-        // 2. AUTH STATE
-        // ============================================================
-        let isAuthenticated = sessionStorage.getItem('kv-auth') === 'true';
-        let currentModule = 'dashboard';
-        let ordersData = [];
-        let resourcesData = [];
-        let tutorsData = [];
-        let classesData = [];
-        let currentFilter = 'all';
-        let currentPage = 1;
-        const pageSize = 5;
-
-        // ============================================================
-        // 3. TOAST SYSTEM
-        // ============================================================
-        function showToast(title, message, type = 'success') {
-            const container = document.getElementById('toastContainer');
-            const toast = document.createElement('div');
-            toast.className = 'toast-item';
-            toast.style.borderLeftColor = type === 'success' ? '#0b7e4b' : type === 'error' ? '#b33630' : '#4facfe';
-            toast.innerHTML = `<div class="toast-title">${title}</div><div class="toast-msg">${message}</div>`;
-            container.appendChild(toast);
-            setTimeout(() => {
-                toast.style.opacity = '0';
-                toast.style.transform = 'translateX(40px)';
-                toast.style.transition = 'all 0.3s';
-                setTimeout(() => toast.remove(), 300);
-            }, 5000);
-        }
-
-        // ============================================================
-        // 4. AUTH FUNCTIONS
-        // ============================================================
-        function checkAuth() {
-            if (isAuthenticated) {
-                document.getElementById('loginOverlay').classList.remove('active');
-                document.getElementById('sidebar').style.display = 'flex';
-                document.querySelector('.main').style.display = 'block';
-                initApp();
-            } else {
-                document.getElementById('loginOverlay').classList.add('active');
-                document.getElementById('sidebar').style.display = 'none';
-                document.querySelector('.main').style.display = 'none';
-            }
-        }
-
-        function handleLogin(e) {
-            e.preventDefault();
-            const email = document.getElementById('loginEmail').value;
-            const password = document.getElementById('loginPassword').value;
-            const errorEl = document.getElementById('loginError');
-            const btn = document.getElementById('loginBtn');
-
-            if (email === 'adminnexalearn@gmail.com' && password === 'KenyaVault2026') {
-                sessionStorage.setItem('kv-auth', 'true');
-                sessionStorage.setItem('kv-user', email);
-                isAuthenticated = true;
-                errorEl.style.display = 'none';
-                btn.textContent = '⏳ Signing in...';
-                btn.disabled = true;
-                setTimeout(() => {
-                    checkAuth();
-                    showToast('Welcome', 'Logged in successfully');
-                    btn.textContent = '🔑 Sign In';
-                    btn.disabled = false;
-                }, 600);
-            } else {
-                errorEl.textContent = 'Invalid username or password.';
-                errorEl.style.display = 'block';
-                showToast('Login Failed', 'Invalid credentials', 'error');
-            }
-        }
-
-        function logout() {
-            if (confirm('Are you sure you want to logout?')) {
-                sessionStorage.removeItem('kv-auth');
-                sessionStorage.removeItem('kv-user');
-                isAuthenticated = false;
-                checkAuth();
-                showToast('Logged out', 'You have been logged out');
-            }
-        }
-
-        document.getElementById('logoutBtn').addEventListener('click', logout);
-
-        // ============================================================
-        // 5. CLOCK
-        // ============================================================
-        function updateClock() {
-            const now = new Date();
-            document.getElementById('dateDisplay').textContent = now.toLocaleDateString('en-KE', {
-                weekday: 'short',
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric'
-            });
-            document.getElementById('timeDisplay').textContent = now.toLocaleTimeString('en-KE', {
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit',
-                hour12: true
-            });
-        }
-        updateClock();
-        setInterval(updateClock, 1000);
-
-        // ============================================================
-        // 6. SIDEBAR NAVIGATION
-        // ============================================================
-        const moduleNames = {
-            dashboard: 'Dashboard',
-            orders: 'Orders',
-            resources: 'Resources',
-            tutors: 'Tutors',
-            classes: 'Classes',
-            settings: 'Settings'
-        };
-
-        document.querySelectorAll('.sidebar-nav a[data-module]').forEach(link => {
-            link.addEventListener('click', function(e) {
-                e.preventDefault();
-                document.querySelectorAll('.sidebar-nav a[data-module]').forEach(l => l.classList.remove('active'));
-                this.classList.add('active');
-                const mod = this.dataset.module;
-                currentModule = mod;
-                const label = moduleNames[mod] || mod;
-                document.getElementById('pageTitle').innerHTML = label + ' <small>' + (mod === 'dashboard' ?
-                    'overview' : 'management') + '</small>';
-
-                document.querySelectorAll('.module-container').forEach(el => el.classList.remove('active'));
-                document.getElementById('module-' + mod).classList.add('active');
-
-                if (mod === 'dashboard') { loadDashboardData();
-                    loadOrdersTable(); }
-                if (mod === 'orders') loadOrdersTable();
-                if (mod === 'resources') loadResources();
-                if (mod === 'tutors') loadTutors();
-                if (mod === 'classes') loadClasses();
-                if (mod === 'settings') loadSettings();
-            });
-        });
-
-        // ============================================================
-        // 7. ORDER STATUS HELPERS
-        // ============================================================
-        function getPaymentStatus(order) {
-            const amount = order.total_amount || 0;
-            const paid = order.amount_paid || order.paid_amount || 0;
-
-            if (order.payment_status === 'failed' || order.status === 'failed') return 'failed';
-            if (order.payment_status === 'pending' || order.status === 'pending') return 'pending';
-            if (order.payment_status === 'paid' || order.status === 'paid' || order.status === 'completed') {
-                if (paid > amount) return 'overpaid';
-                if (paid < amount && paid > 0) return 'underpaid';
-                return 'paid';
-            }
-            if (order.payment_status === 'overpaid') return 'overpaid';
-            if (order.payment_status === 'underpaid') return 'underpaid';
-            return order.payment_status || 'pending';
-        }
-
-        function getStatusClass(status) {
-            const map = {
-                'paid': 'status-success',
-                'pending': 'status-pending',
-                'failed': 'status-error',
-                'underpaid': 'status-underpaid',
-                'overpaid': 'status-overpaid'
-            };
-            return map[status] || 'status-pending';
-        }
-
-        function getStatusLabel(status) {
-            const map = {
-                'paid': '✅ Paid',
-                'pending': '⏳ Pending',
-                'failed': '❌ Failed',
-                'underpaid': '⚠️ Underpaid',
-                'overpaid': 'ℹ️ Overpaid'
-            };
-            return map[status] || status;
-        }
-
-        // ============================================================
-        // 8. DASHBOARD DATA
-        // ============================================================
-        async function loadDashboardData() {
-            await loadStats();
-        }
-
-        async function loadStats() {
-            try {
-                const { data: orders, error } = await supabase.from('orders').select('*');
-                if (error) throw error;
-
-                ordersData = orders || [];
-                const paid = ordersData.filter(o => getPaymentStatus(o) === 'paid');
-                const pending = ordersData.filter(o => getPaymentStatus(o) === 'pending');
-                const failed = ordersData.filter(o => getPaymentStatus(o) === 'failed');
-                const totalRevenue = ordersData.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
-
-                document.getElementById('statOrders').textContent = ordersData.length;
-                document.getElementById('statPaid').textContent = paid.length;
-                document.getElementById('statPending').textContent = pending.length;
-                document.getElementById('statFailed').textContent = failed.length;
-                document.getElementById('statRevenue').textContent = '$' + totalRevenue.toLocaleString();
-                document.getElementById('statUsers').textContent = '1,284';
-
-                document.querySelectorAll('#statsGrid .stat-card').forEach(el => el.classList.remove('loading-shimmer'));
-
-                // Update pending badge
-                document.getElementById('pendingBadge').textContent = pending.length;
-                document.getElementById('pendingBadge').style.display = pending.length > 0 ? '' : 'none';
-
-                updatePaymentChart();
-            } catch (e) {
-                console.error('Load stats error:', e);
-                // Fallback data
-                document.getElementById('statOrders').textContent = '0';
-                document.getElementById('statPaid').textContent = '0';
-                document.getElementById('statPending').textContent = '0';
-                document.getElementById('statFailed').textContent = '0';
-                document.getElementById('statRevenue').textContent = '$0';
-                document.getElementById('statUsers').textContent = '0';
-                document.querySelectorAll('#statsGrid .stat-card').forEach(el => el.classList.remove('loading-shimmer'));
-            }
-        }
-
-        function updatePaymentChart() {
-            const ctx = document.getElementById('paymentChart')?.getContext('2d');
-            if (!ctx) return;
-
-            const paid = ordersData.filter(o => getPaymentStatus(o) === 'paid').length;
-            const pending = ordersData.filter(o => getPaymentStatus(o) === 'pending').length;
-            const failed = ordersData.filter(o => getPaymentStatus(o) === 'failed').length;
-            const underpaid = ordersData.filter(o => getPaymentStatus(o) === 'underpaid').length;
-            const overpaid = ordersData.filter(o => getPaymentStatus(o) === 'overpaid').length;
-
-            new Chart(ctx, {
-                type: 'doughnut',
-                data: {
-                    labels: ['Paid', 'Pending', 'Failed', 'Underpaid', 'Overpaid'],
-                    datasets: [{
-                        data: [paid, pending, failed, underpaid, overpaid],
-                        backgroundColor: ['#0b7e4b', '#b26b0a', '#b33630', '#f59e0b', '#3b82f6'],
-                        borderWidth: 0
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 12 } } },
-                    cutout: '60%'
-                }
-            });
-        }
-
-        // ============================================================
-        // 9. ORDERS TABLE
-        // ============================================================
-        async function loadOrdersTable() {
-            try {
-                const { data, error } = await supabase.from('orders').select('*').order('created_at', { ascending: false })
-                    .limit(50);
-                if (error) throw error;
-                ordersData = data || [];
-                renderOrdersTable();
-            } catch (e) {
-                console.error('Load orders error:', e);
-                // Fallback data
-                ordersData = [
-                    { id: '1', order_ref: 'ORD-001', customer_name: 'John M.', total_amount: 49, amount_paid: 49,
-                        payment_status: 'paid', payment_method: 'M-Pesa', created_at: new Date().toISOString() },
-                    { id: '2', order_ref: 'ORD-002', customer_name: 'Sarah K.', total_amount: 120, amount_paid: 0,
-                        payment_status: 'pending', payment_method: 'M-Pesa', created_at: new Date().toISOString() },
-                    { id: '3', order_ref: 'ORD-003', customer_name: 'David O.', total_amount: 78, amount_paid: 0,
-                        payment_status: 'failed', payment_method: 'Card', created_at: new Date().toISOString() },
-                    { id: '4', order_ref: 'ORD-004', customer_name: 'Grace W.', total_amount: 95, amount_paid: 50,
-                        payment_status: 'underpaid', payment_method: 'M-Pesa', created_at: new Date().toISOString() },
-                    { id: '5', order_ref: 'ORD-005', customer_name: 'Peter N.', total_amount: 34, amount_paid: 40,
-                        payment_status: 'overpaid', payment_method: 'M-Pesa', created_at: new Date().toISOString() }
-                ];
-                renderOrdersTable();
-            }
-        }
-
-        function renderOrdersTable() {
-            const tbody = document.getElementById('ordersTableBody') || document.getElementById('tableBody');
-            if (!tbody) return;
-
-            const filtered = ordersData.filter(o => {
-                const status = getPaymentStatus(o);
-                if (currentFilter === 'paid') return status === 'paid';
-                if (currentFilter === 'pending') return status === 'pending';
-                if (currentFilter === 'failed') return status === 'failed';
-                if (currentFilter === 'underpaid') return status === 'underpaid';
-                if (currentFilter === 'overpaid') return status === 'overpaid';
-                return true;
-            });
-
-            const start = (currentPage - 1) * pageSize;
-            const paginated = filtered.slice(start, start + pageSize);
-
-            if (paginated.length === 0) {
-                tbody.innerHTML =
-                    `<tr><td colspan="7" style="text-align:center;padding:30px;color:#6d859e;">No orders found</td></tr>`;
-                return;
-            }
-
-            tbody.innerHTML = paginated.map(o => {
-                const status = getPaymentStatus(o);
-                const statusClass = getStatusClass(status);
-                const statusLabel = getStatusLabel(status);
-                const ref = o.order_ref || o.id.slice(0, 8).toUpperCase();
-                const amount = o.total_amount || 0;
-                const paid = o.amount_paid || o.paid_amount || 0;
-
-                return `
-                <tr>
-                  <td data-label="Order Ref">#${ref}</td>
-                  <td data-label="Customer">${o.customer_name || 'N/A'}</td>
-                  <td data-label="Amount">$${amount}</td>
-                  <td data-label="Paid">$${paid}</td>
-                  <td data-label="Status"><span class="status ${statusClass}">${statusLabel}</span></td>
-                  <td data-label="Payment Method">${o.payment_method || 'M-Pesa'}</td>
-                  <td data-label="Actions" class="action-icons">
-                    <i class="fas fa-eye" onclick="viewOrder('${o.id}')"></i>
-                    ${status === 'pending' ? `<i class="fas fa-check" onclick="confirmOrder('${o.id}')" style="color:#0b7e4b;"></i>` : ''}
-                    ${status === 'pending' ? `<i class="fas fa-times" onclick="rejectOrder('${o.id}')" style="color:#b33630;"></i>` : ''}
-                  </td>
-                </tr>
-              `;
-            }).join('');
-
-            // Update pagination
-            const totalPages = Math.ceil(filtered.length / pageSize);
-            document.querySelectorAll('.pagination span[data-page]').forEach(el => {
-                const page = parseInt(el.dataset.page);
-                el.style.display = page <= totalPages ? '' : 'none';
-                el.classList.toggle('active-page', page === currentPage);
-            });
-        }
-
-        window.viewOrder = function(id) {
-            const order = ordersData.find(o => o.id === id);
-            const status = getPaymentStatus(order);
-            showToast('Order Details',
-                `#${order?.order_ref || id.slice(0,8)} | Amount: $${order?.total_amount || 0} | Status: ${status}`,
-                'info');
-        };
-
-        window.confirmOrder = async function(id) {
-            if (!confirm('Confirm this order?')) return;
-            try {
-                const order = ordersData.find(o => o.id === id);
-                await supabase.from('orders').update({
-                    payment_status: 'paid',
-                    status: 'paid',
-                    amount_paid: order?.total_amount || 0
-                }).eq('id', id);
-                showToast('Confirmed', 'Order marked as paid');
-                await loadOrdersTable();
-                await loadStats();
-            } catch (e) { showToast('Error', 'Failed to confirm order', 'error'); }
-        };
-
-        window.rejectOrder = async function(id) {
-            if (!confirm('Reject this order?')) return;
-            try {
-                await supabase.from('orders').update({ payment_status: 'failed', status: 'failed' }).eq('id', id);
-                showToast('Rejected', 'Order marked as failed');
-                await loadOrdersTable();
-                await loadStats();
-            } catch (e) { showToast('Error', 'Failed to reject order', 'error'); }
-        };
-
-        // ============================================================
-        // 10. SEARCH & FILTERS
-        // ============================================================
-        document.getElementById('tableSearch')?.addEventListener('input', function(e) {
-            const query = e.target.value.toLowerCase().trim();
-            const rows = document.querySelectorAll('#tableBody tr');
-            rows.forEach(row => {
-                row.style.display = row.textContent.toLowerCase().includes(query) ? '' : 'none';
-            });
-        });
-
-        document.getElementById('ordersSearch')?.addEventListener('input', function(e) {
-            const query = e.target.value.toLowerCase().trim();
-            const rows = document.querySelectorAll('#ordersTableBody tr');
-            rows.forEach(row => {
-                row.style.display = row.textContent.toLowerCase().includes(query) ? '' : 'none';
-            });
-        });
-
-        document.querySelectorAll('.filter-badge[data-filter]').forEach(chip => {
-            chip.addEventListener('click', function() {
-                document.querySelectorAll('.filter-badge[data-filter]').forEach(c => c.classList.remove('active'));
-                this.classList.add('active');
-                currentFilter = this.dataset.filter;
-                currentPage = 1;
-                renderOrdersTable();
-            });
-        });
-
-        // ============================================================
-        // 11. PAGINATION
-        // ============================================================
-        document.getElementById('prevPage')?.addEventListener('click', function() {
-            if (currentPage > 1) { currentPage--;
-                renderOrdersTable(); }
-        });
-
-        document.getElementById('nextPage')?.addEventListener('click', function() {
-            const filtered = ordersData.filter(o => {
-                const status = getPaymentStatus(o);
-                if (currentFilter === 'paid') return status === 'paid';
-                if (currentFilter === 'pending') return status === 'pending';
-                if (currentFilter === 'failed') return status === 'failed';
-                if (currentFilter === 'underpaid') return status === 'underpaid';
-                if (currentFilter === 'overpaid') return status === 'overpaid';
-                return true;
-            });
-            const totalPages = Math.ceil(filtered.length / pageSize);
-            if (currentPage < totalPages) { currentPage++;
-                renderOrdersTable(); }
-        });
-
-        document.querySelectorAll('.pagination span[data-page]').forEach(el => {
-            el.addEventListener('click', function() {
-                currentPage = parseInt(this.dataset.page);
-                renderOrdersTable();
-            });
-        });
-
-        // ============================================================
-        // 12. EXPORT
-        // ============================================================
-        document.getElementById('exportBtn')?.addEventListener('click', function() {
-            exportOrders();
-        });
-        document.getElementById('ordersExportBtn')?.addEventListener('click', function() {
-            exportOrders();
-        });
-
-        function exportOrders() {
-            const headers = ['Order Ref', 'Customer', 'Amount', 'Paid', 'Status', 'Payment Method'];
-            const rows = ordersData.map(o => {
-                const status = getPaymentStatus(o);
-                return [
-                    o.order_ref || o.id.slice(0, 8),
-                    o.customer_name || 'N/A',
-                    o.total_amount || 0,
-                    o.amount_paid || o.paid_amount || 0,
-                    status,
-                    o.payment_method || 'M-Pesa'
-                ];
-            });
-
-            const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-            const blob = new Blob([csv], { type: 'text/csv' });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'orders_export.csv';
-            a.click();
-            window.URL.revokeObjectURL(url);
-            showToast('Export', 'Orders exported successfully');
-        }
-
-        // ============================================================
-        // 13. RESOURCES
-        // ============================================================
-        async function loadResources() {
-            try {
-                const { data, error } = await supabase.from('resources').select('*').order('created_at', { ascending: false });
-                if (error) throw error;
-                resourcesData = data || [];
-                renderResources();
-            } catch (e) {
-                console.error('Load resources error:', e);
-                resourcesData = [];
-                renderResources();
-            }
-        }
-
-        function renderResources() {
-            const tbody = document.getElementById('resourcesTableBody');
-            if (!tbody) return;
-            if (resourcesData.length === 0) {
-                tbody.innerHTML =
-                    `<tr><td colspan="6" style="text-align:center;padding:20px;color:#6d859e;">No resources found</td></tr>`;
-                return;
-            }
-            tbody.innerHTML = resourcesData.map(r => `
-                <tr>
-                  <td data-label="Title">${r.title}</td>
-                  <td data-label="Subject">${r.subject || '—'}</td>
-                  <td data-label="Level">${r.level || '—'}</td>
-                  <td data-label="Price">${r.price === 0 ? 'FREE' : 'KES ' + r.price}</td>
-                  <td data-label="Status"><span class="status ${r.status === 'live' ? 'status-success' : 'status-pending'}">${r.status || 'draft'}</span></td>
-                  <td data-label="Actions" class="action-icons">
-                    <i class="fas fa-toggle-on" onclick="toggleResource('${r.id}','${r.status}')" style="color:${r.status === 'live' ? '#0b7e4b' : '#6b7f99'};"></i>
-                    <i class="fas fa-trash-alt" onclick="deleteResource('${r.id}')" style="color:#b33630;"></i>
-                  </td>
-                </tr>
-              `).join('');
-        }
-
-        window.toggleResource = async function(id, currentStatus) {
-            const newStatus = currentStatus === 'live' ? 'draft' : 'live';
-            try {
-                await supabase.from('resources').update({ status: newStatus }).eq('id', id);
-                showToast('Updated', `Resource ${newStatus === 'live' ? 'published' : 'drafted'}`);
-                await loadResources();
-            } catch (e) { showToast('Error', 'Failed to update', 'error'); }
-        };
-
-        window.deleteResource = async function(id) {
-            if (!confirm('Delete this resource?')) return;
-            try {
-                await supabase.from('resources').delete().eq('id', id);
-                showToast('Deleted', 'Resource removed');
-                await loadResources();
-            } catch (e) { showToast('Error', 'Failed to delete', 'error'); }
-        };
-
-        document.getElementById('uploadForm')?.addEventListener('submit', async function(e) {
-            e.preventDefault();
-            const fileInput = document.getElementById('fileInput');
-            if (!fileInput.files[0]) { showToast('Error', 'Please select a file', 'error'); return; }
-
-            const file = fileInput.files[0];
-            const title = document.getElementById('resTitle').value;
-            const subject = document.getElementById('resSubject').value;
-            const level = document.getElementById('resLevel').value;
-            const type = document.getElementById('resType').value;
-            const price = parseFloat(document.getElementById('resPrice').value) || 0;
-            const curriculum = document.getElementById('resCurriculum').value;
-
-            try {
-                const fileExt = file.name.split('.').pop();
-                const fileName = `${Date.now()}-${title.replace(/\s/g, '_')}.${fileExt}`;
-                const filePath = `resources/${fileName}`;
-
-                const formData = new FormData();
-                formData.append('file', file);
-                await supabase.storage.from('kenyavault-pdfs').upload(filePath, file);
-
-                const { data: urlData } = supabase.storage.from('kenyavault-pdfs').getPublicUrl(filePath);
-
-                await supabase.from('resources').insert({
-                    title,
-                    subject,
-                    level,
-                    resource_type: type,
-                    price,
-                    curriculum,
-                    file_url: urlData.publicUrl,
-                    status: 'draft',
-                    created_at: new Date().toISOString()
-                });
-
-                showToast('Success', 'Resource uploaded successfully');
-                document.getElementById('uploadForm').reset();
-                document.getElementById('fileLabel').textContent = 'Click to upload or drag & drop PDF, DOCX, PPTX';
-                await loadResources();
-            } catch (e) {
-                console.error('Upload error:', e);
-                showToast('Error', 'Upload failed: ' + e.message, 'error');
-            }
-        });
-
-        document.getElementById('fileInput')?.addEventListener('change', function() {
-            if (this.files[0]) {
-                document.getElementById('fileLabel').textContent = '📎 ' + this.files[0].name;
-            }
-        });
-
-        // ============================================================
-        // 14. TUTORS
-        // ============================================================
-        async function loadTutors() {
-            try {
-                const { data, error } = await supabase.from('tutors').select('*');
-                if (error) throw error;
-                tutorsData = data || [];
-                renderTutors();
-                populateTutorSelects();
-            } catch (e) {
-                console.error('Load tutors error:', e);
-                tutorsData = [];
-                renderTutors();
-            }
-        }
-
-        function renderTutors() {
-            const tbody = document.getElementById('tutorsTableBody');
-            if (!tbody) return;
-            if (tutorsData.length === 0) {
-                tbody.innerHTML =
-                    `<tr><td colspan="5" style="text-align:center;padding:20px;color:#6d859e;">No tutors found</td></tr>`;
-                return;
-            }
-            tbody.innerHTML = tutorsData.map(t => `
-                <tr>
-                  <td data-label="Name">${t.name}</td>
-                  <td data-label="Email">${t.email}</td>
-                  <td data-label="Specialization">${t.specialization || '—'}</td>
-                  <td data-label="Status"><span class="status ${t.status === 'active' ? 'status-success' : 'status-error'}">${t.status || 'inactive'}</span></td>
-                  <td data-label="Actions" class="action-icons">
-                    <i class="fas fa-toggle-on" onclick="toggleTutor('${t.id}','${t.status}')" style="color:${t.status === 'active' ? '#0b7e4b' : '#6b7f99'};"></i>
-                    <i class="fas fa-trash-alt" onclick="deleteTutor('${t.id}')" style="color:#b33630;"></i>
-                  </td>
-                </tr>
-              `).join('');
-        }
-
-        function populateTutorSelects() {
-            const select = document.getElementById('classTutor');
-            if (select) {
-                select.innerHTML = '<option value="">Select Tutor *</option>' +
-                    tutorsData.filter(t => t.status === 'active').map(t => `<option value="${t.id}">${t.name}</option>`)
-                    .join('');
-            }
-        }
-
-        window.toggleTutor = async function(id, currentStatus) {
-            const newStatus = currentStatus === 'active' ? 'suspended' : 'active';
-            try {
-                await supabase.from('tutors').update({ status: newStatus }).eq('id', id);
-                showToast('Updated', `Tutor ${newStatus === 'active' ? 'activated' : 'suspended'}`);
-                await loadTutors();
-            } catch (e) { showToast('Error', 'Failed to update', 'error'); }
-        };
-
-        window.deleteTutor = async function(id) {
-            if (!confirm('Delete this tutor?')) return;
-            try {
-                await supabase.from('tutors').delete().eq('id', id);
-                showToast('Deleted', 'Tutor removed');
-                await loadTutors();
-            } catch (e) { showToast('Error', 'Failed to delete', 'error'); }
-        };
-
-        document.getElementById('tutorForm')?.addEventListener('submit', async function(e) {
-            e.preventDefault();
-            const name = document.getElementById('tutorName').value;
-            const email = document.getElementById('tutorEmail').value;
-            const phone = document.getElementById('tutorPhone').value;
-            const specialization = document.getElementById('tutorSpecialization').value;
-
-            try {
-                await supabase.from('tutors').insert({ name, email, phone, specialization, status: 'active',
-                    created_at: new Date().toISOString() });
-                showToast('Success', 'Tutor added successfully');
-                document.getElementById('tutorForm').reset();
-                await loadTutors();
-            } catch (e) { showToast('Error', 'Failed to add tutor', 'error'); }
-        });
-
-        // ============================================================
-        // 15. CLASSES
-        // ============================================================
-        async function loadClasses() {
-            try {
-                const { data, error } = await supabase.from('classes').select('*').order('scheduled_at', { ascending: true });
-                if (error) throw error;
-                classesData = data || [];
-                renderClasses();
-            } catch (e) {
-                console.error('Load classes error:', e);
-                classesData = [];
-                renderClasses();
-            }
-        }
-
-        function renderClasses() {
-            const tbody = document.getElementById('classesTableBody');
-            if (!tbody) return;
-            if (classesData.length === 0) {
-                tbody.innerHTML =
-                    `<tr><td colspan="5" style="text-align:center;padding:20px;color:#6d859e;">No classes found</td></tr>`;
-                return;
-            }
-            tbody.innerHTML = classesData.map(c => {
-                const tutor = tutorsData.find(t => t.id === c.tutor_id);
-                const status = c.is_live ? 'Live' : c.status || 'Scheduled';
-                const statusClass = c.is_live ? 'status-success' : c.status === 'ended' ? 'status-error' :
-                    'status-pending';
-                const date = c.scheduled_at ? new Date(c.scheduled_at).toLocaleString() : 'N/A';
-                return `
-                <tr>
-                  <td data-label="Title">${c.title}</td>
-                  <td data-label="Tutor">${tutor?.name || 'Unknown'}</td>
-                  <td data-label="Date/Time">${date}</td>
-                  <td data-label="Status"><span class="status ${statusClass}">${status}</span></td>
-                  <td data-label="Actions" class="action-icons">
-                    <i class="fas fa-play" onclick="toggleClass('${c.id}','${c.is_live}')" style="color:${c.is_live ? '#b33630' : '#0b7e4b'};"></i>
-                    <i class="fas fa-trash-alt" onclick="deleteClass('${c.id}')" style="color:#b33630;"></i>
-                  </td>
-                </tr>
-              `;
-            }).join('');
-        }
-
-        window.toggleClass = async function(id, isLive) {
-            const newLive = !isLive;
-            try {
-                await supabase.from('classes').update({
-                    is_live: newLive,
-                    status: newLive ? 'live' : 'scheduled',
-                    updated_at: new Date().toISOString()
-                }).eq('id', id);
-                showToast('Updated', `Class ${newLive ? 'started' : 'ended'}`);
-                await loadClasses();
-            } catch (e) { showToast('Error', 'Failed to update class', 'error'); }
-        };
-
-        window.deleteClass = async function(id) {
-            if (!confirm('Delete this class?')) return;
-            try {
-                await supabase.from('classes').delete().eq('id', id);
-                showToast('Deleted', 'Class removed');
-                await loadClasses();
-            } catch (e) { showToast('Error', 'Failed to delete class', 'error'); }
-        };
-
-        document.getElementById('classForm')?.addEventListener('submit', async function(e) {
-            e.preventDefault();
-            const title = document.getElementById('classTitle').value;
-            const tutor_id = document.getElementById('classTutor').value;
-            const subject = document.getElementById('classSubject').value;
-            const scheduled_at = document.getElementById('classDateTime').value;
-            const duration_minutes = parseInt(document.getElementById('classDuration').value) || 60;
-            const max_students = parseInt(document.getElementById('classMaxStudents').value) || 50;
-            const meeting_link = document.getElementById('classMeetingLink').value;
-            const is_live = document.getElementById('classIsLive').checked;
-
-            try {
-                await supabase.from('classes').insert({
-                    title,
-                    tutor_id,
-                    subject,
-                    scheduled_at,
-                    duration_minutes,
-                    max_students,
-                    meeting_link,
-                    is_live,
-                    status: is_live ? 'live' : 'scheduled',
-                    created_at: new Date().toISOString()
-                });
-                showToast('Success', 'Class created successfully');
-                document.getElementById('classForm').reset();
-                await loadClasses();
-            } catch (e) { showToast('Error', 'Failed to create class', 'error'); }
-        });
-
-        // ============================================================
-        // 16. SETTINGS
-        // ============================================================
-        function loadSettings() {
-            const saved = localStorage.getItem('kv-settings');
-            if (saved) {
-                try {
-                    const settings = JSON.parse(saved);
-                    document.getElementById('settingSiteName').value = settings.siteName || 'KenyaVault';
-                    document.getElementById('settingTagline').value = settings.tagline || 'Complete Education Resources';
-                    document.getElementById('settingPayout').value = settings.payoutPercentage || 80;
-                    document.getElementById('settingCurrency').value = settings.currency || 'KES';
-                    document.getElementById('settingEmailNotif').checked = settings.emailNotifications !== false;
-                    document.getElementById('settingOrderNotif').checked = settings.orderNotifications !== false;
-                    document.getElementById('settingTimezone').value = settings.timezone || 'Africa/Nairobi';
-                } catch (e) {}
-            }
-        }
-
-        document.getElementById('settingsForm')?.addEventListener('submit', function(e) {
-            e.preventDefault();
-            const settings = {
-                siteName: document.getElementById('settingSiteName').value,
-                tagline: document.getElementById('settingTagline').value,
-                payoutPercentage: parseInt(document.getElementById('settingPayout').value) || 80,
-                currency: document.getElementById('settingCurrency').value,
-                emailNotifications: document.getElementById('settingEmailNotif').checked,
-                orderNotifications: document.getElementById('settingOrderNotif').checked,
-                timezone: document.getElementById('settingTimezone').value
-            };
-            localStorage.setItem('kv-settings', JSON.stringify(settings));
-            showToast('Saved', 'Settings updated successfully');
-        });
-
-        function resetSettings() {
-            if (!confirm('Reset all settings to default?')) return;
-            localStorage.removeItem('kv-settings');
-            document.getElementById('settingSiteName').value = 'KenyaVault';
-            document.getElementById('settingTagline').value = 'Complete Education Resources';
-            document.getElementById('settingPayout').value = 80;
-            document.getElementById('settingCurrency').value = 'KES';
-            document.getElementById('settingEmailNotif').checked = true;
-            document.getElementById('settingOrderNotif').checked = true;
-            document.getElementById('settingTimezone').value = 'Africa/Nairobi';
-            showToast('Reset', 'Settings reset to default');
-        }
-
-        // ============================================================
-        // 17. CHARTS
-        // ============================================================
-        const chartDefaults = {
-            responsive: true,
-            maintainAspectRatio: true,
-            plugins: { legend: { display: false } },
-            scales: { y: { beginAtZero: true, grid: { color: '#eef3f9' } }, x: { grid: { display: false } } }
-        };
-
-        new Chart(document.getElementById('salesChart'), {
-            type: 'bar',
-            data: {
-                labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-                datasets: [{ label: 'Sales', data: [28, 42, 35, 58, 62, 48, 72], backgroundColor: '#4facfe',
-                    borderRadius: 6 }]
-            },
-            options: chartDefaults
-        });
-
-        // ============================================================
-        // 18. INIT
-        // ============================================================
-        function initApp() {
-            loadDashboardData();
-            loadOrdersTable();
-            loadResources();
-            loadTutors();
-            loadClasses();
-            loadSettings();
-        }
-
-        // Handle table errors gracefully - create missing tables warning
-        function showTableError(tableName, error) {
-            console.warn(`Table '${tableName}' error:`, error);
-            // Only show in console, don't disrupt UI
-        }
-
-        // Override supabase error handling for missing tables
-        const originalFrom = supabase.from.bind(supabase);
-        supabase.from = function(table) {
-            try {
-                return originalFrom(table);
-            } catch (e) {
-                showTableError(table, e);
-                // Return a dummy query that won't break
-                return {
-                    select: () => ({ data: [], error: null, order: () => ({ data: [], error: null }) }),
-                    insert: () => Promise.resolve({ data: null, error: null }),
-                    update: () => Promise.resolve({ data: null, error: null }),
-                    delete: () => Promise.resolve({ data: null, error: null }),
-                    eq: () => ({ data: [], error: null })
-                };
-            }
-        };
-
+      </div>
+    </div>
+
+    <!-- CATEGORIES MODULE -->
+    <div class="module-container" id="module-categories">
+      <div style="background:white;border-radius:20px;padding:24px;border:1px solid #eef3f9;margin-bottom:24px;">
+        <h3 style="font-size:18px;font-weight:600;margin-bottom:16px;">🏷️ Add Category</h3>
+        <form id="categoryForm" style="display:flex;gap:12px;flex-wrap:wrap;">
+          <input type="text" id="categoryName" placeholder="Category Name *" required style="flex:1;min-width:200px;" />
+          <button type="submit" class="btn-gold">➕ Add</button>
+        </form>
+      </div>
+      <div style="background:white;border-radius:20px;padding:20px;border:1px solid #eef3f9;">
+        <h3 style="font-size:18px;font-weight:600;margin-bottom:16px;">📋 Categories</h3>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Name</th><th>Actions</th></tr></thead>
+            <tbody id="categoriesTableBody"><tr><td colspan="2" style="text-align:center;padding:20px;color:#6d859e;">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- SUBJECTS MODULE -->
+    <div class="module-container" id="module-subjects">
+      <div style="background:white;border-radius:20px;padding:24px;border:1px solid #eef3f9;margin-bottom:24px;">
+        <h3 style="font-size:18px;font-weight:600;margin-bottom:16px;">📚 Add Subject</h3>
+        <form id="subjectForm" style="display:flex;gap:12px;flex-wrap:wrap;">
+          <input type="text" id="subjectName" placeholder="Subject Name *" required style="flex:1;min-width:200px;" />
+          <select id="subjectCategory" required><option value="">Category *</option></select>
+          <button type="submit" class="btn-gold">➕ Add</button>
+        </form>
+      </div>
+      <div style="background:white;border-radius:20px;padding:20px;border:1px solid #eef3f9;">
+        <h3 style="font-size:18px;font-weight:600;margin-bottom:16px;">📋 All Subjects (Kenya Education System)</h3>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Subject</th><th>Category</th><th>Actions</th></tr></thead>
+            <tbody id="subjectsTableBody"><tr><td colspan="3" style="text-align:center;padding:20px;color:#6d859e;">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- WITHDRAWALS MODULE -->
+    <div class="module-container" id="module-withdrawals">
+      <div style="background:white;border-radius:20px;padding:20px;border:1px solid #eef3f9;">
+        <h3 style="font-size:18px;font-weight:600;margin-bottom:16px;">💰 Tutor Withdrawal Requests</h3>
+        <div id="withdrawalsList"><p style="text-align:center;color:#6d859e;padding:20px;">Loading...</p></div>
+      </div>
+    </div>
+
+    <!-- SETTINGS MODULE -->
+    <div class="module-container" id="module-settings">
+      <div style="background:white;border-radius:20px;padding:24px;border:1px solid #eef3f9;max-width:800px;">
+        <h3 style="font-size:20px;font-weight:700;margin-bottom:20px;">⚙️ System Settings</h3>
+        <form id="settingsForm">
+          <div class="settings-section">
+            <div class="section-title">General Settings</div>
+            <div class="setting-row"><label>Site Name</label><input type="text" id="settingSiteName" value="KenyaVault" /></div>
+            <div class="setting-row"><label>Tagline</label><input type="text" id="settingTagline" value="Complete Education Resources" /></div>
+          </div>
+          <div class="settings-section">
+            <div class="section-title">Payout Settings</div>
+            <div class="setting-row"><label>Tutor Payout (%)</label><input type="number" id="settingPayout" value="80" min="0" max="100" /></div>
+            <div class="setting-row"><label>Default Currency</label>
+              <select id="settingCurrency"><option value="KES">KES</option><option value="USD">USD</option><option value="EUR">EUR</option></select>
+            </div>
+          </div>
+          <div class="settings-section">
+            <div class="section-title">Notifications</div>
+            <div class="setting-row"><label>Email Notifications</label><input type="checkbox" id="settingEmailNotif" checked /></div>
+            <div class="setting-row"><label>Order Notifications</label><input type="checkbox" id="settingOrderNotif" checked /></div>
+          </div>
+          <div class="settings-section">
+            <div class="section-title">Regional</div>
+            <div class="setting-row"><label>Timezone</label>
+              <select id="settingTimezone"><option value="Africa/Nairobi">Africa/Nairobi (EAT)</option>
+                <option value="Africa/Lagos">Africa/Lagos (WAT)</option><option value="UTC">UTC</option>
+              </select>
+            </div>
+          </div>
+          <div style="margin-top:20px;display:flex;gap:12px;">
+            <button type="submit" class="btn-gold">💾 Save Settings</button>
+            <button type="button" class="btn-sm red" onclick="resetSettings()">Reset to Default</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </main>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script>
+    // ============================================================
+    // 1. SUPABASE CONFIG
+    // ============================================================
+    const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // ============================================================
+    // 2. AUTH STATE
+    // ============================================================
+    let isAuthenticated = sessionStorage.getItem('kv-auth') === 'true';
+    let currentModule = 'dashboard';
+    let ordersData = [];
+    let resourcesData = [];
+    let tutorsData = [];
+    let classesData = [];
+    let categoriesData = [];
+    let subjectsData = [];
+    let withdrawalsData = [];
+    let currentFilter = 'all';
+    let currentPage = 1;
+    const pageSize = 5;
+    let currentCurrency = 'KES';
+    const exchangeRates = { KES: 1, USD: 0.0077, EUR: 0.0071 };
+
+    // ============================================================
+    // 3. TOAST SYSTEM
+    // ============================================================
+    function showToast(title, message, type = 'success') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = 'toast-item';
+      toast.style.borderLeftColor = type === 'success' ? '#0b7e4b' : type === 'error' ? '#b33630' : '#4facfe';
+      toast.innerHTML = `<div class="toast-title">${title}</div><div class="toast-msg">${message}</div>`;
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(40px)';
+        toast.style.transition = 'all 0.3s';
+        setTimeout(() => toast.remove(), 300);
+      }, 5000);
+    }
+
+    // ============================================================
+    // 4. AUTH FUNCTIONS
+    // ============================================================
+    function checkAuth() {
+      if (isAuthenticated) {
+        document.getElementById('loginOverlay').classList.remove('active');
+        document.getElementById('sidebar').style.display = 'flex';
+        document.querySelector('.main').style.display = 'block';
+        initApp();
+      } else {
+        document.getElementById('loginOverlay').classList.add('active');
+        document.getElementById('sidebar').style.display = 'none';
+        document.querySelector('.main').style.display = 'none';
+      }
+    }
+
+    function handleLogin(e) {
+      e.preventDefault();
+      const email = document.getElementById('loginEmail').value;
+      const password = document.getElementById('loginPassword').value;
+      const errorEl = document.getElementById('loginError');
+      const btn = document.getElementById('loginBtn');
+
+      if (email === 'adminnexalearn@gmail.com' && password === 'KenyaVault2026') {
+        sessionStorage.setItem('kv-auth', 'true');
+        sessionStorage.setItem('kv-user', email);
+        isAuthenticated = true;
+        errorEl.style.display = 'none';
+        btn.textContent = '⏳ Signing in...';
+        btn.disabled = true;
+        setTimeout(() => {
+          checkAuth();
+          showToast('Welcome', 'Logged in successfully');
+          btn.textContent = '🔑 Sign In';
+          btn.disabled = false;
+        }, 600);
+      } else {
+        errorEl.textContent = 'Invalid username or password.';
+        errorEl.style.display = 'block';
+        showToast('Login Failed', 'Invalid credentials', 'error');
+      }
+    }
+
+    function logout() {
+      if (confirm('Are you sure you want to logout?')) {
+        sessionStorage.removeItem('kv-auth');
+        sessionStorage.removeItem('kv-user');
+        isAuthenticated = false;
         checkAuth();
-    </script>
+        showToast('Logged out', 'You have been logged out');
+      }
+    }
+
+    document.getElementById('logoutBtn').addEventListener('click', logout);
+
+    // ============================================================
+    // 5. CLOCK
+    // ============================================================
+    function updateClock() {
+      const now = new Date();
+      document.getElementById('dateDisplay').textContent = now.toLocaleDateString('en-KE', {
+        weekday: 'short',
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      });
+      document.getElementById('timeDisplay').textContent = now.toLocaleTimeString('en-KE', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+      });
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    // ============================================================
+    // 6. SIDEBAR NAVIGATION
+    // ============================================================
+    const moduleNames = {
+      dashboard: 'Dashboard',
+      orders: 'Orders',
+      resources: 'Resources',
+      tutors: 'Tutors',
+      classes: 'Classes',
+      categories: 'Categories',
+      subjects: 'Subjects',
+      withdrawals: 'Withdrawals',
+      settings: 'Settings'
+    };
+
+    document.querySelectorAll('.sidebar-nav a[data-module]').forEach(link => {
+      link.addEventListener('click', function(e) {
+        e.preventDefault();
+        document.querySelectorAll('.sidebar-nav a[data-module]').forEach(l => l.classList.remove('active'));
+        this.classList.add('active');
+        const mod = this.dataset.module;
+        currentModule = mod;
+        const label = moduleNames[mod] || mod;
+        document.getElementById('pageTitle').innerHTML = label + ' <small>' + (mod === 'dashboard' ? 'overview' :
+          'management') + '</small>';
+
+        document.querySelectorAll('.module-container').forEach(el => el.classList.remove('active'));
+        document.getElementById('module-' + mod).classList.add('active');
+
+        if (mod === 'dashboard') loadDashboardData();
+        if (mod === 'orders') loadOrders();
+        if (mod === 'resources') loadResources();
+        if (mod === 'tutors') loadTutors();
+        if (mod === 'classes') loadClasses();
+        if (mod === 'categories') loadCategories();
+        if (mod === 'subjects') loadSubjects();
+        if (mod === 'withdrawals') loadWithdrawals();
+        if (mod === 'settings') loadSettings();
+      });
+    });
+
+    // ============================================================
+    // 7. CURRENCY TOGGLE
+    // ============================================================
+    document.querySelectorAll('#currencyToggle button').forEach(btn => {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('#currencyToggle button').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        currentCurrency = this.dataset.currency;
+        // Refresh all displays
+        renderOrdersTable();
+        updateStatsUI();
+        renderResources();
+        renderWithdrawals();
+      });
+    });
+
+    function formatCurrency(amount) {
+      const symbol = currentCurrency === 'KES' ? 'KES ' :
+        currentCurrency === 'USD' ? '$' :
+        currentCurrency === 'EUR' ? '€' : 'KES ';
+      const rate = exchangeRates[currentCurrency] || 1;
+      const converted = amount * rate;
+      if (currentCurrency === 'KES') {
+        return symbol + converted.toLocaleString();
+      }
+      return symbol + converted.toFixed(2);
+    }
+
+    // ============================================================
+    // 8. ORDER STATUS HELPERS
+    // ============================================================
+    function getPaymentStatus(order) {
+      const amount = order.total_amount || 0;
+      const paid = order.amount_paid || order.paid_amount || 0;
+
+      if (order.payment_status === 'failed' || order.status === 'failed') return 'failed';
+      if (order.payment_status === 'pending' || order.status === 'pending' || order.status === 'pending_verification')
+        return 'pending';
+      if (order.payment_status === 'paid' || order.status === 'paid' || order.status === 'completed') {
+        if (paid > amount && amount > 0) return 'overpaid';
+        if (paid < amount && paid > 0) return 'underpaid';
+        if (paid >= amount) return 'paid';
+        return 'pending';
+      }
+      if (order.payment_status === 'overpaid') return 'overpaid';
+      if (order.payment_status === 'underpaid') return 'underpaid';
+      return order.payment_status || 'pending';
+    }
+
+    function getStatusClass(status) {
+      const map = {
+        'paid': 'status-success',
+        'pending': 'status-pending',
+        'failed': 'status-error',
+        'underpaid': 'status-underpaid',
+        'overpaid': 'status-overpaid'
+      };
+      return map[status] || 'status-pending';
+    }
+
+    function getStatusLabel(status) {
+      const map = {
+        'paid': '✅ Paid',
+        'pending': '⏳ Pending',
+        'failed': '❌ Failed',
+        'underpaid': '⚠️ Underpaid',
+        'overpaid': 'ℹ️ Overpaid'
+      };
+      return map[status] || status;
+    }
+
+    // ============================================================
+    // 9. DASHBOARD DATA
+    // ============================================================
+    async function loadDashboardData() {
+      await loadStats();
+      await loadOrders();
+    }
+
+    async function loadStats() {
+      try {
+        const { data: orders, error } = await supabase.from('orders').select('*');
+        if (error) throw error;
+
+        ordersData = orders || [];
+        const paid = ordersData.filter(o => getPaymentStatus(o) === 'paid');
+        const pending = ordersData.filter(o => getPaymentStatus(o) === 'pending');
+        const failed = ordersData.filter(o => getPaymentStatus(o) === 'failed');
+        const totalRevenue = ordersData.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
+
+        document.getElementById('statOrders').textContent = ordersData.length;
+        document.getElementById('statPaid').textContent = paid.length;
+        document.getElementById('statPending').textContent = pending.length;
+        document.getElementById('statFailed').textContent = failed.length;
+        document.getElementById('statRevenue').textContent = formatCurrency(totalRevenue);
+        document.getElementById('statUsers').textContent = '1,284';
+
+        document.querySelectorAll('#statsGrid .stat-card').forEach(el => el.classList.remove('loading-shimmer'));
+
+        // Update pending badge
+        document.getElementById('pendingBadge').textContent = pending.length;
+        document.getElementById('pendingBadge').style.display = pending.length > 0 ? '' : 'none';
+
+        updatePaymentChart();
+      } catch (e) {
+        console.error('Load stats error:', e);
+        // Fallback data
+        document.getElementById('statOrders').textContent = '0';
+        document.getElementById('statPaid').textContent = '0';
+        document.getElementById('statPending').textContent = '0';
+        document.getElementById('statFailed').textContent = '0';
+        document.getElementById('statRevenue').textContent = formatCurrency(0);
+        document.getElementById('statUsers').textContent = '0';
+        document.querySelectorAll('#statsGrid .stat-card').forEach(el => el.classList.remove('loading-shimmer'));
+      }
+    }
+
+    function updatePaymentChart() {
+      const ctx = document.getElementById('paymentChart')?.getContext('2d');
+      if (!ctx) return;
+
+      const paid = ordersData.filter(o => getPaymentStatus(o) === 'paid').length;
+      const pending = ordersData.filter(o => getPaymentStatus(o) === 'pending').length;
+      const failed = ordersData.filter(o => getPaymentStatus(o) === 'failed').length;
+      const underpaid = ordersData.filter(o => getPaymentStatus(o) === 'underpaid').length;
+      const overpaid = ordersData.filter(o => getPaymentStatus(o) === 'overpaid').length;
+
+      new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: ['Paid', 'Pending', 'Failed', 'Underpaid', 'Overpaid'],
+          datasets: [{
+            data: [paid, pending, failed, underpaid, overpaid],
+            backgroundColor: ['#0b7e4b', '#b26b0a', '#b33630', '#f59e0b', '#3b82f6'],
+            borderWidth: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 12 } } },
+          cutout: '60%'
+        }
+      });
+    }
+
+    // ============================================================
+    // 10. ORDERS
+    // ============================================================
+    async function loadOrders() {
+      try {
+        const { data, error } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
+        if (error) throw error;
+        ordersData = (data || []).map(o => {
+          if (o.cart_items && typeof o.cart_items === 'string') {
+            try { o.cart_items = JSON.parse(o.cart_items); } catch (e) { o.cart_items = []; }
+          }
+          return o;
+        });
+        renderOrdersTable();
+        updateStatsUI();
+      } catch (e) {
+        console.error('Load orders error:', e);
+        ordersData = [
+          { id: '1', order_ref: 'ORD-001', customer_name: 'John M.', phone: '0712345678', total_amount: 49,
+            amount_paid: 49, payment_status: 'paid', status: 'paid', item_title: 'Math 101', user_role: 'Learner',
+            payment_method: 'M-Pesa', created_at: new Date().toISOString() },
+          { id: '2', order_ref: 'ORD-002', customer_name: 'Sarah K.', phone: '0723456789', total_amount: 120,
+            amount_paid: 0, payment_status: 'pending', status: 'pending', item_title: 'Physics Lab',
+            user_role: 'Tutor', payment_method: 'M-Pesa', created_at: new Date().toISOString() },
+          { id: '3', order_ref: 'ORD-003', customer_name: 'David O.', phone: '0734567890', total_amount: 78,
+            amount_paid: 0, payment_status: 'failed', status: 'failed', item_title: 'Chemistry',
+            user_role: 'Learner', payment_method: 'Card', created_at: new Date().toISOString() },
+          { id: '4', order_ref: 'ORD-004', customer_name: 'Grace W.', phone: '0745678901', total_amount: 95,
+            amount_paid: 50, payment_status: 'underpaid', status: 'underpaid', item_title: 'Biology',
+            user_role: 'Tutor', payment_method: 'M-Pesa', created_at: new Date().toISOString() },
+          { id: '5', order_ref: 'ORD-005', customer_name: 'Peter N.', phone: '0756789012', total_amount: 34,
+            amount_paid: 40, payment_status: 'overpaid', status: 'overpaid', item_title: 'History',
+            user_role: 'Learner', payment_method: 'M-Pesa', created_at: new Date().toISOString() }
+        ];
+        renderOrdersTable();
+        updateStatsUI();
+      }
+    }
+
+    function renderOrdersTable() {
+      const tbody = document.getElementById('ordersTableBody') || document.getElementById('tableBody');
+      if (!tbody) return;
+
+      const filtered = ordersData.filter(o => {
+        const status = getPaymentStatus(o);
+        if (currentFilter === 'paid') return status === 'paid';
+        if (currentFilter === 'pending') return status === 'pending';
+        if (currentFilter === 'failed') return status === 'failed';
+        if (currentFilter === 'underpaid') return status === 'underpaid';
+        if (currentFilter === 'overpaid') return status === 'overpaid';
+        return true;
+      });
+
+      const start = (currentPage - 1) * pageSize;
+      const paginated = filtered.slice(start, start + pageSize);
+
+      if (paginated.length === 0) {
+        tbody.innerHTML =
+          `<tr><td colspan="7" style="text-align:center;padding:30px;color:#6d859e;">No orders found</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = paginated.map(o => {
+        const status = getPaymentStatus(o);
+        const statusClass = getStatusClass(status);
+        const statusLabel = getStatusLabel(status);
+        const ref = o.order_ref || o.id.slice(0, 8).toUpperCase();
+        const amount = o.total_amount || 0;
+        const paid = o.amount_paid || o.paid_amount || 0;
+
+        return `
+          <tr>
+            <td data-label="Order Ref">#${ref}</td>
+            <td data-label="Customer">${o.customer_name || 'N/A'}</td>
+            <td data-label="Amount">${formatCurrency(amount)}</td>
+            <td data-label="Paid">${formatCurrency(paid)}</td>
+            <td data-label="Status"><span class="status ${statusClass}">${statusLabel}</span></td>
+            <td data-label="Payment Method">${o.payment_method || 'M-Pesa'}</td>
+            <td data-label="Actions" class="action-icons">
+              <i class="fas fa-eye" onclick="viewOrder('${o.id}')"></i>
+              ${status === 'pending' ? `<i class="fas fa-check" onclick="confirmOrder('${o.id}')" style="color:#0b7e4b;"></i>` : ''}
+              ${status === 'pending' ? `<i class="fas fa-times" onclick="rejectOrder('${o.id}')" style="color:#b33630;"></i>` : ''}
+              ${status === 'underpaid' ? `<i class="fas fa-exclamation-triangle" style="color:#f59e0b;" title="Underpaid - Amount paid is less than expected"></i>` : ''}
+              ${status === 'overpaid' ? `<i class="fas fa-info-circle" style="color:#3b82f6;" title="Overpaid - Amount paid exceeds expected"></i>` : ''}
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      // Update pagination
+      const totalPages = Math.ceil(filtered.length / pageSize);
+      document.querySelectorAll('.pagination span[data-page]').forEach(el => {
+        const page = parseInt(el.dataset.page);
+        el.style.display = page <= totalPages ? '' : 'none';
+        el.classList.toggle('active-page', page === currentPage);
+      });
+    }
+
+    function updateStatsUI() {
+      const total = ordersData.length;
+      const paid = ordersData.filter(o => getPaymentStatus(o) === 'paid').length;
+      const pending = ordersData.filter(o => getPaymentStatus(o) === 'pending').length;
+      const failed = ordersData.filter(o => getPaymentStatus(o) === 'failed').length;
+      const revenue = ordersData.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
+
+      document.getElementById('statOrders').textContent = total;
+      document.getElementById('statPaid').textContent = paid;
+      document.getElementById('statPending').textContent = pending;
+      document.getElementById('statFailed').textContent = failed;
+      document.getElementById('statRevenue').textContent = formatCurrency(revenue);
+
+      document.getElementById('pendingBadge').textContent = pending;
+      document.getElementById('pendingBadge').style.display = pending > 0 ? '' : 'none';
+    }
+
+    window.viewOrder = function(id) {
+      const order = ordersData.find(o => o.id === id);
+      const status = getPaymentStatus(order);
+      showToast('Order Details',
+        `#${order?.order_ref || id.slice(0,8)} | Amount: ${formatCurrency(order?.total_amount || 0)} | Status: ${status}`,
+        'info');
+    };
+
+    window.confirmOrder = async function(id) {
+      if (!confirm('Confirm this order?')) return;
+      try {
+        const order = ordersData.find(o => o.id === id);
+        await supabase.from('orders').update({
+          payment_status: 'paid',
+          status: 'paid',
+          amount_paid: order?.total_amount || 0
+        }).eq('id', id);
+        showToast('Confirmed', 'Order marked as paid');
+        await loadOrders();
+        await loadStats();
+      } catch (e) { showToast('Error', 'Failed to confirm order', 'error'); }
+    };
+
+    window.rejectOrder = async function(id) {
+      if (!confirm('Reject this order?')) return;
+      try {
+        await supabase.from('orders').update({ payment_status: 'failed', status: 'failed' }).eq('id', id);
+        showToast('Rejected', 'Order marked as failed');
+        await loadOrders();
+        await loadStats();
+      } catch (e) { showToast('Error', 'Failed to reject order', 'error'); }
+    };
+
+    // ============================================================
+    // 11. SEARCH & FILTERS
+    // ============================================================
+    document.getElementById('tableSearch')?.addEventListener('input', function(e) {
+      const query = e.target.value.toLowerCase().trim();
+      const rows = document.querySelectorAll('#tableBody tr');
+      rows.forEach(row => {
+        row.style.display = row.textContent.toLowerCase().includes(query) ? '' : 'none';
+      });
+    });
+
+    document.getElementById('ordersSearch')?.addEventListener('input', function(e) {
+      const query = e.target.value.toLowerCase().trim();
+      const rows = document.querySelectorAll('#ordersTableBody tr');
+      rows.forEach(row => {
+        row.style.display = row.textContent.toLowerCase().includes(query) ? '' : 'none';
+      });
+    });
+
+    document.querySelectorAll('.filter-badge[data-filter]').forEach(chip => {
+      chip.addEventListener('click', function() {
+        document.querySelectorAll('.filter-badge[data-filter]').forEach(c => c.classList.remove('active'));
+        this.classList.add('active');
+        currentFilter = this.dataset.filter;
+        currentPage = 1;
+        renderOrdersTable();
+      });
+    });
+
+    // ============================================================
+    // 12. PAGINATION
+    // ============================================================
+    document.getElementById('prevPage')?.addEventListener('click', function() {
+      if (currentPage > 1) { currentPage--;
+        renderOrdersTable(); }
+    });
+
+    document.getElementById('nextPage')?.addEventListener('click', function() {
+      const filtered = ordersData.filter(o => {
+        const status = getPaymentStatus(o);
+        if (currentFilter === 'paid') return status === 'paid';
+        if (currentFilter === 'pending') return status === 'pending';
+        if (currentFilter === 'failed') return status === 'failed';
+        if (currentFilter === 'underpaid') return status === 'underpaid';
+        if (currentFilter === 'overpaid') return status === 'overpaid';
+        return true;
+      });
+      const totalPages = Math.ceil(filtered.length / pageSize);
+      if (currentPage < totalPages) { currentPage++;
+        renderOrdersTable(); }
+    });
+
+    document.querySelectorAll('.pagination span[data-page]').forEach(el => {
+      el.addEventListener('click', function() {
+        currentPage = parseInt(this.dataset.page);
+        renderOrdersTable();
+      });
+    });
+
+    // ============================================================
+    // 13. EXPORT
+    // ============================================================
+    document.getElementById('exportBtn')?.addEventListener('click', function() {
+      exportOrders();
+    });
+    document.getElementById('ordersExportBtn')?.addEventListener('click', function() {
+      exportOrders();
+    });
+
+    function exportOrders() {
+      const headers = ['Order Ref', 'Customer', 'Amount', 'Paid', 'Status', 'Payment Method'];
+      const rows = ordersData.map(o => {
+        const status = getPaymentStatus(o);
+        return [
+          o.order_ref || o.id.slice(0, 8),
+          o.customer_name || 'N/A',
+          o.total_amount || 0,
+          o.amount_paid || o.paid_amount || 0,
+          status,
+          o.payment_method || 'M-Pesa'
+        ];
+      });
+
+      const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'orders_export.csv';
+      a.click();
+      window.URL.revokeObjectURL(url);
+      showToast('Export', 'Orders exported successfully');
+    }
+
+    // ============================================================
+    // 14. RESOURCES
+    // ============================================================
+    async function loadResources() {
+      try {
+        const { data, error } = await supabase.from('resources').select('*').order('created_at', { ascending: false });
+        if (error) throw error;
+        resourcesData = data || [];
+        renderResources();
+      } catch (e) {
+        console.error('Load resources error:', e);
+        resourcesData = [];
+        renderResources();
+      }
+    }
+
+    function renderResources() {
+      const tbody = document.getElementById('resourcesTableBody');
+      if (!tbody) return;
+      if (resourcesData.length === 0) {
+        tbody.innerHTML =
+          `<tr><td colspan="6" style="text-align:center;padding:20px;color:#6d859e;">No resources found</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = resourcesData.map(r => `
+        <tr>
+          <td data-label="Title">${r.title}</td>
+          <td data-label="Subject">${r.subject || '—'}</td>
+          <td data-label="Level">${r.level || '—'}</td>
+          <td data-label="Price">${r.price === 0 ? 'FREE' : formatCurrency(r.price)}</td>
+          <td data-label="Status"><span class="status ${r.status === 'live' ? 'status-success' : 'status-pending'}">${r.status || 'draft'}</span></td>
+          <td data-label="Actions" class="action-icons">
+            <i class="fas fa-toggle-on" onclick="toggleResource('${r.id}','${r.status}')" style="color:${r.status === 'live' ? '#0b7e4b' : '#6b7f99'};"></i>
+            <i class="fas fa-trash-alt" onclick="deleteResource('${r.id}')" style="color:#b33630;"></i>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    window.toggleResource = async function(id, currentStatus) {
+      const newStatus = currentStatus === 'live' ? 'draft' : 'live';
+      try {
+        await supabase.from('resources').update({ status: newStatus }).eq('id', id);
+        showToast('Updated', `Resource ${newStatus === 'live' ? 'published' : 'drafted'}`);
+        await loadResources();
+      } catch (e) { showToast('Error', 'Failed to update', 'error'); }
+    };
+
+    window.deleteResource = async function(id) {
+      if (!confirm('Delete this resource?')) return;
+      try {
+        await supabase.from('resources').delete().eq('id', id);
+        showToast('Deleted', 'Resource removed');
+        await loadResources();
+      } catch (e) { showToast('Error', 'Failed to delete', 'error'); }
+    };
+
+    document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const fileInput = document.getElementById('fileInput');
+      if (!fileInput.files[0]) { showToast('Error', 'Please select a file', 'error'); return; }
+
+      const file = fileInput.files[0];
+      const title = document.getElementById('resTitle').value;
+      const subject = document.getElementById('resSubject').value;
+      const level = document.getElementById('resLevel').value;
+      const type = document.getElementById('resType').value;
+      const price = parseFloat(document.getElementById('resPrice').value) || 0;
+      const curriculum = document.getElementById('resCurriculum').value;
+
+      try {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Date.now()}-${title.replace(/\s/g, '_')}.${fileExt}`;
+        const filePath = `resources/${fileName}`;
+
+        const formData = new FormData();
+        formData.append('file', file);
+        await supabase.storage.from('kenyavault-pdfs').upload(filePath, file);
+
+        const { data: urlData } = supabase.storage.from('kenyavault-pdfs').getPublicUrl(filePath);
+
+        await supabase.from('resources').insert({
+          title,
+          subject,
+          level,
+          resource_type: type,
+          price,
+          curriculum,
+          file_url: urlData.publicUrl,
+          status: 'draft',
+          created_at: new Date().toISOString()
+        });
+
+        showToast('Success', 'Resource uploaded successfully');
+        document.getElementById('uploadForm').reset();
+        document.getElementById('fileLabel').textContent = 'Click to upload or drag & drop PDF, DOCX, PPTX';
+        await loadResources();
+      } catch (e) {
+        console.error('Upload error:', e);
+        showToast('Error', 'Upload failed: ' + e.message, 'error');
+      }
+    });
+
+    document.getElementById('fileInput').addEventListener('change', function() {
+      if (this.files[0]) {
+        document.getElementById('fileLabel').textContent = '📎 ' + this.files[0].name;
+      }
+    });
+
+    // ============================================================
+    // 15. TUTORS
+    // ============================================================
+    async function loadTutors() {
+      try {
+        const { data, error } = await supabase.from('tutors').select('*');
+        if (error) throw error;
+        tutorsData = data || [];
+        renderTutors();
+        populateTutorSelects();
+      } catch (e) {
+        console.error('Load tutors error:', e);
+        tutorsData = [];
+        renderTutors();
+      }
+    }
+
+    function renderTutors() {
+      const tbody = document.getElementById('tutorsTableBody');
+      if (!tbody) return;
+      if (tutorsData.length === 0) {
+        tbody.innerHTML =
+          `<tr><td colspan="5" style="text-align:center;padding:20px;color:#6d859e;">No tutors found</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = tutorsData.map(t => `
+        <tr>
+          <td data-label="Name">${t.name}</td>
+          <td data-label="Email">${t.email}</td>
+          <td data-label="Specialization">${t.specialization || '—'}</td>
+          <td data-label="Status"><span class="status ${t.status === 'active' ? 'status-success' : 'status-error'}">${t.status || 'inactive'}</span></td>
+          <td data-label="Actions" class="action-icons">
+            <i class="fas fa-toggle-on" onclick="toggleTutor('${t.id}','${t.status}')" style="color:${t.status === 'active' ? '#0b7e4b' : '#6b7f99'};"></i>
+            <i class="fas fa-trash-alt" onclick="deleteTutor('${t.id}')" style="color:#b33630;"></i>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function populateTutorSelects() {
+      const select = document.getElementById('classTutor');
+      if (select) {
+        select.innerHTML = '<option value="">Select Tutor *</option>' +
+          tutorsData.filter(t => t.status === 'active').map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+      }
+    }
+
+    window.toggleTutor = async function(id, currentStatus) {
+      const newStatus = currentStatus === 'active' ? 'suspended' : 'active';
+      try {
+        await supabase.from('tutors').update({ status: newStatus }).eq('id', id);
+        showToast('Updated', `Tutor ${newStatus === 'active' ? 'activated' : 'suspended'}`);
+        await loadTutors();
+      } catch (e) { showToast('Error', 'Failed to update', 'error'); }
+    };
+
+    window.deleteTutor = async function(id) {
+      if (!confirm('Delete this tutor?')) return;
+      try {
+        await supabase.from('tutors').delete().eq('id', id);
+        showToast('Deleted', 'Tutor removed');
+        await loadTutors();
+      } catch (e) { showToast('Error', 'Failed to delete', 'error'); }
+    };
+
+    document.getElementById('tutorForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const name = document.getElementById('tutorName').value;
+      const email = document.getElementById('tutorEmail').value;
+      const phone = document.getElementById('tutorPhone').value;
+      const specialization = document.getElementById('tutorSpecialization').value;
+
+      try {
+        await supabase.from('tutors').insert({ name, email, phone, specialization, status: 'active',
+          created_at: new Date().toISOString() });
+        showToast('Success', 'Tutor added successfully');
+        document.getElementById('tutorForm').reset();
+        await loadTutors();
+      } catch (e) { showToast('Error', 'Failed to add tutor', 'error'); }
+    });
+
+    // ============================================================
+    // 16. CLASSES
+    // ============================================================
+    async function loadClasses() {
+      try {
+        const { data, error } = await supabase.from('classes').select('*').order('scheduled_at', { ascending: true });
+        if (error) throw error;
+        classesData = data || [];
+        renderClasses();
+      } catch (e) {
+        console.error('Load classes error:', e);
+        classesData = [];
+        renderClasses();
+      }
+    }
+
+    function renderClasses() {
+      const tbody = document.getElementById('classesTableBody');
+      if (!tbody) return;
+      if (classesData.length === 0) {
+        tbody.innerHTML =
+          `<tr><td colspan="5" style="text-align:center;padding:20px;color:#6d859e;">No classes found</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = classesData.map(c => {
+        const tutor = tutorsData.find(t => t.id === c.tutor_id);
+        const status = c.is_live ? 'Live' : c.status || 'Scheduled';
+        const statusClass = c.is_live ? 'status-success' : c.status === 'ended' ? 'status-error' : 'status-pending';
+        const date = c.scheduled_at ? new Date(c.scheduled_at).toLocaleString() : 'N/A';
+        return `
+          <tr>
+            <td data-label="Title">${c.title}</td>
+            <td data-label="Tutor">${tutor?.name || 'Unknown'}</td>
+            <td data-label="Date/Time">${date}</td>
+            <td data-label="Status"><span class="status ${statusClass}">${status}</span></td>
+            <td data-label="Actions" class="action-icons">
+              <i class="fas fa-play" onclick="toggleClass('${c.id}','${c.is_live}')" style="color:${c.is_live ? '#b33630' : '#0b7e4b'};"></i>
+              <i class="fas fa-trash-alt" onclick="deleteClass('${c.id}')" style="color:#b33630;"></i>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    window.toggleClass = async function(id, isLive) {
+      const newLive = !isLive;
+      try {
+        await supabase.from('classes').update({
+          is_live: newLive,
+          status: newLive ? 'live' : 'scheduled',
+          updated_at: new Date().toISOString()
+        }).eq('id', id);
+        showToast('Updated', `Class ${newLive ? 'started' : 'ended'}`);
+        await loadClasses();
+      } catch (e) { showToast('Error', 'Failed to update class', 'error'); }
+    };
+
+    window.deleteClass = async function(id) {
+      if (!confirm('Delete this class?')) return;
+      try {
+        await supabase.from('classes').delete().eq('id', id);
+        showToast('Deleted', 'Class removed');
+        await loadClasses();
+      } catch (e) { showToast('Error', 'Failed to delete class', 'error'); }
+    };
+
+    document.getElementById('classForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const title = document.getElementById('classTitle').value;
+      const tutor_id = document.getElementById('classTutor').value;
+      const subject = document.getElementById('classSubject').value;
+      const scheduled_at = document.getElementById('classDateTime').value;
+      const duration_minutes = parseInt(document.getElementById('classDuration').value) || 60;
+      const max_students = parseInt(document.getElementById('classMaxStudents').value) || 50;
+      const meeting_link = document.getElementById('classMeetingLink').value;
+      const is_live = document.getElementById('classIsLive').checked;
+
+      try {
+        await supabase.from('classes').insert({
+          title,
+          tutor_id,
+          subject,
+          scheduled_at,
+          duration_minutes,
+          max_students,
+          meeting_link,
+          is_live,
+          status: is_live ? 'live' : 'scheduled',
+          created_at: new Date().toISOString()
+        });
+        showToast('Success', 'Class created successfully');
+        document.getElementById('classForm').reset();
+        await loadClasses();
+      } catch (e) { showToast('Error', 'Failed to create class', 'error'); }
+    });
+
+    // ============================================================
+    // 17. CATEGORIES
+    // ============================================================
+    async function loadCategories() {
+      try {
+        const { data, error } = await supabase.from('categories').select('*').order('name');
+        if (error) throw error;
+        categoriesData = data || [];
+        renderCategories();
+        populateCategorySelects();
+      } catch (e) {
+        console.error('Load categories error:', e);
+        categoriesData = [{ id: '1', name: 'CBC' }, { id: '2', name: '8-4-4' }];
+        renderCategories();
+        populateCategorySelects();
+      }
+    }
+
+    function renderCategories() {
+      const tbody = document.getElementById('categoriesTableBody');
+      if (!tbody) return;
+      if (categoriesData.length === 0) {
+        tbody.innerHTML =
+          `<tr><td colspan="2" style="text-align:center;padding:20px;color:#6d859e;">No categories found</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = categoriesData.map(c => `
+        <tr>
+          <td data-label="Name">${c.name}</td>
+          <td data-label="Actions" class="action-icons">
+            <i class="fas fa-trash-alt" onclick="deleteCategory('${c.id}')" style="color:#b33630;"></i>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function populateCategorySelects() {
+      const select = document.getElementById('subjectCategory');
+      if (select) {
+        select.innerHTML = '<option value="">Category *</option>' +
+          categoriesData.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+      }
+    }
+
+    window.deleteCategory = async function(id) {
+      if (!confirm('Delete this category?')) return;
+      try {
+        await supabase.from('categories').delete().eq('id', id);
+        showToast('Deleted', 'Category removed');
+        await loadCategories();
+      } catch (e) { showToast('Error', 'Failed to delete', 'error'); }
+    };
+
+    document.getElementById('categoryForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const name = document.getElementById('categoryName').value;
+      try {
+        await supabase.from('categories').insert({ name, created_at: new Date().toISOString() });
+        showToast('Success', 'Category added');
+        document.getElementById('categoryName').value = '';
+        await loadCategories();
+      } catch (e) { showToast('Error', 'Failed to add category', 'error'); }
+    });
+
+    // ============================================================
+    // 18. SUBJECTS (Kenya Education System)
+    // ============================================================
+    const defaultSubjects = [
+      'Mathematics', 'English', 'Kiswahili', 'Integrated Science', 'Social Studies',
+      'Creative Arts', 'Business Studies', 'Religious Education', 'Computer Studies',
+      'Chemistry', 'Physics', 'Biology', 'Geography', 'History & Citizenship',
+      'Pretechnical Studies', 'Agriculture', 'Home Science', 'French', 'German',
+      'Music', 'Physical Education', 'Life Skills', 'TVET', 'College', 'University'
+    ];
+
+    async function loadSubjects() {
+      try {
+        const { data, error } = await supabase.from('subjects').select('*, categories(name)').order('name');
+        if (error) {
+          // Table might not exist, create fallback
+          console.warn('Subjects table error, using fallback data');
+          subjectsData = defaultSubjects.map((name, i) => ({
+            id: 'sub-' + i,
+            name: name,
+            categories: { name: 'General' }
+          }));
+          renderSubjects();
+          return;
+        }
+        subjectsData = data || [];
+        // If no subjects, seed default ones
+        if (subjectsData.length === 0) {
+          await seedDefaultSubjects();
+          const { data: newData } = await supabase.from('subjects').select('*, categories(name)').order('name');
+          subjectsData = newData || [];
+        }
+        renderSubjects();
+      } catch (e) {
+        console.error('Load subjects error:', e);
+        // Fallback: use default subjects
+        subjectsData = defaultSubjects.map((name, i) => ({
+          id: 'sub-' + i,
+          name: name,
+          categories: { name: 'General' }
+        }));
+        renderSubjects();
+      }
+    }
+
+    async function seedDefaultSubjects() {
+      try {
+        // Get or create default category
+        let { data: catData } = await supabase.from('categories').select('id').eq('name', 'General').single();
+        if (!catData) {
+          const { data: newCat } = await supabase.from('categories').insert({ name: 'General' }).select().single();
+          catData = newCat;
+        }
+        const categoryId = catData.id;
+
+        for (const name of defaultSubjects) {
+          await supabase.from('subjects').insert({ name, category_id: categoryId }).select();
+        }
+      } catch (e) { console.error('Seed subjects error:', e); }
+    }
+
+    function renderSubjects() {
+      const tbody = document.getElementById('subjectsTableBody');
+      if (!tbody) return;
+      if (subjectsData.length === 0) {
+        tbody.innerHTML =
+          `<tr><td colspan="3" style="text-align:center;padding:20px;color:#6d859e;">No subjects found</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = subjectsData.map(s => `
+        <tr>
+          <td data-label="Subject">${s.name}</td>
+          <td data-label="Category">${s.categories?.name || 'General'}</td>
+          <td data-label="Actions" class="action-icons">
+            <i class="fas fa-trash-alt" onclick="deleteSubject('${s.id}')" style="color:#b33630;"></i>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    window.deleteSubject = async function(id) {
+      if (!confirm('Delete this subject?')) return;
+      try {
+        await supabase.from('subjects').delete().eq('id', id);
+        showToast('Deleted', 'Subject removed');
+        await loadSubjects();
+      } catch (e) { showToast('Error', 'Failed to delete', 'error'); }
+    };
+
+    document.getElementById('subjectForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const name = document.getElementById('subjectName').value;
+      const category_id = document.getElementById('subjectCategory').value;
+      try {
+        await supabase.from('subjects').insert({ name, category_id, created_at: new Date().toISOString() });
+        showToast('Success', 'Subject added');
+        document.getElementById('subjectName').value = '';
+        await loadSubjects();
+      } catch (e) { showToast('Error', 'Failed to add subject', 'error'); }
+    });
+
+    // ============================================================
+    // 19. WITHDRAWALS
+    // ============================================================
+    async function loadWithdrawals() {
+      try {
+        const { data, error } = await supabase.from('withdrawals').select('*, tutors(name)').order('created_at', {
+          ascending: false
+        });
+        if (error) throw error;
+        withdrawalsData = data || [];
+        renderWithdrawals();
+        document.getElementById('withdrawalBadge').textContent = withdrawalsData.filter(w => w.status === 'pending')
+          .length;
+      } catch (e) {
+        console.error('Load withdrawals error:', e);
+        withdrawalsData = [
+          { id: '1', tutor_id: '1', amount: 5000, status: 'pending', created_at: new Date().toISOString(),
+            tutors: { name: 'John Tutor' } },
+          { id: '2', tutor_id: '2', amount: 3000, status: 'pending', created_at: new Date().toISOString(),
+            tutors: { name: 'Sarah Teacher' } }
+        ];
+        renderWithdrawals();
+      }
+    }
+
+    function renderWithdrawals() {
+      const container = document.getElementById('withdrawalsList');
+      if (!container) return;
+      if (withdrawalsData.length === 0) {
+        container.innerHTML = '<p style="text-align:center;color:#6d859e;padding:20px;">No withdrawal requests</p>';
+        return;
+      }
+      container.innerHTML = withdrawalsData.map(w => `
+        <div class="withdrawal-card">
+          <div class="info">
+            <div><div class="label">Tutor</div><div class="value">${w.tutors?.name || 'Unknown'}</div></div>
+            <div><div class="label">Amount</div><div class="value">${formatCurrency(w.amount)}</div></div>
+            <div><div class="label">Date</div><div class="value">${new Date(w.created_at).toLocaleDateString()}</div></div>
+            <div><div class="label">Status</div><div class="value"><span class="status ${w.status === 'pending' ? 'status-pending' : w.status === 'approved' ? 'status-success' : 'status-error'}">${w.status}</span></div></div>
+          </div>
+          ${w.status === 'pending' ? `
+            <div class="actions">
+              <button class="approve" onclick="approveWithdrawal('${w.id}')">✅ Approve</button>
+              <button class="reject" onclick="rejectWithdrawal('${w.id}')">❌ Reject</button>
+            </div>
+          ` : ''}
+        </div>
+      `).join('');
+    }
+
+    window.approveWithdrawal = async function(id) {
+      try {
+        await supabase.from('withdrawals').update({ status: 'approved' }).eq('id', id);
+        showToast('Approved', 'Withdrawal approved');
+        await loadWithdrawals();
+      } catch (e) { showToast('Error', 'Failed to approve', 'error'); }
+    };
+
+    window.rejectWithdrawal = async function(id) {
+      try {
+        await supabase.from('withdrawals').update({ status: 'rejected' }).eq('id', id);
+        showToast('Rejected', 'Withdrawal rejected');
+        await loadWithdrawals();
+      } catch (e) { showToast('Error', 'Failed to reject', 'error'); }
+    };
+
+    // ============================================================
+    // 20. SETTINGS
+    // ============================================================
+    function loadSettings() {
+      const saved = localStorage.getItem('kv-settings');
+      if (saved) {
+        try {
+          const settings = JSON.parse(saved);
+          document.getElementById('settingSiteName').value = settings.siteName || 'KenyaVault';
+          document.getElementById('settingTagline').value = settings.tagline || 'Complete Education Resources';
+          document.getElementById('settingPayout').value = settings.payoutPercentage || 80;
+          document.getElementById('settingCurrency').value = settings.currency || 'KES';
+          document.getElementById('settingEmailNotif').checked = settings.emailNotifications !== false;
+          document.getElementById('settingOrderNotif').checked = settings.orderNotifications !== false;
+          document.getElementById('settingTimezone').value = settings.timezone || 'Africa/Nairobi';
+        } catch (e) {}
+      }
+    }
+
+    document.getElementById('settingsForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const settings = {
+        siteName: document.getElementById('settingSiteName').value,
+        tagline: document.getElementById('settingTagline').value,
+        payoutPercentage: parseInt(document.getElementById('settingPayout').value) || 80,
+        currency: document.getElementById('settingCurrency').value,
+        emailNotifications: document.getElementById('settingEmailNotif').checked,
+        orderNotifications: document.getElementById('settingOrderNotif').checked,
+        timezone: document.getElementById('settingTimezone').value
+      };
+      localStorage.setItem('kv-settings', JSON.stringify(settings));
+      showToast('Saved', 'Settings updated successfully');
+    });
+
+    function resetSettings() {
+      if (!confirm('Reset all settings to default?')) return;
+      localStorage.removeItem('kv-settings');
+      document.getElementById('settingSiteName').value = 'KenyaVault';
+      document.getElementById('settingTagline').value = 'Complete Education Resources';
+      document.getElementById('settingPayout').value = 80;
+      document.getElementById('settingCurrency').value = 'KES';
+      document.getElementById('settingEmailNotif').checked = true;
+      document.getElementById('settingOrderNotif').checked = true;
+      document.getElementById('settingTimezone').value = 'Africa/Nairobi';
+      showToast('Reset', 'Settings reset to default');
+    }
+
+    // ============================================================
+    // 21. CHARTS
+    // ============================================================
+    const chartDefaults = {
+      responsive: true,
+      maintainAspectRatio: true,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, grid: { color: '#eef3f9' } }, x: { grid: { display: false } } }
+    };
+
+    new Chart(document.getElementById('salesChart'), {
+      type: 'bar',
+      data: {
+        labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        datasets: [{ label: 'Sales', data: [28, 42, 35, 58, 62, 48, 72], backgroundColor: '#4facfe',
+          borderRadius: 6 }]
+      },
+      options: chartDefaults
+    });
+
+    // ============================================================
+    // 22. THEME TOGGLE
+    // ============================================================
+    let darkMode = false;
+
+    function toggleTheme() {
+      darkMode = !darkMode;
+      document.body.style.background = darkMode ? '#111827' : '#f4f7fc';
+      document.body.style.color = darkMode ? '#e5e7eb' : '#0b1a33';
+      document.querySelectorAll('.stat-card, .chart-card, .table-section, .module-container > div:not(.module-container)')
+        .forEach(el => {
+          el.style.background = darkMode ? '#1f2937' : 'white';
+          el.style.borderColor = darkMode ? '#374151' : '#eef3f9';
+        });
+      document.querySelectorAll('.stat-card .stat-number, .chart-card h3, .topbar h1, .settings-section .section-title')
+        .forEach(el => {
+          el.style.color = darkMode ? '#f3f4f6' : '';
+        });
+      document.querySelectorAll('.topbar-datetime, .filter-badge, .pagination span, .withdrawal-card').forEach(el => {
+        el.style.background = darkMode ? '#374151' : '';
+        el.style.color = darkMode ? '#e5e7eb' : '';
+        el.style.borderColor = darkMode ? '#4b5563' : '';
+      });
+      document.querySelectorAll('.table-header input, .modal-box input, .modal-box select, .modal-box textarea, .settings-section .setting-row input, .settings-section .setting-row select')
+        .forEach(el => {
+          el.style.background = darkMode ? '#374151' : '#f8fafd';
+          el.style.color = darkMode ? '#e5e7eb' : '';
+          el.style.borderColor = darkMode ? '#4b5563' : '#dce5ef';
+        });
+      document.querySelectorAll('.drop-zone').forEach(el => {
+        el.style.background = darkMode ? '#1f2937' : '#f9fafb';
+        el.style.borderColor = darkMode ? '#4b5563' : '#d1d5db';
+      });
+      document.querySelector('.login-box').style.background = darkMode ? 'rgba(17,24,39,0.9)' :
+        'rgba(255,255,255,0.05)';
+      document.querySelectorAll('.currency-toggle').forEach(el => {
+        el.style.background = darkMode ? '#1f2937' : '#f0f4fa';
+        el.style.borderColor = darkMode ? '#374151' : '#e6edf5';
+      });
+    }
+
+    // ============================================================
+    // 23. ERROR HANDLING FOR MISSING TABLES
+    // ============================================================
+    // Wrap Supabase calls with error handling for missing tables
+    const safeQuery = async (table, action, ...args) => {
+      try {
+        const result = await supabase.from(table)[action](...args);
+        if (result.error && result.error.code === 'PGRST205') {
+          console.warn(`Table '${table}' not found, using fallback data`);
+          return { data: [], error: null };
+        }
+        return result;
+      } catch (e) {
+        console.warn(`Error querying table '${table}':`, e);
+        return { data: [], error: null };
+      }
+    };
+
+    // Override supabase.from with safe version
+    const originalFrom = supabase.from;
+    supabase.from = function(table) {
+      const self = this;
+      return new Proxy(originalFrom.call(self, table), {
+        get(target, prop) {
+          if (typeof target[prop] === 'function') {
+            return function(...args) {
+              try {
+                return target[prop](...args);
+              } catch (e) {
+                console.warn(`Error calling ${prop} on table '${table}':`, e);
+                return Promise.resolve({ data: [], error: null });
+              }
+            };
+          }
+          return target[prop];
+        }
+      });
+    };
+
+    // ============================================================
+    // 24. INIT
+    // ============================================================
+    function initApp() {
+      loadDashboardData();
+      loadResources();
+      loadTutors();
+      loadClasses();
+      loadCategories();
+      loadSubjects();
+      loadOrders();
+      loadWithdrawals();
+      loadSettings();
+      populateTutorSelects();
+
+      // Search for orders
+      document.getElementById('ordersSearch')?.addEventListener('input', function(e) {
+        const query = e.target.value.toLowerCase().trim();
+        const rows = document.querySelectorAll('#ordersTableBody tr');
+        rows.forEach(row => {
+          row.style.display = row.textContent.toLowerCase().includes(query) ? '' : 'none';
+        });
+      });
+
+      // Filter badges for orders
+      document.querySelectorAll('#module-orders .filter-badge').forEach(chip => {
+        chip.addEventListener('click', function() {
+          document.querySelectorAll('#module-orders .filter-badge').forEach(c => c.classList.remove(
+          'active'));
+          this.classList.add('active');
+          currentFilter = this.dataset.filter;
+          currentPage = 1;
+          renderOrdersTable();
+        });
+      });
+    }
+
+    checkAuth();
+  </script>
 </body>
 </html>
