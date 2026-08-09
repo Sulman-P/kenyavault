@@ -3337,33 +3337,27 @@ async function createDownloadTokensForOrder(orderRef, orderIds) {
     // ── SECURE DOWNLOAD RESOURCE ──
     async function secureDownloadResource(orderId, resourceId, token) {
         try {
-            const response = await fetch(`${SUPABASE_URL}/functions/v1/secure-download`, {
-                method: 'POST',
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    order_id: orderId,
-                    resource_id: resourceId,
-                    token: token
-                })
-            });
+        const { data: order, error: orderError } = await supabase
+   .from('orders')
+  .select('id, payment_status, resource_file_path, resource_file_name')
+  .eq('id', order_id)
+  .maybeSingle();
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Download authorization failed');
-            }
+    if (orderError || !order) {
+  console.error('Order not found:', { order_id, error: orderError });
+  return new Response(
+    JSON.stringify({ error: 'Order not found', details: { order_id } }),
+    { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+  );
+}
 
-            const result = await response.json();
-            return result;
-        } catch (error) {
-            console.error('❌ Secure download error:', error);
-            throw error;
-        }
-    }
-
+if (order.payment_status !== 'paid' && order.payment_status !== 'completed') {
+  console.error('Order not paid:', { order_id, payment_status: order.payment_status });
+  return new Response(
+    JSON.stringify({ error: 'Order not paid', details: { payment_status: order.payment_status } }),
+    { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+  );
+}
     // ── DOWNLOAD SINGLE RESOURCE ──
     async function downloadSingleResource(orderId, resourceId, title, index) {
         const itemEl = document.querySelector(`#download-item-${index}`);
