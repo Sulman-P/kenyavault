@@ -492,6 +492,9 @@
         .stat-card .stat-number.green {
             color: var(--kv-green-light);
         }
+        .stat-card .stat-number.purple {
+            color: #8B5CF6;
+        }
         .stat-card .stat-label {
             font-size: 0.8rem;
             color: var(--kv-muted);
@@ -603,6 +606,40 @@
         .metric-row .green {
             color: var(--kv-green-light);
             font-weight: 700;
+        }
+        .top-resources {
+            background: var(--kv-bg);
+            border-radius: var(--kv-radius-sm);
+            padding: 12px 16px;
+            border: 1px solid var(--kv-border);
+            margin-top: 4px;
+        }
+        .dark .top-resources {
+            background: #0F172A;
+            border-color: #1E293B;
+        }
+        .top-resources p {
+            font-weight: 700;
+            font-size: 0.8rem;
+            color: var(--kv-text);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .top-resources ul {
+            list-style: none;
+            margin-top: 6px;
+        }
+        .top-resources ul li {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            padding: 3px 0;
+            color: var(--kv-muted);
+        }
+        .top-resources ul li .gold {
+            color: var(--kv-gold);
+            font-weight: 600;
         }
 
         /* Upload + Resources */
@@ -762,6 +799,10 @@
             background: #F1F5F9;
             color: #475569;
         }
+        .status.pending {
+            background: #FEF3C7;
+            color: #92400E;
+        }
         .dark .status.live {
             background: #064E3B;
             color: #6EE7B7;
@@ -769,6 +810,10 @@
         .dark .status.draft {
             background: #1E293B;
             color: #94A3B8;
+        }
+        .dark .status.pending {
+            background: #451A03;
+            color: #FBBF24;
         }
         .resource-item .gold {
             color: var(--kv-gold);
@@ -801,6 +846,44 @@
         }
         .empty-state p {
             font-size: 0.95rem;
+        }
+        .empty-state .sub {
+            font-size: 0.85rem;
+            color: var(--kv-muted);
+        }
+
+        /* Toast */
+        .toast-notification {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 99999;
+            background: var(--kv-navy);
+            color: #fff;
+            padding: 14px 20px;
+            border-radius: var(--kv-radius-sm);
+            font-size: 0.85rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            transform: translateY(80px);
+            opacity: 0;
+            transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+            pointer-events: none;
+            max-width: 380px;
+        }
+        .toast-notification.show {
+            transform: translateY(0);
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .toast-notification.error {
+            background: #DC2626;
+        }
+        .toast-notification.success {
+            background: var(--kv-green);
         }
 
         /* Responsive */
@@ -876,6 +959,48 @@
         .text-green {
             color: var(--kv-green-light);
         }
+
+        /* Progress bar for upload */
+        .progress-track {
+            width: 100%;
+            height: 6px;
+            background: var(--kv-border);
+            border-radius: 99px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+        .dark .progress-track {
+            background: #374151;
+        }
+        #uploadBar {
+            height: 100%;
+            background: var(--kv-gold);
+            transition: width 0.3s ease;
+            border-radius: 99px;
+        }
+
+        /* Drop zone */
+        .drop-zone {
+            border: 2px dashed var(--kv-border);
+            border-radius: var(--kv-radius-sm);
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .dark .drop-zone {
+            border-color: #4b5563;
+        }
+        .drop-zone:hover {
+            border-color: var(--kv-gold);
+            background: rgba(212, 160, 23, 0.05);
+        }
+        .cover-preview-img {
+            max-width: 100px;
+            max-height: 100px;
+            border-radius: var(--kv-radius-sm);
+            margin-top: 8px;
+        }
     </style>
 </head>
 <body>
@@ -915,11 +1040,13 @@
             tutor: null,
             resources: [],
             orders: [],
+            classes: [],
             loading: true,
             authChecked: false,
             error: null,
             darkMode: localStorage.getItem('kv-tutor-dark') === 'true',
-            debugInfo: []
+            debugInfo: [],
+            activeTab: 'dashboard'
         };
 
         // ─── DOM REFS ───
@@ -988,10 +1115,12 @@
         }
 
         function renderDashboard() {
-            const { tutor, resources, orders } = state;
+            const { tutor, resources, orders, classes } = state;
             const totalDownloads = resources.reduce((sum, r) => sum + (r.download_count || 0), 0);
             const totalEarnings = orders.reduce((sum, o) => sum + (o.tutor_share || Math.round((o.total_amount || o.item_price || 0) * 0.8)), 0);
             const totalSales = orders.length;
+            const pendingEarnings = orders.filter(o => o.status === 'pending' || o.status === 'pending_verification').reduce((sum, o) => sum + (o.tutor_share || 0), 0);
+            const paidOut = tutor?.total_paid_out || 0;
 
             // Monthly chart data (last 6 months)
             const now = new Date();
@@ -1015,11 +1144,11 @@
             const resourceRows = resources.map(r => `
                 <div class="resource-item">
                     <span class="title">${r.title}</span>
-                    <span class="status ${r.status === 'live' || r.published !== false ? 'live' : 'draft'}">${r.status === 'live' || r.published !== false ? 'Live' : 'Draft'}</span>
+                    <span class="status ${r.status === 'live' || r.published !== false ? 'live' : r.status === 'pending' ? 'pending' : 'draft'}">${r.status === 'live' || r.published !== false ? 'Live' : r.status === 'pending' ? 'Pending' : 'Draft'}</span>
                     <span>${r.sales_count || 0}</span>
                     <span>${r.download_count || 0}</span>
                     <span class="gold">KES ${(r.total_earnings || 0).toLocaleString()}</span>
-                    <span class="actions"><i class="fas fa-edit"></i><i class="fas fa-ellipsis-v"></i></span>
+                    <span class="actions"><i class="fas fa-edit" onclick="editResource('${r.id}')"></i><i class="fas fa-trash" onclick="deleteResource('${r.id}')"></i></span>
                 </div>
             `).join('');
 
@@ -1036,18 +1165,18 @@
                         </div>
                         <nav class="sidebar-nav">
                             <div class="nav-label">Main</div>
-                            <a href="#" class="active"><i class="fas fa-th-large"></i> Dashboard</a>
-                            <a href="#"><i class="fas fa-folder-open"></i> My Resources</a>
-                            <a href="#"><i class="fas fa-cloud-upload-alt"></i> Upload Resource</a>
-                            <a href="#"><i class="fas fa-chart-line"></i> Sales</a>
-                            <a href="#"><i class="fas fa-wallet"></i> Earnings</a>
-                            <a href="#"><i class="fas fa-hand-holding-usd"></i> Withdrawals</a>
-                            <a href="#"><i class="fas fa-user-friends"></i> Students</a>
-                            <a href="#"><i class="fas fa-analytics"></i> Analytics</a>
+                            <a href="#" class="${state.activeTab === 'dashboard' ? 'active' : ''}" onclick="switchTab('dashboard')"><i class="fas fa-th-large"></i> Dashboard</a>
+                            <a href="#" class="${state.activeTab === 'resources' ? 'active' : ''}" onclick="switchTab('resources')"><i class="fas fa-folder-open"></i> My Resources</a>
+                            <a href="#" class="${state.activeTab === 'upload' ? 'active' : ''}" onclick="switchTab('upload')"><i class="fas fa-cloud-upload-alt"></i> Upload Resource</a>
+                            <a href="#" class="${state.activeTab === 'sales' ? 'active' : ''}" onclick="switchTab('sales')"><i class="fas fa-chart-line"></i> Sales</a>
+                            <a href="#" class="${state.activeTab === 'earnings' ? 'active' : ''}" onclick="switchTab('earnings')"><i class="fas fa-wallet"></i> Earnings</a>
+                            <a href="#" class="${state.activeTab === 'withdrawals' ? 'active' : ''}" onclick="switchTab('withdrawals')"><i class="fas fa-hand-holding-usd"></i> Withdrawals</a>
+                            <a href="#" class="${state.activeTab === 'students' ? 'active' : ''}" onclick="switchTab('students')"><i class="fas fa-user-friends"></i> Students</a>
+                            <a href="#" class="${state.activeTab === 'analytics' ? 'active' : ''}" onclick="switchTab('analytics')"><i class="fas fa-analytics"></i> Analytics</a>
                             <div class="nav-label" style="margin-top:16px;">Account</div>
-                            <a href="#"><i class="fas fa-user-edit"></i> Profile</a>
-                            <a href="#"><i class="fas fa-cog"></i> Settings</a>
-                            <a href="#"><i class="fas fa-headset"></i> Support</a>
+                            <a href="#" class="${state.activeTab === 'profile' ? 'active' : ''}" onclick="switchTab('profile')"><i class="fas fa-user-edit"></i> Profile</a>
+                            <a href="#" class="${state.activeTab === 'settings' ? 'active' : ''}" onclick="switchTab('settings')"><i class="fas fa-cog"></i> Settings</a>
+                            <a href="#" class="${state.activeTab === 'support' ? 'active' : ''}" onclick="switchTab('support')"><i class="fas fa-headset"></i> Support</a>
                         </nav>
                         <div class="sidebar-footer">
                             <div class="tutor-card">
@@ -1057,7 +1186,7 @@
                                     <div class="status"><i class="fas fa-circle" style="font-size:6px;"></i> ${tutor?.status === 'approved' ? 'Approved' : tutor?.status === 'pending' ? 'Pending' : 'Active'}</div>
                                 </div>
                             </div>
-                            <button class="logout-btn" id="logoutBtn"><i class="fas fa-sign-out-alt"></i> Logout</button>
+                            <button class="logout-btn" onclick="handleLogout()"><i class="fas fa-sign-out-alt"></i> Logout</button>
                         </div>
                     </aside>
 
@@ -1074,6 +1203,42 @@
                             </div>
                         </div>
 
+                        ${renderTabContent()}
+                    </main>
+                </div>
+            `;
+        }
+
+        function renderTabContent() {
+            const { tutor, resources, orders, classes } = state;
+            const totalDownloads = resources.reduce((sum, r) => sum + (r.download_count || 0), 0);
+            const totalEarnings = orders.reduce((sum, o) => sum + (o.tutor_share || Math.round((o.total_amount || o.item_price || 0) * 0.8)), 0);
+            const totalSales = orders.length;
+            const pendingEarnings = orders.filter(o => o.status === 'pending' || o.status === 'pending_verification').reduce((sum, o) => sum + (o.tutor_share || 0), 0);
+            const paidOut = tutor?.total_paid_out || 0;
+
+            // Monthly chart data
+            const now = new Date();
+            const months = [];
+            const monthlyData = [];
+            for (let i = 5; i >= 0; i--) {
+                const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                const monthKey = d.toISOString().slice(0, 7);
+                months.push(d.toLocaleString('default', { month: 'short' }));
+                let sum = 0;
+                orders.forEach(o => {
+                    const oKey = new Date(o.created_at).toISOString().slice(0, 7);
+                    if (oKey === monthKey) {
+                        sum += o.tutor_share || Math.round((o.total_amount || o.item_price || 0) * 0.8);
+                    }
+                });
+                monthlyData.push(sum);
+            }
+            const maxVal = Math.max(...monthlyData, 1);
+
+            switch (state.activeTab) {
+                case 'dashboard':
+                    return `
                         <!-- Stats -->
                         <div class="stats-grid">
                             <div class="stat-card">
@@ -1119,15 +1284,12 @@
                                     <div class="metric-row"><span>Revenue</span><span class="gold">KES ${totalEarnings.toLocaleString()}</span></div>
                                     <div class="metric-row"><span>Sales</span><span class="gold">${totalSales}</span></div>
                                     <div class="metric-row"><span>Downloads</span><span class="green">${totalDownloads}</span></div>
-                                    <div style="background:var(--kv-bg);border-radius:var(--kv-radius-sm);padding:12px 16px;border:1px solid var(--kv-border);margin-top:4px;">
-                                        <p style="font-weight:700;font-size:0.8rem;display:flex;align-items:center;gap:6px;"><i class="fas fa-crown text-gold"></i> Top Resources</p>
-                                        <ul style="list-style:none;margin-top:6px;">
+                                    <div class="top-resources">
+                                        <p><i class="fas fa-crown text-gold"></i> Top Resources</p>
+                                        <ul>
                                             ${resources.sort((a,b) => (b.download_count||0) - (a.download_count||0)).slice(0,3).map(r => `
-                                                <li style="display:flex;justify-content:space-between;font-size:0.85rem;padding:3px 0;color:var(--kv-muted);">
-                                                    <span>${r.title}</span> 
-                                                    <span style="color:var(--kv-gold);font-weight:600;">KES ${(r.total_earnings||0).toLocaleString()}</span>
-                                                </li>
-                                            `).join('') || '<li style="color:var(--kv-muted);font-size:0.8rem;padding:3px 0;">No data yet</li>'}
+                                                <li><span>${r.title}</span> <span class="gold">KES ${(r.total_earnings||0).toLocaleString()}</span></li>
+                                            `).join('') || '<li style="color:var(--kv-muted);font-size:0.8rem;">No data yet</li>'}
                                         </ul>
                                     </div>
                                 </div>
@@ -1140,21 +1302,50 @@
                                 <h3><i class="fas fa-cloud-upload-alt"></i> Upload Resource</h3>
                                 <p>Share your knowledge &amp; start earning</p>
                                 <div class="upload-form">
-                                    <div class="field"><label>Resource title</label><input type="text" placeholder="e.g. Algebra Masterclass" /></div>
+                                    <div class="field"><label>Resource title</label><input type="text" id="uploadTitle" placeholder="e.g. Algebra Masterclass" /></div>
                                     <div class="row2">
-                                        <div class="field"><label>Subject</label><input type="text" placeholder="Mathematics" /></div>
-                                        <div class="field"><label>Grade</label><select><option>Grade 8</option><option>Grade 9</option><option>Grade 10</option></select></div>
+                                        <div class="field"><label>Subject</label><input type="text" id="uploadSubject" placeholder="Mathematics" /></div>
+                                        <div class="field"><label>Grade</label>
+                                            <select id="uploadLevel">
+                                                <option value="">Select level...</option>
+                                                ${LEVELS.map(l => `<option value="${l.value}">${l.label}</option>`).join('')}
+                                            </select>
+                                        </div>
                                     </div>
-                                    <div class="field"><label>Description</label><input type="text" placeholder="Brief description" /></div>
+                                    <div class="field"><label>Description</label><input type="text" id="uploadDescription" placeholder="Brief description" /></div>
                                     <div class="row2">
-                                        <div class="field"><label>Price (KES)</label><input type="number" placeholder="19.99" /></div>
-                                        <div class="field"><label>Category</label><select><option>E‑book</option><option>Video</option><option>Worksheet</option></select></div>
+                                        <div class="field"><label>Price (KES)</label><input type="number" id="uploadPrice" placeholder="19.99" /></div>
+                                        <div class="field"><label>Category</label>
+                                            <select id="uploadCategory">
+                                                <option value="lesson-plan">📝 Lesson Plan</option>
+                                                <option value="practice-sheet">📄 Practice Sheet</option>
+                                                <option value="study-guide">📖 Study Guide</option>
+                                                <option value="assessment">📊 Assessment</option>
+                                                <option value="scheme-work">📋 Scheme of Work</option>
+                                                <option value="activity">🎯 Activity</option>
+                                            </select>
+                                        </div>
                                     </div>
                                     <div class="row2">
-                                        <div class="field"><label>File</label><input type="text" placeholder="file.pdf" /></div>
-                                        <div class="field"><label>Thumbnail</label><input type="text" placeholder="thumbnail.png" /></div>
+                                        <div class="field"><label>File (PDF)</label>
+                                            <div class="drop-zone" onclick="document.getElementById('fileInput').click()">
+                                                <div class="text" id="fileLabel">📄 Click to upload PDF</div>
+                                                <input type="file" id="fileInput" accept=".pdf" style="display:none;" onchange="handleFileSelect(event)" />
+                                            </div>
+                                        </div>
+                                        <div class="field"><label>Thumbnail (Image)</label>
+                                            <div class="drop-zone" onclick="document.getElementById('coverInput').click()">
+                                                <div class="text" id="coverLabel">🖼️ Click to upload cover</div>
+                                                <input type="file" id="coverInput" accept="image/*" style="display:none;" onchange="handleCoverSelect(event)" />
+                                            </div>
+                                            <div id="coverPreview"></div>
+                                        </div>
                                     </div>
-                                    <button class="btn-upload"><i class="fas fa-upload"></i> UPLOAD RESOURCE</button>
+                                    <div id="uploadProgress" style="display:none;">
+                                        <div class="progress-track"><div id="uploadBar" style="width:0%;"></div></div>
+                                        <div style="text-align:center;margin-top:4px;font-size:0.8rem;color:rgba(255,255,255,0.6);" id="progressText">0%</div>
+                                    </div>
+                                    <button class="btn-upload" onclick="handleUpload()"><i class="fas fa-upload"></i> UPLOAD RESOURCE</button>
                                 </div>
                             </div>
 
@@ -1163,23 +1354,229 @@
                                 <div style="display:grid;grid-template-columns:2.2fr 1fr 0.8fr 0.8fr 0.8fr 0.6fr;font-size:0.65rem;font-weight:700;color:var(--kv-muted);padding-bottom:6px;border-bottom:1px solid var(--kv-border);">
                                     <span>Resource</span><span>Status</span><span>Sales</span><span>Downloads</span><span>Revenue</span><span></span>
                                 </div>
-                                ${resources.length ? resourceRows : `
+                                ${resources.length ? resources.map(r => `
+                                    <div class="resource-item">
+                                        <span class="title">${r.title}</span>
+                                        <span class="status ${r.status === 'live' || r.published !== false ? 'live' : r.status === 'pending' ? 'pending' : 'draft'}">${r.status === 'live' || r.published !== false ? 'Live' : r.status === 'pending' ? 'Pending' : 'Draft'}</span>
+                                        <span>${r.sales_count || 0}</span>
+                                        <span>${r.download_count || 0}</span>
+                                        <span class="gold">KES ${(r.total_earnings || 0).toLocaleString()}</span>
+                                        <span class="actions"><i class="fas fa-edit" onclick="editResource('${r.id}')"></i><i class="fas fa-trash" onclick="deleteResource('${r.id}')"></i></span>
+                                    </div>
+                                `).join('') : `
                                     <div class="empty-state">
                                         <i class="fas fa-book-open"></i>
                                         <p>No resources uploaded yet.</p>
-                                        <p style="font-size:0.85rem;color:var(--kv-muted);">Upload your first resource to start earning!</p>
+                                        <p class="sub">Upload your first resource to start earning!</p>
                                     </div>
                                 `}
                             </div>
                         </div>
+                    `;
 
-                        <div style="margin-top:32px;display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--kv-border);padding-top:16px;font-size:0.7rem;color:var(--kv-muted);flex-wrap:wrap;gap:8px;">
-                            <span><i class="fas fa-graduation-cap" style="color:var(--kv-gold);"></i> KENYAVAULT ACADEMY</span>
-                            <span>LEARN • EMPOWER • EXCEL</span>
+                case 'resources':
+                    return `
+                        <div class="resource-table">
+                            <h4>📚 All Resources <span>${resources.length} total</span></h4>
+                            <div style="display:grid;grid-template-columns:2.2fr 1fr 0.8fr 0.8fr 0.8fr 0.6fr;font-size:0.65rem;font-weight:700;color:var(--kv-muted);padding-bottom:6px;border-bottom:1px solid var(--kv-border);">
+                                <span>Resource</span><span>Status</span><span>Sales</span><span>Downloads</span><span>Revenue</span><span></span>
+                            </div>
+                            ${resources.length ? resources.map(r => `
+                                <div class="resource-item">
+                                    <span class="title">${r.title}</span>
+                                    <span class="status ${r.status === 'live' || r.published !== false ? 'live' : r.status === 'pending' ? 'pending' : 'draft'}">${r.status === 'live' || r.published !== false ? 'Live' : r.status === 'pending' ? 'Pending' : 'Draft'}</span>
+                                    <span>${r.sales_count || 0}</span>
+                                    <span>${r.download_count || 0}</span>
+                                    <span class="gold">KES ${(r.total_earnings || 0).toLocaleString()}</span>
+                                    <span class="actions"><i class="fas fa-edit" onclick="editResource('${r.id}')"></i><i class="fas fa-trash" onclick="deleteResource('${r.id}')"></i></span>
+                                </div>
+                            `).join('') : `
+                                <div class="empty-state">
+                                    <i class="fas fa-book-open"></i>
+                                    <p>No resources uploaded yet.</p>
+                                    <p class="sub">Upload your first resource to start earning!</p>
+                                </div>
+                            `}
                         </div>
-                    </main>
-                </div>
-            `;
+                    `;
+
+                case 'upload':
+                    return `
+                        <div class="upload-card" style="background:var(--kv-white);color:var(--kv-text);border:1px solid var(--kv-border);">
+                            <h3 style="color:var(--kv-text);"><i class="fas fa-cloud-upload-alt" style="color:var(--kv-gold);"></i> Upload Resource</h3>
+                            <p style="color:var(--kv-muted);">Share your knowledge &amp; start earning</p>
+                            <div class="upload-form">
+                                <div class="field"><label style="color:var(--kv-muted);">Resource title</label><input type="text" id="uploadTitle2" placeholder="e.g. Algebra Masterclass" style="color:var(--kv-text);background:var(--kv-bg);" /></div>
+                                <div class="row2">
+                                    <div class="field"><label style="color:var(--kv-muted);">Subject</label><input type="text" id="uploadSubject2" placeholder="Mathematics" style="color:var(--kv-text);background:var(--kv-bg);" /></div>
+                                    <div class="field"><label style="color:var(--kv-muted);">Grade</label>
+                                        <select id="uploadLevel2" style="color:var(--kv-text);background:var(--kv-bg);">
+                                            <option value="">Select level...</option>
+                                            ${LEVELS.map(l => `<option value="${l.value}">${l.label}</option>`).join('')}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="field"><label style="color:var(--kv-muted);">Description</label><input type="text" id="uploadDescription2" placeholder="Brief description" style="color:var(--kv-text);background:var(--kv-bg);" /></div>
+                                <div class="row2">
+                                    <div class="field"><label style="color:var(--kv-muted);">Price (KES)</label><input type="number" id="uploadPrice2" placeholder="19.99" style="color:var(--kv-text);background:var(--kv-bg);" /></div>
+                                    <div class="field"><label style="color:var(--kv-muted);">Category</label>
+                                        <select id="uploadCategory2" style="color:var(--kv-text);background:var(--kv-bg);">
+                                            <option value="lesson-plan">📝 Lesson Plan</option>
+                                            <option value="practice-sheet">📄 Practice Sheet</option>
+                                            <option value="study-guide">📖 Study Guide</option>
+                                            <option value="assessment">📊 Assessment</option>
+                                            <option value="scheme-work">📋 Scheme of Work</option>
+                                            <option value="activity">🎯 Activity</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="row2">
+                                    <div class="field"><label style="color:var(--kv-muted);">File (PDF)</label>
+                                        <div class="drop-zone" onclick="document.getElementById('fileInput2').click()" style="background:var(--kv-bg);border-color:var(--kv-border);">
+                                            <div class="text" id="fileLabel2">📄 Click to upload PDF</div>
+                                            <input type="file" id="fileInput2" accept=".pdf" style="display:none;" onchange="handleFileSelect2(event)" />
+                                        </div>
+                                    </div>
+                                    <div class="field"><label style="color:var(--kv-muted);">Thumbnail (Image)</label>
+                                        <div class="drop-zone" onclick="document.getElementById('coverInput2').click()" style="background:var(--kv-bg);border-color:var(--kv-border);">
+                                            <div class="text" id="coverLabel2">🖼️ Click to upload cover</div>
+                                            <input type="file" id="coverInput2" accept="image/*" style="display:none;" onchange="handleCoverSelect2(event)" />
+                                        </div>
+                                        <div id="coverPreview2"></div>
+                                    </div>
+                                </div>
+                                <div id="uploadProgress2" style="display:none;">
+                                    <div class="progress-track"><div id="uploadBar2" style="width:0%;"></div></div>
+                                    <div style="text-align:center;margin-top:4px;font-size:0.8rem;color:var(--kv-muted);" id="progressText2">0%</div>
+                                </div>
+                                <button class="btn-upload" onclick="handleUpload2()"><i class="fas fa-upload"></i> UPLOAD RESOURCE</button>
+                            </div>
+                        </div>
+                    `;
+
+                case 'sales':
+                    return `
+                        <div class="resource-table">
+                            <h4>📦 Sales <span>${orders.length} orders</span></h4>
+                            ${orders.length ? `
+                                <div style="overflow-x:auto;">
+                                    <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+                                        <thead style="background:var(--kv-bg);">
+                                            <tr>
+                                                <th style="padding:10px;text-align:left;font-weight:600;color:var(--kv-muted);">Order</th>
+                                                <th style="padding:10px;text-align:left;font-weight:600;color:var(--kv-muted);">Customer</th>
+                                                <th style="padding:10px;text-align:left;font-weight:600;color:var(--kv-muted);">Resource</th>
+                                                <th style="padding:10px;text-align:left;font-weight:600;color:var(--kv-muted);">Amount</th>
+                                                <th style="padding:10px;text-align:left;font-weight:600;color:var(--kv-muted);">Your Share</th>
+                                                <th style="padding:10px;text-align:left;font-weight:600;color:var(--kv-muted);">Status</th>
+                                                <th style="padding:10px;text-align:left;font-weight:600;color:var(--kv-muted);">Date</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${orders.map(o => `
+                                                <tr style="border-bottom:1px solid var(--kv-border);">
+                                                    <td style="padding:10px;font-weight:600;">#${o.order_ref || o.payment_ref || (o.id || '').slice(0,8).toUpperCase()}</td>
+                                                    <td style="padding:10px;color:var(--kv-muted);">${o.customer_phone || o.phone || 'N/A'}</td>
+                                                    <td style="padding:10px;color:var(--kv-muted);">${o.item_title || o.resource_title || 'Resource'}</td>
+                                                    <td style="padding:10px;color:var(--kv-muted);">KES ${o.total_amount || o.item_price || 0}</td>
+                                                    <td style="padding:10px;font-weight:600;color:var(--kv-gold);">KES ${(o.tutor_share || Math.round((o.total_amount || o.item_price || 0) * 0.8)).toLocaleString()}</td>
+                                                    <td style="padding:10px;"><span class="status ${o.status || 'pending'}">${o.status || 'pending'}</span></td>
+                                                    <td style="padding:10px;font-size:0.75rem;color:var(--kv-muted);">${new Date(o.created_at).toLocaleDateString()}</td>
+                                                </tr>
+                                            `).join('')}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            ` : `
+                                <div class="empty-state">
+                                    <i class="fas fa-shopping-bag"></i>
+                                    <p>No sales yet.</p>
+                                    <p class="sub">Sales will appear here when students purchase your resources.</p>
+                                </div>
+                            `}
+                        </div>
+                    `;
+
+                case 'earnings':
+                    return `
+                        <div>
+                            <div class="stats-grid" style="grid-template-columns:repeat(4,1fr);">
+                                <div class="stat-card"><div class="stat-icon">💰</div><div class="stat-number gold">KES ${totalEarnings.toLocaleString()}</div><div class="stat-label">Total Earned (80%)</div></div>
+                                <div class="stat-card"><div class="stat-icon">⏳</div><div class="stat-number purple">KES ${pendingEarnings.toLocaleString()}</div><div class="stat-label">Pending Payout</div></div>
+                                <div class="stat-card"><div class="stat-icon">✅</div><div class="stat-number green">KES ${paidOut.toLocaleString()}</div><div class="stat-label">Paid Out</div></div>
+                                <div class="stat-card"><div class="stat-icon">📦</div><div class="stat-number">${orders.filter(o => o.status === 'completed' || o.status === 'paid').length}</div><div class="stat-label">Completed Sales</div></div>
+                            </div>
+                            <div style="background:var(--kv-bg);border-radius:var(--kv-radius-sm);padding:16px;border:1px solid var(--kv-border);">
+                                <h4 style="font-weight:700;margin-bottom:8px;">📊 Earnings Breakdown</h4>
+                                <p style="font-size:0.85rem;color:var(--kv-muted);margin-bottom:8px;">You earn <strong style="color:var(--kv-gold);">80%</strong> of every sale on your resources.</p>
+                                <div style="space-y:2px;">
+                                    <div style="display:flex;justify-content:space-between;font-size:0.85rem;padding:4px 0;border-bottom:1px solid var(--kv-border);">
+                                        <span style="color:var(--kv-muted);">📚 Resource Sales</span>
+                                        <span style="font-weight:600;color:var(--kv-gold);">KES ${orders.filter(o => o.type !== 'class').reduce((s, o) => s + (o.tutor_share || 0), 0).toLocaleString()}</span>
+                                    </div>
+                                    <div style="display:flex;justify-content:space-between;font-size:0.85rem;padding:4px 0;border-bottom:1px solid var(--kv-border);">
+                                        <span style="color:var(--kv-muted);">📅 Class Bookings</span>
+                                        <span style="font-weight:600;color:var(--kv-gold);">KES ${orders.filter(o => o.type === 'class').reduce((s, o) => s + (o.tutor_share || 0), 0).toLocaleString()}</span>
+                                    </div>
+                                    <div style="display:flex;justify-content:space-between;font-size:0.95rem;padding:8px 0;font-weight:700;">
+                                        <span>Total</span>
+                                        <span style="color:var(--kv-gold);">KES ${totalEarnings.toLocaleString()}</span>
+                                    </div>
+                                </div>
+                                <div style="margin-top:12px;padding:12px;background:rgba(212,160,23,0.1);border:1px solid rgba(212,160,23,0.2);border-radius:var(--kv-radius-sm);">
+                                    <p style="font-size:0.85rem;color:var(--kv-muted);">💡 Payouts are processed when your pending earnings reach <strong style="color:var(--kv-gold);">KES 500</strong> or more.</p>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                case 'profile':
+                    return `
+                        <div style="max-width:600px;margin:0 auto;">
+                            <div style="display:flex;align-items:center;gap:16px;margin-bottom:24px;">
+                                <div style="width:72px;height:72px;border-radius:50%;background:var(--kv-gold);display:flex;align-items:center;justify-content:center;font-size:1.8rem;font-weight:700;color:var(--kv-navy);">${tutor?.name ? tutor.name.charAt(0).toUpperCase() : 'T'}</div>
+                                <div>
+                                    <h3 style="font-size:1.2rem;font-weight:700;">${tutor?.name || 'Tutor'}</h3>
+                                    <p style="color:var(--kv-muted);">${tutor?.email || ''}</p>
+                                    <p style="color:var(--kv-muted);">📱 ${tutor?.phone || ''}</p>
+                                    <p style="color:var(--kv-muted);">💰 M-PESA: ${tutor?.mpesa_number || 'Not set'}</p>
+                                    <span class="status ${tutor?.status === 'approved' ? 'live' : tutor?.status === 'pending' ? 'pending' : 'draft'}">${tutor?.status === 'approved' ? '✅ Approved' : tutor?.status === 'pending' ? '⏳ Pending' : '❌ Rejected'}</span>
+                                </div>
+                            </div>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+                                <div style="background:var(--kv-bg);border-radius:var(--kv-radius-sm);padding:16px;border:1px solid var(--kv-border);">
+                                    <h4 style="font-weight:700;margin-bottom:8px;">📚 Subjects</h4>
+                                    <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                                        ${tutor?.subjects?.map(s => `<span style="background:var(--kv-border);padding:2px 10px;border-radius:12px;font-size:0.75rem;">${s}</span>`).join('') || '<span style="color:var(--kv-muted);font-size:0.85rem;">No subjects selected</span>'}
+                                    </div>
+                                </div>
+                                <div style="background:var(--kv-bg);border-radius:var(--kv-radius-sm);padding:16px;border:1px solid var(--kv-border);">
+                                    <h4 style="font-weight:700;margin-bottom:8px;">🎓 Levels</h4>
+                                    <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                                        ${tutor?.levels?.map(l => `<span style="background:var(--kv-border);padding:2px 10px;border-radius:12px;font-size:0.75rem;">${l}</span>`).join('') || '<span style="color:var(--kv-muted);font-size:0.85rem;">No levels selected</span>'}
+                                    </div>
+                                </div>
+                            </div>
+                            ${tutor?.bio ? `
+                                <div style="background:var(--kv-bg);border-radius:var(--kv-radius-sm);padding:16px;border:1px solid var(--kv-border);margin-bottom:16px;">
+                                    <h4 style="font-weight:700;margin-bottom:8px;">📝 About</h4>
+                                    <p style="color:var(--kv-muted);font-size:0.9rem;">${tutor.bio}</p>
+                                </div>
+                            ` : ''}
+                            <div style="border-top:1px solid var(--kv-border);padding-top:16px;">
+                                <button onclick="document.getElementById('passwordForm').classList.toggle('hidden')" style="color:var(--kv-gold);background:none;border:none;cursor:pointer;font-weight:600;">🔑 Change Password</button>
+                                <div id="passwordForm" class="hidden" style="margin-top:12px;">
+                                    <div class="form-group"><label>New Password</label><input type="password" id="newPassword" class="form-input" placeholder="Min 6 characters" /></div>
+                                    <div class="form-group"><label>Confirm Password</label><input type="password" id="confirmPassword" class="form-input" placeholder="Confirm your password" /></div>
+                                    <button onclick="updatePassword()" class="btn-login" style="width:auto;padding:10px 24px;">✅ Update Password</button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                default:
+                    return `<div class="empty-state"><p>Content coming soon...</p></div>`;
+            }
         }
 
         // ─── RENDER APP ───
@@ -1237,6 +1634,12 @@
             document.documentElement.classList.toggle('dark', state.darkMode);
         }
 
+        // ─── TAB SWITCHING ───
+        function switchTab(tab) {
+            state.activeTab = tab;
+            renderApp();
+        }
+
         // ─── AUTH ───
         async function checkAuth() {
             state.loading = true;
@@ -1257,7 +1660,6 @@
                 const userId = session.user.id;
                 addDebug(`Auth user: ${userId}`, 'info');
 
-                // Check if user is a tutor
                 const { data: tutorData, error: tutorError } = await supabaseClient
                     .from('tutors')
                     .select('*')
@@ -1273,7 +1675,6 @@
                 }
 
                 if (!tutorData) {
-                    // Try matching by email as fallback for existing tutors
                     const { data: emailMatch, error: emailError } = await supabaseClient
                         .from('tutors')
                         .select('*')
@@ -1281,7 +1682,6 @@
                         .maybeSingle();
 
                     if (emailMatch && !emailError) {
-                        // Link user_id to existing tutor
                         await supabaseClient
                             .from('tutors')
                             .update({ user_id: userId })
@@ -1318,7 +1718,6 @@
         // ─── LOAD TUTOR DATA ───
         async function loadTutorData(tutorId) {
             try {
-                // Load resources
                 const { data: resources, error: rErr } = await supabaseClient
                     .from('resources')
                     .select('*')
@@ -1327,7 +1726,6 @@
                 if (rErr) throw rErr;
                 state.resources = resources || [];
 
-                // Load orders (sales)
                 const { data: orders, error: oErr } = await supabaseClient
                     .from('orders')
                     .select('*')
@@ -1336,7 +1734,15 @@
                 if (oErr) throw oErr;
                 state.orders = orders || [];
 
-                addDebug(`Loaded ${state.resources.length} resources, ${state.orders.length} orders`, 'success');
+                const { data: classes, error: cErr } = await supabaseClient
+                    .from('classes')
+                    .select('*')
+                    .eq('tutor_id', tutorId);
+
+                if (cErr) throw cErr;
+                state.classes = classes || [];
+
+                addDebug(`Loaded ${state.resources.length} resources, ${state.orders.length} orders, ${state.classes.length} classes`, 'success');
             } catch (e) {
                 addDebug(`Data load error: ${e.message}`, 'error');
             }
@@ -1345,7 +1751,6 @@
         // ─── LOGIN ───
         async function handleLogin(phone, password) {
             try {
-                // First check if tutor exists with this phone
                 const { data: tutors, error: findErr } = await supabaseClient
                     .from('tutors')
                     .select('*')
@@ -1363,7 +1768,6 @@
                     return { success: false, message: 'Invalid password.' };
                 }
 
-                // Check if tutor has a user_id; if not, create auth user
                 let authUser = null;
                 if (tutor.user_id) {
                     try {
@@ -1371,7 +1775,6 @@
                         if (!userErr && user) {
                             authUser = user;
                         } else {
-                            // User exists in tutors but not in auth - recreate
                             const { data: newUser, error: createErr } = await supabaseClient.auth.signUp({
                                 email: tutor.email || `${phone}@kenyavault.co.ke`,
                                 password: password,
@@ -1383,7 +1786,6 @@
                             await supabaseClient.from('tutors').update({ user_id: authUser.id }).eq('id', tutor.id);
                         }
                     } catch (e) {
-                        // Fallback: create auth user
                         const { data: newUser, error: createErr } = await supabaseClient.auth.signUp({
                             email: tutor.email || `${phone}@kenyavault.co.ke`,
                             password: password,
@@ -1395,7 +1797,6 @@
                         await supabaseClient.from('tutors').update({ user_id: authUser.id }).eq('id', tutor.id);
                     }
                 } else {
-                    // Create auth user for existing tutor
                     const { data: newUser, error: createErr } = await supabaseClient.auth.signUp({
                         email: tutor.email || `${phone}@kenyavault.co.ke`,
                         password: password,
@@ -1407,14 +1808,12 @@
                     await supabaseClient.from('tutors').update({ user_id: authUser.id }).eq('id', tutor.id);
                 }
 
-                // Sign in
                 const { error: signInErr } = await supabaseClient.auth.signInWithPassword({
                     phone: phone,
                     password: password
                 });
 
                 if (signInErr) {
-                    // Try email fallback
                     const { error: emailErr } = await supabaseClient.auth.signInWithPassword({
                         email: tutor.email || `${phone}@kenyavault.co.ke`,
                         password: password
@@ -1433,7 +1832,6 @@
         // ─── SIGNUP ───
         async function handleSignup(data) {
             try {
-                // Check if phone exists
                 const { data: existing, error: existErr } = await supabaseClient
                     .from('tutors')
                     .select('id')
@@ -1444,7 +1842,6 @@
                     return { success: false, message: 'A tutor with this phone already exists.' };
                 }
 
-                // Create auth user
                 const { data: authData, error: authErr } = await supabaseClient.auth.signUp({
                     email: data.email,
                     password: data.password,
@@ -1454,7 +1851,6 @@
 
                 if (authErr) throw authErr;
 
-                // Create tutor record
                 const tutorData = {
                     name: data.name,
                     email: data.email,
@@ -1478,7 +1874,6 @@
 
                 if (insertErr) throw insertErr;
 
-                // Sign in
                 await supabaseClient.auth.signInWithPassword({
                     phone: data.phone,
                     password: data.password
@@ -1499,8 +1894,377 @@
             state.tutor = null;
             state.resources = [];
             state.orders = [];
+            state.classes = [];
             state.authChecked = true;
             renderApp();
+        }
+
+        // ─── UPLOAD FUNCTIONS ───
+        let selectedFile = null;
+        let selectedCover = null;
+        let coverPreview = null;
+
+        function handleFileSelect(e) {
+            const file = e.target.files[0];
+            if (file && file.type === 'application/pdf') {
+                selectedFile = file;
+                document.getElementById('fileLabel').textContent = '✅ ' + file.name;
+            } else {
+                showToast('Please select a PDF file', 'error');
+            }
+        }
+
+        function handleFileSelect2(e) {
+            const file = e.target.files[0];
+            if (file && file.type === 'application/pdf') {
+                selectedFile = file;
+                document.getElementById('fileLabel2').textContent = '✅ ' + file.name;
+            } else {
+                showToast('Please select a PDF file', 'error');
+            }
+        }
+
+        function handleCoverSelect(e) {
+            const file = e.target.files[0];
+            if (file && file.type.startsWith('image/')) {
+                selectedCover = file;
+                document.getElementById('coverLabel').textContent = '✅ ' + file.name;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    document.getElementById('coverPreview').innerHTML = `<img src="${e.target.result}" class="cover-preview-img" />`;
+                };
+                reader.readAsDataURL(file);
+            } else {
+                showToast('Please select an image file', 'error');
+            }
+        }
+
+        function handleCoverSelect2(e) {
+            const file = e.target.files[0];
+            if (file && file.type.startsWith('image/')) {
+                selectedCover = file;
+                document.getElementById('coverLabel2').textContent = '✅ ' + file.name;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    document.getElementById('coverPreview2').innerHTML = `<img src="${e.target.result}" class="cover-preview-img" />`;
+                };
+                reader.readAsDataURL(file);
+            } else {
+                showToast('Please select an image file', 'error');
+            }
+        }
+
+        async function handleUpload() {
+            const title = document.getElementById('uploadTitle').value;
+            const subject = document.getElementById('uploadSubject').value;
+            const level = document.getElementById('uploadLevel').value;
+            const description = document.getElementById('uploadDescription').value;
+            const price = document.getElementById('uploadPrice').value;
+            const category = document.getElementById('uploadCategory').value;
+
+            if (!title || !subject || !level || !selectedFile) {
+                showToast('Please fill all required fields and select a PDF', 'error');
+                return;
+            }
+
+            const tutorId = state.tutor?.id || sessionStorage.getItem('tutor_id');
+            if (!tutorId) {
+                showToast('You must be logged in to upload', 'error');
+                return;
+            }
+
+            const progressEl = document.getElementById('uploadProgress');
+            const barEl = document.getElementById('uploadBar');
+            const textEl = document.getElementById('progressText');
+            progressEl.style.display = 'block';
+
+            try {
+                const fileExt = selectedFile.name.split('.').pop();
+                const filePath = `resources/${level}/${subject}/${Date.now()}.${fileExt}`;
+
+                barEl.style.width = '30%';
+                textEl.textContent = '30%';
+
+                const uploadRes = await fetch(`${SB_URL}/storage/v1/object/kenyavault-resources/${filePath}`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${SB_ANON_KEY}` },
+                    body: selectedFile
+                });
+
+                if (!uploadRes.ok) throw new Error('PDF upload failed');
+                const fileUrl = `${SB_URL}/storage/v1/object/public/kenyavault-resources/${filePath}`;
+
+                barEl.style.width = '60%';
+                textEl.textContent = '60%';
+
+                let coverUrl = null;
+                if (selectedCover) {
+                    const coverExt = selectedCover.name.split('.').pop();
+                    const coverPath = `covers/${level}/${subject}/${Date.now()}.${coverExt}`;
+                    const coverRes = await fetch(`${SB_URL}/storage/v1/object/kenyavault-resources/${coverPath}`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${SB_ANON_KEY}` },
+                        body: selectedCover
+                    });
+                    if (coverRes.ok) {
+                        coverUrl = `${SB_URL}/storage/v1/object/public/kenyavault-resources/${coverPath}`;
+                    }
+                }
+
+                barEl.style.width = '80%';
+                textEl.textContent = '80%';
+
+                const resourceData = {
+                    title,
+                    subject,
+                    level,
+                    description,
+                    price: parseInt(price) || 0,
+                    resource_type: category,
+                    file_url: fileUrl,
+                    cover_image_url: coverUrl,
+                    tutor_id: tutorId,
+                    tutor_name: state.tutor?.name || sessionStorage.getItem('tutor_name') || 'Tutor',
+                    status: 'pending',
+                    download_count: 0,
+                    sales_count: 0,
+                    total_earnings: 0,
+                    created_at: new Date().toISOString()
+                };
+
+                const saveRes = await fetch(`${SB_URL}/rest/v1/resources`, {
+                    method: 'POST',
+                    headers: {
+                        'apikey': SB_ANON_KEY,
+                        'Authorization': `Bearer ${SB_ANON_KEY}`,
+                        'Content-Type': 'application/json',
+                        'Prefer': 'return=minimal'
+                    },
+                    body: JSON.stringify(resourceData)
+                });
+
+                if (!saveRes.ok) throw new Error('Failed to save resource');
+
+                barEl.style.width = '100%';
+                textEl.textContent = '100%';
+
+                showToast('Resource uploaded successfully! It will be reviewed by admin.', 'success');
+
+                // Reset form
+                document.getElementById('uploadTitle').value = '';
+                document.getElementById('uploadSubject').value = '';
+                document.getElementById('uploadLevel').value = '';
+                document.getElementById('uploadDescription').value = '';
+                document.getElementById('uploadPrice').value = '';
+                document.getElementById('fileLabel').textContent = '📄 Click to upload PDF';
+                document.getElementById('coverLabel').textContent = '🖼️ Click to upload cover';
+                document.getElementById('coverPreview').innerHTML = '';
+                document.getElementById('fileInput').value = '';
+                document.getElementById('coverInput').value = '';
+                selectedFile = null;
+                selectedCover = null;
+                setTimeout(() => { progressEl.style.display = 'none'; }, 1000);
+
+                await loadTutorData(tutorId);
+
+            } catch (e) {
+                console.error('Upload error:', e);
+                showToast('Upload failed: ' + e.message, 'error');
+                progressEl.style.display = 'none';
+            }
+        }
+
+        async function handleUpload2() {
+            const title = document.getElementById('uploadTitle2').value;
+            const subject = document.getElementById('uploadSubject2').value;
+            const level = document.getElementById('uploadLevel2').value;
+            const description = document.getElementById('uploadDescription2').value;
+            const price = document.getElementById('uploadPrice2').value;
+            const category = document.getElementById('uploadCategory2').value;
+
+            if (!title || !subject || !level || !selectedFile) {
+                showToast('Please fill all required fields and select a PDF', 'error');
+                return;
+            }
+
+            const tutorId = state.tutor?.id || sessionStorage.getItem('tutor_id');
+            if (!tutorId) {
+                showToast('You must be logged in to upload', 'error');
+                return;
+            }
+
+            const progressEl = document.getElementById('uploadProgress2');
+            const barEl = document.getElementById('uploadBar2');
+            const textEl = document.getElementById('progressText2');
+            progressEl.style.display = 'block';
+
+            try {
+                const fileExt = selectedFile.name.split('.').pop();
+                const filePath = `resources/${level}/${subject}/${Date.now()}.${fileExt}`;
+
+                barEl.style.width = '30%';
+                textEl.textContent = '30%';
+
+                const uploadRes = await fetch(`${SB_URL}/storage/v1/object/kenyavault-resources/${filePath}`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${SB_ANON_KEY}` },
+                    body: selectedFile
+                });
+
+                if (!uploadRes.ok) throw new Error('PDF upload failed');
+                const fileUrl = `${SB_URL}/storage/v1/object/public/kenyavault-resources/${filePath}`;
+
+                barEl.style.width = '60%';
+                textEl.textContent = '60%';
+
+                let coverUrl = null;
+                if (selectedCover) {
+                    const coverExt = selectedCover.name.split('.').pop();
+                    const coverPath = `covers/${level}/${subject}/${Date.now()}.${coverExt}`;
+                    const coverRes = await fetch(`${SB_URL}/storage/v1/object/kenyavault-resources/${coverPath}`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${SB_ANON_KEY}` },
+                        body: selectedCover
+                    });
+                    if (coverRes.ok) {
+                        coverUrl = `${SB_URL}/storage/v1/object/public/kenyavault-resources/${coverPath}`;
+                    }
+                }
+
+                barEl.style.width = '80%';
+                textEl.textContent = '80%';
+
+                const resourceData = {
+                    title,
+                    subject,
+                    level,
+                    description,
+                    price: parseInt(price) || 0,
+                    resource_type: category,
+                    file_url: fileUrl,
+                    cover_image_url: coverUrl,
+                    tutor_id: tutorId,
+                    tutor_name: state.tutor?.name || sessionStorage.getItem('tutor_name') || 'Tutor',
+                    status: 'pending',
+                    download_count: 0,
+                    sales_count: 0,
+                    total_earnings: 0,
+                    created_at: new Date().toISOString()
+                };
+
+                const saveRes = await fetch(`${SB_URL}/rest/v1/resources`, {
+                    method: 'POST',
+                    headers: {
+                        'apikey': SB_ANON_KEY,
+                        'Authorization': `Bearer ${SB_ANON_KEY}`,
+                        'Content-Type': 'application/json',
+                        'Prefer': 'return=minimal'
+                    },
+                    body: JSON.stringify(resourceData)
+                });
+
+                if (!saveRes.ok) throw new Error('Failed to save resource');
+
+                barEl.style.width = '100%';
+                textEl.textContent = '100%';
+
+                showToast('Resource uploaded successfully! It will be reviewed by admin.', 'success');
+
+                document.getElementById('uploadTitle2').value = '';
+                document.getElementById('uploadSubject2').value = '';
+                document.getElementById('uploadLevel2').value = '';
+                document.getElementById('uploadDescription2').value = '';
+                document.getElementById('uploadPrice2').value = '';
+                document.getElementById('fileLabel2').textContent = '📄 Click to upload PDF';
+                document.getElementById('coverLabel2').textContent = '🖼️ Click to upload cover';
+                document.getElementById('coverPreview2').innerHTML = '';
+                document.getElementById('fileInput2').value = '';
+                document.getElementById('coverInput2').value = '';
+                selectedFile = null;
+                selectedCover = null;
+                setTimeout(() => { progressEl.style.display = 'none'; }, 1000);
+
+                await loadTutorData(tutorId);
+
+            } catch (e) {
+                console.error('Upload error:', e);
+                showToast('Upload failed: ' + e.message, 'error');
+                progressEl.style.display = 'none';
+            }
+        }
+
+        // ─── DELETE RESOURCE ───
+        async function deleteResource(id) {
+            if (!confirm('Delete this resource permanently?')) return;
+            try {
+                const res = await fetch(`${SB_URL}/rest/v1/resources?id=eq.${id}`, {
+                    method: 'DELETE',
+                    headers: { 'apikey': SB_ANON_KEY, 'Authorization': `Bearer ${SB_ANON_KEY}` }
+                });
+                if (res.ok) {
+                    showToast('Resource deleted', 'success');
+                    const tutorId = state.tutor?.id || sessionStorage.getItem('tutor_id');
+                    await loadTutorData(tutorId);
+                    renderApp();
+                }
+            } catch (e) { showToast('Error deleting', 'error'); }
+        }
+
+        // ─── EDIT RESOURCE ───
+        function editResource(id) {
+            showToast('Edit feature coming soon!', 'info');
+        }
+
+        // ─── UPDATE PASSWORD ───
+        async function updatePassword() {
+            const newPass = document.getElementById('newPassword').value;
+            const confirmPass = document.getElementById('confirmPassword').value;
+            const tutorId = state.tutor?.id || sessionStorage.getItem('tutor_id');
+
+            if (newPass.length < 6) {
+                showToast('Password must be at least 6 characters.', 'error');
+                return;
+            }
+            if (newPass !== confirmPass) {
+                showToast('Passwords do not match.', 'error');
+                return;
+            }
+
+            try {
+                const res = await fetch(`${SB_URL}/rest/v1/tutors?id=eq.${tutorId}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'apikey': SB_ANON_KEY,
+                        'Authorization': `Bearer ${SB_ANON_KEY}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ password: newPass })
+                });
+                if (res.ok) {
+                    showToast('Password updated successfully! 🔒', 'success');
+                    document.getElementById('passwordForm').classList.add('hidden');
+                    document.getElementById('newPassword').value = '';
+                    document.getElementById('confirmPassword').value = '';
+                } else {
+                    showToast('Failed to update password.', 'error');
+                }
+            } catch (e) { showToast('Error: ' + e.message, 'error'); }
+        }
+
+        // ─── TOAST ───
+        function showToast(msg, type = 'success') {
+            const existing = document.querySelector('.toast-notification');
+            if (existing) existing.remove();
+
+            const toast = document.createElement('div');
+            toast.className = `toast-notification show ${type === 'error' ? 'error' : 'success'}`;
+            toast.innerHTML = `<span>${type === 'error' ? '❌' : '✅'}</span><span>${msg}</span>`;
+            document.body.appendChild(toast);
+
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
         }
 
         // ─── ATTACH LISTENERS ───
@@ -1595,7 +2359,6 @@
                 });
             }
 
-            // Enter key support
             document.querySelectorAll('#loginForm input').forEach(inp => {
                 inp.addEventListener('keydown', (e) => {
                     if (e.key === 'Enter') document.getElementById('loginBtn')?.click();
@@ -1609,14 +2372,7 @@
         }
 
         function attachDashboardListeners() {
-            const logoutBtn = document.getElementById('logoutBtn');
-            if (logoutBtn) {
-                logoutBtn.addEventListener('click', () => {
-                    if (confirm('Logout from KenyaVault Tutor Studio?')) {
-                        handleLogout();
-                    }
-                });
-            }
+            // Already handled via inline onclick
         }
 
         // ─── INIT ───
@@ -1624,6 +2380,20 @@
             document.documentElement.classList.toggle('dark', state.darkMode);
             checkAuth();
         });
+
+        // Make functions globally accessible for inline onclick
+        window.switchTab = switchTab;
+        window.handleLogout = handleLogout;
+        window.deleteResource = deleteResource;
+        window.editResource = editResource;
+        window.updatePassword = updatePassword;
+        window.handleUpload = handleUpload;
+        window.handleUpload2 = handleUpload2;
+        window.handleFileSelect = handleFileSelect;
+        window.handleFileSelect2 = handleFileSelect2;
+        window.handleCoverSelect = handleCoverSelect;
+        window.handleCoverSelect2 = handleCoverSelect2;
+        window.showToast = showToast;
     </script>
 </body>
 </html>
