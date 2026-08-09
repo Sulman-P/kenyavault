@@ -2954,6 +2954,9 @@
         return `ORD-${year}${month}${day}-${random}`;
     }
 
+    // NOTE: kept for backward compatibility but no longer used to create
+    // download tokens. Tokens are now generated server-side inside the
+    // create-download-tokens Edge Function using crypto.randomUUID().
     function generateDownloadToken() {
         return 'dt_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 12) + '_' + Math.random().toString(36).substring(2, 8);
     }
@@ -3292,45 +3295,34 @@
         return null;
     }
 
-    // ── CREATE DOWNLOAD TOKEN ──
-    async function createDownloadToken(orderId, resourceId, orderRef) {
+    // ── CREATE DOWNLOAD TOKENS (server-issued, one call per order) ──
+    // SECURITY: tokens are no longer inserted from the browser. This
+    // calls the create-download-tokens Edge Function, which verifies
+    // payment status server-side (using the service role key) before
+    // minting any token. The anon key has zero write access to
+    // public.download_tokens (see the RLS lockdown in the migration).
+    async function createDownloadTokensForOrder(orderRef, orderIds) {
         try {
-            const token = generateDownloadToken();
-            const expiresAt = new Date();
-            expiresAt.setHours(expiresAt.getHours() + 24); // 24 hour expiration
-            
-            const tokenData = {
-                order_id: orderId,
-                resource_id: resourceId,
-                order_ref: orderRef,
-                token: token,
-                expires_at: expiresAt.toISOString(),
-                status: 'active',
-                created_at: new Date().toISOString()
-            };
-
-            const response = await fetch(`${SUPABASE_URL}/rest/v1/download_tokens`, {
+            const response = await fetch(`${SUPABASE_URL}/functions/v1/create-download-tokens`, {
                 method: 'POST',
                 headers: {
                     'apikey': SUPABASE_ANON_KEY,
                     'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                    'Content-Type': 'application/json',
-                    'Prefer': 'return=representation'
+                    'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(tokenData)
+                body: JSON.stringify({ order_ref: orderRef, order_ids: orderIds })
             });
 
             if (!response.ok) {
-                console.error('❌ Failed to create download token:', await response.text());
-                return null;
+                console.error('❌ Failed to create download tokens:', await response.text());
+                return [];
             }
 
             const result = await response.json();
-            const createdToken = result[0] || result;
-            return createdToken;
+            return result.tokens || [];
         } catch (error) {
             console.error('❌ Download token creation error:', error);
-            return null;
+            return [];
         }
     }
 
@@ -3370,13 +3362,26 @@
         const statusEl = itemEl ? itemEl.querySelector('.item-status') : null;
         const btnEl = itemEl ? itemEl.querySelector('.btn-download-item') : null;
 
-        try {
-            // Get the token for this resource
-            const tokenData = downloadTokens[resourceId];
-            if (!tokenData) {
-                throw new Error('Download token not found');
+        // Get the token for this resource. If it isn't ready yet, the
+        // payment IS confirmed (we only reach this point for eligible
+        // orders) but the secure link is still being prepared — show
+        // that state instead of a hard failure, with a way to retry.
+        const tokenData = downloadTokens[resourceId];
+        if (!tokenData) {
+            if (statusEl) {
+                statusEl.textContent = 'Preparing…';
+                statusEl.className = 'item-status';
             }
+            if (btnEl) {
+                btnEl.disabled = false;
+                btnEl.textContent = '🔄 TRY AGAIN';
+                btnEl.onclick = () => downloadSingleResource(orderId, resourceId, title, index);
+            }
+            showToast('Your payment is confirmed, but your secure download link is still being prepared. Please try again.', 'warning');
+            return false;
+        }
 
+        try {
             if (statusEl) {
                 statusEl.textContent = 'Downloading...';
                 statusEl.className = 'item-status downloading';
@@ -3449,7 +3454,7 @@
             const item = purchasedResources[i];
             const success = await downloadSingleResource(
                 item.orderId || currentOrderId,
-                item.resourceId || item.id,
+                item.resourceId,
                 item.title || 'Resource',
                 i + 1
             );
@@ -3488,7 +3493,7 @@
             } else if (orderRef) {
                 query += `&order_ref=eq.${orderRef}`;
             } else {
-                return;
+                return [];
             }
 
             const response = await fetch(query, {
@@ -3500,14 +3505,31 @@
 
             if (!response.ok) {
                 console.error('❌ Failed to fetch purchased resources:', await response.text());
-                return;
+                purchasedResources = [];
+                renderDownloadPanel();
+                return [];
             }
 
             const orders = await response.json();
-            if (!orders || orders.length === 0) return;
+            if (!orders || orders.length === 0) {
+                purchasedResources = [];
+                renderDownloadPanel();
+                return [];
+            }
 
-            // Get resource details for each order
-            const resourceIds = orders.map(o => o.resource_id).filter(id => id);
+            // Only orders that are genuinely paid/completed are eligible.
+            // Pending, underpaid, cancelled or failed orders never get a
+            // token — this is re-enforced server-side regardless.
+            const eligibleOrders = orders.filter(o => o.payment_status === 'paid' || o.payment_status === 'completed');
+            if (eligibleOrders.length === 0) {
+                purchasedResources = [];
+                renderDownloadPanel();
+                return [];
+            }
+
+            // Resource metadata is only used for display purposes
+            // (title/subject/level) — it plays no role in authorization.
+            const resourceIds = eligibleOrders.map(o => o.resource_id).filter(id => id);
             let resources = [];
             
             if (resourceIds.length > 0) {
@@ -3523,34 +3545,37 @@
                 }
             }
 
+            // One server call issues tokens for every eligible order at once
+            const tokens = await createDownloadTokensForOrder(orderRef, eligibleOrders.map(o => o.id));
+
             // Build purchased resources list with tokens
             purchasedResources = [];
             downloadTokens = {};
 
-            for (const order of orders) {
+            for (const order of eligibleOrders) {
                 const resource = resources.find(r => r.id === order.resource_id) || {};
                 const resourceId = order.resource_id || resource.id;
                 const title = order.item_title || resource.title || 'Resource';
-                
-                // Create download token for each resource
-                const token = await createDownloadToken(order.id, resourceId, order.order_ref);
-                if (token) {
+                const tokenInfo = tokens.find(t => String(t.order_id) === String(order.id) && String(t.resource_id) === String(resourceId));
+
+                if (tokenInfo) {
                     downloadTokens[resourceId] = {
-                        token: token.token,
-                        expiresAt: token.expires_at,
+                        token: tokenInfo.token,
+                        expiresAt: tokenInfo.expires_at,
                         orderId: order.id
                     };
                 }
 
                 purchasedResources.push({
-                    id: resourceId,
+                    resourceId: resourceId,   // consistent field name used everywhere (fixes old resourceId||id bug)
                     orderId: order.id,
                     title: title,
                     fileName: order.resource_file_name || resource.file_name || 'resource.pdf',
                     filePath: order.resource_file_path || resource.file_path || resource.file_url || '',
                     subject: resource.subject || '',
                     level: resource.level || '',
-                    price: order.total_amount || 0
+                    price: order.total_amount || 0,
+                    tokenReady: !!tokenInfo
                 });
             }
 
@@ -3560,6 +3585,8 @@
 
         } catch (error) {
             console.error('❌ Error loading purchased resources:', error);
+            purchasedResources = [];
+            renderDownloadPanel();
             return [];
         }
     }
@@ -3595,10 +3622,10 @@
                         <div class="item-title">${displayIndex}. ${item.title}</div>
                         <div class="item-sub">${item.fileName}${subjectDisplay}${levelDisplay}${priceDisplay}</div>
                     </div>
-                    <span class="item-status" id="status-${displayIndex}">Ready</span>
-                    <button class="btn-download-item" id="download-btn-${displayIndex}" 
-                        onclick="downloadSingleResource('${item.orderId}', '${item.id}', '${item.title.replace(/'/g, "\\'")}', ${displayIndex})">
-                        📥 Download
+                    <span class="item-status" id="status-${displayIndex}">${item.tokenReady ? 'Ready' : 'Preparing…'}</span>
+                    <button class="btn-download-item" id="download-btn-${displayIndex}" ${item.tokenReady ? '' : 'disabled'}
+                        onclick="downloadSingleResource('${item.orderId}', '${item.resourceId}', '${item.title.replace(/'/g, "\\'")}', ${displayIndex})">
+                        ${item.tokenReady ? '📥 Download' : '⏳ Preparing'}
                     </button>
                 </div>
             `;
@@ -3631,7 +3658,7 @@
                 // Single resource - auto download
                 await downloadSingleResource(
                     purchasedResources[0].orderId,
-                    purchasedResources[0].id,
+                    purchasedResources[0].resourceId,
                     purchasedResources[0].title,
                     1
                 );
@@ -4732,6 +4759,5 @@
     console.log('✅ Download authorization is enforced server-side');
     console.log('❌ No price manipulation or unauthorized downloads possible');
 </script>
-
 </body>
 </html>
