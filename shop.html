@@ -2954,13 +2954,6 @@
         return `ORD-${year}${month}${day}-${random}`;
     }
 
-    // NOTE: kept for backward compatibility but no longer used to create
-    // download tokens. Tokens are now generated server-side inside the
-    // create-download-tokens Edge Function using crypto.randomUUID().
-    function generateDownloadToken() {
-        return 'dt_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 12) + '_' + Math.random().toString(36).substring(2, 8);
-    }
-
     function getOrCreateSessionId() {
         let sessionId = localStorage.getItem('guest_session_id');
         if (!sessionId) {
@@ -3295,12 +3288,7 @@
         return null;
     }
 
-    // ── CREATE DOWNLOAD TOKENS (server-issued, one call per order) ──
-    // SECURITY: tokens are no longer inserted from the browser. This
-    // calls the create-download-tokens Edge Function, which verifies
-    // payment status server-side (using the service role key) before
-    // minting any token. The anon key has zero write access to
-    // public.download_tokens (see the RLS lockdown in the migration).
+    // ── CREATE DOWNLOAD TOKENS (server-issued via Edge Function) ──
     async function createDownloadTokensForOrder(orderRef, orderIds) {
         try {
             const response = await fetch(`${SUPABASE_URL}/functions/v1/create-download-tokens`, {
@@ -3314,7 +3302,8 @@
             });
 
             if (!response.ok) {
-                console.error('❌ Failed to create download tokens:', await response.text());
+                const errorText = await response.text();
+                console.error('❌ Failed to create download tokens:', errorText);
                 return [];
             }
 
@@ -3362,10 +3351,6 @@
         const statusEl = itemEl ? itemEl.querySelector('.item-status') : null;
         const btnEl = itemEl ? itemEl.querySelector('.btn-download-item') : null;
 
-        // Get the token for this resource. If it isn't ready yet, the
-        // payment IS confirmed (we only reach this point for eligible
-        // orders) but the secure link is still being prepared — show
-        // that state instead of a hard failure, with a way to retry.
         const tokenData = downloadTokens[resourceId];
         if (!tokenData) {
             if (statusEl) {
@@ -3463,7 +3448,6 @@
             } else {
                 failCount++;
             }
-            // Small delay between downloads to prevent browser blocking
             if (i < purchasedResources.length - 1) {
                 await new Promise(res => setTimeout(res, 1000));
             }
@@ -3517,9 +3501,7 @@
                 return [];
             }
 
-            // Only orders that are genuinely paid/completed are eligible.
-            // Pending, underpaid, cancelled or failed orders never get a
-            // token — this is re-enforced server-side regardless.
+            // Only orders that are genuinely paid/completed are eligible
             const eligibleOrders = orders.filter(o => o.payment_status === 'paid' || o.payment_status === 'completed');
             if (eligibleOrders.length === 0) {
                 purchasedResources = [];
@@ -3527,8 +3509,7 @@
                 return [];
             }
 
-            // Resource metadata is only used for display purposes
-            // (title/subject/level) — it plays no role in authorization.
+            // Get resource metadata for display
             const resourceIds = eligibleOrders.map(o => o.resource_id).filter(id => id);
             let resources = [];
             
@@ -3545,7 +3526,7 @@
                 }
             }
 
-            // One server call issues tokens for every eligible order at once
+            // Issue tokens for every eligible order
             const tokens = await createDownloadTokensForOrder(orderRef, eligibleOrders.map(o => o.id));
 
             // Build purchased resources list with tokens
@@ -3567,7 +3548,7 @@
                 }
 
                 purchasedResources.push({
-                    resourceId: resourceId,   // consistent field name used everywhere (fixes old resourceId||id bug)
+                    resourceId: resourceId,
                     orderId: order.id,
                     title: title,
                     fileName: order.resource_file_name || resource.file_name || 'resource.pdf',
@@ -3579,7 +3560,6 @@
                 });
             }
 
-            // Render download panel
             renderDownloadPanel();
             return purchasedResources;
 
@@ -3602,13 +3582,11 @@
 
         downloadPanel.style.display = 'block';
 
-        // Update status badge
         if (downloadStatusBadge) {
             downloadStatusBadge.textContent = `${purchasedResources.length} item${purchasedResources.length > 1 ? 's' : ''}`;
             downloadStatusBadge.className = 'status-badge';
         }
 
-        // Render individual items
         let html = '';
         purchasedResources.forEach((item, index) => {
             const displayIndex = index + 1;
@@ -3632,7 +3610,6 @@
         });
         downloadItems.innerHTML = html;
 
-        // Enable download all button
         if (downloadAllBtn) {
             downloadAllBtn.disabled = false;
             downloadAllBtn.style.display = 'flex';
@@ -3645,17 +3622,13 @@
         checkoutOrderIds = orderIds || [];
         downloadOrderRef = orderRef;
 
-        // Load purchased resources
         await loadPurchasedResources(orderRef, orderIds);
 
-        // Show success modal
         if (successOrderRef) successOrderRef.textContent = orderRef;
         if (successModal) successModal.classList.add('open');
 
-        // Attempt automatic downloads
         setTimeout(async () => {
             if (purchasedResources.length === 1) {
-                // Single resource - auto download
                 await downloadSingleResource(
                     purchasedResources[0].orderId,
                     purchasedResources[0].resourceId,
@@ -3663,7 +3636,6 @@
                     1
                 );
             } else if (purchasedResources.length > 1) {
-                // Multiple resources - try auto download all
                 await downloadAllPurchased();
             }
         }, 1500);
@@ -3726,7 +3698,6 @@
 
                 showToast('Payment confirmed! Preparing your downloads...', 'success');
                 
-                // Show success with downloads
                 await showPaymentSuccess(orderRefFound, orderIdsFound);
                 
                 if (checkoutMode === 'cart') clearCart();
@@ -3968,7 +3939,6 @@
         if (mpesaVerificationBox) mpesaVerificationBox.classList.remove('visible');
         if (verificationStatus) verificationStatus.style.display = 'none';
 
-        // Show line items
         const lineItemsContainer = document.getElementById('checkoutLineItems');
         if (lineItemsContainer) {
             let html = '';
@@ -4662,7 +4632,6 @@
                 setLevel(levelParam);
             }
             
-            // Check for existing purchase
             const hasPurchase = await checkForExistingPurchase();
             if (!hasPurchase) {
                 checkPaymentCallback();
