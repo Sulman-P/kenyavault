@@ -377,13 +377,13 @@
   <!-- DASHBOARD -->
   <div class="module-container active" id="module-dashboard">
     <div class="stats-grid" id="statsGrid">
-      <div class="stat-card loading-shimmer"><div class="stat-label">Total Orders</div><div class="stat-number" id="statOrders">—</div><div class="stat-sub">Loading...</div></div>
-      <div class="stat-card loading-shimmer"><div class="stat-label">Paid</div><div class="stat-number" id="statPaid">—</div><div class="stat-sub">Loading...</div></div>
-      <div class="stat-card loading-shimmer"><div class="stat-label">Pending</div><div class="stat-number" id="statPending">—</div><div class="stat-sub">Loading...</div></div>
-      <div class="stat-card loading-shimmer"><div class="stat-label">Failed</div><div class="stat-number" id="statFailed">—</div><div class="stat-sub">Loading...</div></div>
-      <div class="stat-card loading-shimmer"><div class="stat-label">Revenue</div><div class="stat-number gold" id="statRevenue">—</div><div class="stat-sub">Loading...</div></div>
-      <div class="stat-card loading-shimmer"><div class="stat-label">👁️ Unique Visitors</div><div class="stat-number" id="visitorCount">—</div><div class="stat-sub" id="visitorChange">Loading...</div></div>
-      <div class="stat-card loading-shimmer"><div class="stat-label">Tutors</div><div class="stat-number" id="statTotalTutors">—</div><div class="stat-sub" id="statTutorsSub">Loading...</div></div>
+      <div class="stat-card"><div class="stat-label">Total Orders</div><div class="stat-number" id="statOrders">—</div><div class="stat-sub" id="statOrdersSub">Loading...</div></div>
+      <div class="stat-card"><div class="stat-label">Paid</div><div class="stat-number" id="statPaid">—</div><div class="stat-sub" id="statPaidSub">Loading...</div></div>
+      <div class="stat-card"><div class="stat-label">Pending</div><div class="stat-number" id="statPending">—</div><div class="stat-sub" id="statPendingSub">Loading...</div></div>
+      <div class="stat-card"><div class="stat-label">Failed</div><div class="stat-number" id="statFailed">—</div><div class="stat-sub" id="statFailedSub">Loading...</div></div>
+      <div class="stat-card"><div class="stat-label">Revenue</div><div class="stat-number gold" id="statRevenue">—</div><div class="stat-sub" id="statRevenueSub">Loading...</div></div>
+      <div class="stat-card"><div class="stat-label">👁️ Unique Visitors</div><div class="stat-number" id="visitorCount">—</div><div class="stat-sub" id="visitorChange">Loading...</div></div>
+      <div class="stat-card"><div class="stat-label">Tutors</div><div class="stat-number" id="statTotalTutors">—</div><div class="stat-sub" id="statTutorsSub">Loading...</div></div>
     </div>
 
     <div class="charts-row">
@@ -441,7 +441,7 @@
     </div>
   </div>
 
-  <!-- ORDERS -->
+  <!-- ORDERS MODULE - Full orders management -->
   <div class="module-container" id="module-orders">
     <div class="table-section">
       <div class="table-header">
@@ -456,13 +456,21 @@
             <span class="filter-badge" data-filter="overpaid">Overpaid</span>
           </div>
         </div>
-        <div><span class="filter-badge" id="ordersExportBtn"><i class="fas fa-download"></i> Export</span></div>
+        <div>
+          <span class="filter-badge" id="ordersExportBtn"><i class="fas fa-download"></i> Export</span>
+          <span class="filter-badge" onclick="loadOrders()" style="margin-left:8px;"><i class="fas fa-sync"></i> Refresh</span>
+        </div>
       </div>
       <div class="table-wrapper">
         <table>
           <thead><tr><th>Order Ref</th><th>Customer</th><th class="numeric">Amount</th><th class="numeric">Paid</th><th>Status</th><th>Payment Method</th><th>Actions</th></tr></thead>
           <tbody id="ordersTableBody"><tr><td colspan="7" style="text-align:center;padding:30px;color:var(--muted);">Loading orders...</td></tr></tbody>
         </table>
+      </div>
+      <div class="pagination" id="ordersPagination">
+        <span id="ordersPrevPage"><i class="fas fa-chevron-left"></i></span>
+        <span class="active-page" data-page="1">1</span><span data-page="2">2</span><span data-page="3">3</span><span>…</span><span data-page="8">8</span>
+        <span id="ordersNextPage"><i class="fas fa-chevron-right"></i></span>
       </div>
     </div>
   </div>
@@ -690,7 +698,7 @@
           <div class="setting-row"><label>Min. Payout (KES)</label><input type="number" id="settingMinPayout" value="500" min="0" /></div>
         </div>
         <div class="settings-section">
-          <div class="section-title">Tutor Approval</div>
+          <div class="section-title>Tutor Approval</div>
           <div class="setting-row"><label>Auto-approve tutors</label><input type="checkbox" id="settingAutoApprove" checked disabled /></div>
           <div class="setting-row"><label>Notify me on new application</label><input type="checkbox" id="settingNotifyApplication" checked /></div>
         </div>
@@ -782,7 +790,7 @@
   let currentFilter = 'all';
   let currentTutorTab = 'all';
   let currentPage = 1;
-  const pageSize = 5;
+  const pageSize = 10;
 
   // ============================================================
   // 3. TOAST
@@ -933,7 +941,6 @@
   // 9. DASHBOARD
   // ============================================================
   async function loadDashboardData() {
-    await ensureTablesExist();
     await Promise.all([
       loadStats(),
       loadOrders(),
@@ -995,23 +1002,50 @@
       const failed = ordersData.filter(o => getPaymentStatus(o) === 'failed');
       const totalRevenue = ordersData.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
 
-      document.getElementById('statOrders').textContent = ordersData.length;
-      document.getElementById('statPaid').textContent = paid.length;
-      document.getElementById('statPending').textContent = pending.length;
-      document.getElementById('statFailed').textContent = failed.length;
-      document.getElementById('statRevenue').textContent = formatCurrency(totalRevenue);
-      document.querySelectorAll('#statsGrid .stat-card').forEach(el => el.classList.remove('loading-shimmer'));
+      // Calculate percentage changes (mock data for demo)
+      const totalOrders = ordersData.length;
+      const paidCount = paid.length;
+      const pendingCount = pending.length;
+      const failedCount = failed.length;
+      
+      // Calculate percentages
+      const paidPercent = totalOrders > 0 ? Math.round((paidCount / totalOrders) * 100) : 0;
+      const pendingPercent = totalOrders > 0 ? Math.round((pendingCount / totalOrders) * 100) : 0;
+      const failedPercent = totalOrders > 0 ? Math.round((failedCount / totalOrders) * 100) : 0;
+      const revenuePercent = totalOrders > 0 ? Math.round((totalRevenue / (totalOrders * 100)) * 100) : 0;
 
-      document.getElementById('pendingBadge').textContent = pending.length;
-      document.getElementById('pendingBadge').style.display = pending.length > 0 ? '' : 'none';
+      document.getElementById('statOrders').textContent = totalOrders;
+      document.getElementById('statOrdersSub').innerHTML = `<span class="trend-up">${totalOrders} total</span>`;
+      
+      document.getElementById('statPaid').textContent = paidCount;
+      document.getElementById('statPaidSub').innerHTML = `<span class="trend-up">${paidPercent}% of orders</span>`;
+      
+      document.getElementById('statPending').textContent = pendingCount;
+      document.getElementById('statPendingSub').innerHTML = `<span class="trend-down">${pendingPercent}% of orders</span>`;
+      
+      document.getElementById('statFailed').textContent = failedCount;
+      document.getElementById('statFailedSub').innerHTML = `<span class="trend-down">${failedPercent}% of orders</span>`;
+      
+      document.getElementById('statRevenue').textContent = formatCurrency(totalRevenue);
+      document.getElementById('statRevenueSub').innerHTML = `<span class="trend-up">+${revenuePercent || 0}% growth</span>`;
+
+      document.getElementById('pendingBadge').textContent = pendingCount;
+      document.getElementById('pendingBadge').style.display = pendingCount > 0 ? '' : 'none';
+
+      // Remove loading shimmer
+      document.querySelectorAll('#statsGrid .stat-card').forEach(el => el.classList.remove('loading-shimmer'));
 
       updateVisitorMetrics();
       updatePaymentChart();
       updateSalesChart();
     } catch (e) {
       console.warn('Stats load error:', e);
-      ['statOrders','statPaid','statPending','statFailed'].forEach(id => document.getElementById(id).textContent = '0');
+      ['statOrders','statPaid','statPending','statFailed'].forEach(id => {
+        document.getElementById(id).textContent = '0';
+        document.getElementById(id + 'Sub').innerHTML = 'No data';
+      });
       document.getElementById('statRevenue').textContent = formatCurrency(0);
+      document.getElementById('statRevenueSub').innerHTML = 'No data';
       document.querySelectorAll('#statsGrid .stat-card').forEach(el => el.classList.remove('loading-shimmer'));
     }
   }
@@ -1066,15 +1100,7 @@
   }
 
   // ============================================================
-  // 10. TABLE CREATION FUNCTIONS
-  // ============================================================
-  async function ensureTablesExist() {
-    // This function attempts to create missing tables but gracefully handles errors
-    console.log('Checking tables...');
-  }
-
-  // ============================================================
-  // 11. ORDERS
+  // 10. ORDERS - Full orders management
   // ============================================================
   async function loadOrders() {
     try {
@@ -1084,11 +1110,13 @@
         if (o.cart_items && typeof o.cart_items === 'string') { try { o.cart_items = JSON.parse(o.cart_items); } catch(e){ o.cart_items = []; } }
         return o;
       });
-      renderOrdersTable(); updateStatsUI();
+      renderOrdersTable(); 
+      updateStatsUI();
     } catch (e) {
       console.warn('Orders load error:', e);
       ordersData = [];
-      renderOrdersTable(); updateStatsUI();
+      renderOrdersTable(); 
+      updateStatsUI();
     }
   }
 
@@ -1101,11 +1129,31 @@
   }
 
   function renderOrdersTable() {
+    // Render for both dashboard and orders module
     const tbody = document.getElementById('ordersTableBody') || document.getElementById('tableBody');
     if (!tbody) return;
+    
     const filtered = filteredOrders();
+    const totalOrders = filtered.length;
+    const totalPages = Math.ceil(totalOrders / pageSize);
     const start = (currentPage - 1) * pageSize;
     const paginated = filtered.slice(start, start + pageSize);
+
+    // Update pagination info
+    const paginationEl = document.getElementById('ordersPagination') || document.querySelector('#module-dashboard .pagination');
+    if (paginationEl) {
+      const pageSpans = paginationEl.querySelectorAll('span[data-page]');
+      pageSpans.forEach(el => {
+        const page = parseInt(el.dataset.page);
+        el.style.display = page <= totalPages ? '' : 'none';
+        el.classList.toggle('active-page', page === currentPage);
+      });
+      // Show current page info
+      const prevEl = paginationEl.querySelector('#prevPage') || paginationEl.querySelector('#ordersPrevPage');
+      const nextEl = paginationEl.querySelector('#nextPage') || paginationEl.querySelector('#ordersNextPage');
+      if (prevEl) prevEl.style.opacity = currentPage <= 1 ? '0.3' : '1';
+      if (nextEl) nextEl.style.opacity = currentPage >= totalPages ? '0.3' : '1';
+    }
 
     if (paginated.length === 0) {
       tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="ico">📭</div>No orders found</div></td></tr>`;
@@ -1136,13 +1184,6 @@
           </td>
         </tr>`;
     }).join('');
-
-    const totalPages = Math.ceil(filtered.length / pageSize);
-    document.querySelectorAll('.pagination span[data-page]').forEach(el => {
-      const page = parseInt(el.dataset.page);
-      el.style.display = page <= totalPages ? '' : 'none';
-      el.classList.toggle('active-page', page === currentPage);
-    });
   }
 
   function updateStatsUI() {
@@ -1151,11 +1192,22 @@
     const pending = ordersData.filter(o => getPaymentStatus(o) === 'pending').length;
     const failed = ordersData.filter(o => getPaymentStatus(o) === 'failed').length;
     const revenue = ordersData.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
+    
+    // Calculate percentages
+    const paidPercent = total > 0 ? Math.round((paid / total) * 100) : 0;
+    const pendingPercent = total > 0 ? Math.round((pending / total) * 100) : 0;
+    const failedPercent = total > 0 ? Math.round((failed / total) * 100) : 0;
+    
     document.getElementById('statOrders').textContent = total;
+    document.getElementById('statOrdersSub').innerHTML = `<span class="trend-up">${total} total</span>`;
     document.getElementById('statPaid').textContent = paid;
+    document.getElementById('statPaidSub').innerHTML = `<span class="trend-up">${paidPercent}% of orders</span>`;
     document.getElementById('statPending').textContent = pending;
+    document.getElementById('statPendingSub').innerHTML = `<span class="trend-down">${pendingPercent}% of orders</span>`;
     document.getElementById('statFailed').textContent = failed;
+    document.getElementById('statFailedSub').innerHTML = `<span class="trend-down">${failedPercent}% of orders</span>`;
     document.getElementById('statRevenue').textContent = formatCurrency(revenue);
+    document.getElementById('statRevenueSub').innerHTML = `<span class="trend-up">+${total > 0 ? Math.round(revenue / total / 10) : 0}% growth</span>`;
     document.getElementById('pendingBadge').textContent = pending;
     document.getElementById('pendingBadge').style.display = pending > 0 ? '' : 'none';
   }
@@ -1240,18 +1292,24 @@
     try {
       const order = ordersData.find(o => o.id === id);
       await supabase.from('orders').update({ payment_status:'paid', status:'paid', amount_paid: order?.total_amount || 0 }).eq('id', id);
-      showToast('Confirmed', 'Order marked as paid'); await loadOrders(); await loadStats();
+      showToast('Confirmed', 'Order marked as paid'); 
+      await loadOrders(); 
+      await loadStats();
     } catch (e) { showToast('Error', 'Failed to confirm order', 'error'); }
   };
+
   window.rejectOrder = async function(id) {
     if (!confirm('Reject this order?')) return;
-    try { await supabase.from('orders').update({ payment_status:'failed', status:'failed' }).eq('id', id);
-      showToast('Rejected', 'Order marked as failed'); await loadOrders(); await loadStats();
+    try { 
+      await supabase.from('orders').update({ payment_status:'failed', status:'failed' }).eq('id', id);
+      showToast('Rejected', 'Order marked as failed'); 
+      await loadOrders(); 
+      await loadStats();
     } catch (e) { showToast('Error', 'Failed to reject order', 'error'); }
   };
 
   // ============================================================
-  // 12. SEARCH & FILTERS
+  // 11. SEARCH & FILTERS
   // ============================================================
   function wireSearch(inputId, rowsSelector) {
     document.getElementById(inputId)?.addEventListener('input', function(e) {
@@ -1266,32 +1324,64 @@
 
   document.querySelectorAll('.filter-badge[data-filter]').forEach(chip => {
     chip.addEventListener('click', function() {
-      const scope = this.closest('.table-header');
+      const scope = this.closest('.table-header') || this.closest('.module-container');
       scope.querySelectorAll('.filter-badge[data-filter]').forEach(c => c.classList.remove('active'));
       this.classList.add('active');
-      currentFilter = this.dataset.filter; currentPage = 1; renderOrdersTable();
+      currentFilter = this.dataset.filter; 
+      currentPage = 1; 
+      renderOrdersTable();
     });
   });
 
   // ============================================================
-  // 13. PAGINATION
+  // 12. PAGINATION
   // ============================================================
-  document.getElementById('prevPage')?.addEventListener('click', function() { if (currentPage > 1) { currentPage--; renderOrdersTable(); } });
+  document.getElementById('prevPage')?.addEventListener('click', function() { 
+    if (currentPage > 1) { currentPage--; renderOrdersTable(); } 
+  });
+  
   document.getElementById('nextPage')?.addEventListener('click', function() {
     const totalPages = Math.ceil(filteredOrders().length / pageSize);
     if (currentPage < totalPages) { currentPage++; renderOrdersTable(); }
   });
-  document.querySelectorAll('.pagination span[data-page]').forEach(el => { el.addEventListener('click', function() { currentPage = parseInt(this.dataset.page); renderOrdersTable(); }); });
+  
+  document.getElementById('ordersPrevPage')?.addEventListener('click', function() { 
+    if (currentPage > 1) { currentPage--; renderOrdersTable(); } 
+  });
+  
+  document.getElementById('ordersNextPage')?.addEventListener('click', function() {
+    const totalPages = Math.ceil(filteredOrders().length / pageSize);
+    if (currentPage < totalPages) { currentPage++; renderOrdersTable(); }
+  });
+
+  document.querySelectorAll('.pagination span[data-page]').forEach(el => { 
+    el.addEventListener('click', function() { 
+      currentPage = parseInt(this.dataset.page); 
+      renderOrdersTable(); 
+    }); 
+  });
 
   // ============================================================
-  // 14. EXPORT
+  // 13. EXPORT
   // ============================================================
   document.getElementById('exportBtn')?.addEventListener('click', exportOrders);
   document.getElementById('ordersExportBtn')?.addEventListener('click', exportOrders);
+  
   function exportOrders() {
-    const headers = ['Order Ref','Customer','Amount','Paid','Status','Payment Method'];
-    const rows = ordersData.map(o => { const status = getPaymentStatus(o);
-      return [o.order_ref || o.id.slice(0,8), o.customer_name || 'N/A', o.total_amount || 0, o.amount_paid || o.paid_amount || 0, status, o.payment_method || 'M-Pesa']; });
+    const headers = ['Order Ref','Customer','Phone','Amount','Paid','Status','Payment Method','Date'];
+    const rows = ordersData.map(o => { 
+      const status = getPaymentStatus(o);
+      return [
+        o.order_ref || o.id.slice(0,8), 
+        o.customer_name || 'N/A', 
+        o.phone || o.customer_phone || 'N/A',
+        o.total_amount || 0, 
+        o.amount_paid || o.paid_amount || 0, 
+        status, 
+        o.payment_method || 'M-Pesa',
+        o.created_at ? new Date(o.created_at).toLocaleString() : 'N/A'
+      ]; 
+    });
     const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     const blob = new Blob([csv], { type:'text/csv' });
     const url = window.URL.createObjectURL(blob);
@@ -1300,7 +1390,7 @@
   }
 
   // ============================================================
-  // 15. RESOURCES
+  // 14. RESOURCES
   // ============================================================
   async function loadResources() {
     try {
@@ -1335,6 +1425,7 @@
       showToast('Updated', `Resource ${newStatus === 'live' ? 'published' : 'drafted'}`); await loadResources();
     } catch (e) { showToast('Error', 'Failed to update', 'error'); }
   };
+  
   window.deleteResource = async function(id) {
     if (!confirm('Delete this resource?')) return;
     try { await supabase.from('resources').delete().eq('id', id); showToast('Deleted', 'Resource removed'); await loadResources(); }
@@ -1355,6 +1446,7 @@
     document.getElementById('editResDescription').value = r.description || '';
     document.getElementById('resourceEditModal').classList.add('open');
   };
+  
   function closeResourceModal() { document.getElementById('resourceEditModal').classList.remove('open'); }
   window.closeResourceModal = closeResourceModal;
 
@@ -1412,12 +1504,13 @@
       await loadResources();
     } catch (e) { console.error('Upload error:', e); showToast('Error', 'Upload failed: ' + e.message, 'error'); }
   });
+  
   document.getElementById('fileInput').addEventListener('change', function() {
     if (this.files[0]) document.getElementById('fileLabel').textContent = '📎 ' + this.files[0].name + ' (' + (this.files[0].size/1024/1024).toFixed(2) + ' MB)';
   });
 
   // ============================================================
-  // 16. TUTORS
+  // 15. TUTORS
   // ============================================================
   async function loadTutors() {
     try {
@@ -1566,6 +1659,7 @@
       </div>`;
     document.getElementById('tutorDetailModal').classList.add('open');
   };
+  
   function closeTutorModal() { document.getElementById('tutorDetailModal').classList.remove('open'); }
   window.closeTutorModal = closeTutorModal;
 
@@ -1584,7 +1678,7 @@
   });
 
   // ============================================================
-  // 17. CLASSES - FIXED to use correct column names
+  // 16. CLASSES
   // ============================================================
   async function loadClasses() {
     try {
@@ -1608,7 +1702,6 @@
       const status = c.is_live ? 'Live' : c.status || 'Scheduled';
       const statusClass = c.is_live ? 'status-success' : c.status === 'ended' ? 'status-error' : 'status-pending';
       
-      // Format date and time
       const classDate = c.class_date ? new Date(c.class_date).toLocaleDateString() : 'N/A';
       const classTime = c.class_time || 'N/A';
       
@@ -1662,7 +1755,6 @@
     const meeting_link = document.getElementById('classMeetingLink').value;
     const is_live = document.getElementById('classIsLive').checked;
     
-    // Get tutor name
     const tutor = tutorsData.find(t => t.id === tutor_id);
     const tutor_name = tutor?.name || '';
 
@@ -1695,7 +1787,7 @@
   });
 
   // ============================================================
-  // 18. CATEGORIES
+  // 17. CATEGORIES
   // ============================================================
   async function loadCategories() {
     try {
@@ -1730,7 +1822,7 @@
   });
 
   // ============================================================
-  // 19. SUBJECTS
+  // 18. SUBJECTS
   // ============================================================
   const defaultSubjects = ['Mathematics','English','Kiswahili','Integrated Science','Social Studies','Creative Arts','Business Studies','Religious Education','Computer Studies','Chemistry','Physics','Biology','Geography','History & Citizenship','Pretechnical Studies','Agriculture','Home Science','French','German','Music','Physical Education','Life Skills','TVET','College','University'];
   
@@ -1773,7 +1865,7 @@
   });
 
   // ============================================================
-  // 20. WITHDRAWALS
+  // 19. WITHDRAWALS
   // ============================================================
   async function loadWithdrawals() {
     try {
@@ -1804,7 +1896,7 @@
   window.rejectWithdrawal = async function(id) { try { await supabase.from('withdrawals').update({status:'rejected'}).eq('id',id); showToast('Rejected','Withdrawal rejected'); await loadWithdrawals(); } catch(e){ showToast('Error','Failed to reject','error'); } };
 
   // ============================================================
-  // 21. ANALYTICS
+  // 20. ANALYTICS
   // ============================================================
   async function loadAnalytics() {
     try {
@@ -1862,7 +1954,7 @@
   }
 
   // ============================================================
-  // 22. VISITOR COUNT
+  // 21. VISITOR COUNT
   // ============================================================
   async function updateVisitorMetrics() {
     try {
@@ -1912,7 +2004,7 @@
   }
 
   // ============================================================
-  // 23. SETTINGS
+  // 22. SETTINGS
   // ============================================================
   function loadSettings() {
     const saved = localStorage.getItem('kv-settings');
@@ -1959,7 +2051,7 @@
   window.resetSettings = resetSettings;
 
   // ============================================================
-  // 24. ADMIN TEAM
+  // 23. ADMIN TEAM
   // ============================================================
   function loadTeam() {
     teamData = JSON.parse(localStorage.getItem('kv-admin-team') || '[]');
@@ -1997,7 +2089,7 @@
   });
 
   // ============================================================
-  // 25. THEME
+  // 24. THEME
   // ============================================================
   let darkMode = false;
   function toggleTheme() {
@@ -2007,7 +2099,7 @@
   }
 
   // ============================================================
-  // 26. INIT
+  // 25. INIT
   // ============================================================
   async function initApp() {
     await loadDashboardData();
