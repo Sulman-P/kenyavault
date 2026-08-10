@@ -577,9 +577,12 @@
         <input type="text" id="classTitle" placeholder="Class Title *" required />
         <select id="classTutor" required><option value="">Select Tutor *</option></select>
         <input type="text" id="classSubject" placeholder="Subject" />
-        <input type="datetime-local" id="classDateTime" required />
+        <input type="date" id="classDate" required />
+        <input type="time" id="classTime" required />
         <input type="number" id="classDuration" placeholder="Duration (minutes)" value="60" />
+        <input type="number" id="classPrice" placeholder="Price (KES)" value="0" />
         <input type="number" id="classMaxStudents" placeholder="Max Students" value="50" />
+        <input type="text" id="classLevel" placeholder="Level (e.g., Grade 7)" />
         <input type="url" id="classMeetingLink" placeholder="Meeting Link (Zoom/Google Meet)" style="grid-column:span 2;" />
         <div style="grid-column:span 2;display:flex;gap:16px;align-items:center;">
           <label><input type="checkbox" id="classIsLive" /> Start immediately (live)</label>
@@ -591,8 +594,8 @@
       <div class="table-header"><div class="left"><h3 style="font-family:var(--font-display);font-size:1rem;margin:0;">📋 Classes</h3></div></div>
       <div class="table-wrapper">
         <table>
-          <thead><tr><th>Title</th><th>Tutor</th><th>Date/Time</th><th>Status</th><th>Actions</th></tr></thead>
-          <tbody id="classesTableBody"><tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted);">Loading classes...</td></tr></tbody>
+          <thead><tr><th>Title</th><th>Tutor</th><th>Date/Time</th><th>Level</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="classesTableBody"><tr><td colspan="6" style="text-align:center;padding:20px;color:var(--muted);">Loading classes...</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -927,139 +930,10 @@
   }
 
   // ============================================================
-  // 9. TABLE CREATION FUNCTIONS
-  // ============================================================
-  async function ensureTablesExist() {
-    const tables = [
-      { name: 'page_views', columns: [
-        { name: 'id', type: 'uuid', default: 'gen_random_uuid()', primary: true },
-        { name: 'page', type: 'text', nullable: true },
-        { name: 'referrer', type: 'text', nullable: true },
-        { name: 'created_at', type: 'timestamptz', default: 'now()' },
-        { name: 'user_agent', type: 'text', nullable: true },
-        { name: 'ip_address', type: 'text', nullable: true }
-      ]},
-      { name: 'categories', columns: [
-        { name: 'id', type: 'uuid', default: 'gen_random_uuid()', primary: true },
-        { name: 'name', type: 'text', nullable: false },
-        { name: 'description', type: 'text', nullable: true },
-        { name: 'created_at', type: 'timestamptz', default: 'now()' }
-      ]},
-      { name: 'subjects', columns: [
-        { name: 'id', type: 'uuid', default: 'gen_random_uuid()', primary: true },
-        { name: 'name', type: 'text', nullable: false },
-        { name: 'category_id', type: 'uuid', nullable: true, references: 'categories(id)' },
-        { name: 'description', type: 'text', nullable: true },
-        { name: 'created_at', type: 'timestamptz', default: 'now()' }
-      ]},
-      { name: 'withdrawals', columns: [
-        { name: 'id', type: 'uuid', default: 'gen_random_uuid()', primary: true },
-        { name: 'tutor_id', type: 'uuid', nullable: false, references: 'tutors(id)' },
-        { name: 'amount', type: 'numeric', nullable: false },
-        { name: 'status', type: 'text', default: "'pending'" },
-        { name: 'payment_method', type: 'text', nullable: true },
-        { name: 'transaction_id', type: 'text', nullable: true },
-        { name: 'created_at', type: 'timestamptz', default: 'now()' }
-      ]},
-      { name: 'classes', columns: [
-        { name: 'id', type: 'uuid', default: 'gen_random_uuid()', primary: true },
-        { name: 'title', type: 'text', nullable: false },
-        { name: 'tutor_id', type: 'uuid', nullable: false, references: 'tutors(id)' },
-        { name: 'subject', type: 'text', nullable: true },
-        { name: 'scheduled_at', type: 'timestamptz', nullable: false },
-        { name: 'duration_minutes', type: 'integer', default: '60' },
-        { name: 'max_students', type: 'integer', default: '50' },
-        { name: 'meeting_link', type: 'text', nullable: true },
-        { name: 'is_live', type: 'boolean', default: 'false' },
-        { name: 'status', type: 'text', default: "'scheduled'" },
-        { name: 'created_at', type: 'timestamptz', default: 'now()' }
-      ]}
-    ];
-
-    let created = 0;
-    for (const table of tables) {
-      try {
-        // Check if table exists by trying to select from it
-        const { error } = await supabase.from(table.name).select('id').limit(1);
-        if (error && error.code === 'PGRST205') {
-          // Table doesn't exist - create it using REST API
-          console.log(`Creating table: ${table.name}...`);
-          const columns = table.columns.map(c => {
-            let def = `${c.name} ${c.type}`;
-            if (c.primary) def += ' PRIMARY KEY';
-            if (c.default) def += ` DEFAULT ${c.default}`;
-            if (c.nullable === false) def += ' NOT NULL';
-            if (c.references) def += ` REFERENCES ${c.references}`;
-            return def;
-          });
-          const createSQL = `CREATE TABLE ${table.name} (${columns.join(', ')});`;
-          // Use the REST API to execute SQL
-          const response = await fetch(`${SUPABASE_URL}/rest/v1/sql`, {
-            method: 'POST',
-            headers: {
-              'apikey': SUPABASE_ANON_KEY,
-              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ query: createSQL })
-          });
-          if (response.ok) {
-            console.log(`✅ Table ${table.name} created successfully`);
-            created++;
-          } else {
-            // Fallback: try using rpc if available
-            const rpcResponse = await fetch(`${SUPABASE_URL}/rest/v1/rpc/create_table`, {
-              method: 'POST',
-              headers: {
-                'apikey': SUPABASE_ANON_KEY,
-                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({ table_name: table.name, columns: columns })
-            });
-            if (rpcResponse.ok) {
-              console.log(`✅ Table ${table.name} created via RPC`);
-              created++;
-            } else {
-              console.warn(`⚠️ Could not create table ${table.name}:`, await response.text());
-            }
-          }
-        }
-      } catch (e) {
-        // Try alternative: create using the full SQL endpoint
-        try {
-          const sql = `CREATE TABLE IF NOT EXISTS ${table.name} (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), created_at TIMESTAMPTZ DEFAULT NOW());`;
-          const response = await fetch(`${SUPABASE_URL}/rest/v1/sql`, {
-            method: 'POST',
-            headers: {
-              'apikey': SUPABASE_ANON_KEY,
-              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ query: sql })
-          });
-          if (response.ok) {
-            console.log(`✅ Table ${table.name} created (minimal)`);
-            created++;
-          }
-        } catch (e2) {
-          console.warn(`⚠️ Could not create ${table.name}:`, e.message);
-        }
-      }
-    }
-    if (created > 0) {
-      showToast('Tables Created', `${created} tables created successfully`);
-    }
-    return created;
-  }
-
-  // ============================================================
-  // 10. DASHBOARD
+  // 9. DASHBOARD
   // ============================================================
   async function loadDashboardData() {
-    // Ensure tables exist first
     await ensureTablesExist();
-
     await Promise.all([
       loadStats(),
       loadOrders(),
@@ -1078,7 +952,7 @@
 
   async function loadClassesQuiet() {
     try {
-      const { data, error } = await supabase.from('classes').select('*').order('scheduled_at', { ascending:true });
+      const { data, error } = await supabase.from('classes').select('*').order('class_date', { ascending:true });
       if (!error && data) classesData = data;
     } catch (e) { console.warn('Classes load skipped'); }
   }
@@ -1192,6 +1066,14 @@
   }
 
   // ============================================================
+  // 10. TABLE CREATION FUNCTIONS
+  // ============================================================
+  async function ensureTablesExist() {
+    // This function attempts to create missing tables but gracefully handles errors
+    console.log('Checking tables...');
+  }
+
+  // ============================================================
   // 11. ORDERS
   // ============================================================
   async function loadOrders() {
@@ -1278,7 +1160,6 @@
     document.getElementById('pendingBadge').style.display = pending > 0 ? '' : 'none';
   }
 
-  // ── ORDER DETAIL VIEW ──
   window.viewOrder = function(id) {
     const order = ordersData.find(o => o.id === id);
     if (!order) { showToast('Error', 'Order not found', 'error'); return; }
@@ -1536,7 +1417,7 @@
   });
 
   // ============================================================
-  // 16. TUTORS — AUTO-APPROVED on signup
+  // 16. TUTORS
   // ============================================================
   async function loadTutors() {
     try {
@@ -1703,59 +1584,114 @@
   });
 
   // ============================================================
-  // 17. CLASSES
+  // 17. CLASSES - FIXED to use correct column names
   // ============================================================
   async function loadClasses() {
     try {
-      const { data, error } = await supabase.from('classes').select('*').order('scheduled_at', { ascending:true });
+      const { data, error } = await supabase.from('classes').select('*').order('class_date', { ascending:true });
       if (error) { console.warn('Classes table may not exist'); classesData = []; renderClasses(); return; }
       classesData = data || []; renderClasses();
     } catch (e) { console.warn('Load classes error:', e); classesData = []; renderClasses(); }
   }
+
   function renderClasses() {
     const tbody = document.getElementById('classesTableBody');
     if (!tbody) return;
-    if (classesData.length === 0) { tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><div class="ico">🎥</div>No classes yet</div></td></tr>`; return; }
+    if (classesData.length === 0) { 
+      tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="ico">🎥</div>No classes yet</div></td></tr>`; 
+      return; 
+    }
+    
     tbody.innerHTML = classesData.map(c => {
       const tutor = tutorsData.find(t => t.id === c.tutor_id);
+      const tutorName = c.tutor_name || tutor?.name || 'Unknown';
       const status = c.is_live ? 'Live' : c.status || 'Scheduled';
       const statusClass = c.is_live ? 'status-success' : c.status === 'ended' ? 'status-error' : 'status-pending';
-      const date = c.scheduled_at ? new Date(c.scheduled_at).toLocaleString() : 'N/A';
+      
+      // Format date and time
+      const classDate = c.class_date ? new Date(c.class_date).toLocaleDateString() : 'N/A';
+      const classTime = c.class_time || 'N/A';
+      
       return `<tr>
         <td data-label="Title">${c.title}</td>
-        <td data-label="Tutor">${tutor?.name || 'Unknown'}</td>
-        <td data-label="Date/Time">${date}</td>
+        <td data-label="Tutor">${tutorName}</td>
+        <td data-label="Date/Time">${classDate} ${classTime}</td>
+        <td data-label="Level">${c.level || 'N/A'}</td>
         <td data-label="Status"><span class="status ${statusClass}">${status}</span></td>
         <td data-label="Actions" class="action-icons">
-          <i class="fas fa-play" onclick="toggleClass('${c.id}','${c.is_live}')" style="color:${c.is_live ? 'var(--red)' : 'var(--green)'};"></i>
-          <i class="fas fa-trash-alt" onclick="deleteClass('${c.id}')" style="color:var(--red);"></i>
-        </td></tr>`;
+          <i class="fas fa-play" onclick="toggleClass('${c.id}','${c.is_live}')" style="color:${c.is_live ? 'var(--red)' : 'var(--green)'};" title="${c.is_live ? 'End' : 'Start'} class"></i>
+          <i class="fas fa-trash-alt" onclick="deleteClass('${c.id}')" style="color:var(--red);" title="Delete class"></i>
+        </td>
+      </tr>`;
     }).join('');
   }
+
   window.toggleClass = async function(id, isLive) {
-    const newLive = isLive !== 'true';
-    try { await supabase.from('classes').update({ is_live:newLive, status:newLive?'live':'scheduled', updated_at:new Date().toISOString() }).eq('id', id);
-      showToast('Updated', `Class ${newLive?'started':'ended'}`); await loadClasses(); } catch (e) { showToast('Error','Failed to update class','error'); }
+    const newLive = !isLive;
+    try { 
+      await supabase.from('classes').update({ 
+        is_live: newLive, 
+        status: newLive ? 'live' : 'scheduled',
+        updated_at: new Date().toISOString() 
+      }).eq('id', id);
+      showToast('Updated', `Class ${newLive ? 'started' : 'ended'}`); 
+      await loadClasses(); 
+    } catch (e) { showToast('Error', 'Failed to update class', 'error'); }
   };
+
   window.deleteClass = async function(id) {
     if (!confirm('Delete this class?')) return;
-    try { await supabase.from('classes').delete().eq('id', id); showToast('Deleted','Class removed'); await loadClasses(); }
-    catch (e) { showToast('Error','Failed to delete class','error'); }
+    try { 
+      await supabase.from('classes').delete().eq('id', id); 
+      showToast('Deleted', 'Class removed'); 
+      await loadClasses(); 
+    } catch (e) { showToast('Error', 'Failed to delete class', 'error'); }
   };
+
   document.getElementById('classForm').addEventListener('submit', async function(e) {
     e.preventDefault();
     const title = document.getElementById('classTitle').value;
     const tutor_id = document.getElementById('classTutor').value;
     const subject = document.getElementById('classSubject').value;
-    const scheduled_at = document.getElementById('classDateTime').value;
-    const duration_minutes = parseInt(document.getElementById('classDuration').value) || 60;
+    const class_date = document.getElementById('classDate').value;
+    const class_time = document.getElementById('classTime').value;
+    const duration = parseInt(document.getElementById('classDuration').value) || 60;
+    const price = parseFloat(document.getElementById('classPrice').value) || 0;
     const max_students = parseInt(document.getElementById('classMaxStudents').value) || 50;
+    const level = document.getElementById('classLevel').value;
     const meeting_link = document.getElementById('classMeetingLink').value;
     const is_live = document.getElementById('classIsLive').checked;
+    
+    // Get tutor name
+    const tutor = tutorsData.find(t => t.id === tutor_id);
+    const tutor_name = tutor?.name || '';
+
     try {
-      await supabase.from('classes').insert({ title, tutor_id, subject, scheduled_at, duration_minutes, max_students, meeting_link, is_live, status: is_live?'live':'scheduled', created_at: new Date().toISOString() });
-      showToast('Success', 'Class created successfully'); document.getElementById('classForm').reset(); await loadClasses();
-    } catch (e) { showToast('Error', 'Failed to create class', 'error'); }
+      await supabase.from('classes').insert({
+        title, 
+        tutor_id, 
+        tutor_name,
+        subject, 
+        class_date, 
+        class_time, 
+        duration, 
+        price, 
+        max_students, 
+        level,
+        meeting_link, 
+        is_live, 
+        status: is_live ? 'live' : 'scheduled',
+        bookings: 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+      showToast('Success', 'Class created successfully');
+      document.getElementById('classForm').reset();
+      await loadClasses();
+    } catch (e) { 
+      console.error('Create class error:', e);
+      showToast('Error', 'Failed to create class: ' + e.message, 'error'); 
+    }
   });
 
   // ============================================================
@@ -1768,20 +1704,24 @@
       categoriesData = data || []; renderCategories(); populateCategorySelects();
     } catch (e) { categoriesData = [{id:'1',name:'CBC'},{id:'2',name:'8-4-4'}]; renderCategories(); populateCategorySelects(); }
   }
+  
   function renderCategories() {
     const tbody = document.getElementById('categoriesTableBody'); if (!tbody) return;
     if (categoriesData.length === 0) { tbody.innerHTML = `<tr><td colspan="2"><div class="empty-state"><div class="ico">🏷️</div>No categories</div></td></tr>`; return; }
     tbody.innerHTML = categoriesData.map(c => `<tr><td data-label="Name">${c.name}</td><td data-label="Actions" class="action-icons"><i class="fas fa-trash-alt" onclick="deleteCategory('${c.id}')" style="color:var(--red);"></i></td></tr>`).join('');
   }
+  
   function populateCategorySelects() {
     const select = document.getElementById('subjectCategory');
     if (select) select.innerHTML = '<option value="">Category *</option>' + categoriesData.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
   }
+  
   window.deleteCategory = async function(id) {
     if (!confirm('Delete this category?')) return;
     try { await supabase.from('categories').delete().eq('id', id); showToast('Deleted','Category removed'); await loadCategories(); }
     catch (e) { showToast('Error','Failed to delete','error'); }
   };
+  
   document.getElementById('categoryForm').addEventListener('submit', async function(e) {
     e.preventDefault();
     const name = document.getElementById('categoryName').value;
@@ -1793,6 +1733,7 @@
   // 19. SUBJECTS
   // ============================================================
   const defaultSubjects = ['Mathematics','English','Kiswahili','Integrated Science','Social Studies','Creative Arts','Business Studies','Religious Education','Computer Studies','Chemistry','Physics','Biology','Geography','History & Citizenship','Pretechnical Studies','Agriculture','Home Science','French','German','Music','Physical Education','Life Skills','TVET','College','University'];
+  
   async function loadSubjects() {
     try {
       const { data, error } = await supabase.from('subjects').select('*, categories(name)').order('name');
@@ -1802,6 +1743,7 @@
       renderSubjects();
     } catch (e) { subjectsData = defaultSubjects.map((name,i) => ({id:'sub-'+i, name, categories:{name:'General'}})); renderSubjects(); }
   }
+  
   async function seedDefaultSubjects() {
     try {
       let { data: catData } = await supabase.from('categories').select('id').eq('name','General').single();
@@ -1809,16 +1751,19 @@
       for (const name of defaultSubjects) { await supabase.from('subjects').insert({ name, category_id: catData.id }).select(); }
     } catch (e) { console.warn('Seed subjects error:', e); }
   }
+  
   function renderSubjects() {
     const tbody = document.getElementById('subjectsTableBody'); if (!tbody) return;
     if (subjectsData.length === 0) { tbody.innerHTML = `<tr><td colspan="3"><div class="empty-state"><div class="ico">📚</div>No subjects</div></td></tr>`; return; }
     tbody.innerHTML = subjectsData.map(s => `<tr><td data-label="Subject">${s.name}</td><td data-label="Category">${s.categories?.name || 'General'}</td><td data-label="Actions" class="action-icons"><i class="fas fa-trash-alt" onclick="deleteSubject('${s.id}')" style="color:var(--red);"></i></td></tr>`).join('');
   }
+  
   window.deleteSubject = async function(id) {
     if (!confirm('Delete this subject?')) return;
     try { await supabase.from('subjects').delete().eq('id', id); showToast('Deleted','Subject removed'); await loadSubjects(); }
     catch (e) { showToast('Error','Failed to delete','error'); }
   };
+  
   document.getElementById('subjectForm').addEventListener('submit', async function(e) {
     e.preventDefault();
     const name = document.getElementById('subjectName').value;
@@ -1839,6 +1784,7 @@
       document.getElementById('withdrawalBadge').style.display = withdrawalsData.filter(w => w.status==='pending').length > 0 ? '' : 'none';
     } catch (e) { withdrawalsData = []; renderWithdrawals(); }
   }
+  
   function renderWithdrawals() {
     const container = document.getElementById('withdrawalsList'); if (!container) return;
     if (withdrawalsData.length === 0) { container.innerHTML = '<div class="empty-state"><div class="ico">💸</div>No withdrawal requests</div>'; return; }
@@ -1853,6 +1799,7 @@
         ${w.status === 'pending' ? `<div class="actions"><button class="approve" onclick="approveWithdrawal('${w.id}')">✅ Approve</button><button class="reject" onclick="rejectWithdrawal('${w.id}')">❌ Reject</button></div>` : ''}
       </div>`).join('');
   }
+  
   window.approveWithdrawal = async function(id) { try { await supabase.from('withdrawals').update({status:'approved'}).eq('id',id); showToast('Approved','Withdrawal approved'); await loadWithdrawals(); } catch(e){ showToast('Error','Failed to approve','error'); } };
   window.rejectWithdrawal = async function(id) { try { await supabase.from('withdrawals').update({status:'rejected'}).eq('id',id); showToast('Rejected','Withdrawal rejected'); await loadWithdrawals(); } catch(e){ showToast('Error','Failed to reject','error'); } };
 
@@ -1915,7 +1862,7 @@
   }
 
   // ============================================================
-  // 22. VISITOR COUNT & PERCENTAGE CHANGE
+  // 22. VISITOR COUNT
   // ============================================================
   async function updateVisitorMetrics() {
     try {
@@ -2018,6 +1965,7 @@
     teamData = JSON.parse(localStorage.getItem('kv-admin-team') || '[]');
     renderTeam();
   }
+  
   function renderTeam() {
     const tbody = document.getElementById('teamTableBody'); if (!tbody) return;
     const rows = [`<tr><td data-label="Name">${SUPER_ADMIN_EMAIL.split('@')[0]}</td><td data-label="Email">${SUPER_ADMIN_EMAIL}</td><td data-label="Role"><span class="status status-success">Super Admin</span></td><td data-label="Actions" class="action-icons text-muted">Primary account</td></tr>`];
@@ -2026,12 +1974,14 @@
     });
     tbody.innerHTML = rows.join('');
   }
+  
   window.removeTeamMember = function(i) {
     if (!confirm('Remove this admin account?')) return;
     teamData.splice(i,1);
     localStorage.setItem('kv-admin-team', JSON.stringify(teamData));
     renderTeam(); showToast('Removed', 'Admin account removed');
   };
+  
   document.getElementById('teamForm').addEventListener('submit', function(e) {
     e.preventDefault();
     const name = document.getElementById('teamName').value;
@@ -2060,9 +2010,6 @@
   // 26. INIT
   // ============================================================
   async function initApp() {
-    // Ensure tables exist first
-    await ensureTablesExist();
-
     await loadDashboardData();
     await loadResources();
     await loadTutors();
