@@ -1363,6 +1363,9 @@
       <div class="nav-group-label">Overview</div>
       <a href="#" class="active" data-module="dashboard"><i class="fas fa-th-large"></i> Dashboard</a>
 
+      <div class="nav-group-label">Catalog</div>
+      <a href="#" data-module="resources"><i class="fas fa-folder-open"></i> Resources <span class="badge gold" id="resourceCountBadge">0</span></a>
+
       <div class="nav-group-label">People</div>
       <a href="#" data-module="tutors"><i class="fas fa-chalkboard-teacher"></i> Tutors <span class="badge gold" id="pendingTutorBadge">0</span></a>
 
@@ -1437,6 +1440,11 @@
           <div class="stat-label">Tutors Awaiting Review</div>
           <div class="stat-number" id="statPendingTutors">0</div>
           <div class="stat-sub" id="statPendingTutorsSub">Loading...</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total Resources</div>
+          <div class="stat-number blue" id="statResources">0</div>
+          <div class="stat-sub" id="statResourcesSub">Loading...</div>
         </div>
       </div>
 
@@ -1541,6 +1549,63 @@
                 <td colspan="8" style="text-align:center;padding:30px;color:var(--muted);">Loading orders...</td>
               </tr>
             </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- RESOURCES -->
+    <div class="module-container" id="module-resources">
+      <div class="panel">
+        <h3>📤 Upload New Resource</h3>
+        <p class="sub">Any format, up to 50MB — PDF, Word, Excel, PowerPoint, images, video, audio, ZIP.</p>
+        <form id="uploadForm">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:14px;">
+            <input type="text" id="resTitle" placeholder="Title *" required />
+            <select id="resSubject" required><option value="">Subject</option>
+              <option value="mathematics">Mathematics</option><option value="english">English</option>
+              <option value="kiswahili">Kiswahili</option><option value="science">Integrated Science</option>
+              <option value="social-studies">Social Studies</option><option value="creative-arts">Creative Arts</option>
+              <option value="business-studies">Business Studies</option><option value="religious-education">Religious Education</option>
+              <option value="computer-studies">Computer Studies</option><option value="chemistry">Chemistry</option>
+              <option value="physics">Physics</option><option value="Biology">Biology</option><option value="geography">Geography</option>
+              <option value="History-citizenship">History & Citizenship</option><option value="pretechnical-studies">Pretechnical Studies</option>
+              <option value="tvet">TVET</option><option value="college">College</option><option value="university">University</option>
+            </select>
+            <select id="resLevel" required><option value="">Level</option>
+              <option value="pp1">PP1</option><option value="pp2">PP2</option><option value="grade-1">Grade 1</option>
+              <option value="grade-2">Grade 2</option><option value="grade-3">Grade 3</option><option value="grade-4">Grade 4</option>
+              <option value="grade-5">Grade 5</option><option value="grade-6">Grade 6</option><option value="grade-7">Grade 7</option>
+              <option value="grade-8">Grade 8</option><option value="grade-9">Grade 9</option><option value="grade-10">Grade 10</option>
+              <option value="grade-11">Grade 11</option><option value="grade-12">Grade 12</option><option value="form-1">Form 1</option>
+              <option value="form-2">Form 2</option><option value="form-3">Form 3</option><option value="form-4">Form 4</option>
+              <option value="college">College</option><option value="tvet">TVET</option><option value="university">University</option>
+            </select>
+            <select id="resType"><option value="lesson-plan">Lesson Plan</option><option value="scheme-work">Scheme of Work</option>
+              <option value="revision-paper">Revision Paper</option><option value="cbc-portfolio">CBC Portfolio</option>
+              <option value="exam-paper">Exam Paper</option>
+            </select>
+            <input type="number" id="resPrice" placeholder="Price (KES)" min="0" value="0" />
+            <select id="resCurriculum"><option value="cbc">CBC</option><option value="8-4-4">8-4-4</option></select>
+          </div>
+          <textarea id="resDescription" placeholder="Short description (optional)" rows="2" style="width:100%;padding:11px 14px;border:1px solid var(--line);border-radius:8px;font-size:.85rem;margin-bottom:14px;background:var(--paper);color:var(--ink);"></textarea>
+          <div class="drop-zone" onclick="document.getElementById('fileInput').click()">
+            <input type="file" id="fileInput" style="display:none;" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.webp,.mp4,.mov,.mp3,.wav,.zip,.epub" />
+            <div class="icon">📄</div>
+            <div class="text" id="fileLabel">Click to upload or drag & drop — <strong>any format, max 50MB</strong></div>
+          </div>
+          <button type="submit" class="btn-gold">📤 Upload Resource</button>
+        </form>
+      </div>
+      <div class="table-section">
+        <div class="table-header">
+          <div class="left"><h3 style="font-family:var(--font-display);font-size:1rem;">📚 Resource Inventory</h3></div>
+          <div><input type="text" placeholder="Search resources..." id="resourcesSearch" /></div>
+        </div>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Title</th><th>Subject</th><th>Level</th><th class="numeric">Price</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="resourcesTableBody"><tr><td colspan="6" style="text-align:center;padding:20px;color:var(--muted);">Loading...</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -1688,6 +1753,7 @@
     let isAuthenticated = sessionStorage.getItem('kv-auth') === 'true';
     let currentModule = 'dashboard';
     let ordersData = [],
+      resourcesData = [],
       tutorsData = [],
       withdrawalsData = [];
     let currentFilter = 'all';
@@ -1695,7 +1761,7 @@
     let currentPage = 1;
     let pageSize = 10;
     let currentCurrency = 'KES';
-    let previousStats = { total: 0, paid: 0, pending: 0, failed: 0, revenue: 0 };
+    let previousStats = { total: 0, paid: 0, pending: 0, failed: 0, revenue: 0, resources: 0 };
     let exchangeRates = { KES: 1, USD: 0.0077, EUR: 0.0071, GBP: 0.0061 };
 
     // ============================================================
@@ -1807,6 +1873,7 @@
     const moduleNames = {
       dashboard: 'Dashboard',
       orders: 'Orders',
+      resources: 'Resources',
       tutors: 'Tutors',
       withdrawals: 'Withdrawals',
       settings: 'Settings'
@@ -1828,6 +1895,7 @@
 
         if (mod === 'dashboard') loadDashboardData();
         if (mod === 'orders') loadOrders();
+        if (mod === 'resources') loadResources();
         if (mod === 'tutors') loadTutors();
         if (mod === 'withdrawals') loadWithdrawals();
         if (mod === 'settings') loadSettings();
@@ -1882,6 +1950,7 @@
     }
 
     function getOrderResources(order) {
+      // Try to get resource names from cart_items
       if (order.cart_items && typeof order.cart_items === 'string') {
         try {
           const items = JSON.parse(order.cart_items);
@@ -1892,9 +1961,19 @@
               return `${title} (x${qty})`;
             }).join('; ');
           }
-        } catch (e) {}
+        } catch (e) {
+          console.warn('Failed to parse cart_items:', e);
+        }
       }
-      return order.resource_title || order.product_name || 'N/A';
+
+      // Fallback: check if we have resource_id and can look it up
+      if (order.resource_id) {
+        const resource = resourcesData.find(r => r.id === order.resource_id);
+        if (resource) return resource.title;
+      }
+
+      // Last resort: use any available fields
+      return order.resource_title || order.product_name || order.item_name || 'N/A';
     }
 
     function getChange(current, previous) {
@@ -1909,6 +1988,7 @@
     // ============================================================
     async function loadDashboardData() {
       await loadOrders();
+      await loadResources();
       await loadTutorCountsQuiet();
     }
 
@@ -1930,7 +2010,7 @@
     }
 
     // ============================================================
-    // 11. ORDERS - FIXED: both tables render correctly
+    // 11. ORDERS
     // ============================================================
     async function loadOrders() {
       try {
@@ -1963,7 +2043,6 @@
     }
 
     function renderOrdersTable() {
-      // Render to BOTH tables (dashboard and orders page)
       const tbody1 = document.getElementById('tableBody');
       const tbody2 = document.getElementById('ordersTableBody');
 
@@ -2013,7 +2092,6 @@
       if (!pageContainer) return;
 
       let html = '';
-      // Show first page
       html += `<span class="${currentPage === 1 ? 'active-page' : ''}" onclick="goToPage(1)">1</span>`;
 
       if (totalPages > 1) {
@@ -2035,7 +2113,6 @@
 
       pageContainer.innerHTML = html;
 
-      // Update prev/next buttons
       document.getElementById('prevPage').style.opacity = currentPage <= 1 ? '0.4' : '1';
       document.getElementById('prevPage').style.cursor = currentPage <= 1 ? 'default' : 'pointer';
       document.getElementById('nextPage').style.opacity = currentPage >= totalPages ? '0.4' : '1';
@@ -2062,14 +2139,16 @@
       const pending = ordersData.filter(o => getPaymentStatus(o) === 'pending').length;
       const failed = ordersData.filter(o => getPaymentStatus(o) === 'failed').length;
       const revenue = ordersData.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
+      const resourceCount = resourcesData.length;
 
       const changeTotal = getChange(total, previousStats.total);
       const changePaid = getChange(paid, previousStats.paid);
       const changePending = getChange(pending, previousStats.pending);
       const changeFailed = getChange(failed, previousStats.failed);
       const changeRevenue = getChange(revenue, previousStats.revenue);
+      const changeResources = getChange(resourceCount, previousStats.resources);
 
-      previousStats = { total, paid, pending, failed, revenue };
+      previousStats = { total, paid, pending, failed, revenue, resources: resourceCount };
 
       document.getElementById('statOrders').textContent = total;
       document.getElementById('statOrdersSub').innerHTML =
@@ -2091,8 +2170,15 @@
       document.getElementById('statRevenueSub').innerHTML =
         `${changeRevenue.up ? '⬆' : '⬇'} <span class="${changeRevenue.up ? 'change-up' : 'change-down'}">${changeRevenue.pct}%</span> from last load`;
 
+      document.getElementById('statResources').textContent = resourceCount;
+      document.getElementById('statResourcesSub').innerHTML =
+        `${changeResources.up ? '⬆' : '⬇'} <span class="${changeResources.up ? 'change-up' : 'change-down'}">${changeResources.pct}%</span> from last load`;
+
       document.getElementById('pendingBadge').textContent = pending;
       document.getElementById('pendingBadge').style.display = pending > 0 ? '' : 'none';
+
+      document.getElementById('resourceCountBadge').textContent = resourceCount;
+      document.getElementById('resourceCountBadge').style.display = resourceCount > 0 ? '' : 'none';
     }
 
     let paymentChartInstance = null;
@@ -2150,8 +2236,9 @@
     window.viewOrder = function(id) {
       const order = ordersData.find(o => o.id === id);
       const status = getPaymentStatus(order);
+      const resources = getOrderResources(order);
       showToast('Order Details',
-        `#${order?.order_ref || id.slice(0,8)} | ${order?.customer_name || 'N/A'} | ${formatCurrency(order?.total_amount || 0)} | Status: ${status}`,
+        `#${order?.order_ref || id.slice(0,8)} | ${order?.customer_name || 'N/A'} | ${resources} | ${formatCurrency(order?.total_amount || 0)} | Status: ${status}`,
         'info');
     };
 
@@ -2188,6 +2275,7 @@
     }
     wireSearch('tableSearch', '#tableBody tr');
     wireSearch('ordersSearch', '#ordersTableBody tr');
+    wireSearch('resourcesSearch', '#resourcesTableBody tr');
     wireSearch('tutorsSearch', '#tutorsTableBody tr');
 
     document.querySelectorAll('.filter-badge[data-filter]').forEach(chip => {
@@ -2250,7 +2338,186 @@
     window.exportExcel = exportExcel;
 
     // ============================================================
-    // 14. TUTORS - with Edit Details
+    // 14. RESOURCES - restored full functionality
+    // ============================================================
+    async function loadResources() {
+      try {
+        const { data, error } = await supabase.from('resources').select('*').order('created_at', { ascending: false });
+        if (error) throw error;
+        resourcesData = data || [];
+        renderResources();
+        // Update stats
+        document.getElementById('statResources').textContent = resourcesData.length;
+        document.getElementById('resourceCountBadge').textContent = resourcesData.length;
+        document.getElementById('resourceCountBadge').style.display = resourcesData.length > 0 ? '' : 'none';
+      } catch (e) {
+        console.error('Load resources error:', e);
+        resourcesData = [];
+        renderResources();
+      }
+    }
+
+    function renderResources() {
+      const tbody = document.getElementById('resourcesTableBody');
+      if (!tbody) return;
+      if (resourcesData.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="ico">📂</div>No resources yet — upload one above</div></td></tr>`;
+        return;
+      }
+      tbody.innerHTML = resourcesData.map(r => `
+      <tr>
+        <td data-label="Title">${r.title}</td>
+        <td data-label="Subject">${r.subject || '—'}</td>
+        <td data-label="Level">${r.level || '—'}</td>
+        <td data-label="Price" class="numeric">${r.price === 0 ? 'FREE' : formatCurrency(r.price)}</td>
+        <td data-label="Status"><span class="status ${r.status === 'live' ? 'status-success' : 'status-pending'}">${r.status || 'draft'}</span></td>
+        <td data-label="Actions" class="action-icons">
+          <i class="fas fa-edit" onclick="openResourceModal('${r.id}')" title="Edit"></i>
+          <i class="fas fa-toggle-on" onclick="toggleResource('${r.id}','${r.status}')" style="color:${r.status === 'live' ? 'var(--green)' : 'var(--muted-soft)'};" title="Publish/Draft"></i>
+          <i class="fas fa-trash-alt" onclick="deleteResource('${r.id}')" style="color:var(--red);" title="Delete"></i>
+        </td>
+      </tr>`).join('');
+    }
+
+    window.toggleResource = async function(id, currentStatus) {
+      const newStatus = currentStatus === 'live' ? 'draft' : 'live';
+      try {
+        await supabase.from('resources').update({ status: newStatus }).eq('id', id);
+        showToast('Updated', `Resource ${newStatus === 'live' ? 'published' : 'drafted'}`);
+        await loadResources();
+      } catch (e) { showToast('Error', 'Failed to update', 'error'); }
+    };
+
+    window.deleteResource = async function(id) {
+      if (!confirm('Delete this resource?')) return;
+      try {
+        await supabase.from('resources').delete().eq('id', id);
+        showToast('Deleted', 'Resource removed');
+        await loadResources();
+      } catch (e) { showToast('Error', 'Failed to delete', 'error'); }
+    };
+
+    // Resource Edit Modal
+    window.openResourceModal = function(id) {
+      const r = resourcesData.find(x => x.id === id);
+      if (!r) return;
+      // Check if modal exists, if not create it
+      let modal = document.getElementById('resourceEditModal');
+      if (!modal) {
+        modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.id = 'resourceEditModal';
+        modal.innerHTML = `
+          <div class="modal-box">
+            <h3>✏️ Edit Resource</h3>
+            <form id="resourceEditForm">
+              <input type="hidden" id="editResId" />
+              <label class="mlabel">Title</label>
+              <input type="text" id="editResTitle" required />
+              <div class="field-grid">
+                <div><label class="mlabel">Subject</label><input type="text" id="editResSubject" /></div>
+                <div><label class="mlabel">Level</label><input type="text" id="editResLevel" /></div>
+                <div><label class="mlabel">Resource Type</label><input type="text" id="editResType" /></div>
+                <div><label class="mlabel">Curriculum</label><input type="text" id="editResCurriculum" /></div>
+                <div><label class="mlabel">Price (KES)</label><input type="number" id="editResPrice" min="0" /></div>
+                <div><label class="mlabel">Status</label>
+                  <select id="editResStatus"><option value="draft">Draft</option><option value="live">Live</option></select>
+                </div>
+              </div>
+              <label class="mlabel">Description</label>
+              <textarea id="editResDescription" rows="3"></textarea>
+              <div class="modal-actions">
+                <button type="submit" class="primary">💾 Save Changes</button>
+                <button type="button" class="secondary" onclick="closeResourceModal()">Cancel</button>
+              </div>
+            </form>
+          </div>`;
+        document.body.appendChild(modal);
+        document.getElementById('resourceEditForm').addEventListener('submit', saveResourceEdit);
+      }
+
+      document.getElementById('editResId').value = r.id;
+      document.getElementById('editResTitle').value = r.title || '';
+      document.getElementById('editResSubject').value = r.subject || '';
+      document.getElementById('editResLevel').value = r.level || '';
+      document.getElementById('editResType').value = r.resource_type || '';
+      document.getElementById('editResCurriculum').value = r.curriculum || '';
+      document.getElementById('editResPrice').value = r.price || 0;
+      document.getElementById('editResStatus').value = r.status || 'draft';
+      document.getElementById('editResDescription').value = r.description || '';
+      modal.classList.add('open');
+    };
+
+    function closeResourceModal() {
+      const modal = document.getElementById('resourceEditModal');
+      if (modal) modal.classList.remove('open');
+    }
+    window.closeResourceModal = closeResourceModal;
+
+    async function saveResourceEdit(e) {
+      e.preventDefault();
+      const id = document.getElementById('editResId').value;
+      const patch = {
+        title: document.getElementById('editResTitle').value,
+        subject: document.getElementById('editResSubject').value,
+        level: document.getElementById('editResLevel').value,
+        resource_type: document.getElementById('editResType').value,
+        curriculum: document.getElementById('editResCurriculum').value,
+        price: parseFloat(document.getElementById('editResPrice').value) || 0,
+        status: document.getElementById('editResStatus').value,
+        description: document.getElementById('editResDescription').value
+      };
+      try {
+        await supabase.from('resources').update(patch).eq('id', id);
+        showToast('Saved', 'Resource updated successfully');
+        closeResourceModal();
+        await loadResources();
+      } catch (e) { showToast('Error', 'Failed to save changes: ' + e.message, 'error'); }
+    }
+
+    // Upload
+    document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const fileInput = document.getElementById('fileInput');
+      if (!fileInput.files[0]) { showToast('Error', 'Please select a file', 'error'); return; }
+      const file = fileInput.files[0];
+      if (file.size > 50 * 1024 * 1024) { showToast('Error', 'File too large — maximum size is 50MB', 'error'); return; }
+
+      const title = document.getElementById('resTitle').value;
+      const subject = document.getElementById('resSubject').value;
+      const level = document.getElementById('resLevel').value;
+      const type = document.getElementById('resType').value;
+      const price = parseFloat(document.getElementById('resPrice').value) || 0;
+      const curriculum = document.getElementById('resCurriculum').value;
+      const description = document.getElementById('resDescription').value;
+
+      try {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Date.now()}-${title.replace(/\s/g,'_')}.${fileExt}`;
+        const filePath = `resources/${fileName}`;
+        await supabase.storage.from('kenyavault-resources').upload(filePath, file);
+        const { data: urlData } = supabase.storage.from('kenyavault-resources').getPublicUrl(filePath);
+
+        await supabase.from('resources').insert({
+          title, subject, level, resource_type: type, price, curriculum, description,
+          file_url: urlData.publicUrl, file_name: file.name, file_size: file.size, file_type: file.type || 'application/octet-stream',
+          status: 'draft', download_count: 0, created_at: new Date().toISOString()
+        });
+
+        showToast('Success', 'Resource uploaded successfully');
+        document.getElementById('uploadForm').reset();
+        document.getElementById('fileLabel').textContent = 'Click to upload or drag & drop — any format, max 50MB';
+        await loadResources();
+      } catch (e) { console.error('Upload error:', e); showToast('Error', 'Upload failed: ' + e.message, 'error'); }
+    });
+
+    document.getElementById('fileInput').addEventListener('change', function() {
+      if (this.files[0]) document.getElementById('fileLabel').textContent = '📎 ' + this.files[0].name + ' (' + (this.files[
+        0].size / 1024 / 1024).toFixed(2) + ' MB)';
+    });
+
+    // ============================================================
+    // 15. TUTORS
     // ============================================================
     async function loadTutors() {
       try {
@@ -2341,7 +2608,7 @@
       }).join('');
     }
 
-    // Edit Tutor modal
+    // Edit Tutor
     window.editTutor = function(id) {
       const t = tutorsData.find(x => x.id === id);
       if (!t) return;
@@ -2491,16 +2758,14 @@
     });
 
     // ============================================================
-    // 15. WITHDRAWALS - FIXED: query tutor_payouts table
+    // 16. WITHDRAWALS
     // ============================================================
     async function loadWithdrawals() {
       try {
-        // Try tutor_payouts first (where tutor.html writes)
         let { data, error } = await supabase.from('tutor_payouts').select('*, tutors(name)').order('created_at', {
           ascending: false
         });
 
-        // Fallback to withdrawals if tutor_payouts doesn't exist
         if (error && error.code === '42P01') {
           const { data: fallbackData, error: fallbackError } = await supabase.from('withdrawals')
             .select('*, tutors(name)').order('created_at', { ascending: false });
@@ -2520,7 +2785,6 @@
         console.warn('Withdrawals load error:', e);
         withdrawalsData = [];
         renderWithdrawals();
-        // Show a helpful message if table doesn't exist
         const container = document.getElementById('withdrawalsList');
         if (container) {
           container.innerHTML =
@@ -2550,7 +2814,6 @@
 
     window.approveWithdrawal = async function(id) {
       try {
-        // Try tutor_payouts first
         let result = await supabase.from('tutor_payouts').update({ status: 'approved' }).eq('id', id);
         if (result.error && result.error.code === '42P01') {
           result = await supabase.from('withdrawals').update({ status: 'approved' }).eq('id', id);
@@ -2574,7 +2837,7 @@
     };
 
     // ============================================================
-    // 16. SETTINGS
+    // 17. SETTINGS
     // ============================================================
     function loadSettings() {
       const saved = localStorage.getItem('kv-settings');
@@ -2618,7 +2881,7 @@
     window.resetSettings = resetSettings;
 
     // ============================================================
-    // 17. THEME
+    // 18. THEME
     // ============================================================
     let darkMode = false;
 
@@ -2629,7 +2892,7 @@
     }
 
     // ============================================================
-    // 18. INIT
+    // 19. INIT
     // ============================================================
     async function initApp() {
       const saved = localStorage.getItem('kv-settings');
@@ -2643,10 +2906,10 @@
         } catch (e) {}
       }
 
-      // Initialize stats with 0 (no loading shimmer)
       document.querySelectorAll('#statsGrid .stat-card').forEach(el => el.classList.remove('loading-shimmer'));
 
       await loadOrders();
+      await loadResources();
       await loadTutors();
       await loadWithdrawals();
       loadSettings();
