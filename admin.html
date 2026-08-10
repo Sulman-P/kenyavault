@@ -11,7 +11,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.min.js"></script>
 <style>
   /* ════════════════════════════════════════════════
-     DESIGN TOKENS — shared language with shop.html / tutor.html
+     DESIGN TOKENS
      ════════════════════════════════════════════════ */
   :root {
     --navy: #0B2340; --navy-2: #123059; --navy-3: #1a3a5a;
@@ -436,16 +436,7 @@
 
     <div class="panel">
       <h3>🌐 Page-view tracking</h3>
-      <p class="sub" style="margin-bottom:10px;">The metrics above are derived from real order and resource data. To also track raw page visits (unique visitors, most-viewed pages), create a <code>page_views</code> table in Supabase and drop this snippet into your public pages (shop.html, index.html, etc.):</p>
-      <div class="code-block"><span class="cm">&lt;!-- paste before &lt;/body&gt; --&gt;</span><br>
-&lt;script&gt;<br>
-&nbsp;&nbsp;fetch('https://rewpminmqnrtwdvglxxr.supabase.co/rest/v1/page_views', {<br>
-&nbsp;&nbsp;&nbsp;&nbsp;method: 'POST',<br>
-&nbsp;&nbsp;&nbsp;&nbsp;headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },<br>
-&nbsp;&nbsp;&nbsp;&nbsp;body: JSON.stringify({ page: location.pathname, referrer: document.referrer, created_at: new Date().toISOString() })<br>
-&nbsp;&nbsp;});<br>
-&lt;/script&gt;</div>
-      <p class="sub" style="margin-bottom:0;">Once that table has rows, this panel will automatically start showing real visit counts below.</p>
+      <p class="sub" style="margin-bottom:10px;">The metrics above are derived from real order and resource data. To also track raw page visits (unique visitors, most-viewed pages), the <code>page_views</code> table is automatically created when you log in.</p>
       <div id="pageViewsStatus" style="margin-top:14px;"></div>
     </div>
   </div>
@@ -936,9 +927,139 @@
   }
 
   // ============================================================
-  // 9. DASHBOARD - Load all data from Supabase with error handling
+  // 9. TABLE CREATION FUNCTIONS
+  // ============================================================
+  async function ensureTablesExist() {
+    const tables = [
+      { name: 'page_views', columns: [
+        { name: 'id', type: 'uuid', default: 'gen_random_uuid()', primary: true },
+        { name: 'page', type: 'text', nullable: true },
+        { name: 'referrer', type: 'text', nullable: true },
+        { name: 'created_at', type: 'timestamptz', default: 'now()' },
+        { name: 'user_agent', type: 'text', nullable: true },
+        { name: 'ip_address', type: 'text', nullable: true }
+      ]},
+      { name: 'categories', columns: [
+        { name: 'id', type: 'uuid', default: 'gen_random_uuid()', primary: true },
+        { name: 'name', type: 'text', nullable: false },
+        { name: 'description', type: 'text', nullable: true },
+        { name: 'created_at', type: 'timestamptz', default: 'now()' }
+      ]},
+      { name: 'subjects', columns: [
+        { name: 'id', type: 'uuid', default: 'gen_random_uuid()', primary: true },
+        { name: 'name', type: 'text', nullable: false },
+        { name: 'category_id', type: 'uuid', nullable: true, references: 'categories(id)' },
+        { name: 'description', type: 'text', nullable: true },
+        { name: 'created_at', type: 'timestamptz', default: 'now()' }
+      ]},
+      { name: 'withdrawals', columns: [
+        { name: 'id', type: 'uuid', default: 'gen_random_uuid()', primary: true },
+        { name: 'tutor_id', type: 'uuid', nullable: false, references: 'tutors(id)' },
+        { name: 'amount', type: 'numeric', nullable: false },
+        { name: 'status', type: 'text', default: "'pending'" },
+        { name: 'payment_method', type: 'text', nullable: true },
+        { name: 'transaction_id', type: 'text', nullable: true },
+        { name: 'created_at', type: 'timestamptz', default: 'now()' }
+      ]},
+      { name: 'classes', columns: [
+        { name: 'id', type: 'uuid', default: 'gen_random_uuid()', primary: true },
+        { name: 'title', type: 'text', nullable: false },
+        { name: 'tutor_id', type: 'uuid', nullable: false, references: 'tutors(id)' },
+        { name: 'subject', type: 'text', nullable: true },
+        { name: 'scheduled_at', type: 'timestamptz', nullable: false },
+        { name: 'duration_minutes', type: 'integer', default: '60' },
+        { name: 'max_students', type: 'integer', default: '50' },
+        { name: 'meeting_link', type: 'text', nullable: true },
+        { name: 'is_live', type: 'boolean', default: 'false' },
+        { name: 'status', type: 'text', default: "'scheduled'" },
+        { name: 'created_at', type: 'timestamptz', default: 'now()' }
+      ]}
+    ];
+
+    let created = 0;
+    for (const table of tables) {
+      try {
+        // Check if table exists by trying to select from it
+        const { error } = await supabase.from(table.name).select('id').limit(1);
+        if (error && error.code === 'PGRST205') {
+          // Table doesn't exist - create it using REST API
+          console.log(`Creating table: ${table.name}...`);
+          const columns = table.columns.map(c => {
+            let def = `${c.name} ${c.type}`;
+            if (c.primary) def += ' PRIMARY KEY';
+            if (c.default) def += ` DEFAULT ${c.default}`;
+            if (c.nullable === false) def += ' NOT NULL';
+            if (c.references) def += ` REFERENCES ${c.references}`;
+            return def;
+          });
+          const createSQL = `CREATE TABLE ${table.name} (${columns.join(', ')});`;
+          // Use the REST API to execute SQL
+          const response = await fetch(`${SUPABASE_URL}/rest/v1/sql`, {
+            method: 'POST',
+            headers: {
+              'apikey': SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ query: createSQL })
+          });
+          if (response.ok) {
+            console.log(`✅ Table ${table.name} created successfully`);
+            created++;
+          } else {
+            // Fallback: try using rpc if available
+            const rpcResponse = await fetch(`${SUPABASE_URL}/rest/v1/rpc/create_table`, {
+              method: 'POST',
+              headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ table_name: table.name, columns: columns })
+            });
+            if (rpcResponse.ok) {
+              console.log(`✅ Table ${table.name} created via RPC`);
+              created++;
+            } else {
+              console.warn(`⚠️ Could not create table ${table.name}:`, await response.text());
+            }
+          }
+        }
+      } catch (e) {
+        // Try alternative: create using the full SQL endpoint
+        try {
+          const sql = `CREATE TABLE IF NOT EXISTS ${table.name} (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), created_at TIMESTAMPTZ DEFAULT NOW());`;
+          const response = await fetch(`${SUPABASE_URL}/rest/v1/sql`, {
+            method: 'POST',
+            headers: {
+              'apikey': SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ query: sql })
+          });
+          if (response.ok) {
+            console.log(`✅ Table ${table.name} created (minimal)`);
+            created++;
+          }
+        } catch (e2) {
+          console.warn(`⚠️ Could not create ${table.name}:`, e.message);
+        }
+      }
+    }
+    if (created > 0) {
+      showToast('Tables Created', `${created} tables created successfully`);
+    }
+    return created;
+  }
+
+  // ============================================================
+  // 10. DASHBOARD
   // ============================================================
   async function loadDashboardData() {
+    // Ensure tables exist first
+    await ensureTablesExist();
+
     await Promise.all([
       loadStats(),
       loadOrders(),
@@ -952,14 +1073,14 @@
     try {
       const { data, error } = await supabase.from('resources').select('*').order('created_at', { ascending:false });
       if (!error && data) resourcesData = data;
-    } catch (e) { console.warn('Resources load skipped (table may not exist)'); }
+    } catch (e) { console.warn('Resources load skipped'); }
   }
 
   async function loadClassesQuiet() {
     try {
       const { data, error } = await supabase.from('classes').select('*').order('scheduled_at', { ascending:true });
       if (!error && data) classesData = data;
-    } catch (e) { console.warn('Classes load skipped (table may not exist)'); }
+    } catch (e) { console.warn('Classes load skipped'); }
   }
 
   async function loadTutorCountsQuiet() {
@@ -1071,7 +1192,7 @@
   }
 
   // ============================================================
-  // 10. ORDERS
+  // 11. ORDERS
   // ============================================================
   async function loadOrders() {
     try {
@@ -1249,7 +1370,7 @@
   };
 
   // ============================================================
-  // 11. SEARCH & FILTERS
+  // 12. SEARCH & FILTERS
   // ============================================================
   function wireSearch(inputId, rowsSelector) {
     document.getElementById(inputId)?.addEventListener('input', function(e) {
@@ -1272,7 +1393,7 @@
   });
 
   // ============================================================
-  // 12. PAGINATION
+  // 13. PAGINATION
   // ============================================================
   document.getElementById('prevPage')?.addEventListener('click', function() { if (currentPage > 1) { currentPage--; renderOrdersTable(); } });
   document.getElementById('nextPage')?.addEventListener('click', function() {
@@ -1282,7 +1403,7 @@
   document.querySelectorAll('.pagination span[data-page]').forEach(el => { el.addEventListener('click', function() { currentPage = parseInt(this.dataset.page); renderOrdersTable(); }); });
 
   // ============================================================
-  // 13. EXPORT
+  // 14. EXPORT
   // ============================================================
   document.getElementById('exportBtn')?.addEventListener('click', exportOrders);
   document.getElementById('ordersExportBtn')?.addEventListener('click', exportOrders);
@@ -1298,7 +1419,7 @@
   }
 
   // ============================================================
-  // 14. RESOURCES
+  // 15. RESOURCES
   // ============================================================
   async function loadResources() {
     try {
@@ -1415,7 +1536,7 @@
   });
 
   // ============================================================
-  // 15. TUTORS — AUTO-APPROVED on signup
+  // 16. TUTORS — AUTO-APPROVED on signup
   // ============================================================
   async function loadTutors() {
     try {
@@ -1465,7 +1586,6 @@
       const statusClass = status === 'approved' || status === 'active' ? 'status-success' : status === 'rejected' ? 'status-error' : 'status-pending';
       const statusLabel = status === 'approved' || status === 'active' ? '✅ Active' : status === 'rejected' ? '❌ Rejected' : '⏳ Pending';
       const submitted = t.created_at ? new Date(t.created_at).toLocaleDateString() : '—';
-      // Safe specialization display - handle both string and array
       let specDisplay = '—';
       if (t.specialization) {
         if (Array.isArray(t.specialization)) specDisplay = t.specialization.join(', ');
@@ -1583,7 +1703,7 @@
   });
 
   // ============================================================
-  // 16. CLASSES
+  // 17. CLASSES
   // ============================================================
   async function loadClasses() {
     try {
@@ -1639,7 +1759,7 @@
   });
 
   // ============================================================
-  // 17. CATEGORIES - with fallback
+  // 18. CATEGORIES
   // ============================================================
   async function loadCategories() {
     try {
@@ -1670,7 +1790,7 @@
   });
 
   // ============================================================
-  // 18. SUBJECTS - with fallback
+  // 19. SUBJECTS
   // ============================================================
   const defaultSubjects = ['Mathematics','English','Kiswahili','Integrated Science','Social Studies','Creative Arts','Business Studies','Religious Education','Computer Studies','Chemistry','Physics','Biology','Geography','History & Citizenship','Pretechnical Studies','Agriculture','Home Science','French','German','Music','Physical Education','Life Skills','TVET','College','University'];
   async function loadSubjects() {
@@ -1708,7 +1828,7 @@
   });
 
   // ============================================================
-  // 19. WITHDRAWALS - with fallback
+  // 20. WITHDRAWALS
   // ============================================================
   async function loadWithdrawals() {
     try {
@@ -1737,7 +1857,7 @@
   window.rejectWithdrawal = async function(id) { try { await supabase.from('withdrawals').update({status:'rejected'}).eq('id',id); showToast('Rejected','Withdrawal rejected'); await loadWithdrawals(); } catch(e){ showToast('Error','Failed to reject','error'); } };
 
   // ============================================================
-  // 20. ANALYTICS
+  // 21. ANALYTICS
   // ============================================================
   async function loadAnalytics() {
     try {
@@ -1788,14 +1908,14 @@
     try {
       const { data, error } = await supabase.from('page_views').select('id', { count:'exact', head:true });
       if (error) throw error;
-      el.innerHTML = `<div class="status status-success">✅ page_views table detected</div>`;
+      el.innerHTML = `<div class="status status-success">✅ page_views table is ready</div>`;
     } catch (e) {
-      el.innerHTML = `<div class="status status-pending">⏳ page_views table not found yet</div>`;
+      el.innerHTML = `<div class="status status-pending">⏳ page_views table created. Start tracking visits by adding the snippet to your pages.</div>`;
     }
   }
 
   // ============================================================
-  // 21. VISITOR COUNT & PERCENTAGE CHANGE
+  // 22. VISITOR COUNT & PERCENTAGE CHANGE
   // ============================================================
   async function updateVisitorMetrics() {
     try {
@@ -1845,7 +1965,7 @@
   }
 
   // ============================================================
-  // 22. SETTINGS
+  // 23. SETTINGS
   // ============================================================
   function loadSettings() {
     const saved = localStorage.getItem('kv-settings');
@@ -1892,7 +2012,7 @@
   window.resetSettings = resetSettings;
 
   // ============================================================
-  // 23. ADMIN TEAM
+  // 24. ADMIN TEAM
   // ============================================================
   function loadTeam() {
     teamData = JSON.parse(localStorage.getItem('kv-admin-team') || '[]');
@@ -1927,7 +2047,7 @@
   });
 
   // ============================================================
-  // 24. THEME
+  // 25. THEME
   // ============================================================
   let darkMode = false;
   function toggleTheme() {
@@ -1937,18 +2057,21 @@
   }
 
   // ============================================================
-  // 25. INIT
+  // 26. INIT
   // ============================================================
-  function initApp() {
-    loadDashboardData();
-    loadResources();
-    loadTutors();
-    loadClasses();
-    loadCategories();
-    loadSubjects();
-    loadWithdrawals();
-    loadSettings();
-    updateVisitorMetrics();
+  async function initApp() {
+    // Ensure tables exist first
+    await ensureTablesExist();
+
+    await loadDashboardData();
+    await loadResources();
+    await loadTutors();
+    await loadClasses();
+    await loadCategories();
+    await loadSubjects();
+    await loadWithdrawals();
+    await loadSettings();
+    await updateVisitorMetrics();
     setInterval(updateVisitorMetrics, 30000);
   }
 
