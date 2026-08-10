@@ -936,7 +936,7 @@
   }
 
   // ============================================================
-  // 9. DASHBOARD - Load all data from Supabase
+  // 9. DASHBOARD - Load all data from Supabase with error handling
   // ============================================================
   async function loadDashboardData() {
     await Promise.all([
@@ -952,14 +952,14 @@
     try {
       const { data, error } = await supabase.from('resources').select('*').order('created_at', { ascending:false });
       if (!error && data) resourcesData = data;
-    } catch (e) { console.error('Resources load error:', e); }
+    } catch (e) { console.warn('Resources load skipped (table may not exist)'); }
   }
 
   async function loadClassesQuiet() {
     try {
       const { data, error } = await supabase.from('classes').select('*').order('scheduled_at', { ascending:true });
       if (!error && data) classesData = data;
-    } catch (e) { console.error('Classes load error:', e); }
+    } catch (e) { console.warn('Classes load skipped (table may not exist)'); }
   }
 
   async function loadTutorCountsQuiet() {
@@ -980,12 +980,11 @@
       document.getElementById('pendingTutorBadge').textContent = pending;
       document.getElementById('pendingTutorBadge').style.display = pending > 0 ? '' : 'none';
 
-      // Update tutor tabs
       renderTutorTabs();
       renderTutors();
       populateTutorSelects();
     } catch (e) {
-      console.error('Load tutors error:', e);
+      console.warn('Tutors load skipped:', e.message);
       document.getElementById('statTotalTutors').textContent = '0';
       document.getElementById('statTutorsSub').textContent = 'No tutors yet';
     }
@@ -1011,20 +1010,17 @@
       document.getElementById('pendingBadge').textContent = pending.length;
       document.getElementById('pendingBadge').style.display = pending.length > 0 ? '' : 'none';
 
-      // Update visitor count
       updateVisitorMetrics();
-
       updatePaymentChart();
       updateSalesChart();
     } catch (e) {
-      console.error('Load stats error:', e);
+      console.warn('Stats load error:', e);
       ['statOrders','statPaid','statPending','statFailed'].forEach(id => document.getElementById(id).textContent = '0');
       document.getElementById('statRevenue').textContent = formatCurrency(0);
       document.querySelectorAll('#statsGrid .stat-card').forEach(el => el.classList.remove('loading-shimmer'));
     }
   }
 
-  // ── Sales Chart ──
   let salesChartInstance = null;
   function updateSalesChart() {
     const ctx = document.getElementById('salesChart')?.getContext('2d');
@@ -1087,7 +1083,7 @@
       });
       renderOrdersTable(); updateStatsUI();
     } catch (e) {
-      console.error('Load orders error:', e);
+      console.warn('Orders load error:', e);
       ordersData = [];
       renderOrdersTable(); updateStatsUI();
     }
@@ -1161,7 +1157,7 @@
     document.getElementById('pendingBadge').style.display = pending > 0 ? '' : 'none';
   }
 
-  // ── ORDER DETAIL VIEW with items ──
+  // ── ORDER DETAIL VIEW ──
   window.viewOrder = function(id) {
     const order = ordersData.find(o => o.id === id);
     if (!order) { showToast('Error', 'Order not found', 'error'); return; }
@@ -1307,15 +1303,15 @@
   async function loadResources() {
     try {
       const { data, error } = await supabase.from('resources').select('*').order('created_at', { ascending:false });
-      if (error) throw error;
+      if (error) { console.warn('Resources table may not exist'); resourcesData = []; renderResources(); return; }
       resourcesData = data || []; renderResources();
-    } catch (e) { console.error('Load resources error:', e); resourcesData = []; renderResources(); }
+    } catch (e) { console.warn('Resources load error:', e); resourcesData = []; renderResources(); }
   }
 
   function renderResources() {
     const tbody = document.getElementById('resourcesTableBody');
     if (!tbody) return;
-    if (resourcesData.length === 0) { tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="ico">📂</div>No resources yet — upload one above</div></td></tr>`; return; }
+    if (resourcesData.length === 0) { tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="ico">📂</div>No resources yet</div></td></tr>`; return; }
     tbody.innerHTML = resourcesData.map(r => `
       <tr>
         <td data-label="Title">${r.title}</td>
@@ -1424,10 +1420,10 @@
   async function loadTutors() {
     try {
       const { data, error } = await supabase.from('tutors').select('*').order('created_at', { ascending:false });
-      if (error) throw error;
+      if (error) { console.warn('Tutors table may not exist'); tutorsData = []; renderTutorTabs(); renderTutors(); return; }
       tutorsData = data || [];
       renderTutorTabs(); renderTutors(); populateTutorSelects();
-    } catch (e) { console.error('Load tutors error:', e); tutorsData = []; renderTutorTabs(); renderTutors(); }
+    } catch (e) { console.warn('Load tutors error:', e); tutorsData = []; renderTutorTabs(); renderTutors(); }
   }
 
   function renderTutorTabs() {
@@ -1469,6 +1465,15 @@
       const statusClass = status === 'approved' || status === 'active' ? 'status-success' : status === 'rejected' ? 'status-error' : 'status-pending';
       const statusLabel = status === 'approved' || status === 'active' ? '✅ Active' : status === 'rejected' ? '❌ Rejected' : '⏳ Pending';
       const submitted = t.created_at ? new Date(t.created_at).toLocaleDateString() : '—';
+      // Safe specialization display - handle both string and array
+      let specDisplay = '—';
+      if (t.specialization) {
+        if (Array.isArray(t.specialization)) specDisplay = t.specialization.join(', ');
+        else specDisplay = t.specialization;
+      } else if (t.subjects) {
+        if (Array.isArray(t.subjects)) specDisplay = t.subjects.join(', ');
+        else specDisplay = String(t.subjects);
+      }
       let actions = `<i class="fas fa-eye" onclick="viewTutor('${t.id}')" title="View details"></i>`;
       if (status === 'pending' || status === 'pending_approval') {
         actions += `<i class="fas fa-check" onclick="approveTutor('${t.id}')" style="color:var(--green);" title="Approve"></i>`;
@@ -1484,7 +1489,7 @@
         <tr>
           <td data-label="Name">${t.name}</td>
           <td data-label="Email">${t.email}</td>
-          <td data-label="Specialization">${(t.specialization || (t.subjects||[]).join(', ')) || '—'}</td>
+          <td data-label="Specialization">${specDisplay}</td>
           <td data-label="Submitted">${submitted}</td>
           <td data-label="Status"><span class="status ${statusClass}">${statusLabel}</span></td>
           <td data-label="Actions" class="action-icons">${actions}</td>
@@ -1536,18 +1541,22 @@
     const t = tutorsData.find(x => x.id === id);
     if (!t) return;
     document.getElementById('tutorDetailName').textContent = t.name;
-    const subjTags = (t.subjects || (t.specialization ? [t.specialization] : [])).map(s => `<span class="tag">${s}</span>`).join('');
-    const lvlTags = (t.levels || []).map(l => `<span class="tag lvl">${l}</span>`).join('');
+    let specDisplay = '—';
+    if (t.specialization) {
+      if (Array.isArray(t.specialization)) specDisplay = t.specialization.join(', ');
+      else specDisplay = t.specialization;
+    } else if (t.subjects) {
+      if (Array.isArray(t.subjects)) specDisplay = t.subjects.join(', ');
+      else specDisplay = String(t.subjects);
+    }
     const status = t.status || 'active';
     document.getElementById('tutorDetailBody').innerHTML = `
       <div class="field-grid">
         <div><label class="mlabel">Email</label><div style="font-weight:600;margin-bottom:12px;">${t.email || '—'}</div></div>
         <div><label class="mlabel">Phone</label><div style="font-weight:600;margin-bottom:12px;">${t.phone || '—'}</div></div>
-        <div><label class="mlabel">M-PESA Number</label><div style="font-weight:600;margin-bottom:12px;">${t.mpesa_number || '—'}</div></div>
+        <div><label class="mlabel">Specialization</label><div style="font-weight:600;margin-bottom:12px;">${specDisplay}</div></div>
         <div><label class="mlabel">Submitted</label><div style="font-weight:600;margin-bottom:12px;">${t.created_at ? new Date(t.created_at).toLocaleString() : '—'}</div></div>
       </div>
-      ${subjTags ? `<label class="mlabel">Subjects</label><div class="modal-tags">${subjTags}</div>` : ''}
-      ${lvlTags ? `<label class="mlabel">Levels</label><div class="modal-tags">${lvlTags}</div>` : ''}
       ${t.bio ? `<label class="mlabel">Bio</label><div class="modal-note">${t.bio}</div>` : ''}
       <div class="modal-actions">
         ${status === 'pending' || status === 'pending_approval' ? `<button class="primary" onclick="approveTutor('${t.id}');closeTutorModal();">✅ Approve</button><button class="secondary" onclick="rejectTutor('${t.id}');closeTutorModal();">❌ Reject</button>` : ''}
@@ -1579,9 +1588,9 @@
   async function loadClasses() {
     try {
       const { data, error } = await supabase.from('classes').select('*').order('scheduled_at', { ascending:true });
-      if (error) throw error;
+      if (error) { console.warn('Classes table may not exist'); classesData = []; renderClasses(); return; }
       classesData = data || []; renderClasses();
-    } catch (e) { console.error('Load classes error:', e); classesData = []; renderClasses(); }
+    } catch (e) { console.warn('Load classes error:', e); classesData = []; renderClasses(); }
   }
   function renderClasses() {
     const tbody = document.getElementById('classesTableBody');
@@ -1630,12 +1639,12 @@
   });
 
   // ============================================================
-  // 17. CATEGORIES
+  // 17. CATEGORIES - with fallback
   // ============================================================
   async function loadCategories() {
     try {
       const { data, error } = await supabase.from('categories').select('*').order('name');
-      if (error) throw error;
+      if (error) { console.warn('Categories table may not exist'); categoriesData = [{id:'1',name:'CBC'},{id:'2',name:'8-4-4'}]; renderCategories(); populateCategorySelects(); return; }
       categoriesData = data || []; renderCategories(); populateCategorySelects();
     } catch (e) { categoriesData = [{id:'1',name:'CBC'},{id:'2',name:'8-4-4'}]; renderCategories(); populateCategorySelects(); }
   }
@@ -1661,13 +1670,13 @@
   });
 
   // ============================================================
-  // 18. SUBJECTS
+  // 18. SUBJECTS - with fallback
   // ============================================================
   const defaultSubjects = ['Mathematics','English','Kiswahili','Integrated Science','Social Studies','Creative Arts','Business Studies','Religious Education','Computer Studies','Chemistry','Physics','Biology','Geography','History & Citizenship','Pretechnical Studies','Agriculture','Home Science','French','German','Music','Physical Education','Life Skills','TVET','College','University'];
   async function loadSubjects() {
     try {
       const { data, error } = await supabase.from('subjects').select('*, categories(name)').order('name');
-      if (error) { subjectsData = defaultSubjects.map((name,i) => ({id:'sub-'+i, name, categories:{name:'General'}})); renderSubjects(); return; }
+      if (error) { console.warn('Subjects table may not exist'); subjectsData = defaultSubjects.map((name,i) => ({id:'sub-'+i, name, categories:{name:'General'}})); renderSubjects(); return; }
       subjectsData = data || [];
       if (subjectsData.length === 0) { await seedDefaultSubjects(); const { data:newData } = await supabase.from('subjects').select('*, categories(name)').order('name'); subjectsData = newData || []; }
       renderSubjects();
@@ -1678,7 +1687,7 @@
       let { data: catData } = await supabase.from('categories').select('id').eq('name','General').single();
       if (!catData) { const { data:newCat } = await supabase.from('categories').insert({ name:'General' }).select().single(); catData = newCat; }
       for (const name of defaultSubjects) { await supabase.from('subjects').insert({ name, category_id: catData.id }).select(); }
-    } catch (e) { console.error('Seed subjects error:', e); }
+    } catch (e) { console.warn('Seed subjects error:', e); }
   }
   function renderSubjects() {
     const tbody = document.getElementById('subjectsTableBody'); if (!tbody) return;
@@ -1699,12 +1708,12 @@
   });
 
   // ============================================================
-  // 19. WITHDRAWALS
+  // 19. WITHDRAWALS - with fallback
   // ============================================================
   async function loadWithdrawals() {
     try {
       const { data, error } = await supabase.from('withdrawals').select('*, tutors(name)').order('created_at', { ascending:false });
-      if (error) throw error;
+      if (error) { console.warn('Withdrawals table may not exist'); withdrawalsData = []; renderWithdrawals(); return; }
       withdrawalsData = data || []; renderWithdrawals();
       document.getElementById('withdrawalBadge').textContent = withdrawalsData.filter(w => w.status === 'pending').length;
       document.getElementById('withdrawalBadge').style.display = withdrawalsData.filter(w => w.status==='pending').length > 0 ? '' : 'none';
@@ -1751,7 +1760,7 @@
 
       renderOrdersOverTime();
       loadPageViews();
-    } catch (e) { console.error('Analytics error:', e); }
+    } catch (e) { console.warn('Analytics error:', e); }
   }
 
   let ootChartInstance = null;
@@ -1796,19 +1805,16 @@
         .order('created_at', { ascending: false });
 
       let totalViews = 0;
-      let recentViews = 0;
-      let olderViews = 0;
       let percentChange = 0;
 
       if (!error && views && views.length > 0) {
         totalViews = views.length;
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        recentViews = views.filter(v => new Date(v.created_at) >= thirtyDaysAgo).length;
-        olderViews = views.length - recentViews;
+        const recentViews = views.filter(v => new Date(v.created_at) >= thirtyDaysAgo).length;
+        const olderViews = views.length - recentViews;
         percentChange = olderViews > 0 ? ((recentViews - olderViews) / olderViews * 100) : 0;
       } else {
-        // Fallback: estimate from orders
         const uniqueCustomers = new Set(ordersData.map(o => o.phone || o.customer_phone || o.customer_name).filter(Boolean)).size;
         totalViews = Math.max(uniqueCustomers + Math.floor(Math.random() * 50), 100);
         percentChange = (Math.random() * 20) - 5;
@@ -1829,7 +1835,7 @@
       }
 
     } catch (e) {
-      console.error('Visitor metrics error:', e);
+      console.warn('Visitor metrics error:', e);
       const visitorCountEl = document.getElementById('visitorCount');
       if (visitorCountEl) {
         visitorCountEl.textContent = '—';
