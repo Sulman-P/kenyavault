@@ -776,6 +776,12 @@
     .dark .action-icons i:hover {
       color: #fff;
     }
+    .action-icons .approve-btn {
+      color: var(--green);
+    }
+    .action-icons .reject-btn {
+      color: var(--red);
+    }
 
     .pagination {
       display: flex;
@@ -1394,7 +1400,7 @@
                 <th>Order Ref</th>
                 <th>Customer</th>
                 <th>Phone</th>
-                <th>Product</th>
+                <th>Resources</th>
                 <th class="numeric">Amount</th>
                 <th>Status</th>
                 <th>Date</th>
@@ -1440,7 +1446,7 @@
                 <th>Order Ref</th>
                 <th>Customer</th>
                 <th>Phone</th>
-                <th>Product</th>
+                <th>Resources</th>
                 <th class="numeric">Amount</th>
                 <th>Status</th>
                 <th>Date</th>
@@ -1779,14 +1785,21 @@
       return { paid: '✅ Paid', pending: '⏳ Pending', failed: '❌ Failed' } [status] || status;
     }
 
-    function getProductName(order) {
+    function getOrderResources(order) {
       if (order.cart_items && typeof order.cart_items === 'string') {
         try {
           const items = JSON.parse(order.cart_items);
           if (Array.isArray(items) && items.length) {
-            return items.map(i => i.title || i.name || 'Item').join(', ');
+            return items.map(i => {
+              const title = i.title || i.name || 'Resource';
+              const qty = i.quantity || 1;
+              const price = i.price || 0;
+              return `${title} (x${qty} @ ${formatCurrency(price)})`;
+            }).join('; ');
           }
-        } catch (e) {}
+        } catch (e) {
+          console.warn('Failed to parse cart_items:', e);
+        }
       }
       return order.resource_title || order.product_name || 'N/A';
     }
@@ -1824,7 +1837,7 @@
     }
 
     // ============================================================
-    // 10. ORDERS
+    // 10. ORDERS with detailed resources
     // ============================================================
     async function loadOrders() {
       try {
@@ -1875,7 +1888,7 @@
         const statusLabel = getStatusLabel(status);
         const ref = o.order_ref || (o.id || '').slice(0, 8).toUpperCase();
         const amount = o.total_amount || 0;
-        const product = getProductName(o);
+        const resources = getOrderResources(o);
         const date = o.created_at ? new Date(o.created_at).toLocaleString() : '—';
         const phone = o.phone || o.customer_phone || '—';
         const customer = o.customer_name || 'N/A';
@@ -1885,14 +1898,14 @@
             <td data-label="Order Ref">#${ref}</td>
             <td data-label="Customer">${customer}</td>
             <td data-label="Phone">${phone}</td>
-            <td data-label="Product">${product}</td>
+            <td data-label="Resources">${resources}</td>
             <td data-label="Amount" class="numeric">${formatCurrency(amount)}</td>
             <td data-label="Status"><span class="status ${statusClass}">${statusLabel}</span></td>
             <td data-label="Date">${date}</td>
             <td data-label="Actions" class="action-icons">
               <i class="fas fa-eye" onclick="viewOrder('${o.id}')"></i>
-              ${status === 'pending' ? `<i class="fas fa-check" onclick="confirmOrder('${o.id}')" style="color:var(--green);"></i>` : ''}
-              ${status === 'pending' ? `<i class="fas fa-times" onclick="rejectOrder('${o.id}')" style="color:var(--red);"></i>` : ''}
+              ${status === 'pending' ? `<i class="fas fa-check approve-btn" onclick="confirmOrder('${o.id}')" title="Approve order"></i>` : ''}
+              ${status === 'pending' ? `<i class="fas fa-times reject-btn" onclick="rejectOrder('${o.id}')" title="Reject order"></i>` : ''}
             </td>
           </tr>`;
       }).join('');
@@ -1996,8 +2009,9 @@
     window.viewOrder = function(id) {
       const order = ordersData.find(o => o.id === id);
       const status = getPaymentStatus(order);
+      const resources = getOrderResources(order);
       showToast('Order Details',
-        `#${order?.order_ref || id.slice(0,8)} | ${order?.customer_name || 'N/A'} | ${formatCurrency(order?.total_amount || 0)} | Status: ${status}`,
+        `#${order?.order_ref || id.slice(0,8)} | ${order?.customer_name || 'N/A'} | ${resources} | ${formatCurrency(order?.total_amount || 0)} | Status: ${status}`,
         'info');
     };
 
@@ -2073,14 +2087,14 @@
     document.getElementById('ordersExportBtn')?.addEventListener('click', exportOrders);
 
     function exportOrders() {
-      const headers = ['Order Ref', 'Customer', 'Phone', 'Product', 'Amount', 'Status', 'Date'];
+      const headers = ['Order Ref', 'Customer', 'Phone', 'Resources', 'Amount', 'Status', 'Date'];
       const rows = ordersData.map(o => {
         const status = getPaymentStatus(o);
         return [
           o.order_ref || o.id.slice(0, 8),
           o.customer_name || 'N/A',
           o.phone || o.customer_phone || '—',
-          getProductName(o),
+          getOrderResources(o),
           o.total_amount || 0,
           status,
           o.created_at ? new Date(o.created_at).toLocaleString() : '—'
@@ -2098,7 +2112,7 @@
     }
 
     // ============================================================
-    // 14. TUTORS — FIXED: handle subjects safely
+    // 14. TUTORS — APPROVE/REJECT BUTTONS FIXED
     // ============================================================
     async function loadTutors() {
       try {
@@ -2109,7 +2123,6 @@
         renderTutors();
       } catch (e) {
         console.error('Load tutors error:', e);
-        // Fallback: show empty state
         tutorsData = [];
         renderTutorTabs();
         renderTutors();
@@ -2129,7 +2142,6 @@
     }
 
     function getTutorSpecialization(tutor) {
-      // Safely handle subjects or specialization
       if (tutor.subjects) {
         if (Array.isArray(tutor.subjects)) {
           return tutor.subjects.join(', ');
@@ -2161,13 +2173,12 @@
         const submitted = t.created_at ? new Date(t.created_at).toLocaleDateString() : '—';
         const specialization = getTutorSpecialization(t);
 
-        let actions =
-          `<i class="fas fa-eye" onclick="viewTutor('${t.id}')" title="View details"></i>`;
+        let actions = '';
         if (status === 'pending') {
           actions +=
-            `<i class="fas fa-check" onclick="approveTutor('${t.id}')" style="color:var(--green);" title="Approve"></i>`;
+            `<i class="fas fa-check approve-btn" onclick="approveTutor('${t.id}')" title="Approve tutor"></i>`;
           actions +=
-            `<i class="fas fa-times" onclick="rejectTutor('${t.id}')" style="color:var(--red);" title="Reject"></i>`;
+            `<i class="fas fa-times reject-btn" onclick="rejectTutor('${t.id}')" title="Reject tutor"></i>`;
         } else if (status === 'approved') {
           actions +=
             `<i class="fas fa-ban" onclick="suspendTutor('${t.id}')" style="color:var(--gold);" title="Suspend access"></i>`;
@@ -2175,6 +2186,8 @@
           actions +=
             `<i class="fas fa-rotate-left" onclick="approveTutor('${t.id}')" style="color:var(--green);" title="Approve anyway"></i>`;
         }
+        actions +=
+          `<i class="fas fa-eye" onclick="viewTutor('${t.id}')" title="View details"></i>`;
         actions +=
           `<i class="fas fa-trash-alt" onclick="deleteTutor('${t.id}')" style="color:var(--red);" title="Delete"></i>`;
 
