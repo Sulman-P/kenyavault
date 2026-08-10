@@ -570,7 +570,7 @@
         .page-content { padding: 24px 28px 48px; max-width: 1320px; }
 
         /* ════════════════════════════════════════════════
-           APPROVAL GATE (signature element)
+           APPROVAL GATE — shown only while pending/rejected
            ════════════════════════════════════════════════ */
         .gate-wrap {
             max-width: 780px;
@@ -846,8 +846,7 @@
         ];
 
         // ────────────────────────────────────────────────
-        // CONTEXT  (unchanged logic from the working build —
-        // only the UI layer around it has been redesigned)
+        // CONTEXT
         // ────────────────────────────────────────────────
         const TutorContext = createContext(null);
 
@@ -865,6 +864,7 @@
             const [debugInfo, setDebugInfo] = useState([]);
             const [isMobile, setIsMobile] = useState(window.innerWidth <= 900);
             const [payoutRequests, setPayoutRequests] = useState([]);
+            const [isApproved, setIsApproved] = useState(false);
 
             useEffect(() => {
                 localStorage.setItem('tutor-dark-mode', darkMode);
@@ -887,6 +887,19 @@
                 return () => window.removeEventListener('resize', handleResize);
             }, []);
 
+            // Check approval status and update isApproved
+            useEffect(() => {
+                if (tutor) {
+                    const approved = tutor.status === 'approved' || tutor.status === 'active';
+                    setIsApproved(approved);
+                    // If approved, make sure we don't show the gate
+                    if (approved && activeTab === 'dashboard') {
+                        // Force a re-render of the dashboard content
+                        setActiveTab('dashboard');
+                    }
+                }
+            }, [tutor]);
+
             const addDebug = (message, type = 'info') => {
                 setDebugInfo(prev => [...prev, { message, type, timestamp: new Date().toLocaleTimeString() }]);
                 console.log(message);
@@ -908,6 +921,9 @@
                         const data = await tRes.json();
                         if (data.length > 0) {
                             setTutor(data[0]);
+                            // Check if approved
+                            const approved = data[0].status === 'approved' || data[0].status === 'active';
+                            setIsApproved(approved);
                             sessionStorage.setItem('tutor_name', data[0].name);
                             addDebug('✅ Tutor data loaded', 'success');
                         } else {
@@ -1051,6 +1067,7 @@
                 setClasses([]);
                 setPayoutRequests([]);
                 setActiveTab('dashboard');
+                setIsApproved(false);
                 setDebugInfo([]);
                 showNotification('Logged out successfully', 'success');
                 setTimeout(() => { window.location.href = '/'; }, 500);
@@ -1352,6 +1369,8 @@
                     deleteClass,
                     uploadResource,
                     updateProfileData,
+                    isApproved,
+                    setIsApproved
                 }}>
                     {children}
                 </TutorContext.Provider>
@@ -1365,7 +1384,7 @@
         }
 
         // ────────────────────────────────────────────────
-        // LOGIN PAGE
+        // LOGIN PAGE (unchanged)
         // ────────────────────────────────────────────────
         function LoginPage() {
             const { setIsLoggedIn, setTutor, showNotification, loadTutorData, darkMode, toggleDarkMode, addDebug } = useTutor();
@@ -1750,8 +1769,7 @@
         }
 
         // ────────────────────────────────────────────────
-        // APPROVAL GATE — shown instead of the full dashboard
-        // while a tutor's application is pending or rejected.
+        // APPROVAL GATE — shown only when pending/rejected
         // ────────────────────────────────────────────────
         function ApprovalGate() {
             const { tutor, setActiveTab } = useTutor();
@@ -1759,7 +1777,7 @@
             const submitted = tutor?.created_at ? new Date(tutor.created_at) : null;
             const submittedLabel = submitted ? submitted.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
 
-            if (status === 'approved') return null;
+            if (status === 'approved' || status === 'active') return null;
 
             return (
                 <div className="gate-wrap">
@@ -1768,7 +1786,7 @@
                         <h2>{status === 'rejected' ? 'Your application needs another look' : 'Your application is under review'}</h2>
                         <p className="lede">
                             {status === 'rejected'
-                                ? 'Our team reviewed your submission and it wasn\u2019t approved this time. You can update your profile details and reach out to support for specifics.'
+                                ? 'Our team reviewed your submission and it wasn\'t approved this time. You can update your profile details and reach out to support for specifics.'
                                 : 'Uploading, live classes and payouts unlock automatically the moment an admin approves your account — no action needed from you in the meantime.'}
                         </p>
 
@@ -1850,9 +1868,9 @@
                 logout,
                 sidebarOpen, toggleSidebar, closeSidebar,
                 debugInfo,
+                isApproved
             } = useTutor();
 
-            const isApproved = tutor?.status === 'approved';
             const [currentTime, setCurrentTime] = useState(new Date());
 
             useEffect(() => {
@@ -1886,11 +1904,15 @@
             };
 
             const renderContent = () => {
+                // Check if approved - if not and not on dashboard/profile, show gate
                 if (!isApproved && !['dashboard', 'profile'].includes(activeTab)) {
                     return <ApprovalGate />;
                 }
+                // On dashboard, show gate if not approved, otherwise show dashboard content
+                if (activeTab === 'dashboard') {
+                    return isApproved ? <DashboardContent /> : <ApprovalGate />;
+                }
                 switch(activeTab) {
-                    case 'dashboard': return isApproved ? <DashboardContent /> : <ApprovalGate />;
                     case 'resources': return <ResourcesTab />;
                     case 'classes': return <ClassesTab />;
                     case 'orders': return <OrdersTab />;
@@ -1910,8 +1932,8 @@
             };
 
             const hasErrors = debugInfo.some(d => d.type === 'error');
-            const statusChipClass = tutor?.status === 'approved' ? 'approved' : tutor?.status === 'rejected' ? 'rejected' : 'pending';
-            const statusChipLabel = tutor?.status === 'approved' ? 'Approved tutor' : tutor?.status === 'rejected' ? 'Application rejected' : 'Pending admin approval';
+            const statusChipClass = tutor?.status === 'approved' || tutor?.status === 'active' ? 'approved' : tutor?.status === 'rejected' ? 'rejected' : 'pending';
+            const statusChipLabel = tutor?.status === 'approved' || tutor?.status === 'active' ? '✅ Approved tutor' : tutor?.status === 'rejected' ? '❌ Application rejected' : '⏳ Pending admin approval';
 
             return (
                 <div className="dashboard-wrapper">
@@ -2726,8 +2748,8 @@
 
             if (!tutor) return <div>Loading...</div>;
 
-            const statusClass = tutor.status === 'approved' ? 'approved' : tutor.status === 'pending' ? 'pending' : 'rejected';
-            const statusLabel = tutor.status === 'approved' ? '✅ Approved' : tutor.status === 'pending' ? '⏳ Pending' : '❌ Rejected';
+            const statusClass = tutor.status === 'approved' || tutor.status === 'active' ? 'approved' : tutor.status === 'pending' ? 'pending' : 'rejected';
+            const statusLabel = tutor.status === 'approved' || tutor.status === 'active' ? '✅ Approved' : tutor.status === 'pending' ? '⏳ Pending' : '❌ Rejected';
 
             return (
                 <div className="content-card">
