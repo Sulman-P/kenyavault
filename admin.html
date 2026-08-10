@@ -11,6 +11,8 @@
   </script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.min.js">
   </script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js">
+  </script>
   <style>
     /* ── DESIGN TOKENS ── */
     :root {
@@ -625,6 +627,12 @@
       font-weight: 700;
       margin-bottom: 16px;
     }
+    .panel .sub {
+      color: var(--muted);
+      font-size: .85rem;
+      margin-top: -10px;
+      margin-bottom: 16px;
+    }
 
     .charts-row {
       display: grid;
@@ -762,6 +770,14 @@
       background: var(--red-soft);
       color: var(--red);
     }
+    .status-underpaid {
+      background: var(--gold-soft);
+      color: #9A7415;
+    }
+    .status-overpaid {
+      background: var(--blue-soft);
+      color: var(--blue);
+    }
 
     .action-icons i {
       margin: 0 6px;
@@ -790,6 +806,7 @@
       gap: 6px;
       padding: 16px 0 8px;
       font-size: .82rem;
+      flex-wrap: wrap;
     }
     .pagination span {
       padding: 6px 14px;
@@ -798,10 +815,30 @@
       color: var(--ink);
       font-weight: 600;
       cursor: pointer;
+      transition: .15s;
+    }
+    .pagination span:hover {
+      background: var(--gold-soft);
     }
     .pagination .active-page {
       background: var(--navy);
       color: #fff;
+    }
+    .pagination .page-size-selector {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-left: 12px;
+    }
+    .pagination .page-size-selector select {
+      padding: 4px 8px;
+      border-radius: var(--r-sm);
+      border: 1px solid var(--line);
+      background: var(--paper);
+      color: var(--ink);
+      font-weight: 600;
+      font-size: .8rem;
+      cursor: pointer;
     }
 
     .empty-state {
@@ -1134,6 +1171,21 @@
       }
     }
 
+    .export-buttons {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .export-buttons .filter-badge {
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .export-buttons .filter-badge i {
+      font-size: .7rem;
+    }
+
     /* ── RESPONSIVE ── */
     @media (min-width: 901px) {
       .sidebar {
@@ -1188,6 +1240,15 @@
       .flex-card .info {
         flex-direction: column;
         gap: 8px;
+      }
+      .pagination {
+        justify-content: center;
+        gap: 4px;
+      }
+      .pagination .page-size-selector {
+        margin-left: 0;
+        width: 100%;
+        justify-content: center;
       }
     }
     @media (max-width: 560px) {
@@ -1255,6 +1316,10 @@
       }
       .currency-toggle select {
         font-size: .75rem;
+      }
+      .export-buttons .filter-badge {
+        font-size: .7rem;
+        padding: 4px 10px;
       }
     }
   </style>
@@ -1345,32 +1410,32 @@
       <div class="stats-grid" id="statsGrid">
         <div class="stat-card">
           <div class="stat-label">Total Orders</div>
-          <div class="stat-number" id="statOrders">—</div>
+          <div class="stat-number" id="statOrders">0</div>
           <div class="stat-sub" id="statOrdersSub">Loading...</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">Paid</div>
-          <div class="stat-number green" id="statPaid">—</div>
+          <div class="stat-number green" id="statPaid">0</div>
           <div class="stat-sub" id="statPaidSub">Loading...</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">Pending</div>
-          <div class="stat-number gold" id="statPending">—</div>
+          <div class="stat-number gold" id="statPending">0</div>
           <div class="stat-sub" id="statPendingSub">Loading...</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">Failed</div>
-          <div class="stat-number red" id="statFailed">—</div>
+          <div class="stat-number red" id="statFailed">0</div>
           <div class="stat-sub" id="statFailedSub">Loading...</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">Revenue</div>
-          <div class="stat-number gold" id="statRevenue">—</div>
+          <div class="stat-number gold" id="statRevenue">KES 0</div>
           <div class="stat-sub" id="statRevenueSub">Loading...</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">Tutors Awaiting Review</div>
-          <div class="stat-number" id="statPendingTutors">—</div>
+          <div class="stat-number" id="statPendingTutors">0</div>
           <div class="stat-sub" id="statPendingTutorsSub">Loading...</div>
         </div>
       </div>
@@ -1389,9 +1454,14 @@
               <span class="filter-badge" data-filter="paid">Paid</span>
               <span class="filter-badge" data-filter="pending">Pending</span>
               <span class="filter-badge" data-filter="failed">Failed</span>
+              <span class="filter-badge" data-filter="underpaid">Underpaid</span>
+              <span class="filter-badge" data-filter="overpaid">Overpaid</span>
             </div>
           </div>
-          <div><span class="filter-badge" id="exportBtn"><i class="fas fa-download"></i> Export CSV</span></div>
+          <div class="export-buttons">
+            <span class="filter-badge" onclick="exportCSV()"><i class="fas fa-file-csv"></i> CSV</span>
+            <span class="filter-badge" onclick="exportExcel()"><i class="fas fa-file-excel"></i> Excel</span>
+          </div>
         </div>
         <div class="table-wrapper">
           <table>
@@ -1414,12 +1484,20 @@
             </tbody>
           </table>
         </div>
-        <div class="pagination">
+        <div class="pagination" id="paginationContainer">
           <span id="prevPage"><i class="fas fa-chevron-left"></i></span>
-          <span class="active-page" data-page="1">1</span>
-          <span data-page="2">2</span>
-          <span data-page="3">3</span>
+          <div id="pageNumbers"></div>
           <span id="nextPage"><i class="fas fa-chevron-right"></i></span>
+          <div class="page-size-selector">
+            <span>Rows:</span>
+            <select id="pageSizeSelect" onchange="changePageSize()">
+              <option value="5">5</option>
+              <option value="10" selected>10</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+          </div>
         </div>
       </div>
     </div>
@@ -1435,9 +1513,14 @@
               <span class="filter-badge" data-filter="paid">Paid</span>
               <span class="filter-badge" data-filter="pending">Pending</span>
               <span class="filter-badge" data-filter="failed">Failed</span>
+              <span class="filter-badge" data-filter="underpaid">Underpaid</span>
+              <span class="filter-badge" data-filter="overpaid">Overpaid</span>
             </div>
           </div>
-          <div><span class="filter-badge" id="ordersExportBtn"><i class="fas fa-download"></i> Export CSV</span></div>
+          <div class="export-buttons">
+            <span class="filter-badge" onclick="exportCSV()"><i class="fas fa-file-csv"></i> CSV</span>
+            <span class="filter-badge" onclick="exportExcel()"><i class="fas fa-file-excel"></i> Excel</span>
+          </div>
         </div>
         <div class="table-wrapper">
           <table>
@@ -1610,9 +1693,10 @@
     let currentFilter = 'all';
     let currentTutorTab = 'all';
     let currentPage = 1;
-    const pageSize = 5;
+    let pageSize = 10;
     let currentCurrency = 'KES';
     let previousStats = { total: 0, paid: 0, pending: 0, failed: 0, revenue: 0 };
+    let exchangeRates = { KES: 1, USD: 0.0077, EUR: 0.0071, GBP: 0.0061 };
 
     // ============================================================
     // 3. TOAST
@@ -1750,9 +1834,15 @@
       });
     });
 
+    // ============================================================
+    // 8. CURRENCY HELPERS
+    // ============================================================
     function formatCurrency(amount) {
+      if (amount === undefined || amount === null) amount = 0;
+      const rate = exchangeRates[currentCurrency] || 1;
+      const converted = amount * rate;
       const sym = currentCurrency === 'KES' ? 'KES ' : currentCurrency === 'USD' ? '$' : currentCurrency === 'EUR' ? '€' : '£';
-      return sym + (Number(amount) || 0).toLocaleString();
+      return sym + Math.round(converted).toLocaleString();
     }
 
     function updateCurrency() {
@@ -1762,7 +1852,7 @@
     }
 
     // ============================================================
-    // 8. ORDER STATUS HELPERS
+    // 9. ORDER STATUS HELPERS
     // ============================================================
     function getPaymentStatus(order) {
       const amount = order.total_amount || 0;
@@ -1771,18 +1861,24 @@
       if (order.payment_status === 'pending' || order.status === 'pending' || order.status === 'pending_verification')
         return 'pending';
       if (order.payment_status === 'paid' || order.status === 'paid' || order.status === 'completed') {
+        if (paid > amount && amount > 0) return 'overpaid';
+        if (paid < amount && paid > 0) return 'underpaid';
         if (paid >= amount) return 'paid';
         return 'pending';
       }
+      if (order.payment_status === 'overpaid') return 'overpaid';
+      if (order.payment_status === 'underpaid') return 'underpaid';
       return order.payment_status || 'pending';
     }
 
     function getStatusClass(status) {
-      return { paid: 'status-success', pending: 'status-pending', failed: 'status-error' } [status] || 'status-pending';
+      return { paid: 'status-success', pending: 'status-pending', failed: 'status-error', underpaid: 'status-underpaid',
+        overpaid: 'status-overpaid' } [status] || 'status-pending';
     }
 
     function getStatusLabel(status) {
-      return { paid: '✅ Paid', pending: '⏳ Pending', failed: '❌ Failed' } [status] || status;
+      return { paid: '✅ Paid', pending: '⏳ Pending', failed: '❌ Failed', underpaid: '⚠️ Underpaid',
+        overpaid: 'ℹ️ Overpaid' } [status] || status;
     }
 
     function getOrderResources(order) {
@@ -1793,13 +1889,10 @@
             return items.map(i => {
               const title = i.title || i.name || 'Resource';
               const qty = i.quantity || 1;
-              const price = i.price || 0;
-              return `${title} (x${qty} @ ${formatCurrency(price)})`;
+              return `${title} (x${qty})`;
             }).join('; ');
           }
-        } catch (e) {
-          console.warn('Failed to parse cart_items:', e);
-        }
+        } catch (e) {}
       }
       return order.resource_title || order.product_name || 'N/A';
     }
@@ -1812,7 +1905,7 @@
     }
 
     // ============================================================
-    // 9. DASHBOARD
+    // 10. DASHBOARD
     // ============================================================
     async function loadDashboardData() {
       await loadOrders();
@@ -1837,7 +1930,7 @@
     }
 
     // ============================================================
-    // 10. ORDERS with detailed resources
+    // 11. ORDERS - FIXED: both tables render correctly
     // ============================================================
     async function loadOrders() {
       try {
@@ -1870,30 +1963,28 @@
     }
 
     function renderOrdersTable() {
-      const tbody = document.getElementById('ordersTableBody') || document.getElementById('tableBody');
-      if (!tbody) return;
+      // Render to BOTH tables (dashboard and orders page)
+      const tbody1 = document.getElementById('tableBody');
+      const tbody2 = document.getElementById('ordersTableBody');
+
       const filtered = filteredOrders();
       const start = (currentPage - 1) * pageSize;
       const paginated = filtered.slice(start, start + pageSize);
 
-      if (paginated.length === 0) {
-        tbody.innerHTML =
-          `<tr><td colspan="8"><div class="empty-state"><div class="ico">📭</div>No orders found</div></td></tr>`;
-        return;
-      }
+      const html = paginated.length === 0 ?
+        `<tr><td colspan="8"><div class="empty-state"><div class="ico">📭</div>No orders found</div></td></tr>` :
+        paginated.map(o => {
+          const status = getPaymentStatus(o);
+          const statusClass = getStatusClass(status);
+          const statusLabel = getStatusLabel(status);
+          const ref = o.order_ref || (o.id || '').slice(0, 8).toUpperCase();
+          const amount = o.total_amount || 0;
+          const resources = getOrderResources(o);
+          const date = o.created_at ? new Date(o.created_at).toLocaleString() : '—';
+          const phone = o.phone || o.customer_phone || '—';
+          const customer = o.customer_name || 'N/A';
 
-      tbody.innerHTML = paginated.map(o => {
-        const status = getPaymentStatus(o);
-        const statusClass = getStatusClass(status);
-        const statusLabel = getStatusLabel(status);
-        const ref = o.order_ref || (o.id || '').slice(0, 8).toUpperCase();
-        const amount = o.total_amount || 0;
-        const resources = getOrderResources(o);
-        const date = o.created_at ? new Date(o.created_at).toLocaleString() : '—';
-        const phone = o.phone || o.customer_phone || '—';
-        const customer = o.customer_name || 'N/A';
-
-        return `
+          return `
           <tr>
             <td data-label="Order Ref">#${ref}</td>
             <td data-label="Customer">${customer}</td>
@@ -1908,14 +1999,61 @@
               ${status === 'pending' ? `<i class="fas fa-times reject-btn" onclick="rejectOrder('${o.id}')" title="Reject order"></i>` : ''}
             </td>
           </tr>`;
-      }).join('');
+        }).join('');
 
-      const totalPages = Math.ceil(filtered.length / pageSize);
-      document.querySelectorAll('.pagination span[data-page]').forEach(el => {
-        const page = parseInt(el.dataset.page);
-        el.style.display = page <= totalPages ? '' : 'none';
-        el.classList.toggle('active-page', page === currentPage);
-      });
+      if (tbody1) tbody1.innerHTML = html;
+      if (tbody2) tbody2.innerHTML = html;
+
+      renderPagination(filtered.length);
+    }
+
+    function renderPagination(totalItems) {
+      const totalPages = Math.ceil(totalItems / pageSize);
+      const pageContainer = document.getElementById('pageNumbers');
+      if (!pageContainer) return;
+
+      let html = '';
+      // Show first page
+      html += `<span class="${currentPage === 1 ? 'active-page' : ''}" onclick="goToPage(1)">1</span>`;
+
+      if (totalPages > 1) {
+        if (currentPage > 3) {
+          html += `<span>…</span>`;
+        }
+        for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) {
+          if (i === 1) continue;
+          html += `<span class="${i === currentPage ? 'active-page' : ''}" onclick="goToPage(${i})">${i}</span>`;
+        }
+        if (currentPage < totalPages - 2) {
+          html += `<span>…</span>`;
+        }
+        if (totalPages > 1) {
+          html +=
+            `<span class="${currentPage === totalPages ? 'active-page' : ''}" onclick="goToPage(${totalPages})">${totalPages}</span>`;
+        }
+      }
+
+      pageContainer.innerHTML = html;
+
+      // Update prev/next buttons
+      document.getElementById('prevPage').style.opacity = currentPage <= 1 ? '0.4' : '1';
+      document.getElementById('prevPage').style.cursor = currentPage <= 1 ? 'default' : 'pointer';
+      document.getElementById('nextPage').style.opacity = currentPage >= totalPages ? '0.4' : '1';
+      document.getElementById('nextPage').style.cursor = currentPage >= totalPages ? 'default' : 'pointer';
+    }
+
+    function goToPage(page) {
+      const totalItems = filteredOrders().length;
+      const totalPages = Math.ceil(totalItems / pageSize);
+      if (page < 1 || page > totalPages) return;
+      currentPage = page;
+      renderOrdersTable();
+    }
+
+    function changePageSize() {
+      pageSize = parseInt(document.getElementById('pageSizeSelect').value);
+      currentPage = 1;
+      renderOrdersTable();
     }
 
     function updateStatsUI() {
@@ -1966,11 +2104,14 @@
       const paid = ordersData.filter(o => getPaymentStatus(o) === 'paid').length;
       const pending = ordersData.filter(o => getPaymentStatus(o) === 'pending').length;
       const failed = ordersData.filter(o => getPaymentStatus(o) === 'failed').length;
+      const underpaid = ordersData.filter(o => getPaymentStatus(o) === 'underpaid').length;
+      const overpaid = ordersData.filter(o => getPaymentStatus(o) === 'overpaid').length;
       paymentChartInstance = new Chart(ctx, {
         type: 'doughnut',
         data: {
-          labels: ['Paid', 'Pending', 'Failed'],
-          datasets: [{ data: [paid, pending, failed], backgroundColor: ['#1F7A3A', '#C9971F', '#C0392B'], borderWidth: 0 }]
+          labels: ['Paid', 'Pending', 'Failed', 'Underpaid', 'Overpaid'],
+          datasets: [{ data: [paid, pending, failed, underpaid, overpaid],
+            backgroundColor: ['#1F7A3A', '#C9971F', '#C0392B', '#E8B94A', '#2A5C8A'], borderWidth: 0 }]
         },
         options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { position: 'bottom',
               labels: { boxWidth: 12, padding: 12 } } }, cutout: '62%' }
@@ -2009,9 +2150,8 @@
     window.viewOrder = function(id) {
       const order = ordersData.find(o => o.id === id);
       const status = getPaymentStatus(order);
-      const resources = getOrderResources(order);
       showToast('Order Details',
-        `#${order?.order_ref || id.slice(0,8)} | ${order?.customer_name || 'N/A'} | ${resources} | ${formatCurrency(order?.total_amount || 0)} | Status: ${status}`,
+        `#${order?.order_ref || id.slice(0,8)} | ${order?.customer_name || 'N/A'} | ${formatCurrency(order?.total_amount || 0)} | Status: ${status}`,
         'info');
     };
 
@@ -2036,7 +2176,7 @@
     };
 
     // ============================================================
-    // 11. SEARCH & FILTERS
+    // 12. SEARCH & FILTERS
     // ============================================================
     function wireSearch(inputId, rowsSelector) {
       document.getElementById(inputId)?.addEventListener('input', function(e) {
@@ -2062,32 +2202,10 @@
     });
 
     // ============================================================
-    // 12. PAGINATION
+    // 13. EXPORT - CSV & Excel
     // ============================================================
-    document.getElementById('prevPage')?.addEventListener('click', function() {
-      if (currentPage > 1) { currentPage--;
-        renderOrdersTable(); }
-    });
-    document.getElementById('nextPage')?.addEventListener('click', function() {
-      const totalPages = Math.ceil(filteredOrders().length / pageSize);
-      if (currentPage < totalPages) { currentPage++;
-        renderOrdersTable(); }
-    });
-    document.querySelectorAll('.pagination span[data-page]').forEach(el => {
-      el.addEventListener('click', function() {
-        currentPage = parseInt(this.dataset.page);
-        renderOrdersTable();
-      });
-    });
-
-    // ============================================================
-    // 13. EXPORT CSV
-    // ============================================================
-    document.getElementById('exportBtn')?.addEventListener('click', exportOrders);
-    document.getElementById('ordersExportBtn')?.addEventListener('click', exportOrders);
-
-    function exportOrders() {
-      const headers = ['Order Ref', 'Customer', 'Phone', 'Resources', 'Amount', 'Status', 'Date'];
+    function exportCSV() {
+      const headers = ['Order Ref', 'Customer', 'Phone', 'Resources', 'Amount (KES)', 'Status', 'Date'];
       const rows = ordersData.map(o => {
         const status = getPaymentStatus(o);
         return [
@@ -2108,11 +2226,31 @@
       a.download = 'orders_export.csv';
       a.click();
       window.URL.revokeObjectURL(url);
-      showToast('Export', 'Orders exported successfully');
+      showToast('Export', 'Orders exported as CSV');
     }
 
+    function exportExcel() {
+      const data = ordersData.map(o => ({
+        'Order Ref': o.order_ref || o.id.slice(0, 8),
+        'Customer': o.customer_name || 'N/A',
+        'Phone': o.phone || o.customer_phone || '—',
+        'Resources': getOrderResources(o),
+        'Amount (KES)': o.total_amount || 0,
+        'Status': getPaymentStatus(o),
+        'Date': o.created_at ? new Date(o.created_at).toLocaleString() : '—'
+      }));
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Orders');
+      XLSX.writeFile(wb, 'orders_export.xlsx');
+      showToast('Export', 'Orders exported as Excel');
+    }
+
+    window.exportCSV = exportCSV;
+    window.exportExcel = exportExcel;
+
     // ============================================================
-    // 14. TUTORS — APPROVE/REJECT BUTTONS FIXED
+    // 14. TUTORS - with Edit Details
     // ============================================================
     async function loadTutors() {
       try {
@@ -2173,7 +2311,9 @@
         const submitted = t.created_at ? new Date(t.created_at).toLocaleDateString() : '—';
         const specialization = getTutorSpecialization(t);
 
-        let actions = '';
+        let actions =
+          `<i class="fas fa-edit" onclick="editTutor('${t.id}')" title="Edit details"></i>`;
+        actions += `<i class="fas fa-eye" onclick="viewTutor('${t.id}')" title="View details"></i>`;
         if (status === 'pending') {
           actions +=
             `<i class="fas fa-check approve-btn" onclick="approveTutor('${t.id}')" title="Approve tutor"></i>`;
@@ -2186,8 +2326,6 @@
           actions +=
             `<i class="fas fa-rotate-left" onclick="approveTutor('${t.id}')" style="color:var(--green);" title="Approve anyway"></i>`;
         }
-        actions +=
-          `<i class="fas fa-eye" onclick="viewTutor('${t.id}')" title="View details"></i>`;
         actions +=
           `<i class="fas fa-trash-alt" onclick="deleteTutor('${t.id}')" style="color:var(--red);" title="Delete"></i>`;
 
@@ -2202,6 +2340,61 @@
           </tr>`;
       }).join('');
     }
+
+    // Edit Tutor modal
+    window.editTutor = function(id) {
+      const t = tutorsData.find(x => x.id === id);
+      if (!t) return;
+      document.getElementById('tutorDetailName').textContent = `✏️ Edit ${t.name || 'Tutor'}`;
+      const specialization = getTutorSpecialization(t);
+      document.getElementById('tutorDetailBody').innerHTML = `
+        <form id="editTutorForm" onsubmit="saveTutorEdit(event, '${t.id}')">
+          <div class="field-grid">
+            <div><label class="mlabel">Full Name *</label><input type="text" id="editTutorName" value="${t.name || ''}" required /></div>
+            <div><label class="mlabel">Email *</label><input type="email" id="editTutorEmail" value="${t.email || ''}" required /></div>
+            <div><label class="mlabel">Phone</label><input type="tel" id="editTutorPhone" value="${t.phone || ''}" /></div>
+            <div><label class="mlabel">M-PESA Number</label><input type="tel" id="editTutorMpesa" value="${t.mpesa_number || ''}" /></div>
+            <div><label class="mlabel">Specialization</label><input type="text" id="editTutorSpecialization" value="${specialization}" /></div>
+            <div><label class="mlabel">Status</label>
+              <select id="editTutorStatus">
+                <option value="pending" ${t.status === 'pending' ? 'selected' : ''}>Pending</option>
+                <option value="approved" ${t.status === 'approved' ? 'selected' : ''}>Approved</option>
+                <option value="rejected" ${t.status === 'rejected' ? 'selected' : ''}>Rejected</option>
+              </select>
+            </div>
+          </div>
+          <label class="mlabel">Bio</label>
+          <textarea id="editTutorBio" rows="3">${t.bio || ''}</textarea>
+          <div class="modal-actions">
+            <button type="submit" class="primary">💾 Save Changes</button>
+            <button type="button" class="secondary" onclick="closeTutorModal()">Cancel</button>
+          </div>
+        </form>
+      `;
+      document.getElementById('tutorDetailModal').classList.add('open');
+    };
+
+    window.saveTutorEdit = async function(e, id) {
+      e.preventDefault();
+      const patch = {
+        name: document.getElementById('editTutorName').value,
+        email: document.getElementById('editTutorEmail').value,
+        phone: document.getElementById('editTutorPhone').value,
+        mpesa_number: document.getElementById('editTutorMpesa').value,
+        specialization: document.getElementById('editTutorSpecialization').value,
+        status: document.getElementById('editTutorStatus').value,
+        bio: document.getElementById('editTutorBio').value
+      };
+      try {
+        await supabase.from('tutors').update(patch).eq('id', id);
+        showToast('✅ Saved', 'Tutor details updated successfully');
+        closeTutorModal();
+        await loadTutors();
+        await loadTutorCountsQuiet();
+      } catch (e) {
+        showToast('Error', 'Failed to save: ' + e.message, 'error');
+      }
+    };
 
     window.approveTutor = async function(id) {
       const t = tutorsData.find(x => x.id === id);
@@ -2255,13 +2448,16 @@
         <div class="field-grid">
           <div><label class="mlabel">Email</label><div style="font-weight:600;margin-bottom:12px;">${t.email || '—'}</div></div>
           <div><label class="mlabel">Phone</label><div style="font-weight:600;margin-bottom:12px;">${t.phone || '—'}</div></div>
+          <div><label class="mlabel">M-PESA</label><div style="font-weight:600;margin-bottom:12px;">${t.mpesa_number || '—'}</div></div>
           <div><label class="mlabel">Specialization</label><div style="font-weight:600;margin-bottom:12px;">${specialization}</div></div>
           <div><label class="mlabel">Submitted</label><div style="font-weight:600;margin-bottom:12px;">${t.created_at ? new Date(t.created_at).toLocaleString() : '—'}</div></div>
+          <div><label class="mlabel">Status</label><div style="font-weight:600;margin-bottom:12px;"><span class="status ${status === 'approved' ? 'status-success' : status === 'rejected' ? 'status-error' : 'status-pending'}">${status}</span></div></div>
         </div>
         ${t.bio ? `<label class="mlabel">Bio</label><div class="modal-note">${t.bio}</div>` : ''}
         <div class="modal-actions">
           ${status === 'pending' ? `<button class="primary" onclick="approveTutor('${t.id}');closeTutorModal();">✅ Approve</button><button class="secondary" onclick="rejectTutor('${t.id}');closeTutorModal();">❌ Reject</button>` : ''}
           ${status === 'approved' ? `<button class="secondary" onclick="suspendTutor('${t.id}');closeTutorModal();">🚫 Suspend Access</button>` : ''}
+          <button class="secondary" onclick="editTutor('${t.id}')">✏️ Edit</button>
           <button class="secondary" onclick="closeTutorModal()">Close</button>
         </div>`;
       document.getElementById('tutorDetailModal').classList.add('open');
@@ -2295,13 +2491,25 @@
     });
 
     // ============================================================
-    // 15. WITHDRAWALS
+    // 15. WITHDRAWALS - FIXED: query tutor_payouts table
     // ============================================================
     async function loadWithdrawals() {
       try {
-        const { data, error } = await supabase.from('withdrawals').select('*, tutors(name)').order('created_at', {
+        // Try tutor_payouts first (where tutor.html writes)
+        let { data, error } = await supabase.from('tutor_payouts').select('*, tutors(name)').order('created_at', {
           ascending: false
         });
+
+        // Fallback to withdrawals if tutor_payouts doesn't exist
+        if (error && error.code === '42P01') {
+          const { data: fallbackData, error: fallbackError } = await supabase.from('withdrawals')
+            .select('*, tutors(name)').order('created_at', { ascending: false });
+          if (!fallbackError) {
+            data = fallbackData;
+            error = null;
+          }
+        }
+
         if (error) throw error;
         withdrawalsData = data || [];
         renderWithdrawals();
@@ -2309,8 +2517,15 @@
         document.getElementById('withdrawalBadge').style.display = withdrawalsData.filter(w => w.status === 'pending')
           .length > 0 ? '' : 'none';
       } catch (e) {
+        console.warn('Withdrawals load error:', e);
         withdrawalsData = [];
         renderWithdrawals();
+        // Show a helpful message if table doesn't exist
+        const container = document.getElementById('withdrawalsList');
+        if (container) {
+          container.innerHTML =
+            `<div class="empty-state"><div class="ico">💸</div>No withdrawal requests found. Make sure the <strong>tutor_payouts</strong> table exists in Supabase.</div>`;
+        }
       }
     }
 
@@ -2335,18 +2550,27 @@
 
     window.approveWithdrawal = async function(id) {
       try {
-        await supabase.from('withdrawals').update({ status: 'approved' }).eq('id', id);
+        // Try tutor_payouts first
+        let result = await supabase.from('tutor_payouts').update({ status: 'approved' }).eq('id', id);
+        if (result.error && result.error.code === '42P01') {
+          result = await supabase.from('withdrawals').update({ status: 'approved' }).eq('id', id);
+        }
+        if (result.error) throw result.error;
         showToast('Approved', 'Withdrawal approved');
         await loadWithdrawals();
-      } catch (e) { showToast('Error', 'Failed to approve', 'error'); }
+      } catch (e) { showToast('Error', 'Failed to approve: ' + e.message, 'error'); }
     };
 
     window.rejectWithdrawal = async function(id) {
       try {
-        await supabase.from('withdrawals').update({ status: 'rejected' }).eq('id', id);
+        let result = await supabase.from('tutor_payouts').update({ status: 'rejected' }).eq('id', id);
+        if (result.error && result.error.code === '42P01') {
+          result = await supabase.from('withdrawals').update({ status: 'rejected' }).eq('id', id);
+        }
+        if (result.error) throw result.error;
         showToast('Rejected', 'Withdrawal rejected');
         await loadWithdrawals();
-      } catch (e) { showToast('Error', 'Failed to reject', 'error'); }
+      } catch (e) { showToast('Error', 'Failed to reject: ' + e.message, 'error'); }
     };
 
     // ============================================================
@@ -2362,6 +2586,10 @@
           document.getElementById('settingPayout').value = s.payoutPercentage || 80;
           document.getElementById('settingMinPayout').value = s.minPayout || 500;
           document.getElementById('settingCurrency').value = s.currency || 'KES';
+          if (s.currency) {
+            document.getElementById('currencySelect').value = s.currency;
+            currentCurrency = s.currency;
+          }
         } catch (e) {}
       }
     }
@@ -2414,6 +2642,9 @@
           }
         } catch (e) {}
       }
+
+      // Initialize stats with 0 (no loading shimmer)
+      document.querySelectorAll('#statsGrid .stat-card').forEach(el => el.classList.remove('loading-shimmer'));
 
       await loadOrders();
       await loadTutors();
