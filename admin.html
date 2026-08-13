@@ -1104,83 +1104,6 @@
       color: var(--muted);
     }
 
-    /* Stylish Resource Upload Form */
-    .upload-zone {
-      border: 2px dashed var(--line);
-      border-radius: var(--r-lg);
-      padding: 32px 24px;
-      text-align: center;
-      cursor: pointer;
-      transition: all .25s var(--ease);
-      background: var(--paper);
-      position: relative;
-    }
-    .upload-zone:hover {
-      border-color: var(--gold);
-      background: var(--gold-soft);
-    }
-    .upload-zone.dragover {
-      border-color: var(--gold);
-      background: var(--gold-soft);
-      transform: scale(1.01);
-    }
-    .upload-zone .upload-icon {
-      font-size: 2.8rem;
-      color: var(--muted-soft);
-      margin-bottom: 10px;
-    }
-    .upload-zone .upload-text {
-      color: var(--muted);
-      font-size: .9rem;
-    }
-    .upload-zone .upload-text strong {
-      color: var(--ink);
-    }
-    .upload-zone .upload-hint {
-      font-size: .75rem;
-      color: var(--muted-soft);
-      margin-top: 6px;
-    }
-    .upload-preview {
-      display: none;
-      align-items: center;
-      gap: 14px;
-      padding: 12px 16px;
-      background: var(--surface);
-      border-radius: var(--r);
-      border: 1px solid var(--line);
-      margin-top: 12px;
-    }
-    .upload-preview.show {
-      display: flex;
-    }
-    .upload-preview .file-icon {
-      font-size: 1.8rem;
-      color: var(--gold);
-    }
-    .upload-preview .file-info {
-      flex: 1;
-    }
-    .upload-preview .file-info .file-name {
-      font-weight: 600;
-      font-size: .9rem;
-      color: var(--ink);
-    }
-    .upload-preview .file-info .file-size {
-      font-size: .78rem;
-      color: var(--muted);
-    }
-    .upload-preview .file-remove {
-      color: var(--red);
-      cursor: pointer;
-      padding: 4px 8px;
-      border-radius: var(--r-sm);
-      transition: .2s;
-    }
-    .upload-preview .file-remove:hover {
-      background: var(--red-soft);
-    }
-
     .resource-form-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -1865,7 +1788,7 @@
     }
 
     // ============================================================
-    // 4. AUTH — logout redirects to index.html
+    // 4. AUTH
     // ============================================================
     function checkAuth() {
       if (isAuthenticated) {
@@ -1916,7 +1839,6 @@
         sessionStorage.removeItem('kv-user');
         sessionStorage.removeItem('kv-role');
         isAuthenticated = false;
-        // Redirect to homepage (index.html)
         window.location.href = 'index.html';
       }
     }
@@ -2007,19 +1929,44 @@
     window.updateCurrency = updateCurrency;
 
     // ============================================================
-    // 8. ORDER STATUS HELPERS
+    // 8. ORDER STATUS HELPERS — FIXED LOGIC
     // ============================================================
     function getPaymentStatus(order) {
-      const amount = order.total_amount || 0;
-      const paid = order.amount_paid || order.paid_amount || 0;
-      if (order.payment_status === 'failed' || order.status === 'failed') return 'failed';
-      if (order.payment_status === 'pending' || order.status === 'pending' || order.status === 'pending_verification')
-        return 'pending';
-      if (order.payment_status === 'paid' || order.status === 'paid' || order.status === 'completed') {
-        if (paid >= amount) return 'paid';
+      // 1. If payment_status is 'paid' or 'completed' → PAID
+      if (order.payment_status === 'paid' || order.payment_status === 'completed' || order.status === 'paid' || order
+        .status === 'completed') {
+        return 'paid';
+      }
+
+      // 2. If payment_status is 'failed' → FAILED
+      if (order.payment_status === 'failed' || order.status === 'failed') {
+        return 'failed';
+      }
+
+      // 3. If amount_paid >= total_amount → PAID (automatically confirmed)
+      const total = Number(order.total_amount) || 0;
+      const paid = Number(order.amount_paid) || Number(order.paid_amount) || 0;
+      if (paid >= total && total > 0) {
+        return 'paid';
+      }
+
+      // 4. If payment_status is 'pending' or 'pending_verification' → PENDING
+      if (order.payment_status === 'pending' || order.payment_status === 'pending_verification' || order.status ===
+        'pending' || order.status === 'pending_verification') {
         return 'pending';
       }
-      return order.payment_status || 'pending';
+
+      // 5. Default fallback: if no status is set, check if amount is 0 → pending (no payment)
+      if (total === 0) {
+        return 'pending';
+      }
+
+      // 6. If we have a payment_status value that's not recognized, default to pending
+      if (order.payment_status) {
+        return 'pending';
+      }
+
+      return 'pending';
     }
 
     function getStatusClass(status) {
@@ -2061,7 +2008,7 @@
     }
 
     // ============================================================
-    // 10. ORDERS
+    // 10. ORDERS — with auto-confirm for paid orders
     // ============================================================
     async function loadOrders() {
       try {
@@ -2073,6 +2020,39 @@
           }
           return o;
         });
+
+        // AUTO-CONFIRM: Check for pending orders that should be paid
+        // If amount_paid >= total_amount, automatically update to paid
+        let needsUpdate = false;
+        for (const order of ordersData) {
+          const total = Number(order.total_amount) || 0;
+          const paid = Number(order.amount_paid) || Number(order.paid_amount) || 0;
+          const status = order.payment_status || order.status || 'pending';
+
+          // If paid amount covers the total and status is not already 'paid' or 'completed'
+          if (paid >= total && total > 0 && status !== 'paid' && status !== 'completed') {
+            needsUpdate = true;
+            await supabase.from('orders')
+              .update({ payment_status: 'paid', status: 'paid' })
+              .eq('id', order.id);
+          }
+        }
+
+        // Reload if we updated any orders
+        if (needsUpdate) {
+          const { data: refreshed, error: refreshError } = await supabase.from('orders')
+            .select('*')
+            .order('created_at', { ascending: false });
+          if (!refreshError) {
+            ordersData = (refreshed || []).map(o => {
+              if (o.cart_items && typeof o.cart_items === 'string') {
+                try { o.cart_items = JSON.parse(o.cart_items); } catch (e) { o.cart_items = []; }
+              }
+              return o;
+            });
+          }
+        }
+
       } catch (e) {
         console.error('Load orders error:', e);
         ordersData = [];
@@ -2093,6 +2073,16 @@
       const status = getPaymentStatus(o);
       const ref = o.order_ref || (o.id || '').slice(0, 8).toUpperCase();
       const date = o.created_at ? new Date(o.created_at).toLocaleString('en-KE') : '—';
+
+      // Show payment note for pending orders
+      let note = '';
+      if (status === 'pending') {
+        const total = Number(o.total_amount) || 0;
+        const paid = Number(o.amount_paid) || Number(o.paid_amount) || 0;
+        note = total > 0 && paid === 0 ? ' <span style="font-size:0.65rem;color:var(--gold);">(No payment received)</span>' :
+          '';
+      }
+
       return `
         <tr>
           <td data-label="Order Ref">#${ref}</td>
@@ -2100,7 +2090,7 @@
           <td data-label="Phone">${o.phone || o.customer_phone || '—'}</td>
           <td data-label="Resources">${getOrderResources(o)}</td>
           <td data-label="Amount" class="numeric">${formatCurrency(o.total_amount || 0)}</td>
-          <td data-label="Status"><span class="status ${getStatusClass(status)}">${getStatusLabel(status)}</span></td>
+          <td data-label="Status"><span class="status ${getStatusClass(status)}">${getStatusLabel(status)}${note}</span></td>
           <td data-label="Date">${date}</td>
           <td data-label="Actions" class="action-icons">
             <i class="fas fa-eye" onclick="viewOrder('${o.id}')" title="View"></i>
@@ -2354,7 +2344,7 @@
     window.exportOrdersExcel = exportOrdersExcel;
 
     // ============================================================
-    // 13. RESOURCES — with stylish upload form
+    // 13. RESOURCES
     // ============================================================
     async function loadResources() {
       try {
@@ -2757,13 +2747,12 @@
     });
 
     // ============================================================
-    // 15. LEARNERS — from Supabase, no placeholder
+    // 15. LEARNERS
     // ============================================================
     async function loadLearners() {
       try {
         const { data, error } = await supabase.from('learners').select('*').order('created_at', { ascending: false });
         if (error) {
-          // If learners table doesn't exist, show empty state
           learnersData = [];
           renderLearners();
           updateStatsUI();
