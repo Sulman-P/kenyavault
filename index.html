@@ -3592,7 +3592,7 @@
   </div>
 
   <!-- ============================================ -->
-  <!-- SUCCESS MODAL WITH DOWNLOAD PANEL -->
+  <!-- SUCCESS MODAL WITH DOWNLOAD PANEL - FIXED DELIVERY PIPELINE -->
   <!-- ============================================ -->
   <div class="kv-success-modal" id="successModal" role="dialog" aria-modal="true" aria-label="Payment successful">
     <div class="success-content">
@@ -3601,13 +3601,13 @@
       <p style="font-size:0.82rem;color:var(--kv-muted);margin-bottom:4px;">Your order reference is:</p>
       <div class="order-ref" id="successOrderRef">—</div>
 
-      <!-- DOWNLOAD PANEL -->
+      <!-- DOWNLOAD PANEL - CRITICAL DELIVERY PIPELINE -->
       <div id="downloadPanelContainer">
         <div class="kv-download-panel" id="downloadPanel">
           <div class="download-header">
             <span class="check-icon">📥</span>
             <h4>Your Resources Are Ready</h4>
-            <span class="status-badge" id="downloadStatusBadge">Ready</span>
+            <span class="status-badge" id="downloadStatusBadge">Preparing...</span>
           </div>
 
           <!-- Download All Button -->
@@ -3827,7 +3827,7 @@
   </footer>
 
   <!-- ============================================ -->
-  <!-- JAVASCRIPT — SECURE PAYMENT + DOWNLOAD SYSTEM -->
+  <!-- JAVASCRIPT — SECURE PAYMENT + DOWNLOAD SYSTEM - FIXED DELIVERY PIPELINE -->
   <!-- ============================================ -->
   <script>
     // ── CONFIGURATION ──
@@ -3869,6 +3869,8 @@
     let downloadTokens = {};
     let isDownloadAllRunning = false;
     let downloadOrderRef = null;
+    let deliveryAttempts = 0;
+    const MAX_DELIVERY_ATTEMPTS = 5;
 
     // ── DOM REFS ──
     const productsGrid = document.getElementById('productsGrid');
@@ -4245,34 +4247,94 @@
       return { orderRef, orderIds, totalAmount };
     }
 
+    // ── CRITICAL: FIXED RESOURCE FILE PATH NORMALIZATION ──
+    function normalizeFilePath(rawPath) {
+      if (!rawPath) return null;
+
+      let path = rawPath;
+
+      // Remove full Supabase storage URLs
+      const storagePattern =
+        /https?:\/\/[^\/]+\/storage\/v1\/object\/public\/([^\/]+)\/(.*)/;
+      const match = path.match(storagePattern);
+      if (match) {
+        // Extract bucket and path from the URL
+        const bucket = match[1];
+        let objectPath = match[2];
+        // Remove any leading slashes
+        objectPath = objectPath.replace(/^\/+/, '');
+        // If the path still contains the bucket name as prefix, remove it
+        if (objectPath.startsWith(`${bucket}/`)) {
+          objectPath = objectPath.replace(`${bucket}/`, '');
+        }
+        return {
+          bucket: bucket,
+          path: objectPath,
+          fullPath: objectPath
+        };
+      }
+
+      // Check if it's a bucket-prefixed path
+      for (const bucket of AVAILABLE_BUCKETS) {
+        if (path.startsWith(`${bucket}/`)) {
+          const objectPath = path.replace(`${bucket}/`, '');
+          return {
+            bucket: bucket,
+            path: objectPath,
+            fullPath: objectPath
+          };
+        }
+      }
+
+      // Check for resources/ prefix
+      if (path.startsWith('resources/')) {
+        const objectPath = path.replace('resources/', '');
+        return {
+          bucket: 'kenyavault-resources',
+          path: objectPath,
+          fullPath: objectPath
+        };
+      }
+
+      // Check for academic-resources/ prefix
+      if (path.startsWith('academic-resources/')) {
+        const objectPath = path.replace('academic-resources/', '');
+        return {
+          bucket: 'academic-resources',
+          path: objectPath,
+          fullPath: objectPath
+        };
+      }
+
+      // Plain filename or path - try to determine bucket
+      // First try kenyavault-resources as default
+      return {
+        bucket: 'kenyavault-resources',
+        path: path,
+        fullPath: path
+      };
+    }
+
     // ── GENERATE PUBLIC URL ──
     async function generatePublicUrl(filePath, bucketNames = AVAILABLE_BUCKETS) {
       if (!filePath) return null;
-      const pathVariations = [];
-      let decoded = filePath;
-      try { decoded = decodeURIComponent(filePath); } catch (e) {}
-      const fileName = decoded.split('/').pop();
-      pathVariations.push(decoded);
-      if (decoded.startsWith('resources/')) {
-        pathVariations.push(decoded.replace('resources/', ''));
-      }
-      if (!decoded.startsWith('resources/')) {
-        pathVariations.push(`resources/${decoded}`);
-      }
-      if (fileName && fileName !== decoded) {
-        pathVariations.push(fileName);
-      }
 
-      for (const bucket of bucketNames) {
-        for (const path of pathVariations) {
-          try {
-            const cleanPath = path.replace(/\/+/g, '/').replace(/^\/+/, '');
-            const pathSegments = cleanPath.split('/').map(s => encodeURIComponent(s));
-            const encodedPath = pathSegments.join('/');
-            const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${encodedPath}`;
-            const response = await fetch(publicUrl, { method: 'HEAD' });
-            if (response.ok) return publicUrl;
-          } catch (e) {}
+      const normalized = normalizeFilePath(filePath);
+      if (!normalized) return null;
+
+      // Try the determined bucket first
+      const bucketsToTry = [normalized.bucket, ...bucketNames.filter(b => b !== normalized.bucket)];
+
+      for (const bucket of bucketsToTry) {
+        try {
+          const cleanPath = normalized.path.replace(/\/+/g, '/').replace(/^\/+/, '');
+          const pathSegments = cleanPath.split('/').map(s => encodeURIComponent(s));
+          const encodedPath = pathSegments.join('/');
+          const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${encodedPath}`;
+          const response = await fetch(publicUrl, { method: 'HEAD' });
+          if (response.ok) return publicUrl;
+        } catch (e) {
+          console.warn('File not found in bucket:', bucket, normalized.path);
         }
       }
       return null;
@@ -4292,6 +4354,8 @@
 
         const requestBody = { order_ref: orderRef, order_ids: orderIds };
 
+        console.log('[TOKEN_REQUESTED]', { orderRef, orderIds });
+
         const response = await fetch(`${SUPABASE_URL}/functions/v1/create-download-tokens`, {
           method: 'POST',
           headers: {
@@ -4309,6 +4373,7 @@
         }
 
         const result = await response.json();
+        console.log('[TOKEN_CREATED]', result);
         return result.tokens || [];
       } catch (error) {
         console.error('❌ Download token creation error:', error);
@@ -4316,9 +4381,11 @@
       }
     }
 
-    // ── SECURE DOWNLOAD RESOURCE - FIXED to handle actual file downloads ──
+    // ── CRITICAL: FIXED SECURE DOWNLOAD ──
     async function secureDownloadResource(orderId, resourceId, token) {
       try {
+        console.log('[DOWNLOAD_AUTH_REQUESTED]', { orderId, resourceId });
+
         const response = await fetch(`${SUPABASE_URL}/functions/v1/secure-download`, {
           method: 'POST',
           headers: {
@@ -4335,10 +4402,12 @@
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
+          console.error('[DOWNLOAD_AUTH_FAILED]', { orderId, resourceId, status: response.status, error: errorData });
           throw new Error(errorData.error || `Download authorization failed (HTTP ${response.status})`);
         }
 
         const result = await response.json();
+        console.log('[DOWNLOAD_AUTHORIZED]', { orderId, resourceId, hasUrl: !!result.download_url });
         return result;
       } catch (error) {
         console.error('❌ Secure download error:', error);
@@ -4346,13 +4415,33 @@
       }
     }
 
-    // ── DOWNLOAD SINGLE RESOURCE - FIXED to handle blob downloads ──
+    // ── CRITICAL: FIXED DOWNLOAD SINGLE RESOURCE ──
     async function downloadSingleResource(orderId, resourceId, title, index) {
       const itemEl = document.querySelector(`#download-item-${index}`);
       const statusEl = itemEl ? itemEl.querySelector('.item-status') : null;
       const btnEl = itemEl ? itemEl.querySelector('.btn-download-item') : null;
 
-      const tokenData = downloadTokens[resourceId];
+      // Check if we already have a token
+      let tokenData = downloadTokens[resourceId];
+
+      // If no token, try to create one
+      if (!tokenData) {
+        if (statusEl) {
+          statusEl.textContent = 'Preparing token...';
+          statusEl.className = 'item-status';
+        }
+        if (btnEl) {
+          btnEl.disabled = true;
+          btnEl.textContent = '⏳ Preparing...';
+        }
+
+        // Re-fetch tokens with retry
+        const retryToken = await retryTokenCreation(orderId, resourceId);
+        if (retryToken) {
+          tokenData = downloadTokens[resourceId];
+        }
+      }
+
       if (!tokenData) {
         if (statusEl) {
           statusEl.textContent = 'Preparing…';
@@ -4402,6 +4491,9 @@
             window.URL.revokeObjectURL(url);
           }, 5000);
 
+          // Mark as delivered
+          await markOrderDelivered(orderId);
+
           if (statusEl) {
             statusEl.textContent = '✅ Downloaded';
             statusEl.className = 'item-status downloaded';
@@ -4429,6 +4521,66 @@
         }
         showToast(`Failed to download ${title}: ${error.message}`, 'error');
         return false;
+      }
+    }
+
+    // ── RETRY TOKEN CREATION ──
+    async function retryTokenCreation(orderId, resourceId) {
+      const delays = [500, 1000, 2000, 4000, 8000];
+      for (let i = 0; i < delays.length; i++) {
+        await new Promise(resolve => setTimeout(resolve, delays[i]));
+        // Re-fetch tokens from server
+        if (downloadOrderRef && checkoutOrderIds.length > 0) {
+          const tokens = await createDownloadTokensForOrder(downloadOrderRef, checkoutOrderIds);
+          if (tokens && tokens.length > 0) {
+            // Update downloadTokens
+            tokens.forEach(token => {
+              const tokenResourceId = token.resource_id || token.resourceId;
+              if (tokenResourceId && String(token.order_id) === String(orderId)) {
+                downloadTokens[tokenResourceId] = {
+                  token: token.token,
+                  expiresAt: token.expires_at,
+                  orderId: token.order_id
+                };
+              }
+            });
+            // Check if we now have a token for this resource
+            if (downloadTokens[resourceId]) {
+              return downloadTokens[resourceId];
+            }
+          }
+        }
+        // If we have the resource, try loading it directly
+        if (currentOrderRef) {
+          await loadPurchasedResources(currentOrderRef, checkoutOrderIds);
+          if (downloadTokens[resourceId]) {
+            return downloadTokens[resourceId];
+          }
+        }
+      }
+      return null;
+    }
+
+    // ── MARK ORDER AS DELIVERED ──
+    async function markOrderDelivered(orderId) {
+      try {
+        await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
+          method: 'PATCH',
+          headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            file_delivered: true,
+            delivered_at: new Date().toISOString()
+          }),
+          params: new URLSearchParams({
+            id: `eq.${orderId}`
+          })
+        });
+      } catch (e) {
+        console.warn('Could not mark order as delivered:', e);
       }
     }
 
@@ -4482,11 +4634,11 @@
       }
     }
 
-    // ── LOAD PURCHASED RESOURCES ──
+    // ── CRITICAL: FIXED LOAD PURCHASED RESOURCES ──
     async function loadPurchasedResources(orderRef, orderIds) {
       try {
         let query =
-          `${SUPABASE_URL}/rest/v1/orders?select=id,order_ref,resource_id,item_title,resource_file_path,resource_file_name,payment_status,total_amount`;
+          `${SUPABASE_URL}/rest/v1/orders?select=id,order_ref,resource_id,item_title,resource_file_path,resource_file_name,payment_status,total_amount,file_delivered`;
         if (orderRef && orderIds && orderIds.length > 0) {
           query += `&id=in.(${orderIds.join(',')})`;
         } else if (orderRef) {
@@ -4516,13 +4668,22 @@
           return [];
         }
 
-        const eligibleOrders = orders.filter(o => o.payment_status === 'paid' || o.payment_status === 'completed');
+        // CRITICAL: Check for paid/completed status
+        const eligibleOrders = orders.filter(o =>
+          o.payment_status === 'paid' ||
+          o.payment_status === 'completed' ||
+          o.payment_status === 'success'
+        );
+
+        console.log('[ORDER_PAID]', { total: orders.length, eligible: eligibleOrders.length });
+
         if (eligibleOrders.length === 0) {
           purchasedResources = [];
           renderDownloadPanel();
           return [];
         }
 
+        // Get resource details
         const resourceIds = eligibleOrders.map(o => o.resource_id).filter(id => id);
         let resources = [];
 
@@ -4540,6 +4701,7 @@
           }
         }
 
+        // Create download tokens
         const tokens = await createDownloadTokensForOrder(orderRef, eligibleOrders.map(o => o.id));
 
         purchasedResources = [];
@@ -4549,8 +4711,10 @@
           const resource = resources.find(r => r.id === order.resource_id) || {};
           const resourceId = order.resource_id || resource.id;
           const title = order.item_title || resource.title || 'Resource';
-          const tokenInfo = tokens.find(t => String(t.order_id) === String(order.id) && String(t.resource_id) === String(
-            resourceId));
+          const tokenInfo = tokens.find(t =>
+            String(t.order_id) === String(order.id) &&
+            String(t.resource_id) === String(resourceId)
+          );
 
           if (tokenInfo) {
             downloadTokens[resourceId] = {
@@ -4560,19 +4724,26 @@
             };
           }
 
+          // Normalize file path
+          const filePath = order.resource_file_path || resource.file_path || resource.file_url || '';
+          const normalized = normalizeFilePath(filePath);
+
           purchasedResources.push({
             resourceId: resourceId,
             orderId: order.id,
             title: title,
             fileName: order.resource_file_name || resource.file_name || 'resource.pdf',
-            filePath: order.resource_file_path || resource.file_path || resource.file_url || '',
+            filePath: normalized ? normalized.fullPath : filePath,
+            fileBucket: normalized ? normalized.bucket : 'kenyavault-resources',
             subject: resource.subject || '',
             level: resource.level || '',
             price: order.total_amount || 0,
-            tokenReady: !!tokenInfo
+            tokenReady: !!tokenInfo,
+            delivered: order.file_delivered || false
           });
         }
 
+        console.log('[RESOURCE_RESOLVED]', { resources: purchasedResources.length });
         renderDownloadPanel();
         return purchasedResources;
 
@@ -4595,9 +4766,21 @@
 
       downloadPanel.style.display = 'block';
 
+      const total = purchasedResources.length;
+      const delivered = purchasedResources.filter(r => r.delivered).length;
+      const ready = purchasedResources.filter(r => r.tokenReady).length;
+
       if (downloadStatusBadge) {
-        downloadStatusBadge.textContent = `${purchasedResources.length} item${purchasedResources.length > 1 ? 's' : ''}`;
-        downloadStatusBadge.className = 'status-badge';
+        if (ready === total) {
+          downloadStatusBadge.textContent = `✅ ${total} ready`;
+          downloadStatusBadge.className = 'status-badge';
+        } else if (ready > 0) {
+          downloadStatusBadge.textContent = `⏳ ${ready}/${total} ready`;
+          downloadStatusBadge.className = 'status-badge';
+        } else {
+          downloadStatusBadge.textContent = `⏳ Preparing ${total} items...`;
+          downloadStatusBadge.className = 'status-badge';
+        }
       }
 
       let html = '';
@@ -4606,6 +4789,7 @@
         const subjectDisplay = item.subject ? ` · ${item.subject}` : '';
         const levelDisplay = item.level ? ` · ${LEVEL_DISPLAY[item.level] || item.level}` : '';
         const priceDisplay = item.price > 0 ? ` · KES ${item.price}` : ' · FREE';
+        const isReady = item.tokenReady;
 
         html += `
                 <div class="download-item" id="download-item-${displayIndex}">
@@ -4613,10 +4797,10 @@
                         <div class="item-title">${displayIndex}. ${item.title}</div>
                         <div class="item-sub">${item.fileName}${subjectDisplay}${levelDisplay}${priceDisplay}</div>
                     </div>
-                    <span class="item-status" id="status-${displayIndex}">${item.tokenReady ? 'Ready' : 'Preparing…'}</span>
-                    <button class="btn-download-item" id="download-btn-${displayIndex}" ${item.tokenReady ? '' : 'disabled'}
+                    <span class="item-status" id="status-${displayIndex}">${isReady ? (item.delivered ? '✅ Downloaded' : 'Ready') : '⏳ Preparing…'}</span>
+                    <button class="btn-download-item" id="download-btn-${displayIndex}" ${isReady && !item.delivered ? '' : 'disabled'}
                         onclick="downloadSingleResource('${item.orderId}', '${item.resourceId}', '${item.title.replace(/'/g, "\\'")}', ${displayIndex})">
-                        ${item.tokenReady ? '📥 Download' : '⏳ Preparing'}
+                        ${isReady ? (item.delivered ? '✅ Downloaded' : '📥 Download') : '⏳ Preparing'}
                     </button>
                 </div>
             `;
@@ -4624,38 +4808,79 @@
       downloadItems.innerHTML = html;
 
       if (downloadAllBtn) {
-        downloadAllBtn.disabled = false;
+        const allReady = purchasedResources.every(r => r.tokenReady);
+        downloadAllBtn.disabled = !allReady || purchasedResources.every(r => r.delivered);
         downloadAllBtn.style.display = 'flex';
+        if (allReady && !purchasedResources.every(r => r.delivered)) {
+          downloadAllBtn.textContent = '📥 DOWNLOAD ALL PURCHASED RESOURCES';
+        } else if (purchasedResources.every(r => r.delivered)) {
+          downloadAllBtn.textContent = '✅ All Downloaded';
+        } else {
+          downloadAllBtn.textContent = '⏳ Preparing downloads...';
+        }
       }
     }
 
-    // ── SHOW PAYMENT SUCCESS WITH DOWNLOADS ──
+    // ── CRITICAL: FIXED PAYMENT SUCCESS PIPELINE ──
     async function showPaymentSuccess(orderRef, orderIds) {
+      console.log('[PAYMENT_CONFIRMED]', { orderRef, orderIds });
+
+      // Save state for recovery
       currentOrderRef = orderRef;
       checkoutOrderIds = orderIds || [];
       downloadOrderRef = orderRef;
 
-      await loadPurchasedResources(orderRef, orderIds);
-
       if (successOrderRef) successOrderRef.textContent = orderRef;
       if (successModal) successModal.classList.add('open');
 
+      // Load purchased resources - this will also create tokens
+      await loadPurchasedResources(orderRef, orderIds);
+
+      // Update status
+      if (downloadStatusBadge) {
+        const ready = purchasedResources.filter(r => r.tokenReady).length;
+        const total = purchasedResources.length;
+        downloadStatusBadge.textContent = ready === total ? `✅ ${total} ready` : `⏳ ${ready}/${total} ready`;
+      }
+
+      // Start automatic download after a brief delay
       setTimeout(async () => {
         if (purchasedResources.length === 1) {
-          await downloadSingleResource(
-            purchasedResources[0].orderId,
-            purchasedResources[0].resourceId,
-            purchasedResources[0].title,
-            1
-          );
+          const item = purchasedResources[0];
+          if (item.tokenReady) {
+            await downloadSingleResource(item.orderId, item.resourceId, item.title, 1);
+          } else {
+            // Retry token creation for single resource
+            showToast('Preparing your download...', 'info', '⏳ Processing');
+            await retryTokenCreation(item.orderId, item.resourceId);
+            // Try download again
+            await downloadSingleResource(item.orderId, item.resourceId, item.title, 1);
+          }
         } else if (purchasedResources.length > 1) {
-          await downloadAllPurchased();
+          // Check if all are ready
+          const allReady = purchasedResources.every(r => r.tokenReady);
+          if (allReady) {
+            await downloadAllPurchased();
+          } else {
+            // Try to get tokens for missing ones
+            showToast('Preparing all downloads...', 'info', '⏳ Processing');
+            for (const item of purchasedResources) {
+              if (!item.tokenReady) {
+                await retryTokenCreation(item.orderId, item.resourceId);
+              }
+            }
+            // Re-render and then download all
+            await loadPurchasedResources(orderRef, orderIds);
+            await downloadAllPurchased();
+          }
         }
-      }, 1500);
+      }, 2000);
 
       if (verificationStatus) verificationStatus.style.display = 'none';
       localStorage.removeItem('pendingOrderRef');
       localStorage.removeItem('pendingOrderId');
+
+      console.log('[DOWNLOAD_PIPELINE_COMPLETE]', { orderRef, orderIds, resources: purchasedResources.length });
     }
 
     // ── CHECK ORDER PAYMENT STATUS ──
@@ -4695,9 +4920,15 @@
           return;
         }
 
-        const allPaid = orders.every(o => o.payment_status === 'paid' || o.payment_status === 'completed');
+        // CRITICAL: Check for paid/completed status
+        const allPaid = orders.every(o =>
+          o.payment_status === 'paid' ||
+          o.payment_status === 'completed' ||
+          o.payment_status === 'success'
+        );
 
         if (allPaid) {
+          console.log('[ORDER_PAID]', { orderRef: currentOrderRef, orderIds: orders.map(o => o.id) });
           stopPaymentPolling();
           const orderRefFound = orders[0].order_ref;
           const orderIdsFound = orders.map(o => o.id);
@@ -4766,6 +4997,7 @@
       const orderRef = params.get('order_ref') || localStorage.getItem('pendingOrderRef');
 
       if ((status === 'success' || status === 'completed') && orderRef) {
+        console.log('[CALLBACK_RECEIVED]', { orderRef, status });
         (async () => {
           try {
             const orderRes = await fetch(
@@ -4779,7 +5011,11 @@
             if (orderRes.ok) {
               const orders = await orderRes.json();
               if (orders.length > 0) {
-                const allPaid = orders.every(o => o.payment_status === 'paid' || o.payment_status === 'completed');
+                const allPaid = orders.every(o =>
+                  o.payment_status === 'paid' ||
+                  o.payment_status === 'completed' ||
+                  o.payment_status === 'success'
+                );
                 if (allPaid) {
                   currentOrderId = orders[0].id;
                   currentOrderRef = orderRef;
@@ -4811,6 +5047,7 @@
       const paymentStatus = params.get('status');
 
       if (orderRef && (paymentStatus === 'success' || paymentStatus === 'completed')) {
+        console.log('[EXISTING_PURCHASE_DETECTED]', { orderRef, status: paymentStatus });
         try {
           const orderRes = await fetch(
             `${SUPABASE_URL}/rest/v1/orders?order_ref=eq.${orderRef}&select=id,payment_status`, {
@@ -4822,11 +5059,18 @@
           );
           if (orderRes.ok) {
             const orders = await orderRes.json();
-            if (orders.length > 0 && (orders[0].payment_status === 'paid' || orders[0].payment_status === 'completed')) {
-              const orderIds = orders.map(o => o.id);
-              await showPaymentSuccess(orderRef, orderIds);
-              window.history.replaceState({}, document.title, window.location.pathname);
-              return true;
+            if (orders.length > 0) {
+              const allPaid = orders.every(o =>
+                o.payment_status === 'paid' ||
+                o.payment_status === 'completed' ||
+                o.payment_status === 'success'
+              );
+              if (allPaid) {
+                const orderIds = orders.map(o => o.id);
+                await showPaymentSuccess(orderRef, orderIds);
+                window.history.replaceState({}, document.title, window.location.pathname);
+                return true;
+              }
             }
           }
         } catch (e) {
@@ -5900,6 +6144,7 @@
           renderShop();
         }
 
+        // CRITICAL: Check for existing purchases on load
         const hasPurchase = await checkForExistingPurchase();
         if (!hasPurchase) {
           checkPaymentCallback();
@@ -5909,6 +6154,7 @@
         console.log(`✅ Loaded ${allResources.length} resources`);
         console.log('🔒 Secure payment system active - Amount validation enforced server-side');
         console.log('📥 Secure download system active - Only verified purchases can download');
+        console.log('📦 Delivery pipeline: Payment → Token → Download');
       } catch (error) {
         console.error('❌ Init error:', error);
         if (productsGrid) {
@@ -5997,6 +6243,7 @@
     console.log('🔒 KenyaVault — Secure Payment & Download System Active');
     console.log('✅ Payment amount validation is enforced server-side');
     console.log('✅ Download authorization is enforced server-side');
+    console.log('📦 Delivery pipeline: Payment → Token → Download');
     console.log('❌ No price manipulation or unauthorized downloads possible');
   </script>
 
