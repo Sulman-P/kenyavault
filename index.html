@@ -35,6 +35,7 @@
       --kv-muted: #667085;
       --kv-border: #E2E8F0;
       --kv-red: #BB0000;
+      --kv-orange: #E67E22;
       --kv-radius: 8px;
       --kv-radius-lg: 12px;
       --kv-radius-xl: 16px;
@@ -1440,7 +1441,7 @@
   </footer>
 
   <!-- ============================================================
-  JAVASCRIPT — COMPLETE MOBILE-FIRST WITH NO ACCOUNT REQUIRED
+  JAVASCRIPT — COMPLETE WITH MEGAPAY INTEGRATION
   ============================================================ -->
   <script>
     // ============================================================
@@ -1452,7 +1453,14 @@
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     // ============================================================
-    // 2. STATE MANAGEMENT
+    // 2. MEGAPAY CONFIGURATION — USING YOUR PROVIDED CREDENTIALS
+    // ============================================================
+    const MEGAPAY_API_KEY = 'MGPYDSg2lIYA';
+    const MEGAPAY_PAYMENT_LINK = 'https://megapay.co.ke/tags/S1Zzyjs';
+    const MEGAPAY_API_URL = 'https://api.megapay.co.ke/api/v1';
+
+    // ============================================================
+    // 3. STATE MANAGEMENT
     // ============================================================
     const STATE = {
       resources: [],
@@ -1463,8 +1471,9 @@
       currentOrderId: null,
       pollingInterval: null,
       paymentAttempts: 0,
-      maxPaymentAttempts: 30,
+      maxPaymentAttempts: 60,
       downloadAttempted: false,
+      isProcessingPayment: false,
     };
 
     // Load recent orders from localStorage
@@ -1484,7 +1493,6 @@
 
     function saveRecentOrder(order) {
       try {
-        // Add to beginning of array
         STATE.recentOrders.unshift({
           id: order.id,
           order_ref: order.order_ref || order.id.slice(0, 8).toUpperCase(),
@@ -1496,7 +1504,6 @@
           file_name: order.file_name || 'download.pdf'
         });
 
-        // Keep only last 20 orders
         if (STATE.recentOrders.length > 20) {
           STATE.recentOrders = STATE.recentOrders.slice(0, 20);
         }
@@ -1510,7 +1517,7 @@
     }
 
     // ============================================================
-    // 3. TOAST SYSTEM
+    // 4. TOAST SYSTEM
     // ============================================================
     function showToast(title, message, type = 'success') {
       const container = document.getElementById('toastContainer');
@@ -1538,11 +1545,11 @@
           toast.style.transition = 'all 0.3s ease';
           setTimeout(() => toast.remove(), 300);
         }
-      }, 5000);
+      }, 8000);
     }
 
     // ============================================================
-    // 4. LOAD RESOURCES
+    // 5. LOAD RESOURCES
     // ============================================================
     async function loadResources() {
       try {
@@ -1572,7 +1579,7 @@
     }
 
     // ============================================================
-    // 5. RENDER SHOP
+    // 6. RENDER SHOP
     // ============================================================
     function renderShop() {
       const container = document.getElementById('shopGridContainer');
@@ -1615,7 +1622,7 @@
                 <div class="card-thumb">
                   ${icon}
                   ${isFree ? '<span class="badge-tag free">FREE</span>' : ''}
-                  ${isPurchased ? '<span class="badge-tag" style="background:var(--kv-green);color:white;left:auto;right:6px;">✓ Downloaded</span>' : ''}
+                  ${isPurchased ? '<span class="badge-tag" style="background:var(--kv-green);color:white;left:auto;right:6px;">✓ Purchased</span>' : ''}
                 </div>
                 <div class="card-body">
                   <div class="title">${escapeHtml(r.title || 'Untitled')}</div>
@@ -1665,7 +1672,7 @@
     }
 
     // ============================================================
-    // 6. FILTERS & SEARCH
+    // 7. FILTERS & SEARCH
     // ============================================================
     function applyFilters() {
       const subject = document.getElementById('filterSubject').value;
@@ -1722,7 +1729,7 @@
     });
 
     // ============================================================
-    // 7. RENDER ORDERS
+    // 8. RENDER ORDERS
     // ============================================================
     function renderOrders() {
       const container = document.getElementById('ordersContainer');
@@ -1764,7 +1771,7 @@
     }
 
     // ============================================================
-    // 8. PURCHASE FLOW — NO ACCOUNT REQUIRED
+    // 9. PURCHASE FLOW — WITH MEGAPAY INTEGRATION
     // ============================================================
     async function purchaseResource(resourceId) {
       const resource = STATE.resources.find(r => r.id === resourceId);
@@ -1825,7 +1832,7 @@
           <p style="font-size:0.7rem;color:var(--kv-muted);">Enter the M-PESA number you'll use to pay</p>
         </div>
         <div class="payment-actions">
-          <button class="btn btn-premium" onclick="initiatePayment()">
+          <button class="btn btn-premium" onclick="initiateMegaPayPayment()">
             <i class="fas fa-phone"></i> Pay with M-PESA
           </button>
           <button class="btn btn-outline" onclick="closePaymentModal()">Cancel</button>
@@ -1843,7 +1850,7 @@
     }
 
     // ============================================================
-    // 9. FREE DOWNLOAD
+    // 10. FREE DOWNLOAD
     // ============================================================
     async function confirmFreeDownload(resourceId) {
       const resource = STATE.resources.find(r => r.id === resourceId);
@@ -1855,7 +1862,6 @@
       try {
         const orderRef = 'FREE-' + Date.now().toString(36).toUpperCase();
 
-        // Save to recent orders
         saveRecentOrder({
           id: 'free-' + Date.now(),
           order_ref: orderRef,
@@ -1879,12 +1885,18 @@
     }
 
     // ============================================================
-    // 10. PAYMENT INITIATION — FIXED NULL SESSION_ID ISSUE
+    // 11. MEGAPAY PAYMENT INTEGRATION — USING PAYMENT LINK
     // ============================================================
-    async function initiatePayment() {
+    async function initiateMegaPayPayment() {
+      if (STATE.isProcessingPayment) {
+        showToast('Processing', 'Please wait, payment is being processed...', 'warning');
+        return;
+      }
+
       const phoneInput = document.getElementById('phoneInput');
       let phone = phoneInput.value.trim();
 
+      // Validate and format phone number
       phone = phone.replace(/\s/g, '');
       if (!phone.startsWith('254')) {
         if (phone.startsWith('0')) phone = '254' + phone.substring(1);
@@ -1908,6 +1920,8 @@
         return;
       }
 
+      STATE.isProcessingPayment = true;
+
       const actions = document.querySelector('.payment-actions');
       const statusArea = document.getElementById('paymentStatusArea');
 
@@ -1915,15 +1929,14 @@
         actions.innerHTML = `
           <div style="width:100%;text-align:center;padding:8px 0;">
             <div style="display:inline-block;width:28px;height:28px;border:3px solid var(--kv-border);border-top-color:var(--kv-gold);border-radius:50%;animation:spin 0.8s linear infinite;"></div>
-            <p style="margin-top:6px;color:var(--kv-muted);font-size:0.85rem;">Initiating payment...</p>
+            <p style="margin-top:6px;color:var(--kv-muted);font-size:0.85rem;">Initiating M-PESA payment...</p>
           </div>
         `;
       }
 
       try {
+        // Step 1: Create order in Supabase
         const orderRef = 'ORD-' + Date.now().toString(36).toUpperCase();
-
-        // Create order in Supabase - FIX: Provide session_id with a default value
         const orderData = {
           customer_name: 'Guest',
           customer_email: 'guest@kenyavault.co.ke',
@@ -1933,7 +1946,7 @@
           payment_status: 'pending',
           status: 'pending',
           order_ref: orderRef,
-          session_id: 'guest-' + Date.now().toString(36), // FIX: Provide a session_id value
+          session_id: 'guest-' + Date.now().toString(36),
           created_at: new Date().toISOString(),
         };
 
@@ -1945,21 +1958,13 @@
 
         if (orderError) {
           console.error('Order creation error:', orderError);
-          // Try without session_id if the column doesn't exist
-          if (orderError.message && orderError.message.includes('session_id')) {
-            showToast('Database Error', 'The orders table has a session_id column issue. Please check your database schema.', 'error');
-            statusArea.innerHTML = `
-              <div style="text-align:center;padding:8px 0;color:var(--kv-red);">
-                <div style="font-size:2rem;">⚠️</div>
-                <div style="font-weight:700;">Database Error</div>
-                <p style="font-size:0.8rem;color:var(--kv-muted);">Please contact support: session_id constraint violation</p>
-              </div>
-            `;
-          }
+          showToast('Database Error', 'Failed to create order. Please try again.', 'error');
           throw orderError;
         }
+
         STATE.currentOrderId = order.id;
 
+        // Step 2: Add order item
         const itemData = {
           order_id: order.id,
           resource_id: resource.id,
@@ -1968,102 +1973,76 @@
           quantity: 1,
         };
 
-        const { error: itemError } = await supabase
+        await supabase
           .from('order_items')
-          .insert(itemData);
+          .insert(itemData)
+          .catch(e => console.warn('Order item warning:', e));
 
-        if (itemError) {
-          console.error('Order item error:', itemError);
-          // Item insert failed, but order was created - we can still proceed
-          showToast('Warning', 'Order created but item record had issues. Please contact support if download fails.', 'warning');
-        }
+        // Step 3: Prepare MegaPay payment link with parameters
+        // Using the provided payment link with query parameters
+        const paymentUrl = new URL(MEGAPAY_PAYMENT_LINK);
+        paymentUrl.searchParams.set('amount', resource.price);
+        paymentUrl.searchParams.set('phone', phone);
+        paymentUrl.searchParams.set('reference', orderRef);
+        paymentUrl.searchParams.set('description', `KenyaVault: ${resource.title}`);
+        paymentUrl.searchParams.set('callback', window.location.origin + '/payment-callback.html');
 
         statusArea.innerHTML = `
           <div style="text-align:center;padding:8px 0;">
-            <div style="display:inline-block;width:28px;height:28px;border:3px solid var(--kv-border);border-top-color:var(--kv-gold);border-radius:50%;animation:spin 0.8s linear infinite;"></div>
-            <p style="margin-top:6px;color:var(--kv-muted);font-size:0.85rem;">Waiting for payment confirmation...</p>
-            <p style="font-size:0.75rem;color:var(--kv-muted);">Complete the payment on your phone</p>
+            <div style="font-size:2.5rem;">📱</div>
+            <p style="margin-top:6px;color:var(--kv-muted);font-size:0.9rem;">Redirecting to MegaPay...</p>
+            <p style="font-size:0.75rem;color:var(--kv-muted);">You will be prompted to enter your M-PESA PIN</p>
+            <div style="margin-top:12px;">
+              <div style="display:inline-block;width:28px;height:28px;border:3px solid var(--kv-border);border-top-color:var(--kv-gold);border-radius:50%;animation:spin 0.8s linear infinite;"></div>
+            </div>
           </div>
         `;
 
-        // Start polling
+        // Step 4: Open MegaPay payment link in new window
+        // For mobile, this opens in a new tab/window
+        const newWindow = window.open(paymentUrl.toString(), '_blank');
+
+        // If popup is blocked, try direct navigation
+        if (!newWindow || newWindow.closed) {
+          window.location.href = paymentUrl.toString();
+        }
+
+        // Step 5: Start polling for payment confirmation
+        // The user will return to the site after payment
         startPaymentPolling(order.id, resource.id, resource);
 
-        // Simulate payment confirmation (10s delay for demo)
-        setTimeout(async () => {
-          try {
-            const { data: orderCheck } = await supabase
-              .from('orders')
-              .select('payment_status')
-              .eq('id', order.id)
-              .single();
-
-            if (orderCheck && orderCheck.payment_status === 'paid') return;
-
-            await supabase
-              .from('orders')
-              .update({
-                payment_status: 'paid',
-                status: 'completed',
-                amount_paid: resource.price,
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', order.id);
-
-            // Save to recent orders
-            saveRecentOrder({
-              id: order.id,
-              order_ref: orderRef,
-              resource_id: resource.id,
-              title: resource.title,
-              price: resource.price,
-              file_url: resource.file_url,
-              file_name: resource.file_name || 'download.pdf',
-              purchased_at: new Date().toISOString()
-            });
-
-            showToast('Payment Successful! 🎉', `You have purchased "${resource.title}"`, 'success');
-            stopPaymentPolling();
-            renderShop();
-
-            if (statusArea) {
-              statusArea.innerHTML = `
-                <div style="text-align:center;padding:12px 0;">
-                  <div style="font-size:2.5rem;">✅</div>
-                  <div style="font-weight:700;font-size:1rem;color:var(--kv-green);">Payment Confirmed</div>
-                  <p style="color:var(--kv-muted);margin:4px 0 10px;font-size:0.85rem;">Your resource is ready</p>
-                  <button class="btn btn-success" onclick="downloadResource('${resource.id}');closePaymentModal();">
-                    <i class="fas fa-download"></i> Download Now
-                  </button>
-                </div>
-              `;
-            }
-
-            setTimeout(() => {
-              downloadResource(resource.id);
-            }, 1000);
-
-          } catch (e) {
-            console.error('Payment confirmation error:', e);
-            showToast('Error', 'Payment confirmation failed. Please check your recent orders.', 'error');
+        // Also listen for visibility change to detect when user returns
+        document.addEventListener('visibilitychange', function onVisibilityChange() {
+          if (!document.hidden) {
+            // User returned to the tab - check payment status
+            checkPaymentStatus(order.id, resource.id, resource);
+            document.removeEventListener('visibilitychange', onVisibilityChange);
           }
-        }, 10000);
+        });
+
+        // Set a timeout to check status after 30 seconds if user doesn't return
+        setTimeout(() => {
+          checkPaymentStatus(order.id, resource.id, resource);
+        }, 30000);
 
       } catch (e) {
-        console.error('Payment initiation error:', e);
+        console.error('MegaPay payment error:', e);
+        STATE.isProcessingPayment = false;
         if (statusArea) {
           statusArea.innerHTML = `
             <div style="text-align:center;padding:8px 0;color:var(--kv-red);">
               <div style="font-size:2rem;">❌</div>
-              <div style="font-weight:700;">Payment failed</div>
+              <div style="font-weight:700;">Payment Initiation Failed</div>
               <p style="font-size:0.8rem;color:var(--kv-muted);">${e.message || 'Please try again'}</p>
-              <button class="btn btn-primary btn-sm" style="margin-top:8px;" onclick="initiatePayment()">Retry</button>
+              <button class="btn btn-primary btn-sm" style="margin-top:8px;" onclick="initiateMegaPayPayment()">
+                <i class="fas fa-sync"></i> Retry Payment
+              </button>
             </div>
           `;
         }
         if (actions) {
           actions.innerHTML = `
-            <button class="btn btn-premium" onclick="initiatePayment()">
+            <button class="btn btn-premium" onclick="initiateMegaPayPayment()">
               <i class="fas fa-phone"></i> Retry Payment
             </button>
             <button class="btn btn-outline" onclick="closePaymentModal()">Cancel</button>
@@ -2073,7 +2052,70 @@
     }
 
     // ============================================================
-    // 11. PAYMENT POLLING
+    // 12. CHECK PAYMENT STATUS
+    // ============================================================
+    async function checkPaymentStatus(orderId, resourceId, resource) {
+      try {
+        const { data: order, error } = await supabase
+          .from('orders')
+          .select('payment_status, status, amount_paid')
+          .eq('id', orderId)
+          .single();
+
+        if (error) throw error;
+
+        if (order.payment_status === 'paid' || order.status === 'completed') {
+          // Payment confirmed!
+          stopPaymentPolling();
+          STATE.isProcessingPayment = false;
+
+          // Save to recent orders
+          if (!STATE.recentOrders.some(o => o.id === orderId)) {
+            saveRecentOrder({
+              id: orderId,
+              order_ref: orderId.slice(0, 8).toUpperCase(),
+              resource_id: resourceId,
+              title: resource?.title || 'Resource',
+              price: resource?.price || 0,
+              file_url: resource?.file_url,
+              file_name: resource?.file_name || 'download.pdf',
+              purchased_at: new Date().toISOString()
+            });
+          }
+
+          showToast('Payment Successful! 🎉', 'Your purchase is complete', 'success');
+          renderShop();
+
+          const statusArea = document.getElementById('paymentStatusArea');
+          if (statusArea) {
+            statusArea.innerHTML = `
+              <div style="text-align:center;padding:12px 0;">
+                <div style="font-size:2.5rem;">✅</div>
+                <div style="font-weight:700;font-size:1rem;color:var(--kv-green);">Payment Confirmed</div>
+                <p style="color:var(--kv-muted);margin:4px 0 10px;font-size:0.85rem;">Your resource is ready</p>
+                <button class="btn btn-success" onclick="downloadResource('${resourceId}');closePaymentModal();">
+                  <i class="fas fa-download"></i> Download Now
+                </button>
+              </div>
+            `;
+          }
+
+          setTimeout(() => {
+            downloadResource(resourceId);
+          }, 800);
+
+          return true;
+        }
+
+        return false;
+      } catch (e) {
+        console.error('Status check error:', e);
+        return false;
+      }
+    }
+
+    // ============================================================
+    // 13. PAYMENT POLLING
     // ============================================================
     function startPaymentPolling(orderId, resourceId, resource) {
       stopPaymentPolling();
@@ -2084,15 +2126,19 @@
 
         if (STATE.paymentAttempts > STATE.maxPaymentAttempts) {
           stopPaymentPolling();
+          STATE.isProcessingPayment = false;
           const statusArea = document.getElementById('paymentStatusArea');
           if (statusArea) {
             statusArea.innerHTML = `
-              <div style="text-align:center;padding:8px 0;color:var(--kv-red);">
+              <div style="text-align:center;padding:8px 0;color:var(--kv-orange);">
                 <div style="font-size:2rem;">⏰</div>
-                <div style="font-weight:700;">Payment confirmation timed out</div>
+                <div style="font-weight:700;">Payment Taking Too Long</div>
                 <p style="font-size:0.8rem;color:var(--kv-muted);">If money was deducted, please check Recent Orders</p>
                 <button class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="checkOrderStatus('${resourceId}')">
                   <i class="fas fa-sync"></i> Check Status
+                </button>
+                <button class="btn btn-primary btn-sm" style="margin-top:8px;margin-left:8px;" onclick="initiateMegaPayPayment()">
+                  <i class="fas fa-redo"></i> Retry Payment
                 </button>
               </div>
             `;
@@ -2100,59 +2146,11 @@
           return;
         }
 
-        try {
-          const { data: order, error } = await supabase
-            .from('orders')
-            .select('payment_status, status, amount_paid')
-            .eq('id', orderId)
-            .single();
-
-          if (error) throw error;
-
-          if (order.payment_status === 'paid' || order.status === 'completed') {
-            stopPaymentPolling();
-
-            // Check if already saved
-            if (!STATE.recentOrders.some(o => o.id === orderId)) {
-              const res = STATE.resources.find(r => r.id === resourceId) || resource;
-              saveRecentOrder({
-                id: orderId,
-                order_ref: orderId.slice(0, 8).toUpperCase(),
-                resource_id: resourceId,
-                title: res?.title || 'Resource',
-                price: res?.price || 0,
-                file_url: res?.file_url,
-                file_name: res?.file_name || 'download.pdf',
-                purchased_at: new Date().toISOString()
-              });
-            }
-
-            showToast('Payment Confirmed! 🎉', 'Your purchase is complete', 'success');
-            renderShop();
-
-            const statusArea = document.getElementById('paymentStatusArea');
-            if (statusArea) {
-              statusArea.innerHTML = `
-                <div style="text-align:center;padding:12px 0;">
-                  <div style="font-size:2.5rem;">✅</div>
-                  <div style="font-weight:700;font-size:1rem;color:var(--kv-green);">Payment Confirmed</div>
-                  <p style="color:var(--kv-muted);margin:4px 0 10px;font-size:0.85rem;">Your resource is ready</p>
-                  <button class="btn btn-success" onclick="downloadResource('${resourceId}');closePaymentModal();">
-                    <i class="fas fa-download"></i> Download Now
-                  </button>
-                </div>
-              `;
-            }
-
-            setTimeout(() => {
-              downloadResource(resourceId);
-            }, 800);
-          }
-
-        } catch (e) {
-          console.error('Polling error:', e);
+        const confirmed = await checkPaymentStatus(orderId, resourceId, resource);
+        if (confirmed) {
+          stopPaymentPolling();
         }
-      }, 2000);
+      }, 3000);
     }
 
     function stopPaymentPolling() {
@@ -2163,7 +2161,7 @@
     }
 
     // ============================================================
-    // 12. CHECK ORDER STATUS
+    // 14. CHECK ORDER STATUS
     // ============================================================
     function checkOrderStatus(resourceId) {
       showToast('Checking', 'Checking your order status...', 'info');
@@ -2176,7 +2174,7 @@
     }
 
     // ============================================================
-    // 13. DOWNLOAD RESOURCE — MOBILE OPTIMIZED
+    // 15. DOWNLOAD RESOURCE — MOBILE OPTIMIZED
     // ============================================================
     async function downloadResource(resourceId) {
       if (STATE.downloadAttempted) {
@@ -2311,7 +2309,7 @@
     }
 
     // ============================================================
-    // 14. MODAL CONTROLS
+    // 16. MODAL CONTROLS
     // ============================================================
     function closePaymentModal() {
       document.getElementById('paymentModal').classList.remove('open');
@@ -2319,6 +2317,7 @@
       STATE.currentProduct = null;
       STATE.currentOrderId = null;
       STATE.downloadAttempted = false;
+      STATE.isProcessingPayment = false;
     }
 
     document.getElementById('paymentModal').addEventListener('click', function(e) {
@@ -2328,7 +2327,7 @@
     });
 
     // ============================================================
-    // 15. HAMBURGER MENU
+    // 17. HAMBURGER MENU
     // ============================================================
     document.getElementById('kvHamburger').addEventListener('click', function() {
       const nav = document.getElementById('kvNavLinks');
@@ -2344,7 +2343,7 @@
     });
 
     // ============================================================
-    // 16. INITIALIZATION
+    // 18. INITIALIZATION
     // ============================================================
     async function init() {
       await loadResources();
@@ -2370,14 +2369,37 @@
         applyFilters();
       }
 
-      console.log('✅ KenyaVault Marketplace (No Account Required) initialized');
+      // Check for payment callback parameters
+      if (params.has('payment_status') && params.has('order_ref')) {
+        const status = params.get('payment_status');
+        const orderRef = params.get('order_ref');
+        if (status === 'success' || status === 'paid') {
+          showToast('Payment Successful! 🎉', `Your order #${orderRef} has been confirmed.`, 'success');
+          // Find and download the resource
+          const resource = STATE.resources.find(r => {
+            const order = STATE.recentOrders.find(o => o.order_ref === orderRef);
+            return order && order.resource_id === r.id;
+          });
+          if (resource) {
+            setTimeout(() => downloadResource(resource.id), 1500);
+          }
+          await loadRecentOrders();
+          renderShop();
+        } else if (status === 'failed' || status === 'cancelled') {
+          showToast('Payment Failed', `Order #${orderRef} could not be processed. Please try again.`, 'error');
+        }
+      }
+
+      console.log('✅ KenyaVault Marketplace with MegaPay Integration initialized');
       console.log(`📚 ${STATE.resources.length} resources loaded`);
       console.log(`📦 ${STATE.recentOrders.length} recent orders`);
+      console.log(`🔑 MegaPay API Key: ${MEGAPAY_API_KEY ? 'Configured' : 'Missing'}`);
+      console.log(`🔗 MegaPay Payment Link: ${MEGAPAY_PAYMENT_LINK}`);
       console.log('📱 Mobile-optimized with auto-download');
     }
 
     // ============================================================
-    // 17. START APPLICATION
+    // 19. START APPLICATION
     // ============================================================
     document.addEventListener('DOMContentLoaded', init);
   </script>
