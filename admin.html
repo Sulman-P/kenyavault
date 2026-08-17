@@ -2714,7 +2714,7 @@
     window.exportOrdersExcel = exportOrdersExcel;
 
     // ============================================================
-    // 13. RESOURCES - WITH STYLISH UPLOAD AND FIXED COUNT
+    // 13. RESOURCES - WITH FIXED COUNT UPDATE
     // ============================================================
     async function loadResources() {
       try {
@@ -2722,18 +2722,22 @@
         if (error) throw error;
         resourcesData = data || [];
 
-        // Update the resources table
+        // CRITICAL: Update ALL resource-related displays
         renderResources();
-
-        // CRITICAL: Update the stats UI with the new resource count
+        
+        // Force update the stats UI with new resource count
         updateStatsUI();
 
         // Update sidebar badge
-        document.getElementById('resourceCountBadge').textContent = resourcesData.length;
-        document.getElementById('resourceCountBadge').style.display = resourcesData.length > 0 ? '' : 'none';
+        const badge = document.getElementById('resourceCountBadge');
+        if (badge) {
+          badge.textContent = resourcesData.length;
+          badge.style.display = resourcesData.length > 0 ? '' : 'none';
+        }
 
-        // Update the stat card directly as a fallback
-        document.getElementById('statResources').textContent = resourcesData.length;
+        // Update stat card directly
+        const statEl = document.getElementById('statResources');
+        if (statEl) statEl.textContent = resourcesData.length;
 
         console.log('[Resources] Loaded:', resourcesData.length, 'resources');
       } catch (e) {
@@ -2948,10 +2952,19 @@
           created_at: new Date().toISOString()
         });
 
-        // CRITICAL: Reload resources to update the count
+        // CRITICAL FIX: Reload resources and force UI update
         await loadResources();
+        
+        // Force update the stat card and badge again
+        const count = resourcesData.length;
+        document.getElementById('statResources').textContent = count;
+        document.getElementById('resourceCountBadge').textContent = count;
+        document.getElementById('resourceCountBadge').style.display = count > 0 ? '' : 'none';
+        
+        // Update the stats UI with the new count
+        updateStatsUI();
 
-        showToast('Success', `Resource uploaded successfully. Total resources: ${resourcesData.length}`);
+        showToast('Success', `✅ Resource uploaded successfully! Total resources: ${count}`);
         resetUploadForm();
 
       } catch (e) {
