@@ -2576,7 +2576,6 @@
       document.getElementById('pendingBadge').textContent = pending;
       document.getElementById('pendingBadge').style.display = pending > 0 ? '' : 'none';
 
-      // Update resource badge
       const badge = document.getElementById('resourceCountBadge');
       if (badge) {
         badge.textContent = resourceCount;
@@ -2772,7 +2771,7 @@
     window.exportOrdersExcel = exportOrdersExcel;
 
     // ============================================================
-    // 13. RESOURCES - WITH FIXED COUNT UPDATE
+    // 13. RESOURCES - FIXED: Only use columns that exist in your schema
     // ============================================================
     async function loadResources() {
       try {
@@ -2952,7 +2951,7 @@
     }
     window.resetUploadForm = resetUploadForm;
 
-    // ── UPLOAD HANDLER ──
+    // ── UPLOAD HANDLER - FIXED: Only use columns that exist
     document.getElementById('uploadForm').addEventListener('submit', async function(e) {
       e.preventDefault();
       const file = fileInput.files[0];
@@ -2986,7 +2985,8 @@
 
         const { data: urlData } = supabase.storage.from('kenyavault-resources').getPublicUrl(filePath);
 
-        // Insert into database - using the exact column names from your schema
+        // IMPORTANT: Only use columns that exist in your resources table
+        // Removed: file_type, file_size (add them back if they exist in your schema)
         const { error: insertError } = await supabase.from('resources').insert({
           title: title,
           subject: subject,
@@ -2997,8 +2997,6 @@
           description: description,
           file_url: urlData.publicUrl,
           file_name: file.name,
-          file_size: file.size,
-          file_type: file.type || 'application/octet-stream',
           status: 'draft',
           download_count: 0,
           created_at: new Date().toISOString()
@@ -3020,11 +3018,12 @@
 
       } catch (e) {
         console.error('Upload error:', e);
-        // Check for specific error types
         if (e.code === '23505' || e.message?.includes('duplicate')) {
           showToast('Error', 'A resource with this title already exists. Please use a different title.', 'error');
-        } else if (e.message?.includes('storage')) {
+        } else if (e.message?.includes('storage') || e.message?.includes('upload')) {
           showToast('Error', 'Failed to upload file to storage. Please try again.', 'error');
+        } else if (e.message?.includes('column') || e.message?.includes('PGRST204')) {
+          showToast('Error', 'Database schema mismatch. Please check your resources table columns.', 'error');
         } else {
           showToast('Error', 'Upload failed: ' + (e.message || 'Unknown error'), 'error');
         }
