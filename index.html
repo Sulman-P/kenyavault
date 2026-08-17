@@ -2889,6 +2889,7 @@
     const MAX_POLLING_ATTEMPTS = 60;
     let previewProductId = null;
     let orderRefCounter = 0;
+    let resourcesLoaded = false;
 
     // ── CART STATE ──
     let cart = [];
@@ -2926,8 +2927,16 @@
     const previewBuyBtn = document.getElementById('previewBuyBtn');
     const previewInfo = document.getElementById('previewInfo');
 
-    // ── LEVEL CONSTANTS ──
-    const LEVEL_ORDER = ['pp1', 'pp2', 'grade-1', 'grade-2', 'grade-3', 'grade-4', 'grade-5', 'grade-6', 'grade-7', 'grade-8', 'grade-9', 'grade-10', 'grade-11', 'grade-12', 'form-1', 'form-2', 'form-3', 'form-4', 'college', 'tvet', 'university'];
+    // ── FIXED: Complete LEVEL_ORDER with all possible levels ──
+    const LEVEL_ORDER = [
+        'pp1', 'pp2', 
+        'grade-1', 'grade-2', 'grade-3', 'grade-4', 'grade-5', 'grade-6',
+        'grade-7', 'grade-8', 'grade-9', 
+        'grade-10', 'grade-11', 'grade-12',
+        'form-1', 'form-2', 'form-3', 'form-4', 
+        'college', 'tvet', 'university'
+    ];
+
     const LEVEL_DISPLAY = {
         pp1: 'PP1', pp2: 'PP2',
         'grade-1': 'Grade 1', 'grade-2': 'Grade 2', 'grade-3': 'Grade 3',
@@ -3022,6 +3031,7 @@
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
             const data = await response.json();
+            console.log('[Resources] Loaded:', data.length, 'resources');
             return data || [];
         } catch (error) {
             console.error('Fetch error:', error);
@@ -4022,19 +4032,22 @@
         const safeTitle = (r.title || '').replace(/"/g, '&quot;').replace(/'/g, "\\'");
         const rating = r.rating || Math.floor(Math.random() * 2) + 3;
 
+        // Get the level display name
+        const levelDisplay = LEVEL_DISPLAY[r.level] || r.level || 'N/A';
+
         const freeBadge = isFree ? `<span class="cover-badge" style="background:var(--kv-green);color:white;">FREE</span>` : `<span class="cover-badge">${badgeText}</span>`;
         const coverHTML = r.cover_image_url ? `
             <div class="pc-cover">
                 <img src="${r.cover_image_url}" alt="${safeTitle}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" />
                 <div class="cover-fallback" style="display:none;">${getSubjectEmoji(r.subject) || '📄'}</div>
                 ${freeBadge}
-                <span class="cover-level">${LEVEL_DISPLAY[r.level] || r.level}</span>
+                <span class="cover-level">${levelDisplay}</span>
             </div>
         ` : `
             <div class="pc-cover">
                 <div class="cover-fallback">${getSubjectEmoji(r.subject) || '📄'}</div>
                 ${freeBadge}
-                <span class="cover-level">${LEVEL_DISPLAY[r.level] || r.level}</span>
+                <span class="cover-level">${levelDisplay}</span>
             </div>
         `;
 
@@ -4081,7 +4094,11 @@
     function updateCounts() {
         const counts = {};
         LEVEL_ORDER.forEach(l => counts[l] = 0);
-        allResources.forEach(r => { if (counts.hasOwnProperty(r.level)) counts[r.level]++; });
+        allResources.forEach(r => { 
+            if (r.level && counts.hasOwnProperty(r.level)) {
+                counts[r.level]++; 
+            }
+        });
 
         const idMap = {
             'pp1': 'pp1Count', 'pp2': 'pp2Count',
@@ -4314,6 +4331,7 @@
         renderLoading();
         try {
             allResources = await fetchResources();
+            resourcesLoaded = true;
             updateCounts();
             renderShop();
             checkPaymentCallback();
