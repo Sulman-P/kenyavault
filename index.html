@@ -1107,23 +1107,29 @@
     function hideToast() { document.getElementById('toast').classList.remove('show'); }
 
     // ── CRITICAL: VALIDATE FILE URL ──
-    function isValidFileUrl(url) {
-      if (!url) return false;
-      // Must be an absolute URL pointing at a trusted file host. A relative
-      // path (or a URL on our own site's origin) is exactly what causes the
-      // "download turns out to be the shop's HTML" bug — reject it here
-      // instead of discovering it after the blob has already been saved.
+    // Resolves `url` against the trusted Supabase origin (never the page's
+    // own origin) and returns the resolved absolute URL if it's safe to
+    // fetch, or null otherwise. Resolving against SUPABASE_URL means a
+    // legitimate relative storage path from our own edge function still
+    // works, while a path that would otherwise fall back to our own site's
+    // HTML (the original bug) still gets caught, because that fallback
+    // only happens when a relative URL is resolved against the *page's*
+    // origin.
+    function resolveTrustedFileUrl(url) {
+      if (!url) return null;
       let parsed;
-      try { parsed = new URL(url, window.location.origin); } catch { return false; }
-      const isAbsolute = /^https?:\/\//i.test(url);
+      try { parsed = new URL(url, SUPABASE_URL); } catch { return null; }
       const isTrustedHost = TRUSTED_FILE_HOSTS.some(h => parsed.hostname === h || parsed.hostname.endsWith('.' + h));
-      if (!isAbsolute || !isTrustedHost) return false;
+      if (!isTrustedHost) return null;
       const validPatterns = [
         /\.(pdf|doc|docx|xls|xlsx|ppt|pptx|jpg|jpeg|png|gif|zip|mp4|mp3|txt|odt|ods|odp)(\?.*)?$/i,
         /supabase\.co\/storage\/v1\/object\/(public|sign)\//i
       ];
-      return validPatterns.some(pattern => pattern.test(url));
+      return validPatterns.some(pattern => pattern.test(parsed.href)) ? parsed.href : null;
     }
+    // Kept for the resource-listing validation path, which only needs a
+    // yes/no answer (not the resolved URL).
+    function isValidFileUrl(url) { return !!resolveTrustedFileUrl(url); }
 
     function getFileExtensionFromUrl(url) {
       if (!url) return 'pdf';
@@ -1382,19 +1388,22 @@
 
         if (!result || !result.download_url) throw new Error('No download URL received from server');
 
-        // 1. The URL string itself must be absolute and on a trusted file
-        //    host. A relative or same-origin URL is exactly what causes the
+        // 1. Resolve the URL against our trusted Supabase origin and confirm
+        //    it lands on a trusted file host. A path that resolves anywhere
+        //    else (e.g. the shop's own site) is exactly what causes the
         //    "you get the shop's homepage" bug — reject it up front.
-        if (!isValidFileUrl(result.download_url)) {
+        const resolvedUrl = resolveTrustedFileUrl(result.download_url);
+        if (!resolvedUrl) {
           throw new Error('This resource\u2019s download link looks broken. Please contact support with your order reference — we will not charge you again.');
         }
 
-        const fileExt = getFileExtensionFromUrl(result.download_url);
+        const fileExt = getFileExtensionFromUrl(resolvedUrl);
         const mimeType = getMimeType(fileExt);
         const fileName = result.file_name || `resource.${fileExt}`;
 
-        // Fetch the file as blob
-        const fileRes = await fetch(result.download_url, { cache: 'no-store' });
+        // Fetch the file as blob — always via the resolved absolute URL,
+        // never the raw (possibly relative) one from the server.
+        const fileRes = await fetch(resolvedUrl, { cache: 'no-store' });
         if (!fileRes.ok) throw new Error(`Failed to fetch file (HTTP ${fileRes.status})`);
 
         // 2. THE ACTUAL FIX: verify what came back is really the file, not
@@ -1551,7 +1560,7 @@
         const resourceIds = eligible.map(o => o.resource_id).filter(id => id);
         let resources = [];
         if (resourceIds.length) {
-          const rr = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=in.(${resourceIds.join(',')})&select=id,title,file_path,file_url,subject,level,file_extension`, {
+          const rr = await fetch(`${SUPABASE_URL}/rest/v1/resources?id=in.(${resourceIds.join(',')})&select=id,title,file_path,file_url,subject,level`, {
             headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
           });
           if (rr.ok) resources = await rr.json();
@@ -1566,7 +1575,7 @@
           const tokenInfo = tokens.find(t => String(t.order_id) === String(order.id) && String(t.resource_id) === String(rid));
           if (tokenInfo) downloadTokens[rid] = { token: tokenInfo.token, expiresAt: tokenInfo.expires_at, orderId: order.id };
           const fp = order.resource_file_path || resource.file_path || resource.file_url || '';
-          const fileExt = resource.file_extension || getFileExtensionFromUrl(fp) || 'pdf';
+          const fileExt = getFileExtensionFromUrl(fp) || 'pdf';
           const fileName = order.resource_file_name || resource.file_name || `resource.${fileExt}`;
           const norm = normalizeFilePath(fp);
           purchasedResources.push({
