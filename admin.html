@@ -2157,7 +2157,6 @@
     let previousStats = { total: 0, paid: 0, pending: 0, failed: 0, revenue: 0, resources: 0, learners: 0 };
     const exchangeRates = { KES: 1, USD: 0.0077, EUR: 0.0071, GBP: 0.0061 };
 
-    // Chart instances
     let paymentChartInstance = null;
     let salesChartInstance = null;
 
@@ -2565,83 +2564,24 @@
       document.getElementById('statRevenue').textContent = formatCurrency(revenue);
       document.getElementById('statRevenueSub').innerHTML =
         `${cR.up ? '⬆' : '⬇'} <span class="${cR.up ? 'change-up' : 'change-down'}">${cR.pct}%</span> since last refresh`;
-      
-      // Update resource count
+
       document.getElementById('statResources').textContent = resourceCount;
       document.getElementById('statResourcesSub').innerHTML =
         `${cRes.up ? '⬆' : '⬇'} <span class="${cRes.up ? 'change-up' : 'change-down'}">${cRes.pct}%</span> since last refresh`;
-      
+
       document.getElementById('statLearners').textContent = learnerCount;
       document.getElementById('statLearnersSub').innerHTML =
         `${cLearners.up ? '⬆' : '⬇'} <span class="${cLearners.up ? 'change-up' : 'change-down'}">${cLearners.pct}%</span> since last refresh`;
 
       document.getElementById('pendingBadge').textContent = pending;
       document.getElementById('pendingBadge').style.display = pending > 0 ? '' : 'none';
-      
+
       // Update resource badge
-      updateResourceDisplay(resourceCount);
-    }
-
-    // ============================================================
-    // RESOURCE COUNT FUNCTIONS
-    // ============================================================
-    
-    async function countResources() {
-      try {
-        const { count, error } = await supabase
-          .from('resources')
-          .select('*', { count: 'exact', head: true });
-        
-        if (error) {
-          console.error('[Resource Count Error]', error);
-          return null;
-        }
-        
-        return count || 0;
-      } catch (e) {
-        console.error('[Resource Count Exception]', e);
-        return null;
-      }
-    }
-
-    async function updateResourceDisplay(count) {
-      let resourceCount = count;
-      
-      if (resourceCount === undefined || resourceCount === null) {
-        resourceCount = await countResources();
-        if (resourceCount === null) {
-          resourceCount = resourcesData.length;
-          console.warn('[Resource Count] Falling back to resourcesData.length:', resourceCount);
-        }
-      }
-      
-      const statEl = document.getElementById('statResources');
-      if (statEl) {
-        statEl.textContent = resourceCount;
-      }
-      
       const badge = document.getElementById('resourceCountBadge');
       if (badge) {
         badge.textContent = resourceCount;
         badge.style.display = resourceCount > 0 ? '' : 'none';
       }
-      
-      previousStats.resources = resourceCount;
-      
-      console.log('[Resource Display] Updated to:', resourceCount);
-      return resourceCount;
-    }
-
-    async function refreshResourceData() {
-      await loadResources();
-      const exactCount = await countResources();
-      if (exactCount !== null) {
-        await updateResourceDisplay(exactCount);
-      } else {
-        await updateResourceDisplay(resourcesData.length);
-      }
-      console.log('[Resource Refresh] Complete. Count:', 
-        document.getElementById('statResources')?.textContent || 'unknown');
     }
 
     // ============================================================
@@ -2651,31 +2591,31 @@
       const ctx = document.getElementById('paymentChart')?.getContext('2d');
       if (!ctx) return;
       if (paymentChartInstance) paymentChartInstance.destroy();
-      
+
       const paid = ordersData.filter(o => getPaymentStatus(o) === 'paid').length;
       const pending = ordersData.filter(o => getPaymentStatus(o) === 'pending').length;
       const failed = ordersData.filter(o => getPaymentStatus(o) === 'failed').length;
-      
+
       paymentChartInstance = new Chart(ctx, {
         type: 'doughnut',
-        data: { 
-          labels: ['Paid', 'Pending', 'Failed'], 
-          datasets: [{ 
+        data: {
+          labels: ['Paid', 'Pending', 'Failed'],
+          datasets: [{
             data: [paid, pending, failed],
-            backgroundColor: ['#1F7A3A', '#C9971F', '#C0392B'], 
-            borderWidth: 0 
-          }] 
+            backgroundColor: ['#1F7A3A', '#C9971F', '#C0392B'],
+            borderWidth: 0
+          }]
         },
-        options: { 
-          responsive: true, 
-          maintainAspectRatio: true, 
-          plugins: { 
-            legend: { 
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: {
               position: 'bottom',
-              labels: { boxWidth: 12, padding: 12 } 
-            } 
-          }, 
-          cutout: '62%' 
+              labels: { boxWidth: 12, padding: 12 }
+            }
+          },
+          cutout: '62%'
         }
       });
     }
@@ -2687,7 +2627,7 @@
       const ctx = document.getElementById('salesChart')?.getContext('2d');
       if (!ctx) return;
       if (salesChartInstance) salesChartInstance.destroy();
-      
+
       const days = [];
       const data = [];
       for (let i = 6; i >= 0; i--) {
@@ -2697,26 +2637,26 @@
         const key = d.toISOString().slice(0, 10);
         data.push(ordersData.filter(o => (o.created_at || '').slice(0, 10) === key).length);
       }
-      
+
       salesChartInstance = new Chart(ctx, {
         type: 'bar',
-        data: { 
-          labels: days, 
-          datasets: [{ 
-            label: 'Orders', 
-            data, 
-            backgroundColor: '#C9971F', 
-            borderRadius: 6 
-          }] 
+        data: {
+          labels: days,
+          datasets: [{
+            label: 'Orders',
+            data,
+            backgroundColor: '#C9971F',
+            borderRadius: 6
+          }]
         },
-        options: { 
-          responsive: true, 
-          maintainAspectRatio: true, 
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
           plugins: { legend: { display: false } },
-          scales: { 
-            y: { beginAtZero: true, ticks: { precision: 0 } }, 
-            x: { grid: { display: false } } 
-          } 
+          scales: {
+            y: { beginAtZero: true, ticks: { precision: 0 } },
+            x: { grid: { display: false } }
+          }
         }
       });
     }
@@ -2731,27 +2671,27 @@
         `#${order?.order_ref || id.slice(0,8)} | ${order?.customer_name || 'N/A'} | ${getOrderResources(order)} | ${formatCurrency(order?.total_amount || 0)} | ${status}`,
         'info');
     };
-    
+
     window.confirmOrder = async function(id) {
       if (!confirm('Confirm this order?')) return;
       try {
         const order = ordersData.find(o => o.id === id);
-        await supabase.from('orders').update({ 
-          payment_status: 'paid', 
-          status: 'paid', 
-          amount_paid: order?.total_amount || 0 
+        await supabase.from('orders').update({
+          payment_status: 'paid',
+          status: 'paid',
+          amount_paid: order?.total_amount || 0
         }).eq('id', id);
         showToast('Confirmed', 'Order marked as paid');
         await loadOrders();
       } catch (e) { showToast('Error', 'Failed to confirm order', 'error'); }
     };
-    
+
     window.rejectOrder = async function(id) {
       if (!confirm('Reject this order?')) return;
       try {
-        await supabase.from('orders').update({ 
-          payment_status: 'failed', 
-          status: 'failed' 
+        await supabase.from('orders').update({
+          payment_status: 'failed',
+          status: 'failed'
         }).eq('id', id);
         showToast('Rejected', 'Order marked as failed');
         await loadOrders();
@@ -2842,7 +2782,6 @@
 
         renderResources();
         updateStatsUI();
-        await updateResourceDisplay(resourcesData.length);
 
         console.log('[Resources] Loaded:', resourcesData.length, 'resources');
         return resourcesData;
@@ -2882,7 +2821,7 @@
       try {
         await supabase.from('resources').update({ status: newStatus }).eq('id', id);
         showToast('Updated', `Resource ${newStatus === 'live' ? 'published' : 'drafted'}`);
-        await refreshResourceData();
+        await loadResources();
       } catch (e) { showToast('Error', 'Failed to update', 'error'); }
     };
 
@@ -2891,7 +2830,7 @@
       try {
         await supabase.from('resources').delete().eq('id', id);
         showToast('Deleted', 'Resource removed');
-        await refreshResourceData();
+        await loadResources();
       } catch (e) { showToast('Error', 'Failed to delete', 'error'); }
     };
 
@@ -2932,7 +2871,7 @@
         await supabase.from('resources').update(patch).eq('id', id);
         showToast('Saved', 'Resource updated successfully');
         closeResourceModal();
-        await refreshResourceData();
+        await loadResources();
       } catch (e) { showToast('Error', 'Failed to save changes: ' + e.message, 'error'); }
     });
 
@@ -3040,17 +2979,22 @@
         const fileExt = file.name.split('.').pop();
         const fileName = `${Date.now()}-${title.replace(/\s/g, '_')}.${fileExt}`;
         const filePath = `resources/${fileName}`;
-        await supabase.storage.from('kenyavault-resources').upload(filePath, file);
+
+        // Upload to Supabase Storage
+        const { error: uploadError } = await supabase.storage.from('kenyavault-resources').upload(filePath, file);
+        if (uploadError) throw uploadError;
+
         const { data: urlData } = supabase.storage.from('kenyavault-resources').getPublicUrl(filePath);
 
-        await supabase.from('resources').insert({
-          title,
-          subject,
-          level,
+        // Insert into database - using the exact column names from your schema
+        const { error: insertError } = await supabase.from('resources').insert({
+          title: title,
+          subject: subject,
+          level: level,
           resource_type: type,
-          price,
-          curriculum,
-          description,
+          price: price,
+          curriculum: curriculum,
+          description: description,
           file_url: urlData.publicUrl,
           file_name: file.name,
           file_size: file.size,
@@ -3060,18 +3004,32 @@
           created_at: new Date().toISOString()
         });
 
-        await refreshResourceData();
-        
-        const newCount = await countResources();
-        const displayCount = newCount !== null ? newCount : resourcesData.length;
-        
-        showToast('Success', `✅ Resource uploaded successfully! Total resources: ${displayCount}`);
+        if (insertError) {
+          console.error('Insert Error:', insertError);
+          throw insertError;
+        }
+
+        // Refresh the resource list and update the count
+        await loadResources();
+
+        // Update the resource count display directly
+        updateStatsUI();
+
+        showToast('Success', `✅ Resource uploaded successfully! Total resources: ${resourcesData.length}`);
         resetUploadForm();
 
       } catch (e) {
         console.error('Upload error:', e);
-        showToast('Error', 'Upload failed: ' + e.message, 'error');
-        await refreshResourceData();
+        // Check for specific error types
+        if (e.code === '23505' || e.message?.includes('duplicate')) {
+          showToast('Error', 'A resource with this title already exists. Please use a different title.', 'error');
+        } else if (e.message?.includes('storage')) {
+          showToast('Error', 'Failed to upload file to storage. Please try again.', 'error');
+        } else {
+          showToast('Error', 'Upload failed: ' + (e.message || 'Unknown error'), 'error');
+        }
+        // Refresh the count to ensure consistency
+        await loadResources();
       } finally {
         submitBtn.classList.remove('loading');
         submitBtn.disabled = false;
@@ -3526,12 +3484,11 @@
           }
         } catch (e) {}
       }
-      
+
       await loadDashboardData();
       await loadWithdrawals();
       loadSettings();
-      await refreshResourceData();
-      
+
       console.log('[Admin Dashboard] Initialized successfully');
     }
 
