@@ -2157,6 +2157,10 @@
     let previousStats = { total: 0, paid: 0, pending: 0, failed: 0, revenue: 0, resources: 0, learners: 0 };
     const exchangeRates = { KES: 1, USD: 0.0077, EUR: 0.0071, GBP: 0.0061 };
 
+    // Chart instances
+    let paymentChartInstance = null;
+    let salesChartInstance = null;
+
     // ============================================================
     // 3. TOAST
     // ============================================================
@@ -2526,7 +2530,7 @@
     });
 
     // ============================================================
-    // UPDATE STATS UI - FIXED: Properly updates resource count
+    // UPDATE STATS UI
     // ============================================================
     function updateStatsUI() {
       const total = ordersData.length;
@@ -2561,9 +2565,12 @@
       document.getElementById('statRevenue').textContent = formatCurrency(revenue);
       document.getElementById('statRevenueSub').innerHTML =
         `${cR.up ? '⬆' : '⬇'} <span class="${cR.up ? 'change-up' : 'change-down'}">${cR.pct}%</span> since last refresh`;
+      
+      // Update resource count
       document.getElementById('statResources').textContent = resourceCount;
       document.getElementById('statResourcesSub').innerHTML =
         `${cRes.up ? '⬆' : '⬇'} <span class="${cRes.up ? 'change-up' : 'change-down'}">${cRes.pct}%</span> since last refresh`;
+      
       document.getElementById('statLearners').textContent = learnerCount;
       document.getElementById('statLearnersSub').innerHTML =
         `${cLearners.up ? '⬆' : '⬇'} <span class="${cLearners.up ? 'change-up' : 'change-down'}">${cLearners.pct}%</span> since last refresh`;
@@ -2571,18 +2578,14 @@
       document.getElementById('pendingBadge').textContent = pending;
       document.getElementById('pendingBadge').style.display = pending > 0 ? '' : 'none';
       
-      // Update resource badge and stat card
+      // Update resource badge
       updateResourceDisplay(resourceCount);
     }
 
     // ============================================================
-    // RESOURCE COUNT FUNCTIONS - NEW: Dedicated count functions
+    // RESOURCE COUNT FUNCTIONS
     // ============================================================
     
-    /**
-     * Directly query Supabase for the exact resource count
-     * This ensures we always get the real number from the database
-     */
     async function countResources() {
       try {
         const { count, error } = await supabase
@@ -2601,66 +2604,235 @@
       }
     }
 
-    /**
-     * Update all resource count displays with the provided count
-     * or fetch the latest count from Supabase
-     */
     async function updateResourceDisplay(count) {
       let resourceCount = count;
       
-      // If no count provided, fetch it from Supabase
       if (resourceCount === undefined || resourceCount === null) {
         resourceCount = await countResources();
         if (resourceCount === null) {
-          // If count fails, fall back to resourcesData length
           resourceCount = resourcesData.length;
           console.warn('[Resource Count] Falling back to resourcesData.length:', resourceCount);
         }
       }
       
-      // Update stat card
       const statEl = document.getElementById('statResources');
       if (statEl) {
         statEl.textContent = resourceCount;
       }
       
-      // Update sidebar badge
       const badge = document.getElementById('resourceCountBadge');
       if (badge) {
         badge.textContent = resourceCount;
         badge.style.display = resourceCount > 0 ? '' : 'none';
       }
       
-      // Update previous stats for change calculation
       previousStats.resources = resourceCount;
       
       console.log('[Resource Display] Updated to:', resourceCount);
       return resourceCount;
     }
 
-    /**
-     * Refresh all resource data and update the display
-     * This is the main function to call after any resource operation
-     */
     async function refreshResourceData() {
-      // First, get the fresh resource list
       await loadResources();
-      
-      // Then ensure the count is correct by querying directly
       const exactCount = await countResources();
       if (exactCount !== null) {
         await updateResourceDisplay(exactCount);
       } else {
-        // If direct count fails, use the loaded data length
         await updateResourceDisplay(resourcesData.length);
       }
-      
       console.log('[Resource Refresh] Complete. Count:', 
         document.getElementById('statResources')?.textContent || 'unknown');
     }
 
     // ============================================================
-    // RESOURCES - With proper count updates
+    // PAYMENT CHART
+    // ============================================================
+    function updatePaymentChart() {
+      const ctx = document.getElementById('paymentChart')?.getContext('2d');
+      if (!ctx) return;
+      if (paymentChartInstance) paymentChartInstance.destroy();
+      
+      const paid = ordersData.filter(o => getPaymentStatus(o) === 'paid').length;
+      const pending = ordersData.filter(o => getPaymentStatus(o) === 'pending').length;
+      const failed = ordersData.filter(o => getPaymentStatus(o) === 'failed').length;
+      
+      paymentChartInstance = new Chart(ctx, {
+        type: 'doughnut',
+        data: { 
+          labels: ['Paid', 'Pending', 'Failed'], 
+          datasets: [{ 
+            data: [paid, pending, failed],
+            backgroundColor: ['#1F7A3A', '#C9971F', '#C0392B'], 
+            borderWidth: 0 
+          }] 
+        },
+        options: { 
+          responsive: true, 
+          maintainAspectRatio: true, 
+          plugins: { 
+            legend: { 
+              position: 'bottom',
+              labels: { boxWidth: 12, padding: 12 } 
+            } 
+          }, 
+          cutout: '62%' 
+        }
+      });
+    }
+
+    // ============================================================
+    // SALES CHART
+    // ============================================================
+    function updateSalesChart() {
+      const ctx = document.getElementById('salesChart')?.getContext('2d');
+      if (!ctx) return;
+      if (salesChartInstance) salesChartInstance.destroy();
+      
+      const days = [];
+      const data = [];
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        days.push(d.toLocaleDateString('en-KE', { weekday: 'short' }));
+        const key = d.toISOString().slice(0, 10);
+        data.push(ordersData.filter(o => (o.created_at || '').slice(0, 10) === key).length);
+      }
+      
+      salesChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: { 
+          labels: days, 
+          datasets: [{ 
+            label: 'Orders', 
+            data, 
+            backgroundColor: '#C9971F', 
+            borderRadius: 6 
+          }] 
+        },
+        options: { 
+          responsive: true, 
+          maintainAspectRatio: true, 
+          plugins: { legend: { display: false } },
+          scales: { 
+            y: { beginAtZero: true, ticks: { precision: 0 } }, 
+            x: { grid: { display: false } } 
+          } 
+        }
+      });
+    }
+
+    // ============================================================
+    // ORDER ACTIONS
+    // ============================================================
+    window.viewOrder = function(id) {
+      const order = ordersData.find(o => o.id === id);
+      const status = getPaymentStatus(order);
+      showToast('Order Details',
+        `#${order?.order_ref || id.slice(0,8)} | ${order?.customer_name || 'N/A'} | ${getOrderResources(order)} | ${formatCurrency(order?.total_amount || 0)} | ${status}`,
+        'info');
+    };
+    
+    window.confirmOrder = async function(id) {
+      if (!confirm('Confirm this order?')) return;
+      try {
+        const order = ordersData.find(o => o.id === id);
+        await supabase.from('orders').update({ 
+          payment_status: 'paid', 
+          status: 'paid', 
+          amount_paid: order?.total_amount || 0 
+        }).eq('id', id);
+        showToast('Confirmed', 'Order marked as paid');
+        await loadOrders();
+      } catch (e) { showToast('Error', 'Failed to confirm order', 'error'); }
+    };
+    
+    window.rejectOrder = async function(id) {
+      if (!confirm('Reject this order?')) return;
+      try {
+        await supabase.from('orders').update({ 
+          payment_status: 'failed', 
+          status: 'failed' 
+        }).eq('id', id);
+        showToast('Rejected', 'Order marked as failed');
+        await loadOrders();
+      } catch (e) { showToast('Error', 'Failed to reject order', 'error'); }
+    };
+
+    // ============================================================
+    // 11. SEARCH & FILTERS
+    // ============================================================
+    function wireSearch(inputId, rowsSelector) {
+      document.getElementById(inputId)?.addEventListener('input', function(e) {
+        const query = e.target.value.toLowerCase().trim();
+        document.querySelectorAll(rowsSelector).forEach(row => {
+          row.style.display = row.textContent.toLowerCase().includes(query) ? '' : 'none';
+        });
+      });
+    }
+    wireSearch('tableSearch', '#tableBody tr');
+    wireSearch('ordersSearch', '#ordersTableBody tr');
+    wireSearch('resourcesSearch', '#resourcesTableBody tr');
+    wireSearch('tutorsSearch', '#tutorsTableBody tr');
+    wireSearch('learnersSearch', '#learnersTableBody tr');
+
+    document.querySelectorAll('.filter-badge[data-filter]').forEach(chip => {
+      chip.addEventListener('click', function() {
+        const scope = this.closest('.table-header');
+        scope.querySelectorAll('.filter-badge[data-filter]').forEach(c => c.classList.remove('active'));
+        this.classList.add('active');
+        currentFilter = this.dataset.filter;
+        currentPage = 1;
+        renderDashboardOrdersTable();
+        renderOrdersTable();
+      });
+    });
+
+    // ============================================================
+    // 12. EXPORT
+    // ============================================================
+    function exportRows() {
+      return ordersData.map(o => ({
+        'Order Ref': o.order_ref || (o.id || '').slice(0, 8),
+        'Customer': o.customer_name || 'N/A',
+        'Phone': o.phone || o.customer_phone || '—',
+        'Resources': getOrderResources(o),
+        'Amount (KES)': o.total_amount || 0,
+        'Status': getPaymentStatus(o),
+        'Date': o.created_at ? new Date(o.created_at).toLocaleString('en-KE') : '—'
+      }));
+    }
+
+    function exportOrdersCSV() {
+      const rows = exportRows();
+      if (!rows.length) { showToast('Export', 'No orders to export', 'error'); return; }
+      const headers = Object.keys(rows[0]);
+      const csv = [headers.join(','), ...rows.map(r => headers.map(h => `"${String(r[h]).replace(/"/g, '""')}"`).join(','))].join(
+        '\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'kenyavault_orders.csv';
+      a.click();
+      window.URL.revokeObjectURL(url);
+      showToast('Export', 'Orders exported as CSV');
+    }
+
+    function exportOrdersExcel() {
+      const rows = exportRows();
+      if (!rows.length) { showToast('Export', 'No orders to export', 'error'); return; }
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Orders');
+      XLSX.writeFile(wb, 'kenyavault_orders.xlsx');
+      showToast('Export', 'Orders exported as Excel');
+    }
+
+    window.exportOrdersCSV = exportOrdersCSV;
+    window.exportOrdersExcel = exportOrdersExcel;
+
+    // ============================================================
+    // 13. RESOURCES - WITH FIXED COUNT UPDATE
     // ============================================================
     async function loadResources() {
       try {
@@ -2668,13 +2840,8 @@
         if (error) throw error;
         resourcesData = data || [];
 
-        // Update the resources table
         renderResources();
-
-        // Update the stats UI with the new resource count
         updateStatsUI();
-
-        // Directly update resource display with the exact count
         await updateResourceDisplay(resourcesData.length);
 
         console.log('[Resources] Loaded:', resourcesData.length, 'resources');
@@ -2846,7 +3013,7 @@
     }
     window.resetUploadForm = resetUploadForm;
 
-    // ── UPLOAD HANDLER - FIXED: Properly updates count after upload ──
+    // ── UPLOAD HANDLER ──
     document.getElementById('uploadForm').addEventListener('submit', async function(e) {
       e.preventDefault();
       const file = fileInput.files[0];
@@ -2876,7 +3043,6 @@
         await supabase.storage.from('kenyavault-resources').upload(filePath, file);
         const { data: urlData } = supabase.storage.from('kenyavault-resources').getPublicUrl(filePath);
 
-        // Insert the resource
         await supabase.from('resources').insert({
           title,
           subject,
@@ -2894,10 +3060,8 @@
           created_at: new Date().toISOString()
         });
 
-        // CRITICAL: Refresh the resource data and count
         await refreshResourceData();
         
-        // Get the exact count from the database to show in the toast
         const newCount = await countResources();
         const displayCount = newCount !== null ? newCount : resourcesData.length;
         
@@ -2907,7 +3071,6 @@
       } catch (e) {
         console.error('Upload error:', e);
         showToast('Error', 'Upload failed: ' + e.message, 'error');
-        // If upload fails, refresh the count to ensure consistency
         await refreshResourceData();
       } finally {
         submitBtn.classList.remove('loading');
@@ -3364,12 +3527,9 @@
         } catch (e) {}
       }
       
-      // Initial data load
       await loadDashboardData();
       await loadWithdrawals();
       loadSettings();
-      
-      // Ensure resource count is accurate after initial load
       await refreshResourceData();
       
       console.log('[Admin Dashboard] Initialized successfully');
