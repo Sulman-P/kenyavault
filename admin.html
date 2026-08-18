@@ -3342,63 +3342,62 @@
             } catch (e) { showToast('Error', 'Failed to save changes: ' + e.message, 'error'); }
         });
 
-       // ============================================================
-        // 19. DYNAMIC GRADE DROPDOWN - FIXED
-       // ============================================================
-        const gradeMap = {
-          'early-years': ['Play Group', 'PP1', 'PP2'],
-           'primary': ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6'],
-           'jss': ['Grade 7', 'Grade 8', 'Grade 9', 'KJSEA'],
-           'senior-school': ['Grade 10', 'Grade 11', 'Grade 12'],
-           'secondary-844': ['Form 1', 'Form 2', 'Form 3', 'Form 4', 'KCSE'],
-           'college': ['Certificate', 'Diploma', 'Degree'],
-          'general': ['All Levels']
-       };
+        // ============================================================
+// 19. DYNAMIC GRADE DROPDOWN - COMPLETELY FIXED
+// ============================================================
+const gradeMap = {
+    'early-years': ['Play Group', 'PP1', 'PP2'],
+    'primary': ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6'],
+    'jss': ['Grade 7', 'Grade 8', 'Grade 9', 'KJSEA'],
+    'senior-school': ['Grade 10', 'Grade 11', 'Grade 12'],
+    'secondary-844': ['Form 1', 'Form 2', 'Form 3', 'Form 4', 'KCSE'],
+    'college': ['Certificate', 'Diploma', 'Degree'],
+    'general': ['All Levels']
+};
 
-       function populateGradeDropdown(level) {
-       const gradeSelect = document.getElementById('resGrade');
-       if (!gradeSelect) return;
+function populateGradeDropdown(level) {
+    const gradeSelect = document.getElementById('resGrade');
+    if (!gradeSelect) {
+        console.warn('Grade select element not found');
+        return;
+    }
     
-       // Clear existing options
-        gradeSelect.innerHTML = '';
+    // Clear all existing options
+    gradeSelect.innerHTML = '';
     
-       // Add default option
-       const defaultOpt = document.createElement('option');
-       defaultOpt.value = '';
-       defaultOpt.textContent = 'Select Grade/Form';
-       gradeSelect.appendChild(defaultOpt);
+    // Always add the default "Select Grade/Form" option first
+    const defaultOpt = document.createElement('option');
+    defaultOpt.value = '';
+    defaultOpt.textContent = 'Select Grade/Form';
+    defaultOpt.selected = true;
+    gradeSelect.appendChild(defaultOpt);
     
-       // Add level-specific grades
-        if (level && gradeMap[level]) {
-           gradeMap[level].forEach(g => {
+    // If no level is selected or level is empty, stop here
+    if (!level || level === '') {
+        return;
+    }
+    
+    // Get the grades for the selected level
+    const grades = gradeMap[level];
+    
+    if (grades && grades.length > 0) {
+        // Add each grade as an option
+        grades.forEach(function(g) {
             const opt = document.createElement('option');
+            // Convert grade name to a value (lowercase with hyphens)
             opt.value = g.toLowerCase().replace(/\s/g, '-');
             opt.textContent = g;
             gradeSelect.appendChild(opt);
-          });
-       }
+        });
+    }
     
-      // Always add "All Grades" option if a level is selected
-      if (level && level !== '') {
-        const allOpt = document.createElement('option');
-        allOpt.value = 'all-grades';
-        allOpt.textContent = 'All Grades';
-        gradeSelect.appendChild(allOpt);
-        }
-      }
+    // Add "All Grades" option for any selected level
+    const allOpt = document.createElement('option');
+    allOpt.value = 'all-grades';
+    allOpt.textContent = 'All Grades';
+    gradeSelect.appendChild(allOpt);
+   }
 
-        // Event listener for Education Level change
-      document.getElementById('resEducationLevel').addEventListener('change', function() {
-        populateGradeDropdown(this.value);
-     });
-
-      // Also populate on page load
-        document.addEventListener('DOMContentLoaded', function() {
-         const levelSelect = document.getElementById('resEducationLevel');
-        if (levelSelect) {
-         populateGradeDropdown(levelSelect.value);
-         }
-     });
 
         // ============================================================
         // 20. FREE/PAID TOGGLE
@@ -4054,12 +4053,6 @@
                 } catch (e) {}
             }
 
-            // Set initial grade dropdown based on default education level
-            const defaultLevel = document.getElementById('resEducationLevel').value;
-            if (defaultLevel) {
-                populateGradeDropdown(defaultLevel);
-            }
-
             await loadDashboardData();
             await loadWithdrawals();
             loadSettings();
@@ -4067,25 +4060,41 @@
             console.log('[Admin Dashboard] Initialized successfully');
         }
 
-        // Also populate grade dropdown when page loads
-        document.addEventListener('DOMContentLoaded', function() {
-            const defaultLevel = document.getElementById('resEducationLevel').value;
-            if (defaultLevel) {
-                populateGradeDropdown(defaultLevel);
-            }
-        });
-          // Initialize grade dropdown on page load
+    
+// ============================================================
+// 30. INITIALIZE GRADE DROPDOWN ON PAGE LOAD
+// ============================================================
 (function initGradeDropdown() {
-    const levelSelect = document.getElementById('resEducationLevel');
-    const gradeSelect = document.getElementById('resGrade');
-    if (levelSelect && gradeSelect) {
-        // Populate initial grades
-        populateGradeDropdown(levelSelect.value);
+    // Wait for DOM to be ready
+    function setupGradeDropdown() {
+        const levelSelect = document.getElementById('resEducationLevel');
+        const gradeSelect = document.getElementById('resGrade');
         
-        // Add change listener
+        if (!levelSelect || !gradeSelect) {
+            // If elements aren't ready yet, try again
+            setTimeout(setupGradeDropdown, 100);
+            return;
+        }
+        
+        // Get the current selected value
+        const currentLevel = levelSelect.value;
+        
+        // Populate the grade dropdown
+        populateGradeDropdown(currentLevel);
+        
+        // Add event listener for changes
         levelSelect.addEventListener('change', function() {
             populateGradeDropdown(this.value);
         });
+        
+        console.log('Grade dropdown initialized with level:', currentLevel || '(none selected)');
+    }
+    
+    // Run when DOM is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', setupGradeDropdown);
+    } else {
+        setupGradeDropdown();
     }
 })();
         checkAuth();
