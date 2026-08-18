@@ -3111,6 +3111,60 @@
         return map[subject] || '#4B5563';
     }
 
+    // ── IS RESOURCE FREE ──
+    function isResourceFree(resource) {
+        if (!resource) return false;
+        if (resource.is_free === true) return true;
+        if (resource.price === 0) return true;
+        if (resource.resource_type === 'free' || resource.resource_type === 'free-resource') return true;
+        if (resource.status === 'free') return true;
+        return false;
+    }
+
+    // ── DOWNLOAD FREE RESOURCE ──
+    async function downloadFreeResource(product) {
+        // Get the file URL from the product
+        const fileUrl = product.file_url || product.file_path || '';
+        
+        if (!fileUrl) {
+            alert('⚠️ This resource file is not available. Please contact support.');
+            return;
+        }
+
+        try {
+            // Try to fetch and download the file
+            const response = await fetch(fileUrl, {
+                headers: {
+                    'Accept': 'application/pdf,application/octet-stream,*/*'
+                }
+            });
+
+            if (!response.ok) {
+                // Try fallback download
+                window.open(fileUrl, '_blank');
+                showToast('Success', `✅ "${product.title}" opened in new tab.`);
+                return;
+            }
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = product.file_name || `${product.title || 'resource'}.pdf`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+            
+            showToast('Success', `✅ "${product.title}" downloaded successfully!`);
+        } catch (error) {
+            console.error('Download error:', error);
+            // Fallback: open in new tab
+            window.open(fileUrl, '_blank');
+            showToast('Info', `Opening "${product.title}" in new tab.`);
+        }
+    }
+
     // ── FETCH RESOURCES ──
     async function fetchResources() {
         try {
@@ -3127,6 +3181,11 @@
             }
             const data = await response.json();
             console.log('[Resources] Loaded:', data.length, 'resources');
+            
+            // Log free resources count
+            const freeCount = data.filter(r => isResourceFree(r)).length;
+            console.log('[Resources] Free resources:', freeCount);
+            
             return data || [];
         } catch (error) {
             console.error('Fetch error:', error);
@@ -3153,7 +3212,7 @@
     function addToCart(productId) {
         const product = allResources.find(r => r.id === productId);
         if (!product) return;
-        const isFree = (product.price === 0 || product.price === null || product.price === undefined) || product.resource_type === 'free';
+        const isFree = isResourceFree(product);
 
         const existing = cart.find(ci => ci.id === productId);
         if (existing) {
@@ -3167,7 +3226,8 @@
                 resource_type: product.resource_type || '',
                 file_path: product.file_path || '',
                 file_url: product.file_url || '',
-                level: product.level || ''
+                level: product.level || '',
+                isFree: isFree
             });
         }
         saveCart();
@@ -3233,7 +3293,7 @@
 
         let html = '';
         cart.forEach(ci => {
-            const isFree = ci.price === 0;
+            const isFree = ci.isFree || ci.price === 0;
             html += `
                 <div class="cart-item">
                     <div class="cart-item-info">
@@ -3267,6 +3327,88 @@
         document.getElementById('cartDrawer').classList.remove('open');
         document.getElementById('cartOverlay').classList.remove('open');
         document.body.style.overflow = '';
+    }
+
+    function openCartCheckout() {
+        if (cart.length === 0) return;
+        
+        // Check if all items are free
+        const allFree = cart.every(ci => ci.isFree || ci.price === 0);
+        
+        if (allFree) {
+            // Download all free items
+            let downloadCount = 0;
+            cart.forEach(ci => {
+                const product = allResources.find(r => r.id === ci.id);
+                if (product && isResourceFree(product)) {
+                    downloadFreeResource(product);
+                    downloadCount++;
+                }
+            });
+            if (downloadCount > 0) {
+                showToast('Success', `✅ Downloading ${downloadCount} free resource${downloadCount > 1 ? 's' : ''}!`);
+                clearCart();
+            }
+            return;
+        }
+
+        // If there are paid items, proceed to checkout
+        checkoutMode = 'cart';
+        checkoutCartItems = JSON.parse(JSON.stringify(cart));
+        currentProduct = null;
+        currentOrderRef = null;
+        currentOrderId = null;
+        checkoutOrderIds = [];
+
+        const total = checkoutCartItems.reduce((sum, ci) => sum + (ci.price || 0) * ci.qty, 0);
+        checkoutExpectedTotal = total;
+
+        customerNameInput.value = '';
+        customerNameInput.classList.remove('error');
+        phoneInput.value = '';
+        phoneInput.classList.remove('error');
+        mpesaVerificationBox.classList.remove('visible');
+        verifyOrderBtn.classList.remove('loading');
+        verifyOrderBtn.disabled = false;
+        payPrimaryBtn.classList.remove('loading');
+        payPrimaryBtn.disabled = false;
+
+        document.getElementById('checkoutItemRow').style.display = 'none';
+        let lineItemsHtml = '';
+        checkoutCartItems.forEach(ci => {
+            const lineTotal = (ci.price || 0) * ci.qty;
+            lineItemsHtml += `
+                <div class="cart-line-item">
+                    <span class="cli-title">${ci.title}</span>
+                    <span class="cli-qty">x${ci.qty}</span>
+                    <span class="cli-price">${lineTotal === 0 ? 'FREE' : 'KES ' + lineTotal}</span>
+                </div>
+            `;
+        });
+        document.getElementById('checkoutLineItems').innerHTML = lineItemsHtml;
+        checkoutTotal.textContent = `KES ${total}`;
+
+        mpesaVerificationBox.classList.add('visible');
+        payPrimaryBtn.style.display = 'flex';
+        const verifyLabel = document.querySelector('.verify-label');
+        if (verifyLabel) verifyLabel.textContent = 'Secure M-Pesa STK Push';
+        const verifySub = document.querySelector('.verify-sub');
+        if (verifySub) {
+            verifySub.innerHTML = `
+                <strong>Secure Payment via M-Pesa STK Push</strong><br>
+                You'll receive one M-Pesa PIN prompt for the full cart total shown above.<br><br>
+                <span style="font-size:0.85rem;color:#6b7280;">Downloads unlock automatically once the full amount is confirmed.</span>
+            `;
+        }
+        if (verifyOrderBtn) {
+            verifyOrderBtn.style.display = 'none';
+            verifyOrderBtn.disabled = true;
+        }
+
+        closeCartDrawer();
+        checkoutModal.classList.add('open');
+        document.body.style.overflow = 'hidden';
+        setTimeout(() => customerNameInput.focus(), 300);
     }
 
     // ── GENERATE PUBLIC URL ──
@@ -3653,7 +3795,7 @@
         if (checkoutMode === 'single' && !currentProduct) return;
         if (checkoutMode === 'cart' && checkoutCartItems.length === 0) return;
 
-        // Handle free cart checkout
+        // Handle free cart checkout (should be handled earlier, but just in case)
         if (checkoutMode === 'cart' && checkoutExpectedTotal === 0) {
             try {
                 const { orderRef, orderId } = await createCartOrder(checkoutCartItems, customerName, formattedPhone);
@@ -3833,6 +3975,19 @@
         const product = allResources.find(r => r.id === productId);
         if (!product) return;
 
+        // Check if resource is free
+        const isFree = isResourceFree(product);
+
+        // If it's free, download directly without showing checkout modal
+        if (isFree) {
+            // Show a success message and trigger download
+            showToast('Free Resource', `✅ "${product.title}" is FREE! Downloading...`);
+            // Trigger the download
+            downloadFreeResource(product);
+            return;
+        }
+
+        // Paid resource - proceed with checkout
         checkoutMode = 'single';
         checkoutCartItems = [];
         checkoutExpectedTotal = product.price || 0;
@@ -3854,130 +4009,29 @@
         document.getElementById('checkoutItemRow').style.display = 'flex';
         document.getElementById('checkoutLineItems').innerHTML = '';
         checkoutItemTitle.textContent = product.title || 'Resource';
-        checkoutTotal.textContent = (product.price === 0 || product.price === null || product.price === undefined) ? 'FREE' : `KES ${product.price || 0}`;
+        checkoutTotal.textContent = `KES ${product.price || 0}`;
 
-        const isFree = (product.price === 0 || product.price === null || product.price === undefined) || product.resource_type === 'free';
-
-        if (isFree) {
-            mpesaVerificationBox.classList.add('visible');
-            payPrimaryBtn.style.display = 'none';
-            const verifyLabel = document.querySelector('.verify-label');
-            if (verifyLabel) verifyLabel.textContent = 'Free Resource Download';
-            const verifySub = document.querySelector('.verify-sub');
-            if (verifySub) {
-                verifySub.innerHTML = `
-                    <strong>This resource is FREE!</strong><br>
-                    Enter your name and phone number below, then click "Get Free Resource" to download instantly.
-                `;
-            }
-            if (verifyOrderBtn) {
-                verifyOrderBtn.style.display = 'flex';
-                verifyOrderBtn.innerHTML = `<span class="btn-text">Get Free Resource</span><span class="btn-loading-text">Processing...</span>`;
-                verifyOrderBtn.onclick = function() { initiatePayment(); };
-                verifyOrderBtn.disabled = false;
-            }
-        } else {
-            mpesaVerificationBox.classList.add('visible');
-            payPrimaryBtn.style.display = 'flex';
-            const verifyLabel = document.querySelector('.verify-label');
-            if (verifyLabel) verifyLabel.textContent = 'Secure M-Pesa STK Push';
-            const verifySub = document.querySelector('.verify-sub');
-            if (verifySub) {
-                verifySub.innerHTML = `
-                    <strong>Secure Payment via M-Pesa STK Push</strong><br>
-                    After clicking "Pay with M-PESA", you'll receive an M-Pesa PIN prompt on your phone.<br><br>
-                    <strong>How it works:</strong><br>
-                    1. Click "Pay with M-PESA" below<br>
-                    2. Enter your M-Pesa PIN on your phone<br>
-                    3. Payment is verified instantly<br>
-                    4. Your download starts automatically
-                `;
-            }
-            if (verifyOrderBtn) {
-                verifyOrderBtn.style.display = 'none';
-                verifyOrderBtn.disabled = true;
-            }
-        }
-
-        checkoutModal.classList.add('open');
-        document.body.style.overflow = 'hidden';
-        setTimeout(() => customerNameInput.focus(), 300);
-    }
-
-    function openCartCheckout() {
-        if (cart.length === 0) return;
-
-        checkoutMode = 'cart';
-        checkoutCartItems = JSON.parse(JSON.stringify(cart));
-        currentProduct = null;
-        currentOrderRef = null;
-        currentOrderId = null;
-        checkoutOrderIds = [];
-
-        const total = checkoutCartItems.reduce((sum, ci) => sum + (ci.price || 0) * ci.qty, 0);
-        checkoutExpectedTotal = total;
-        const allFree = total === 0;
-
-        customerNameInput.value = '';
-        customerNameInput.classList.remove('error');
-        phoneInput.value = '';
-        phoneInput.classList.remove('error');
-        mpesaVerificationBox.classList.remove('visible');
-        verifyOrderBtn.classList.remove('loading');
-        verifyOrderBtn.disabled = false;
-        payPrimaryBtn.classList.remove('loading');
-        payPrimaryBtn.disabled = false;
-
-        document.getElementById('checkoutItemRow').style.display = 'none';
-        let lineItemsHtml = '';
-        checkoutCartItems.forEach(ci => {
-            const lineTotal = (ci.price || 0) * ci.qty;
-            lineItemsHtml += `
-                <div class="cart-line-item">
-                    <span class="cli-title">${ci.title}</span>
-                    <span class="cli-qty">x${ci.qty}</span>
-                    <span class="cli-price">${lineTotal === 0 ? 'FREE' : 'KES ' + lineTotal}</span>
-                </div>
+        mpesaVerificationBox.classList.add('visible');
+        payPrimaryBtn.style.display = 'flex';
+        const verifyLabel = document.querySelector('.verify-label');
+        if (verifyLabel) verifyLabel.textContent = 'Secure M-Pesa STK Push';
+        const verifySub = document.querySelector('.verify-sub');
+        if (verifySub) {
+            verifySub.innerHTML = `
+                <strong>Secure Payment via M-Pesa STK Push</strong><br>
+                After clicking "Pay with M-PESA", you'll receive an M-Pesa PIN prompt on your phone.<br><br>
+                <strong>How it works:</strong><br>
+                1. Click "Pay with M-PESA" below<br>
+                2. Enter your M-Pesa PIN on your phone<br>
+                3. Payment is verified instantly<br>
+                4. Your download starts automatically
             `;
-        });
-        document.getElementById('checkoutLineItems').innerHTML = lineItemsHtml;
-        checkoutTotal.textContent = allFree ? 'FREE' : `KES ${total}`;
-
-        if (allFree) {
-            mpesaVerificationBox.classList.add('visible');
-            payPrimaryBtn.style.display = 'none';
-            const verifyLabel = document.querySelector('.verify-label');
-            if (verifyLabel) verifyLabel.textContent = 'Free Resources Download';
-            const verifySub = document.querySelector('.verify-sub');
-            if (verifySub) {
-                verifySub.innerHTML = `<strong>Everything in your cart is FREE!</strong><br>Enter your name and phone number, then click below to download all items.`;
-            }
-            if (verifyOrderBtn) {
-                verifyOrderBtn.style.display = 'flex';
-                verifyOrderBtn.innerHTML = `<span class="btn-text">Get Free Resources</span><span class="btn-loading-text">Processing...</span>`;
-                verifyOrderBtn.onclick = function() { initiatePayment(); };
-                verifyOrderBtn.disabled = false;
-            }
-        } else {
-            mpesaVerificationBox.classList.add('visible');
-            payPrimaryBtn.style.display = 'flex';
-            const verifyLabel = document.querySelector('.verify-label');
-            if (verifyLabel) verifyLabel.textContent = 'Secure M-Pesa STK Push';
-            const verifySub = document.querySelector('.verify-sub');
-            if (verifySub) {
-                verifySub.innerHTML = `
-                    <strong>Secure Payment via M-Pesa STK Push</strong><br>
-                    You'll receive one M-Pesa PIN prompt for the full cart total shown above.<br><br>
-                    <span style="font-size:0.85rem;color:#6b7280;">Downloads unlock automatically once the full amount is confirmed.</span>
-                `;
-            }
-            if (verifyOrderBtn) {
-                verifyOrderBtn.style.display = 'none';
-                verifyOrderBtn.disabled = true;
-            }
+        }
+        if (verifyOrderBtn) {
+            verifyOrderBtn.style.display = 'none';
+            verifyOrderBtn.disabled = true;
         }
 
-        closeCartDrawer();
         checkoutModal.classList.add('open');
         document.body.style.overflow = 'hidden';
         setTimeout(() => customerNameInput.focus(), 300);
@@ -3989,7 +4043,7 @@
         if (!product) return;
 
         previewProductId = productId;
-        const isFree = (product.price === 0 || product.price === null || product.price === undefined) || product.resource_type === 'free';
+        const isFree = isResourceFree(product);
         const priceDisplay = isFree ? 'FREE' : `KES ${product.price || 0}`;
         previewPrice.textContent = priceDisplay;
         previewPrice.style.color = isFree ? '#16a34a' : 'var(--kv-gold)';
@@ -4121,7 +4175,7 @@
             r.badge === 'exam' ? 'Exam Prep' :
             r.badge === 'kjsea' ? 'KJSEA' : 'New';
 
-        const isFree = (r.price === 0 || r.price === null || r.price === undefined) || r.resource_type === 'free';
+        const isFree = isResourceFree(r);
         const priceDisplay = isFree ? 'FREE' : `KES ${r.price || 0}`;
         const productId = r.id || 'unknown';
         const safeTitle = (r.title || '').replace(/"/g, '&quot;').replace(/'/g, "\\'");
@@ -4158,7 +4212,7 @@
         if (r.featured) badges.push('<span class="badge badge-popular">⭐ Featured</span>');
 
         const creator = r.creator_name || r.tutor_name || 'KenyaVault';
-        const buttonText = isFree ? 'Get Free' : 'Buy';
+        const buttonText = isFree ? 'Download Free' : 'Buy';
         const inCart = cart.some(ci => ci.id === productId);
 
         return `
@@ -4198,8 +4252,7 @@
             if (r.level && counts.hasOwnProperty(r.level)) {
                 counts[r.level]++; 
             }
-            const isFree = (r.price === 0 || r.price === null || r.price === undefined) || r.resource_type === 'free';
-            if (isFree) freeCount++;
+            if (isResourceFree(r)) freeCount++;
         });
 
         const idMap = {
@@ -4381,7 +4434,6 @@
         if (activeCurriculum !== 'all') params.set('curriculum', activeCurriculum);
         if (activePriceRange !== 'all') params.set('price', activePriceRange);
         if (activeCategories.length < 7) {
-            // Only add category if it's a single category filter
             if (activeCategories.length === 1) {
                 params.set('category', activeCategories[0]);
             }
@@ -4393,7 +4445,6 @@
         window.history.replaceState({}, '', newUrl);
     }
 
-    // ── APPLY URL PARAMS ON LOAD ──
     function applyUrlParams() {
         const params = new URLSearchParams(window.location.search);
         const level = params.get('level');
@@ -4402,7 +4453,6 @@
             document.querySelectorAll('.level-tab').forEach(t => t.classList.toggle('active', t.dataset.level === level));
             document.querySelectorAll('.sidebar-subject').forEach(s => s.classList.toggle('active', s.dataset.levelFilter === level));
             document.querySelectorAll('#mobileLevelGrid .sheet-level-btn').forEach(b => b.classList.toggle('active', b.dataset.level === level));
-            // Update category buttons
             document.querySelectorAll('.category-nav .cat-btn').forEach(b => {
                 b.classList.toggle('active', b.dataset.category === level);
             });
@@ -4716,11 +4766,14 @@
     window.openCartCheckout = openCartCheckout;
     window.heroSearch = heroSearch;
     window.filterByCategory = filterByCategory;
+    window.isResourceFree = isResourceFree;
+    window.downloadFreeResource = downloadFreeResource;
 
     document.addEventListener('DOMContentLoaded', init);
     console.log('✅ KenyaVault — Professional Marketplace with Green/White/Gold theme');
     console.log('✅ Features: Search, Categories, Filters, Sort, Preview, Purchase, Download');
     console.log('✅ Resource count is dynamic from Supabase');
+    console.log('✅ Free resources download directly without M-PESA');
     console.log('✅ URL filtering enabled for sharing');
 </script>
 
