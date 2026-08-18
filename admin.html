@@ -56,11 +56,11 @@
             --line: #26344A;
             --paper: #0D1626;
             --surface: #14213A;
-            --gold-soft: rgba(201, 151, 31, 0.14);
-            --green-soft: rgba(31, 122, 58, 0.16);
-            --red-soft: rgba(192, 57, 43, 0.16);
-            --blue-soft: rgba(42, 92, 138, 0.2);
-            --purple-soft: rgba(107, 79, 160, 0.2);
+            --gold-soft: rgba(201,151,31,0.14);
+            --green-soft: rgba(31,122,58,0.16);
+            --red-soft: rgba(192,57,43,0.16);
+            --blue-soft: rgba(42,92,138,0.2);
+            --purple-soft: rgba(107,79,160,0.2);
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -1910,6 +1910,7 @@
         </div>
     </div>
 
+    <!-- RESOURCE EDIT MODAL - UPDATED with Free/Paid toggle -->
     <div class="modal-overlay" id="resourceEditModal">
         <div class="modal-box">
             <h3>✏️ Edit Resource</h3>
@@ -1926,6 +1927,21 @@
                     <div><label class="mlabel">Year</label><input type="text" id="editResYear" /></div>
                     <div><label class="mlabel">Category</label><input type="text" id="editResCategory" /></div>
                     <div><label class="mlabel">Price (KES)</label><input type="number" id="editResPrice" min="0" /></div>
+                </div>
+                <!-- FREE/PAID TOGGLE in edit modal -->
+                <div style="margin:12px 0;padding:12px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);">
+                    <label class="mlabel">Resource Access <span class="required">*</span></label>
+                    <div style="display:flex;gap:20px;padding-top:4px;">
+                        <label style="display:flex;align-items:center;gap:8px;font-size:.9rem;font-weight:600;cursor:pointer;">
+                            <input type="radio" name="editResIsFree" value="free" /> 🟢 Free
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;font-size:.9rem;font-weight:600;cursor:pointer;">
+                            <input type="radio" name="editResIsFree" value="paid" /> 🔵 Paid
+                        </label>
+                    </div>
+                    <span style="font-size:.7rem;color:var(--muted-soft);">Set price to 0 for free resources</span>
+                </div>
+                <div class="field-grid">
                     <div><label class="mlabel">Featured</label>
                         <select id="editResFeatured"><option value="no">No</option><option value="yes">Yes</option></select>
                     </div>
@@ -2599,27 +2615,14 @@
         window.exportOrdersExcel = exportOrdersExcel;
 
         // ============================================================
-        // 18. RESOURCES - UPGRADED WITH AUTHORITATIVE PRICING
+        // 18. RESOURCES - WITH AUTHORITATIVE PRICING
         // ============================================================
-        // AUTHORITATIVE PRICING FUNCTION FOR ADMIN
         function isResourceFreeAdmin(resource) {
-            // Explicitly free if is_free is true
             if (resource.is_free === true) return true;
-            
-            // Explicitly free if price is 0
             if (resource.price === 0) return true;
-            
-            // Explicitly free if resource_type indicates free
             if (resource.resource_type === 'free' || resource.resource_type === 'free-resource') return true;
-            
-            // If is_free is false, it's paid (regardless of price)
             if (resource.is_free === false) return false;
-            
-            // If price is null or undefined and is_free is not explicitly set,
-            // treat as paid (requires admin attention)
             if (resource.price === null || resource.price === undefined) return false;
-            
-            // Default: not free
             return false;
         }
 
@@ -2654,7 +2657,6 @@
                 renderResources();
                 updateStatsUI();
 
-                // Pricing audit for admin
                 let freeCount = 0, paidCount = 0, invalidCount = 0;
                 resourcesData.forEach(r => {
                     if (isResourceFreeAdmin(r)) freeCount++;
@@ -2709,7 +2711,6 @@
                 const priceDisplay = getPriceDisplay(r);
                 const statusClass = getStatusClass(r.status);
                 const featuredDisplay = getFeaturedDisplay(r);
-                const priceClass = isFree ? 'free' : (r.price === null || r.price === undefined ? 'invalid' : 'paid');
                 
                 return `
                         <tr>
@@ -2718,7 +2719,7 @@
                           <td data-label="Grade">${r.grade || '—'}</td>
                           <td data-label="Subject">${r.subject || '—'}</td>
                           <td data-label="Type">${r.resource_type || '—'}</td>
-                          <td data-label="Price" class="numeric" style="${priceClass === 'invalid' ? 'color:var(--red);' : ''}">${priceDisplay}</td>
+                          <td data-label="Price" class="numeric" style="${priceDisplay === '⚠️ Price missing' ? 'color:var(--red);font-weight:700;' : (isFree ? 'color:var(--green);font-weight:700;' : 'color:var(--gold);font-weight:700;')}">${priceDisplay}</td>
                           <td data-label="Status"><span class="status ${statusClass}">${r.status || 'draft'}</span></td>
                           <td data-label="Featured">${featuredDisplay}</td>
                           <td data-label="Actions" class="action-icons">
@@ -2751,6 +2752,8 @@
         window.openResourceModal = function(id) {
             const r = resourcesData.find(x => x.id === id);
             if (!r) return;
+            
+            // Populate all fields
             document.getElementById('editResId').value = r.id;
             document.getElementById('editResTitle').value = r.title || '';
             document.getElementById('editResEducationLevel').value = r.education_level || '';
@@ -2765,6 +2768,13 @@
             document.getElementById('editResStatus').value = r.status || 'draft';
             document.getElementById('editResDescription').value = r.description || '';
             document.getElementById('editResKeywords').value = r.keywords || '';
+            
+            // Set the Free/Paid radio buttons based on is_free
+            const isFree = r.is_free === true;
+            document.querySelectorAll('input[name="editResIsFree"]').forEach(radio => {
+                radio.checked = (radio.value === 'free' && isFree) || (radio.value === 'paid' && !isFree);
+            });
+            
             document.getElementById('resourceEditModal').classList.add('open');
         };
 
@@ -2776,6 +2786,14 @@
         document.getElementById('resourceEditForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             const id = document.getElementById('editResId').value;
+            
+            // Get the Free/Paid value from radio buttons
+            const isFreeRadio = document.querySelector('input[name="editResIsFree"]:checked');
+            const isFree = isFreeRadio ? isFreeRadio.value === 'free' : false;
+            
+            // If free is selected, force price to 0
+            const price = isFree ? 0 : parseFloat(document.getElementById('editResPrice').value) || 0;
+            
             const patch = {
                 title: document.getElementById('editResTitle').value,
                 education_level: document.getElementById('editResEducationLevel').value,
@@ -2785,12 +2803,14 @@
                 term: document.getElementById('editResTerm').value,
                 year: document.getElementById('editResYear').value,
                 category: document.getElementById('editResCategory').value,
-                price: parseFloat(document.getElementById('editResPrice').value) || 0,
+                price: price,
+                is_free: isFree,
                 featured: document.getElementById('editResFeatured').value === 'yes',
                 status: document.getElementById('editResStatus').value,
                 description: document.getElementById('editResDescription').value,
                 keywords: document.getElementById('editResKeywords').value
             };
+            
             try {
                 await supabase.from('resources').update(patch).eq('id', id);
                 showToast('Saved', 'Resource updated successfully');
