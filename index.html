@@ -1099,7 +1099,7 @@
             color: var(--kv-gold);
         }
 
-        /* ── CHECKOUT MODAL (simplified for this refactor) ── */
+        /* ── CHECKOUT MODAL ── */
         .checkout-modal-overlay {
             display: none;
             position: fixed;
@@ -1459,7 +1459,69 @@
             transform: translateY(-2px);
         }
 
-        /* ── CART DRAWER (simplified) ── */
+        /* ── SOCIAL SHARE ── */
+        .social-share-section {
+            margin: 12px 0 16px;
+            padding: 12px 16px;
+            background: var(--kv-surface);
+            border-radius: var(--kv-radius-sm);
+            border: 1px solid var(--kv-border);
+        }
+        .social-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: center;
+            margin-bottom: 10px;
+        }
+        .social-btn {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 14px;
+            border: none;
+            border-radius: var(--kv-radius-sm);
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: white;
+            cursor: pointer;
+            transition: transform 0.15s ease, opacity 0.15s ease;
+        }
+        .social-btn:hover { transform: translateY(-2px); opacity: 0.9; }
+        .social-btn.whatsapp { background: #25D366; }
+        .social-btn.facebook { background: #1877F2; }
+        .social-btn.twitter { background: #000000; }
+        .social-btn.telegram { background: #0088cc; }
+        .social-btn.linkedin { background: #0A66C2; }
+
+        .copy-link-section {
+            display: flex;
+            gap: 8px;
+            margin-top: 4px;
+        }
+        .btn-copy-link {
+            padding: 8px 16px;
+            background: var(--kv-gold);
+            color: var(--kv-green-dark);
+            border: none;
+            border-radius: 6px;
+            font-weight: 700;
+            cursor: pointer;
+            font-size: 0.75rem;
+            white-space: nowrap;
+            transition: background 0.15s ease;
+        }
+        .btn-copy-link:hover { background: var(--kv-gold-dark); }
+        .btn-copy-link.copied { background: var(--kv-green); color: white; }
+
+        @media (max-width: 480px) {
+            .social-btn { padding: 6px 10px; font-size: 0.65rem; }
+            .social-btn span { display: none; }
+            .copy-link-section { flex-direction: column; }
+            .btn-copy-link { width: 100%; justify-content: center; }
+        }
+
+        /* ── CART DRAWER ── */
         .cart-fab {
             position: fixed;
             right: 20px;
@@ -1498,6 +1560,16 @@
             border: 2px solid #fff;
         }
         .cart-fab .cart-fab-badge.visible { display: flex; }
+
+        .cart-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 10005;
+            background: rgba(0,0,0,0.55);
+            backdrop-filter: blur(4px);
+        }
+        .cart-overlay.open { display: block; }
 
         .cart-drawer {
             position: fixed;
@@ -2489,7 +2561,7 @@
     let previewProductId = null;
     let cart = [];
 
-    // ── DOM REFS ──
+    // ── DOM REFS (defined at top level) ──
     const productsGrid = document.getElementById('productsGrid');
     const productCount = document.getElementById('productCount');
     const pagination = document.getElementById('pagination');
@@ -2500,6 +2572,72 @@
     const clearSearchBtn = document.getElementById('clearSearchBtn');
     const sortSelect = document.getElementById('sortSelect');
     const mobileSortSelect = document.getElementById('mobileSortSelect');
+
+    // Checkout modal elements
+    const checkoutModal = document.getElementById('checkoutModal');
+    const payPrimaryBtn = document.getElementById('payPrimaryBtn');
+    const verifyOrderBtn = document.getElementById('verifyOrderBtn');
+    const phoneInput = document.getElementById('phoneInput');
+    const mpesaVerificationBox = document.getElementById('mpesaVerificationBox');
+    const customerNameInput = document.getElementById('customerName');
+    const checkoutTotal = document.getElementById('checkoutTotal');
+    const checkoutItemTitle = document.getElementById('checkoutItemTitle');
+
+    // Success modal
+    const successModal = document.getElementById('successModal');
+    const successOrderRef = document.getElementById('successOrderRef');
+
+    // Preview modal
+    const previewModal = document.getElementById('previewModal');
+    const previewPrice = document.getElementById('previewPrice');
+    const previewBuyBtn = document.getElementById('previewBuyBtn');
+    const previewInfo = document.getElementById('previewInfo');
+
+    // ── LEVEL CONSTANTS ──
+    const LEVEL_ORDER = [
+        'pp1', 'pp2', 
+        'grade-1', 'grade-2', 'grade-3', 'grade-4', 'grade-5', 'grade-6',
+        'grade-7', 'grade-8', 'grade-9', 
+        'grade-10', 'grade-11', 'grade-12',
+        'form-1', 'form-2', 'form-3', 'form-4', 
+        'college', 'tvet', 'university'
+    ];
+
+    const LEVEL_DISPLAY = {
+        pp1: 'PP1', pp2: 'PP2',
+        'grade-1': 'Grade 1', 'grade-2': 'Grade 2', 'grade-3': 'Grade 3',
+        'grade-4': 'Grade 4', 'grade-5': 'Grade 5', 'grade-6': 'Grade 6',
+        'grade-7': 'Grade 7', 'grade-8': 'Grade 8', 'grade-9': 'Grade 9',
+        'grade-10': 'Grade 10', 'grade-11': 'Grade 11', 'grade-12': 'Grade 12',
+        'form-1': 'Form 1', 'form-2': 'Form 2', 'form-3': 'Form 3', 'form-4': 'Form 4',
+        college: 'College', tvet: 'TVET', university: 'University'
+    };
+
+    function getLevelDisplay(level) {
+        return LEVEL_DISPLAY[level] || level || 'N/A';
+    }
+
+    function getSubjectEmoji(subject) {
+        const map = {
+            mathematics: '📐', english: '📖', kiswahili: '🗣️',
+            'integrated-science': '🔬', 'social-studies': '🌍',
+            'pre-technical': '🔧', agriculture: '🌾',
+            'religious-education': '✝️', 'creative-arts': '🎨',
+            'health-pe': '🏃', biology: '🧬', chemistry: '⚗️',
+            physics: '⚡', business: '💼', 'computer-studies': '💻'
+        };
+        return map[subject] || '📚';
+    }
+
+    function getSubjectColor(subject) {
+        const map = {
+            mathematics: '#2563EB', english: '#7C3AED', kiswahili: '#D97706',
+            'integrated-science': '#16A34A', 'social-studies': '#0891B2',
+            biology: '#16A34A', chemistry: '#7C3AED', physics: '#DC2626',
+            business: '#0D9488', 'computer-studies': '#2563EB'
+        };
+        return map[subject] || '#4B5563';
+    }
 
     // ============================================================
     // AUTHORITATIVE PRICING SYSTEM - ONE SOURCE OF TRUTH
@@ -2560,52 +2698,6 @@
             requiresPayment: requiresPayment,
             isInvalid: !isValid && !explicitlyFree
         };
-    }
-
-    // ── LEVEL DISPLAY HELPERS ──
-    const LEVEL_ORDER = [
-        'pp1', 'pp2', 
-        'grade-1', 'grade-2', 'grade-3', 'grade-4', 'grade-5', 'grade-6',
-        'grade-7', 'grade-8', 'grade-9', 
-        'grade-10', 'grade-11', 'grade-12',
-        'form-1', 'form-2', 'form-3', 'form-4', 
-        'college', 'tvet', 'university'
-    ];
-
-    const LEVEL_DISPLAY = {
-        pp1: 'PP1', pp2: 'PP2',
-        'grade-1': 'Grade 1', 'grade-2': 'Grade 2', 'grade-3': 'Grade 3',
-        'grade-4': 'Grade 4', 'grade-5': 'Grade 5', 'grade-6': 'Grade 6',
-        'grade-7': 'Grade 7', 'grade-8': 'Grade 8', 'grade-9': 'Grade 9',
-        'grade-10': 'Grade 10', 'grade-11': 'Grade 11', 'grade-12': 'Grade 12',
-        'form-1': 'Form 1', 'form-2': 'Form 2', 'form-3': 'Form 3', 'form-4': 'Form 4',
-        college: 'College', tvet: 'TVET', university: 'University'
-    };
-
-    function getLevelDisplay(level) {
-        return LEVEL_DISPLAY[level] || level || 'N/A';
-    }
-
-    function getSubjectEmoji(subject) {
-        const map = {
-            mathematics: '📐', english: '📖', kiswahili: '🗣️',
-            'integrated-science': '🔬', 'social-studies': '🌍',
-            'pre-technical': '🔧', agriculture: '🌾',
-            'religious-education': '✝️', 'creative-arts': '🎨',
-            'health-pe': '🏃', biology: '🧬', chemistry: '⚗️',
-            physics: '⚡', business: '💼', 'computer-studies': '💻'
-        };
-        return map[subject] || '📚';
-    }
-
-    function getSubjectColor(subject) {
-        const map = {
-            mathematics: '#2563EB', english: '#7C3AED', kiswahili: '#D97706',
-            'integrated-science': '#16A34A', 'social-studies': '#0891B2',
-            biology: '#16A34A', chemistry: '#7C3AED', physics: '#DC2626',
-            business: '#0D9488', 'computer-studies': '#2563EB'
-        };
-        return map[subject] || '#4B5563';
     }
 
     // ── FETCH RESOURCES ──
