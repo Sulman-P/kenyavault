@@ -1528,35 +1528,67 @@
     const sortSelect = document.getElementById('sortSelect');
 
     // ============================================================
-    // CRITICAL: FIXED FREE/PAID DETECTION
+    // AUTHORITATIVE PRICING SYSTEM - ONE SOURCE OF TRUTH
     // ============================================================
-    function isResourceFree(resource) {
-        // If is_free is explicitly true, it's free
-        if (resource.is_free === true) return true;
+    function getResourcePricing(resource) {
+        // Normalize values safely
+        const price = typeof resource.price === 'number' ? resource.price : 
+                     (typeof resource.price === 'string' ? parseFloat(resource.price) : null);
+        const isFreeFlag = resource.is_free === true || resource.is_free === 'true';
+        const resourceType = (resource.resource_type || '').toLowerCase();
+        const status = (resource.status || '').toLowerCase();
         
-        // If price is exactly 0, it's free
-        if (resource.price === 0) return true;
+        // Determine if free based on explicit flags
+        const explicitlyFree = isFreeFlag || 
+                               price === 0 || 
+                               resourceType === 'free' || 
+                               resourceType === 'free-resource' ||
+                               status === 'free';
         
-        // If resource_type indicates free
-        if (resource.resource_type === 'free' || resource.resource_type === 'free-resource') return true;
+        // Determine if price is valid
+        const hasValidPrice = price !== null && price !== undefined && !isNaN(price) && price >= 0;
         
-        // If status is free
-        if (resource.status === 'free') return true;
+        // Determine if the resource configuration is valid
+        const isValid = explicitlyFree || (hasValidPrice && price > 0);
         
-        // IMPORTANT: price null or undefined means the resource was uploaded 
-        // without a price set - it should be treated as PAID (not free)
-        // to prevent accidental free downloads
+        // Build the pricing object
+        let displayPrice;
+        let requiresPayment;
+        let isFree;
+        let isPaid;
         
-        // Everything else is PAID
-        return false;
+        if (explicitlyFree) {
+            // If explicitly marked free, it's free regardless of price
+            isFree = true;
+            isPaid = false;
+            requiresPayment = false;
+            displayPrice = 'FREE';
+        } else if (hasValidPrice && price > 0) {
+            // Valid paid resource
+            isFree = false;
+            isPaid = true;
+            requiresPayment = true;
+            displayPrice = 'KES ' + price;
+        } else {
+            // Invalid configuration: missing or invalid price, but not explicitly free
+            isFree = false;
+            isPaid = false;
+            requiresPayment = false;
+            displayPrice = '⚠️ Price unavailable';
+        }
+        
+        return {
+            isFree: isFree,
+            isPaid: isPaid,
+            isValid: isValid,
+            price: price,
+            displayPrice: displayPrice,
+            requiresPayment: requiresPayment,
+            isInvalid: !isValid && !explicitlyFree
+        };
     }
 
-    function formatPrice(price) {
-        if (price === 0) return 'FREE';
-        if (price === null || price === undefined) return 'KES 0'; // Shows as paid but with price 0
-        return 'KES ' + price;
-    }
-
+    // ── LEVEL DISPLAY HELPERS ──
     function getLevelDisplay(level) {
         const map = {
             'pp1': 'PP1', 'pp2': 'PP2',
@@ -1608,12 +1640,31 @@
             }
             const data = await response.json();
             
-            // Log free/paid breakdown for debugging
-            const freeCount = data.filter(r => isResourceFree(r)).length;
-            const paidCount = data.length - freeCount;
-            console.log('[Resources] Loaded:', data.length, 'resources');
-            console.log('[Resources] Free:', freeCount, '| Paid:', paidCount);
-            console.log('[Resources] Sample prices:', data.slice(0, 5).map(r => ({ title: r.title, price: r.price, is_free: r.is_free, free: isResourceFree(r) })));
+            // Pricing audit logging
+            let freeCount = 0, paidCount = 0, invalidCount = 0;
+            data.forEach(r => {
+                const pricing = getResourcePricing(r);
+                if (pricing.isFree) freeCount++;
+                else if (pricing.isPaid) paidCount++;
+                else invalidCount++;
+            });
+            
+            console.log('[KenyaVault Pricing Audit]');
+            console.log('  Total resources:', data.length);
+            console.log('  Free:', freeCount);
+            console.log('  Paid:', paidCount);
+            console.log('  Invalid/Unconfigured:', invalidCount);
+            
+            // Log invalid resources for admin review
+            if (invalidCount > 0) {
+                console.warn('[KenyaVault] Invalid resources (need admin attention):');
+                data.forEach(r => {
+                    const pricing = getResourcePricing(r);
+                    if (pricing.isInvalid) {
+                        console.warn(`  ID: ${r.id || 'unknown'}, Title: "${r.title || 'Untitled'}", Price: ${r.price}, is_free: ${r.is_free}, Type: ${r.resource_type || 'N/A'}`);
+                    }
+                });
+            }
             
             return data || [];
         } catch (error) {
@@ -1687,11 +1738,11 @@
             filtered = filtered.filter(r => allowedLevels.includes(r.level));
         }
 
-        // Filter by price (FREE / PAID)
+        // Filter by price using authoritative pricing
         if (activePriceFilter === 'free') {
-            filtered = filtered.filter(r => isResourceFree(r));
+            filtered = filtered.filter(r => getResourcePricing(r).isFree);
         } else if (activePriceFilter === 'paid') {
-            filtered = filtered.filter(r => !isResourceFree(r));
+            filtered = filtered.filter(r => getResourcePricing(r).isPaid);
         }
 
         // Filter by resource type
@@ -1715,18 +1766,22 @@
             });
         }
 
-        // Sort
+        // Sort using authoritative pricing
         const sort = sortSelect.value || 'newest';
         if (sort === 'price-asc') {
             filtered.sort((a, b) => {
-                const aPrice = isResourceFree(a) ? 0 : (a.price || 999999);
-                const bPrice = isResourceFree(b) ? 0 : (b.price || 999999);
+                const pA = getResourcePricing(a);
+                const pB = getResourcePricing(b);
+                const aPrice = pA.isFree ? 0 : (pA.price !== null && pA.price !== undefined ? pA.price : 999999);
+                const bPrice = pB.isFree ? 0 : (pB.price !== null && pB.price !== undefined ? pB.price : 999999);
                 return aPrice - bPrice;
             });
         } else if (sort === 'price-desc') {
             filtered.sort((a, b) => {
-                const aPrice = isResourceFree(a) ? 0 : (a.price || 0);
-                const bPrice = isResourceFree(b) ? 0 : (b.price || 0);
+                const pA = getResourcePricing(a);
+                const pB = getResourcePricing(b);
+                const aPrice = pA.isFree ? 0 : (pA.price !== null && pA.price !== undefined ? pA.price : 0);
+                const bPrice = pB.isFree ? 0 : (pB.price !== null && pB.price !== undefined ? pB.price : 0);
                 return bPrice - aPrice;
             });
         } else if (sort === 'newest') {
@@ -1745,32 +1800,58 @@
     }
 
     function buildCardHTML(r) {
-        const isFree = isResourceFree(r);
-        const priceDisplay = isFree ? 'FREE' : `KES ${r.price || 0}`;
+        const pricing = getResourcePricing(r);
         const productId = r.id || 'unknown';
         const safeTitle = (r.title || '').replace(/"/g, '&quot;').replace(/'/g, "\\'");
         const rating = r.rating || Math.floor(Math.random() * 2) + 3;
         const levelDisplay = getLevelDisplay(r.level);
 
-        const freeBadge = isFree ? 
-            `<span class="cover-badge free-badge">🎁 FREE</span>` : 
-            (r.featured ? `<span class="cover-badge featured-badge">⭐ Featured</span>` : `<span class="cover-badge paid-badge">💰 Paid</span>`);
+        // Determine badge, card class, price class, button text based on pricing
+        let badgeHTML, cardClass, priceClass, buttonText, priceDisplay, buyBtnClass;
         
+        if (pricing.isFree) {
+            badgeHTML = `<span class="cover-badge free-badge">🎁 FREE</span>`;
+            cardClass = 'free-card';
+            priceClass = 'free';
+            priceDisplay = 'FREE';
+            buttonText = 'Get Free';
+            buyBtnClass = 'free';
+        } else if (pricing.isPaid) {
+            badgeHTML = r.featured ? 
+                `<span class="cover-badge featured-badge">⭐ Featured</span>` : 
+                `<span class="cover-badge paid-badge">💰 Paid</span>`;
+            cardClass = 'paid-card';
+            priceClass = 'paid';
+            priceDisplay = pricing.displayPrice;
+            buttonText = 'Buy';
+            buyBtnClass = 'paid';
+        } else {
+            // Invalid price - show as unavailable
+            badgeHTML = `<span class="cover-badge" style="background:#6B7280;color:white;">⚠️ Unavailable</span>`;
+            cardClass = '';
+            priceClass = '';
+            priceDisplay = '⚠️ Unavailable';
+            buttonText = 'Unavailable';
+            buyBtnClass = 'unavailable';
+        }
+        
+        // Cover image
         const coverHTML = r.cover_image_url ? `
             <div class="pc-cover">
                 <img src="${r.cover_image_url}" alt="${safeTitle}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" />
                 <div class="cover-fallback" style="display:none;">${getSubjectEmoji(r.subject) || '📄'}</div>
-                ${freeBadge}
+                ${badgeHTML}
                 <span class="cover-level">${levelDisplay}</span>
             </div>
         ` : `
             <div class="pc-cover">
                 <div class="cover-fallback">${getSubjectEmoji(r.subject) || '📄'}</div>
-                ${freeBadge}
+                ${badgeHTML}
                 <span class="cover-level">${levelDisplay}</span>
             </div>
         `;
 
+        // Badges
         const badges = [];
         if (r.kicd_aligned !== false) badges.push('<span class="badge badge-kicd">KICD</span>');
         if (r.cbc_compliant !== false) badges.push('<span class="badge badge-cbc">CBC</span>');
@@ -1781,12 +1862,13 @@
         if (r.level === 'pp1' || r.level === 'pp2') badges.push('<span class="badge badge-pp">Preprimary</span>');
         if (r.featured) badges.push('<span class="badge badge-popular">⭐ Featured</span>');
         if (r.download_count > 50) badges.push('<span class="badge badge-hot">🔥 Popular</span>');
-        if (isFree) badges.push('<span class="badge" style="background:#DCFCE7;color:#166534;border-color:#BBF7D0;">🎁 Free</span>');
+        if (pricing.isFree) badges.push('<span class="badge" style="background:#DCFCE7;color:#166534;border-color:#BBF7D0;">🎁 Free</span>');
 
         const creator = r.creator_name || r.tutor_name || 'KenyaVault';
-        const buttonText = isFree ? 'Get Free' : 'Buy';
-        const cardClass = isFree ? 'free-card' : 'paid-card';
-        const priceClass = isFree ? 'free' : 'paid';
+
+        // Action buttons - disable if invalid
+        const previewDisabled = pricing.isInvalid ? 'style="opacity:0.4;cursor:not-allowed;"' : '';
+        const buyDisabled = pricing.isInvalid ? 'disabled style="opacity:0.4;cursor:not-allowed;background:#6B7280;"' : '';
 
         return `
             <div class="product-card ${cardClass}" data-id="${productId}">
@@ -1807,8 +1889,8 @@
                 <div class="pc-footer">
                     <span class="pc-price ${priceClass}">${priceDisplay}</span>
                     <div class="pc-actions">
-                        <button class="btn-preview" onclick="openPreview('${productId}')"><i class="fas fa-eye"></i> Preview</button>
-                        <button class="btn-buy ${isFree ? 'free' : 'paid'}" data-product-id="${productId}" onclick="openCheckout('${productId}')">${buttonText}</button>
+                        <button class="btn-preview" onclick="openPreview('${productId}')" ${previewDisabled}><i class="fas fa-eye"></i> Preview</button>
+                        <button class="btn-buy ${buyBtnClass}" data-product-id="${productId}" onclick="openCheckout('${productId}')" ${buyDisabled}>${buttonText}</button>
                     </div>
                 </div>
             </div>
@@ -1936,12 +2018,16 @@
         const counts = {};
         const levelOrder = ['pp1', 'pp2', 'grade-1', 'grade-2', 'grade-3', 'grade-4', 'grade-5', 'grade-6', 'grade-7', 'grade-8', 'grade-9', 'grade-10', 'grade-11', 'grade-12', 'form-1', 'form-2', 'form-3', 'form-4', 'college', 'tvet', 'university'];
         levelOrder.forEach(l => counts[l] = 0);
-        let freeCount = 0;
-        allResources.forEach(r => { 
+        let freeCount = 0, paidCount = 0, invalidCount = 0;
+        
+        allResources.forEach(r => {
             if (r.level && counts.hasOwnProperty(r.level)) {
-                counts[r.level]++; 
+                counts[r.level]++;
             }
-            if (isResourceFree(r)) freeCount++;
+            const pricing = getResourcePricing(r);
+            if (pricing.isFree) freeCount++;
+            else if (pricing.isPaid) paidCount++;
+            else invalidCount++;
         });
 
         const idMap = {
@@ -1962,9 +2048,9 @@
         const totalEl = document.getElementById('totalCount');
         if (totalEl) totalEl.textContent = allResources.length;
 
-        const catCounts = { 
-            'lesson-plan': 0, 'scheme-work': 0, 'revision-paper': 0, 
-            'exam-paper': 0, 'assignment': 0, 'revision-book': 0, 'teacher-resource': 0 
+        const catCounts = {
+            'lesson-plan': 0, 'scheme-work': 0, 'revision-paper': 0,
+            'exam-paper': 0, 'assignment': 0, 'revision-book': 0, 'teacher-resource': 0
         };
         allResources.forEach(r => {
             const type = r.resource_type || r.category || r.type || '';
@@ -1985,9 +2071,11 @@
             if (el) el.textContent = catCounts[key] || 0;
         });
 
+        // Update hero stats - using real data
         document.getElementById('statResources').textContent = allResources.length;
         document.getElementById('statFree').textContent = freeCount;
-        document.getElementById('statOrders').textContent = Math.floor(Math.random() * 20) + 5;
+        // Order count - fetch from Supabase if available, otherwise show placeholder
+        document.getElementById('statOrders').textContent = '—';
     }
 
     // ── OTHER FUNCTIONS ──
@@ -2029,20 +2117,28 @@
     function openPreview(id) {
         const product = allResources.find(r => r.id === id);
         if (!product) return;
-        const isFree = isResourceFree(product);
-        alert(`Preview: ${product.title}\nPrice: ${isFree ? 'FREE' : 'KES ' + (product.price || 0)}\nLevel: ${getLevelDisplay(product.level)}\nSubject: ${product.subject || 'General'}`);
+        const pricing = getResourcePricing(product);
+        const statusText = pricing.isFree ? 'FREE' : 
+                          (pricing.isPaid ? pricing.displayPrice : '⚠️ Price unavailable');
+        alert(`📄 Preview: ${product.title}\n\n💰 Price: ${statusText}\n📚 Level: ${getLevelDisplay(product.level)}\n📖 Subject: ${product.subject || 'General'}\n📥 Downloads: ${product.download_count || 0}\n\n${pricing.isInvalid ? '\n⚠️ This resource is temporarily unavailable because its price has not been configured. Please contact support.' : ''}`);
     }
 
     function openCheckout(id) {
         const product = allResources.find(r => r.id === id);
         if (!product) return;
-        const isFree = isResourceFree(product);
-        if (isFree) {
-            alert(`✅ "${product.title}" is FREE! Click OK to download.`);
-            // In production, this would trigger the actual download
-        } else {
-            alert(`💰 "${product.title}" costs KES ${product.price || 0}. Proceed to payment.`);
-            // In production, this would open the checkout modal
+        const pricing = getResourcePricing(product);
+        
+        if (pricing.isInvalid) {
+            alert('⚠️ This resource is temporarily unavailable because its price has not been configured.\n\nPlease contact KenyaVault support for assistance.');
+            return;
+        }
+        
+        if (pricing.isFree) {
+            alert(`✅ "${product.title}" is FREE!\n\nClick OK to download this resource.`);
+            // In production, trigger the free download flow
+        } else if (pricing.isPaid) {
+            alert(`💰 "${product.title}" costs ${pricing.displayPrice}.\n\nProceed to secure checkout with M-PESA.`);
+            // In production, open the checkout modal
         }
     }
 
@@ -2075,7 +2171,7 @@
             updateCounts();
             renderShop();
             console.log('✅ KenyaVault initialized successfully');
-            console.log(`📊 Total: ${allResources.length} | Free: ${allResources.filter(r => isResourceFree(r)).length} | Paid: ${allResources.filter(r => !isResourceFree(r)).length}`);
+            console.log(`📊 Total: ${allResources.length} | Free: ${allResources.filter(r => getResourcePricing(r).isFree).length} | Paid: ${allResources.filter(r => getResourcePricing(r).isPaid).length} | Invalid: ${allResources.filter(r => getResourcePricing(r).isInvalid).length}`);
         } catch (e) {
             renderError(e);
         }
@@ -2101,12 +2197,11 @@
     window.init = init;
     window.openPreview = openPreview;
     window.openCheckout = openCheckout;
-    window.isResourceFree = isResourceFree;
+    window.getResourcePricing = getResourcePricing;
 
     document.addEventListener('DOMContentLoaded', init);
-    console.log('✅ KenyaVault Marketplace initialized');
-    console.log('✅ Free/Paid differentiation: Only price=0 or is_free=true are free');
-    console.log('✅ Resources with null/undefined price are treated as PAID (requires fix in admin)');
+    console.log('✅ KenyaVault Marketplace initialized with authoritative pricing system');
+    console.log('✅ Pricing rules: is_free=true OR price=0 → FREE | price>0 → PAID | invalid → Unavailable');
 </script>
 
 </body>
