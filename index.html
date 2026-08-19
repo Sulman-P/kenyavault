@@ -2221,8 +2221,8 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE
 ============================================================ -->
 <script>
     // ============================================================
-    // KENYAVAULT — COMPLETE MARKETPLACE ENGINE (FULLY FIXED)
-    // FIX: 400 storage errors, restored share options
+    // KENYAVAULT — COMPLETE MARKETPLACE ENGINE (MOBILE-FIXED)
+    // FIX: Automatic downloads work on mobile phones
     // ============================================================
 
     (function() {
@@ -2578,20 +2578,17 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE
                     break;
                 }
             }
-            // Remove URL prefixes
             cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
             cleanPath = cleanPath.replace(/^\/+/, '');
             
             // Ensure it has a valid extension
             var ext = cleanPath.split('.').pop().toLowerCase();
             if (!['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'mp3', 'wav', 'zip', 'epub'].includes(ext)) {
-                // If no valid extension, add .pdf
                 if (cleanPath.indexOf('.') === -1) {
                     cleanPath = cleanPath + '.pdf';
                 }
             }
 
-            // Generate variations
             var variations = [
                 cleanPath,
                 'resources/' + cleanPath,
@@ -2599,19 +2596,16 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE
                 encodeURIComponent(cleanPath).replace(/%2F/g, '/')
             ];
 
-            // Try each bucket with each variation
             for (var b = 0; b < AVAILABLE_BUCKETS.length; b++) {
                 var bucket = AVAILABLE_BUCKETS[b];
                 for (var v = 0; v < variations.length; v++) {
                     var path = variations[v];
-                    // Remove double slashes
                     path = path.replace(/\/+/g, '/').replace(/^\/+/, '');
                     
                     var encodedPath = path.split('/').map(function(s) { return encodeURIComponent(s); }).join('/');
                     var downloadUrl = SUPABASE_URL + '/storage/v1/object/public/' + bucket + '/' + encodedPath + '?download=' + encodeURIComponent(fileName || 'document.pdf');
                     
                     try {
-                        console.log('[Download] Trying URL:', downloadUrl);
                         var response = await fetch(downloadUrl, { 
                             method: 'HEAD',
                             headers: { 'Accept': 'application/pdf,application/octet-stream,*/*' }
@@ -2631,48 +2625,38 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE
             return null;
         }
 
-        // ─── FIXED: FORCE DOWNLOAD ──────────────────────────────
-        async function forceDownloadFile(url, fileName) {
-            if (!url) {
-                console.warn('[Download] No URL provided');
-                return false;
-            }
-            
+        // ─── FIXED: MOBILE-FRIENDLY DOWNLOAD ─────────────────────
+        function openFileInNewTab(url, fileName) {
+            // Method 1: Open directly in new tab (best for mobile)
             try {
-                console.log('[Download] Fetching:', url);
-                var response = await fetch(url, {
-                    headers: { 'Accept': 'application/pdf,application/octet-stream,*/*' }
-                });
-                
-                if (!response.ok) {
-                    console.warn('[Download] Fetch failed:', response.status);
-                    return fallbackDownload(url, fileName);
+                var newTab = window.open(url, '_blank');
+                if (newTab) {
+                    console.log('[Download] Opened in new tab:', fileName);
+                    return true;
                 }
-                
-                var blob = await response.blob();
-                var finalBlob = new Blob([blob], { type: blob.type || 'application/pdf' });
-                var blobUrl = window.URL.createObjectURL(finalBlob);
+            } catch (e) {
+                console.warn('[Download] New tab blocked, trying alternative:', e);
+            }
+
+            // Method 2: Create a temporary link and click it (works on most browsers)
+            try {
                 var link = document.createElement('a');
-                link.href = blobUrl;
+                link.href = url;
                 link.download = fileName || 'document.pdf';
                 link.target = '_blank';
                 document.body.appendChild(link);
                 link.click();
                 setTimeout(function() {
                     document.body.removeChild(link);
-                    window.URL.revokeObjectURL(blobUrl);
                 }, 1000);
-                console.log('[Download] Download started:', fileName);
+                console.log('[Download] Link click triggered:', fileName);
                 return true;
-            } catch (error) {
-                console.error('[Download] Force download error:', error);
-                return fallbackDownload(url, fileName);
+            } catch (e) {
+                console.warn('[Download] Link click failed:', e);
             }
-        }
 
-        function fallbackDownload(url, fileName) {
+            // Method 3: Iframe fallback
             try {
-                // Try with iframe
                 var iframe = document.createElement('iframe');
                 iframe.style.display = 'none';
                 iframe.src = url;
@@ -2680,19 +2664,15 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE
                 setTimeout(function() {
                     if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
                 }, 10000);
+                console.log('[Download] Iframe fallback used:', fileName);
                 return true;
-            } catch (error) {
-                try {
-                    window.open(url, '_blank');
-                    return true;
-                } catch (e) {
-                    console.warn('[Download] All download methods failed');
-                    return false;
-                }
+            } catch (e) {
+                console.error('[Download] All methods failed:', e);
+                return false;
             }
         }
 
-        // ─── FIXED: DOWNLOAD ORDER FILES ─────────────────────────
+        // ─── FIXED: DOWNLOAD ORDER FILES (MOBILE) ─────────────────
         async function downloadOrderFiles(order) {
             try {
                 console.log('[Download] Processing order:', order.order_ref || order.id);
@@ -2708,53 +2688,42 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE
                     var fileName = order.resource_file_name || order.file_name || 'resource.pdf';
                     var url = await generatePublicUrl(filePath, fileName);
                     if (url) {
-                        return await forceDownloadFile(url, fileName);
+                        showToast('Opening', 'Opening ' + fileName + '...', 'info');
+                        openFileInNewTab(url, fileName);
+                        return true;
                     }
-                    showToast('Warning', 'Could not locate the file in storage. Please contact support.', 'error');
+                    showToast('Warning', 'Could not locate the file. Please contact support.', 'error');
                     return false;
                 }
 
+                // Multiple items - open each in a new tab
                 var successCount = 0;
                 for (var i = 0; i < items.length; i++) {
                     var item = items[i];
                     var filePath = item.file_path || item.file_url || '';
                     var fileName = item.file_name || (item.title || 'resource') + '.pdf';
                     
-                    // Try to find the product in allResources for better file path
                     var product = allResources.find(function(r) { return r.id === item.id; });
                     if (product) {
                         filePath = product.file_path || product.file_url || filePath;
                         fileName = product.file_name || fileName;
                     }
                     
-                    // Also try to find by title match
-                    if (!filePath && item.title) {
-                        var matched = allResources.find(function(r) { 
-                            return r.title && r.title.toLowerCase() === item.title.toLowerCase(); 
-                        });
-                        if (matched) {
-                            filePath = matched.file_path || matched.file_url || '';
-                            fileName = matched.file_name || fileName;
-                        }
-                    }
-                    
                     var url = await generatePublicUrl(filePath, fileName);
                     if (url) {
-                        var success = await forceDownloadFile(url, fileName);
-                        if (success) {
-                            successCount++;
-                            showToast('Downloading', 'Downloading: ' + fileName, 'info');
-                        }
-                        await new Promise(function(res) { setTimeout(res, 500); });
-                    } else {
-                        console.warn('[Download] No URL found for:', fileName);
+                        // Open each file with a small delay (mobile popup prevention)
+                        setTimeout(function(url, fileName) {
+                            showToast('Opening', 'Opening ' + fileName + '...', 'info');
+                            openFileInNewTab(url, fileName);
+                        }, i * 800, url, fileName);
+                        successCount++;
                     }
                 }
                 
                 if (successCount === 0) {
                     showToast('Warning', 'Could not download files. Please contact support.', 'error');
                 } else {
-                    showToast('Success', 'Downloaded ' + successCount + ' file(s) successfully!');
+                    showToast('Success', 'Opening ' + successCount + ' file(s) in new tabs...');
                 }
                 return successCount > 0;
             } catch (error) {
@@ -2916,7 +2885,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE
             }
         }
 
-        // ─── FIXED: CHECK ORDER PAYMENT STATUS ──────────────────
+        // ─── CHECK ORDER PAYMENT STATUS ──────────────────────────
         async function checkOrderPaymentStatus() {
             if (!currentOrderRef && !currentOrderId) return;
             try {
@@ -2946,7 +2915,6 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE
                     
                     await downloadOrderFiles(order);
                     
-                    // Show success with share options
                     showSuccessWithShare(order.order_ref);
                     
                     clearCart();
@@ -2960,11 +2928,10 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE
             }
         }
 
-        // ─── FIXED: SUCCESS WITH SHARE OPTIONS ──────────────────
+        // ─── SUCCESS WITH SHARE OPTIONS ──────────────────────────
         function showSuccessWithShare(orderRef) {
             successOrderRef.textContent = orderRef;
             
-            // Set share link
             var shareLink = document.getElementById('shareLink');
             if (shareLink) {
                 shareLink.value = window.location.href + '?ref=' + orderRef;
@@ -3006,7 +2973,6 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE
                 return;
             }
 
-            // ─── CHECK IF THIS IS A FREE RESOURCE ───
             var isFreeCheckout = false;
 
             if (checkoutMode === 'single' && currentProduct) {
@@ -3016,7 +2982,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE
                 isFreeCheckout = checkoutExpectedTotal === 0;
             }
 
-            // ─── FREE RESOURCE — NO PAYMENT REQUIRED ───
+            // ─── FREE RESOURCE ──────────────────────────────────
             if (isFreeCheckout) {
                 try {
                     var freeResult;
@@ -3029,9 +2995,8 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE
                     currentOrderRef = freeResult.orderRef;
                     currentOrderId = freeResult.orderId;
 
-                    showToast('Processing', 'Creating your download...', 'info');
+                    showToast('Processing', 'Opening your download...', 'info');
 
-                    // ─── DOWNLOAD THE FILE ───────────────────
                     try {
                         var orderFetch = await fetch(SUPABASE_URL + '/rest/v1/orders?id=eq.' + freeResult.orderId + '&select=*', {
                             headers: {
@@ -3045,21 +3010,18 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE
                                 await downloadOrderFiles(orderData[0]);
                             }
                         } else {
-                            // Try direct download from product
                             if (checkoutMode === 'single' && currentProduct) {
                                 var filePath = currentProduct.file_path || currentProduct.file_url || '';
                                 var fileName = currentProduct.file_name || (currentProduct.title || 'resource') + '.pdf';
                                 var url = await generatePublicUrl(filePath, fileName);
                                 if (url) {
-                                    await forceDownloadFile(url, fileName);
-                                } else {
-                                    showToast('Warning', 'File not found in storage. Please contact support.', 'error');
+                                    openFileInNewTab(url, fileName);
                                 }
                             }
                         }
                     } catch (downloadError) {
                         console.warn('Download error:', downloadError);
-                        showToast('Info', 'Order created. If download doesn\'t start, please contact support.', 'info');
+                        showToast('Info', 'Order created. If file doesn\'t open, please contact support.', 'info');
                     }
 
                     showSuccessWithShare(freeResult.orderRef);
@@ -3073,12 +3035,12 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE
                     return;
                 } catch (error) {
                     console.error('Free download error:', error);
-                    showToast('Error', 'Failed to process free download: ' + (error.message || 'Unknown error'), 'error');
+                    showToast('Error', 'Failed to process: ' + (error.message || 'Unknown error'), 'error');
                     return;
                 }
             }
 
-            // ─── PAID RESOURCE — PROCEED WITH PAYMENT ───
+            // ─── PAID RESOURCE ──────────────────────────────────
             if (checkoutMode === 'single' && !currentProduct) return;
             if (checkoutMode === 'cart' && checkoutCartItems.length === 0) return;
 
@@ -3233,7 +3195,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE
             }, 500);
         }
 
-        // ─── SHARE FUNCTIONS (RESTORED) ──────────────────────────
+        // ─── SHARE FUNCTIONS ──────────────────────────────────────
         function getShareData() {
             var title = currentProduct?.title || 'KenyaVault Educational Resource';
             var url = window.location.href;
@@ -3311,7 +3273,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE
 
                 var verifySub = document.querySelector('.verify-sub');
                 if (verifySub) {
-                    verifySub.innerHTML = '<strong>This resource is FREE!</strong><br>Enter your name and phone number below, then click "Get Free Resource" to download instantly.<br><br><div style="display:flex;align-items:center;gap:8px;justify-content:center;padding:8px;background:var(--green-soft);border-radius:var(--kv-radius-sm);border:1px solid #bbf7d0;"><span style="font-size:1.2rem;">✅</span><span style="font-size:0.8rem;color:var(--kv-green);font-weight:600;">No payment required — download immediately</span></div>';
+                    verifySub.innerHTML = '<strong>This resource is FREE!</strong><br>Enter your name and phone number below, then click "Get Free Resource" to download instantly.<br><br><div style="display:flex;align-items:center;gap:8px;justify-content:center;padding:8px;background:var(--green-soft);border-radius:var(--kv-radius-sm);border:1px solid #bbf7d0;"><span style="font-size:1.2rem;">✅</span><span style="font-size:0.8rem;color:var(--kv-green);font-weight:600;">No payment required — file will open in new tab</span></div>';
                 }
 
                 verifyOrderBtn.textContent = '📥 Get Free Resource';
@@ -3414,7 +3376,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE
 
                 var verifySub = document.querySelector('.verify-sub');
                 if (verifySub) {
-                    verifySub.innerHTML = '<strong>Everything in your cart is FREE!</strong><br>Enter your name and phone number, then click below to download all items.<br><br><div style="display:flex;align-items:center;gap:8px;justify-content:center;padding:8px;background:var(--green-soft);border-radius:var(--kv-radius-sm);border:1px solid #bbf7d0;"><span style="font-size:1.2rem;">✅</span><span style="font-size:0.8rem;color:var(--kv-green);font-weight:600;">No payment required — download all instantly</span></div>';
+                    verifySub.innerHTML = '<strong>Everything in your cart is FREE!</strong><br>Enter your name and phone number, then click below to download all items.<br><br><div style="display:flex;align-items:center;gap:8px;justify-content:center;padding:8px;background:var(--green-soft);border-radius:var(--kv-radius-sm);border:1px solid #bbf7d0;"><span style="font-size:1.2rem;">✅</span><span style="font-size:0.8rem;color:var(--kv-green);font-weight:600;">No payment required — files will open in new tabs</span></div>';
                 }
 
                 verifyOrderBtn.textContent = '📥 Get Free Resources';
@@ -4002,9 +3964,9 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE
         window.copyShareLink = copyShareLink;
 
         document.addEventListener('DOMContentLoaded', init);
-        console.log('✅ KenyaVault Marketplace — Fully Fixed');
-        console.log('✅ Storage 400 errors fixed with path variations');
-        console.log('✅ Share options restored in success modal');
+        console.log('✅ KenyaVault Marketplace — Mobile-Fixed');
+        console.log('✅ Files open in new tab (mobile-friendly)');
+        console.log('✅ Share options restored');
         console.log('✅ FREE resources download without payment');
 
     })();
