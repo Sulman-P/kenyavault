@@ -2221,8 +2221,8 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE
 ============================================================ -->
 <script>
     // ============================================================
-    // KENYAVAULT — COMPLETE MARKETPLACE ENGINE
-    // All fixes applied: Pricing bug fixed, dynamic from Supabase
+    // KENYAVAULT — COMPLETE MARKETPLACE ENGINE (UPDATED)
+    // FIX: Free resources no longer require payment
     // ============================================================
 
     (function() {
@@ -2342,6 +2342,32 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE
 
         function getPricingStatus(resource) {
             return getResourcePricing(resource).status;
+        }
+
+        // ─── TOAST NOTIFICATION ──────────────────────────────────
+        function showToast(title, message, type) {
+            type = type || 'success';
+            var container = document.getElementById('toastContainer');
+            if (!container) {
+                var newContainer = document.createElement('div');
+                newContainer.id = 'toastContainer';
+                newContainer.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:99999;max-width:380px;width:100%;';
+                document.body.appendChild(newContainer);
+                container = newContainer;
+            }
+
+            var toast = document.createElement('div');
+            var borderColor = type === 'success' ? 'var(--kv-green)' : type === 'error' ? 'var(--kv-red)' : 'var(--kv-gold)';
+            toast.style.cssText = 'background:var(--kv-white);border-radius:var(--kv-radius);padding:14px 18px;box-shadow:var(--kv-shadow-lg);border-left:4px solid ' + borderColor + ';margin-bottom:8px;animation:slideInRight 0.4s cubic-bezier(.34,1.56,.64,1);';
+            toast.innerHTML = '<div style="font-weight:700;font-size:0.85rem;color:var(--kv-text);">' + title + '</div><div style="font-size:0.8rem;color:var(--kv-muted);">' + message + '</div>';
+            container.appendChild(toast);
+
+            setTimeout(function() {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(40px)';
+                toast.style.transition = 'all .3s';
+                setTimeout(function() { if (toast.parentNode) toast.remove(); }, 300);
+            }, 5000);
         }
 
         // ─── HELPERS ──────────────────────────────────────────────
@@ -2594,14 +2620,25 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE
             }
         }
 
+        // ─── CRITICAL FIX: INITIATE PAYMENT (FREE RESOURCES) ────
         async function initiatePayment() {
             if (isProcessing) return;
+
             var phone = phoneInput.value.trim().replace(/\s/g, '');
             var customerName = customerNameInput.value.trim();
 
-            if (!customerName) { customerNameInput.style.borderColor = 'var(--kv-red)'; return; }
+            if (!customerName) {
+                customerNameInput.style.borderColor = 'var(--kv-red)';
+                showToast('Error', 'Please enter your full name', 'error');
+                return;
+            }
             customerNameInput.style.borderColor = '';
-            if (!phone || phone.length < 9) { phoneInput.style.borderColor = 'var(--kv-red)'; return; }
+
+            if (!phone || phone.length < 9) {
+                phoneInput.style.borderColor = 'var(--kv-red)';
+                showToast('Error', 'Please enter a valid phone number', 'error');
+                return;
+            }
             phoneInput.style.borderColor = '';
 
             var formattedPhone = phone;
@@ -2610,25 +2647,70 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE
             else if (phone.length === 10 && phone.startsWith('07')) formattedPhone = '254' + phone.substring(1);
             else if (phone.length === 9 && phone.startsWith('7')) formattedPhone = '254' + phone;
 
-            if (!/^254[0-9]{9}$/.test(formattedPhone)) { phoneInput.style.borderColor = 'var(--kv-red)'; return; }
-
-            if (checkoutMode === 'single' && !currentProduct) return;
-            if (checkoutMode === 'cart' && checkoutCartItems.length === 0) return;
-
-            // Free cart checkout
-            if (checkoutMode === 'cart' && checkoutExpectedTotal === 0) {
-                try {
-                    var result = await createCartOrder(checkoutCartItems, customerName, formattedPhone);
-                    currentOrderRef = result.orderRef;
-                    currentOrderId = result.orderId;
-                    showSuccess(result.orderRef);
-                    clearCart();
-                    setTimeout(function() { closeCheckoutModal(); }, 2000);
-                } catch (error) {
-                    console.error('Free cart download error:', error);
-                }
+            if (!/^254[0-9]{9}$/.test(formattedPhone)) {
+                phoneInput.style.borderColor = 'var(--kv-red)';
+                showToast('Error', 'Please enter a valid Safaricom phone number', 'error');
                 return;
             }
+
+            // ─── CHECK IF THIS IS A FREE RESOURCE ───
+            var isFreeCheckout = false;
+
+            if (checkoutMode === 'single' && currentProduct) {
+                var pricing = getResourcePricing(currentProduct);
+                isFreeCheckout = pricing.isFree;
+            } else if (checkoutMode === 'cart') {
+                isFreeCheckout = checkoutExpectedTotal === 0;
+            }
+
+            // ─── FREE RESOURCE — NO PAYMENT REQUIRED ───
+            if (isFreeCheckout) {
+                try {
+                    var freeResult;
+                    if (checkoutMode === 'single') {
+                        freeResult = await createSingleOrder(currentProduct, customerName, formattedPhone);
+                    } else {
+                        freeResult = await createCartOrder(checkoutCartItems, customerName, formattedPhone);
+                    }
+
+                    currentOrderRef = freeResult.orderRef;
+                    currentOrderId = freeResult.orderId;
+
+                    // Update order to paid status (free)
+                    await fetch(SUPABASE_URL + '/rest/v1/orders?id=eq.' + freeResult.orderId, {
+                        method: 'PATCH',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            payment_status: 'paid',
+                            status: 'completed',
+                            amount_paid: 0
+                        })
+                    });
+
+                    showToast('Success', '✅ Resource downloaded successfully!');
+                    showSuccess(freeResult.orderRef);
+
+                    if (checkoutMode === 'cart') clearCart();
+
+                    setTimeout(function() {
+                        closeCheckoutModal();
+                    }, 2000);
+
+                    return;
+                } catch (error) {
+                    console.error('Free download error:', error);
+                    showToast('Error', 'Failed to process free download. Please try again.', 'error');
+                    return;
+                }
+            }
+
+            // ─── PAID RESOURCE — PROCEED WITH PAYMENT ───
+            if (checkoutMode === 'single' && !currentProduct) return;
+            if (checkoutMode === 'cart' && checkoutCartItems.length === 0) return;
 
             isProcessing = true;
             payPrimaryBtn.disabled = true;
@@ -2677,6 +2759,24 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE
 
                 mpesaVerificationBox.style.display = 'block';
                 payPrimaryBtn.style.display = 'none';
+
+                // Update verification box for paid resources
+                var verifyLabel = document.querySelector('.verify-label');
+                if (verifyLabel) verifyLabel.textContent = '🔑 Verify Your Payment';
+
+                var verifySub = document.querySelector('.verify-sub');
+                if (verifySub) {
+                    verifySub.innerHTML = '<strong>Check your phone for the M-PESA STK Push prompt.</strong><br>Enter your PIN to complete payment.<br><br><div style="display:flex;align-items:center;gap:8px;justify-content:center;padding:6px;background:var(--gold-soft);border-radius:var(--kv-radius-sm);"><span style="font-size:1.2rem;">⏳</span><span style="font-size:0.75rem;color:var(--kv-primary);font-weight:600;">Waiting for payment confirmation...</span></div>';
+                }
+
+                verifyOrderBtn.textContent = '🔓 Verify & Complete';
+                verifyOrderBtn.className = 'btn-verify-order';
+                verifyOrderBtn.style.background = 'var(--kv-green)';
+                verifyOrderBtn.style.color = '#fff';
+                verifyOrderBtn.onclick = function() { checkOrderPaymentStatus(); };
+                verifyOrderBtn.disabled = false;
+                verifyOrderBtn.style.display = 'flex';
+
                 startPaymentPolling();
                 setTimeout(function() { checkOrderPaymentStatus(); }, 10000);
                 setTimeout(function() { checkOrderPaymentStatus(); }, 30000);
@@ -2687,6 +2787,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE
                 if (megapayWindow) { megapayWindow.close();
                     megapayWindow = null; }
                 stopPaymentPolling();
+                showToast('Error', 'Payment initiation failed: ' + (error.message || 'Unknown error'), 'error');
             } finally {
                 isProcessing = false;
                 payPrimaryBtn.disabled = false;
@@ -2948,31 +3049,67 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE
                 checkoutTotal.style.color = 'var(--kv-gold)';
             }
 
+            // ── FREE RESOURCE ──
             if (isFree) {
                 mpesaVerificationBox.style.display = 'block';
                 payPrimaryBtn.style.display = 'none';
+
+                // Update verification box for free resources
+                var verifyLabel = document.querySelector('.verify-label');
+                if (verifyLabel) verifyLabel.textContent = '📥 Free Resource Download';
+
+                var verifySub = document.querySelector('.verify-sub');
+                if (verifySub) {
+                    verifySub.innerHTML = '<strong>This resource is FREE!</strong><br>Enter your name and phone number below, then click "Get Free Resource" to download instantly.<br><br><div style="display:flex;align-items:center;gap:8px;justify-content:center;padding:8px;background:var(--green-soft);border-radius:var(--kv-radius-sm);border:1px solid #bbf7d0;"><span style="font-size:1.2rem;">✅</span><span style="font-size:0.8rem;color:var(--kv-green);font-weight:600;">No payment required — download immediately</span></div>';
+                }
+
                 verifyOrderBtn.textContent = '📥 Get Free Resource';
                 verifyOrderBtn.className = 'btn-verify-order free-btn';
                 verifyOrderBtn.style.background = 'var(--kv-gold)';
                 verifyOrderBtn.style.color = 'var(--kv-primary)';
                 verifyOrderBtn.onclick = function() { initiatePayment(); };
                 verifyOrderBtn.disabled = false;
-            } else if (status === 'unavailable') {
+                verifyOrderBtn.style.display = 'flex';
+            }
+            // ── PRICE UNAVAILABLE ──
+            else if (status === 'unavailable') {
                 mpesaVerificationBox.style.display = 'block';
                 payPrimaryBtn.style.display = 'none';
+
+                var verifyLabel = document.querySelector('.verify-label');
+                if (verifyLabel) verifyLabel.textContent = '⚠️ Price Unavailable';
+
+                var verifySub = document.querySelector('.verify-sub');
+                if (verifySub) {
+                    verifySub.innerHTML = '<strong>This resource cannot be purchased at this time.</strong><br>The price information is missing. Please contact support for assistance.';
+                }
+
                 verifyOrderBtn.textContent = '⚠️ Unavailable';
                 verifyOrderBtn.style.background = '#92400E';
                 verifyOrderBtn.style.color = '#FCD34D';
                 verifyOrderBtn.disabled = true;
-            } else {
+                verifyOrderBtn.style.display = 'flex';
+            }
+            // ── PAID RESOURCE ──
+            else {
                 mpesaVerificationBox.style.display = 'block';
                 payPrimaryBtn.style.display = 'flex';
+
+                var verifyLabel = document.querySelector('.verify-label');
+                if (verifyLabel) verifyLabel.textContent = '🔑 Secure M-PESA Payment';
+
+                var verifySub = document.querySelector('.verify-sub');
+                if (verifySub) {
+                    verifySub.innerHTML = '<strong>Secure Payment via M-PESA STK Push</strong><br>You will receive a prompt on your phone. Enter your PIN to complete payment.<br><br><div style="display:flex;align-items:center;gap:8px;justify-content:center;padding:6px;background:var(--gold-soft);border-radius:var(--kv-radius-sm);"><span style="font-size:1.2rem;">🔒</span><span style="font-size:0.75rem;color:var(--kv-primary);font-weight:600;">Payment is encrypted and secure</span></div>';
+                }
+
                 verifyOrderBtn.textContent = '🔓 Verify & Complete';
                 verifyOrderBtn.className = 'btn-verify-order';
                 verifyOrderBtn.style.background = 'var(--kv-green)';
                 verifyOrderBtn.style.color = '#fff';
                 verifyOrderBtn.onclick = function() { checkOrderPaymentStatus(); };
                 verifyOrderBtn.disabled = false;
+                verifyOrderBtn.style.display = 'none';
             }
 
             checkoutModal.style.display = 'flex';
@@ -3021,24 +3158,47 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE
                 checkoutTotal.style.color = 'var(--kv-gold)';
             }
 
+            // ── ALL FREE CART ──
             if (allFree) {
                 mpesaVerificationBox.style.display = 'block';
                 payPrimaryBtn.style.display = 'none';
+
+                var verifyLabel = document.querySelector('.verify-label');
+                if (verifyLabel) verifyLabel.textContent = '📥 Free Resources Download';
+
+                var verifySub = document.querySelector('.verify-sub');
+                if (verifySub) {
+                    verifySub.innerHTML = '<strong>Everything in your cart is FREE!</strong><br>Enter your name and phone number, then click below to download all items.<br><br><div style="display:flex;align-items:center;gap:8px;justify-content:center;padding:8px;background:var(--green-soft);border-radius:var(--kv-radius-sm);border:1px solid #bbf7d0;"><span style="font-size:1.2rem;">✅</span><span style="font-size:0.8rem;color:var(--kv-green);font-weight:600;">No payment required — download all instantly</span></div>';
+                }
+
                 verifyOrderBtn.textContent = '📥 Get Free Resources';
                 verifyOrderBtn.className = 'btn-verify-order free-btn';
                 verifyOrderBtn.style.background = 'var(--kv-gold)';
                 verifyOrderBtn.style.color = 'var(--kv-primary)';
                 verifyOrderBtn.onclick = function() { initiatePayment(); };
                 verifyOrderBtn.disabled = false;
-            } else {
+                verifyOrderBtn.style.display = 'flex';
+            }
+            // ── PAID CART ──
+            else {
                 mpesaVerificationBox.style.display = 'block';
                 payPrimaryBtn.style.display = 'flex';
+
+                var verifyLabel = document.querySelector('.verify-label');
+                if (verifyLabel) verifyLabel.textContent = '🔑 Secure M-PESA Payment';
+
+                var verifySub = document.querySelector('.verify-sub');
+                if (verifySub) {
+                    verifySub.innerHTML = '<strong>Secure Payment via M-PESA STK Push</strong><br>You will receive one M-PESA prompt for the total amount.<br><br><div style="display:flex;align-items:center;gap:8px;justify-content:center;padding:6px;background:var(--gold-soft);border-radius:var(--kv-radius-sm);"><span style="font-size:1.2rem;">🔒</span><span style="font-size:0.75rem;color:var(--kv-primary);font-weight:600;">Payment is encrypted and secure</span></div>';
+                }
+
                 verifyOrderBtn.textContent = '🔓 Verify & Complete';
                 verifyOrderBtn.className = 'btn-verify-order';
                 verifyOrderBtn.style.background = 'var(--kv-green)';
                 verifyOrderBtn.style.color = '#fff';
                 verifyOrderBtn.onclick = function() { checkOrderPaymentStatus(); };
                 verifyOrderBtn.disabled = false;
+                verifyOrderBtn.style.display = 'none';
             }
 
             closeCartDrawer();
@@ -3592,11 +3752,10 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE
         window.filterByCategory = filterByCategory;
 
         document.addEventListener('DOMContentLoaded', init);
-        console.log('✅ KenyaVault Marketplace — Brand Design');
-        console.log('✅ Primary: #0B2340 | Gold: #C9971F');
+        console.log('✅ KenyaVault Marketplace — Fixed Free Resources');
         console.log('✅ FREE = price=0 OR is_free=true OR resource_type=free');
         console.log('✅ PAID = price>0');
-        console.log('✅ UNAVAILABLE = price=null (NEVER treated as free)');
+        console.log('✅ Free resources no longer require payment');
 
     })();
 </script>
