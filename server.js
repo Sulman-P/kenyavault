@@ -1,5 +1,6 @@
 // ============================================================
-// KENYA VAULT - PAYMENT BACKEND SERVER (FIXED)
+// KENYA VAULT - PAYMENT BACKEND SERVER (DEBUG VERSION)
+// Enhanced logging to debug MegaPay response
 // ============================================================
 
 const express = require('express');
@@ -13,12 +14,11 @@ const MEGAPAY_API_KEY = 'MGPYDSg2lIYA';
 const MEGAPAY_API_URL = 'https://megapay.co.ke/backend/initiatestk';
 const MEGAPAY_CALLBACK_URL = 'https://kenyavault.onrender.com/api/mpesa/callback';
 
-// ─── MIDDLEWARE ──────────────────────────────────────────────
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ─── LOGGING ──────────────────────────────────────────────────
+// Logging middleware
 app.use((req, res, next) => {
     console.log(`📥 ${req.method} ${req.url}`);
     if (req.method === 'POST') {
@@ -36,19 +36,9 @@ function generateTransactionReference() {
 
 function validatePhoneNumber(phone) {
     let cleaned = phone.replace(/\D/g, '');
-    
-    if (cleaned.startsWith('0')) {
-        cleaned = '254' + cleaned.substring(1);
-    }
-    
-    if (cleaned.startsWith('254') && cleaned.length === 12) {
-        return cleaned;
-    }
-    
-    if (phone && phone.startsWith('+254')) {
-        return phone.substring(1);
-    }
-    
+    if (cleaned.startsWith('0')) cleaned = '254' + cleaned.substring(1);
+    if (cleaned.startsWith('254') && cleaned.length === 12) return cleaned;
+    if (phone && phone.startsWith('+254')) return phone.substring(1);
     return null;
 }
 
@@ -57,11 +47,10 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
     console.log('🚀 STK Push endpoint called!');
     
     try {
-        const { phone, amount, order_id, customer_name, customer_email, resource_ids } = req.body;
+        const { phone, amount, order_id, customer_name } = req.body;
 
-        // Validate
+        // Validate required fields
         if (!phone || !amount || !order_id) {
-            console.log('❌ Missing required fields');
             return res.status(400).json({
                 success: false,
                 error: 'Missing required fields: phone, amount, order_id'
@@ -70,7 +59,6 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
 
         const formattedPhone = validatePhoneNumber(phone);
         if (!formattedPhone) {
-            console.log('❌ Invalid phone number:', phone);
             return res.status(400).json({
                 success: false,
                 error: 'Invalid phone number. Use 2547XXXXXXXX or 07XXXXXXXX'
@@ -79,7 +67,6 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
 
         const numericAmount = parseFloat(amount);
         if (isNaN(numericAmount) || numericAmount <= 0) {
-            console.log('❌ Invalid amount:', amount);
             return res.status(400).json({
                 success: false,
                 error: 'Invalid amount. Must be a positive number.'
@@ -87,12 +74,7 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
         }
 
         const reference = generateTransactionReference();
-
-        console.log('📤 Sending STK Push:');
-        console.log('Phone:', formattedPhone);
-        console.log('Amount:', numericAmount);
-        console.log('Reference:', reference);
-        console.log('Order ID:', order_id);
+        console.log('📤 Sending STK Push:', { phone: formattedPhone, amount: numericAmount, reference, order_id });
 
         // Prepare MegaPay request
         const megaPayPayload = {
@@ -103,8 +85,7 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
             callback: MEGAPAY_CALLBACK_URL,
             description: `Payment for order ${order_id}`
         };
-
-        console.log('📤 Calling MegaPay API...');
+        console.log('📤 MegaPay Payload:', JSON.stringify(megaPayPayload));
 
         // ─── CALL MEGAPAY API ──────────────────────────────
         const megaPayResponse = await fetch(MEGAPAY_API_URL, {
@@ -116,6 +97,7 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
             body: JSON.stringify(megaPayPayload)
         });
 
+        // Log the raw response for debugging
         const responseText = await megaPayResponse.text();
         console.log('📥 MegaPay Raw Response:', responseText);
 
@@ -123,18 +105,20 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
         try {
             megaPayResult = JSON.parse(responseText);
         } catch (e) {
-            console.log('❌ Failed to parse MegaPay response:', e.message);
+            console.error('❌ Failed to parse MegaPay response. Raw response:', responseText);
+            // Send the raw response back to the client for debugging
             return res.status(500).json({
                 success: false,
                 error: 'Invalid response from payment gateway',
-                raw: responseText
+                raw_response: responseText
             });
         }
 
-        console.log('📥 MegaPay Parsed:', JSON.stringify(megaPayResult, null, 2));
+        console.log('📥 MegaPay Parsed Result:', JSON.stringify(megaPayResult, null, 2));
 
-        // Check if STK Push was successful
-        const isSuccess = megaPayResult.status === 'success' || 
+        // ─── HANDLE RESPONSE ────────────────────────────────
+        // Check if STK Push was successful based on MegaPay's response structure
+        const isSuccess = megaPayResult.status === 'success' ||
                          megaPayResult.success === true ||
                          (megaPayResult.message && megaPayResult.message.toLowerCase().includes('sent'));
 
