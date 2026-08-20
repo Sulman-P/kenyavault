@@ -1,5 +1,5 @@
 // ============================================================
-// KENYA VAULT - PAYMENT BACKEND SERVER (FIXED)
+// KENYA VAULT - FULL PAYMENT SERVER
 // ============================================================
 
 const express = require('express');
@@ -9,7 +9,7 @@ const crypto = require('crypto');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ─── FIXED CORS ──────────────────────────────────────────────
+// ─── CORS ──────────────────────────────────────────────────────
 app.use(cors({
     origin: [
         'https://kenyavault.co.ke',
@@ -19,24 +19,11 @@ app.use(cors({
         'https://kenyavault.onrender.com'
     ],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
-    credentials: true
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
 }));
-
-// Handle preflight
-app.options('*', cors());
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// ─── LOGGING ──────────────────────────────────────────────────
-app.use((req, res, next) => {
-    console.log(`📥 ${req.method} ${req.url}`);
-    if (req.method === 'POST') {
-        console.log('Body:', JSON.stringify(req.body, null, 2));
-    }
-    next();
-});
 
 // ─── MEGAPAY CONFIG ──────────────────────────────────────────
 const MEGAPAY_API_KEY = 'MGPYDSg2lIYA';
@@ -46,7 +33,7 @@ const MEGAPAY_CALLBACK_URL = 'https://kenyavault.onrender.com/api/mpesa/callback
 // ─── HELPERS ──────────────────────────────────────────────────
 function generateTransactionReference() {
     const timestamp = Date.now().toString().slice(-8);
-    const random = crypto.randomBytes(4).toString('hex').toUpperCase();
+    const random = Math.random().toString(36).substring(2, 6).toUpperCase();
     return `KV-${timestamp}-${random}`;
 }
 
@@ -71,6 +58,7 @@ function validatePhoneNumber(phone) {
 // ─── STK PUSH ENDPOINT ──────────────────────────────────────
 app.post('/api/mpesa/stk-push', async (req, res) => {
     console.log('🚀 STK Push endpoint called!');
+    console.log('📥 Request:', JSON.stringify(req.body, null, 2));
     
     try {
         const { phone, amount, order_id, customer_name, customer_email, resource_ids } = req.body;
@@ -102,7 +90,7 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
         const reference = generateTransactionReference();
 
         console.log('📤 Sending STK Push:');
-        console.log('Phone (msisdn):', formattedPhone);
+        console.log('Phone:', formattedPhone);
         console.log('Amount:', numericAmount);
         console.log('Reference:', reference);
         console.log('Order ID:', order_id);
@@ -139,7 +127,7 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
             return res.status(500).json({
                 success: false,
                 error: 'Invalid response from payment gateway',
-                raw_response: responseText.substring(0, 200)
+                raw: responseText
             });
         }
 
@@ -182,14 +170,17 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
     }
 });
 
-// ─── CALLBACK ENDPOINT ──────────────────────────────────────
+// ─── M-PESA CALLBACK ──────────────────────────────────────────
 app.post('/api/mpesa/callback', async (req, res) => {
     console.log('📥 M-Pesa Callback Received:');
     console.log(JSON.stringify(req.body, null, 2));
     
+    // Process the callback (update order status, grant access, etc.)
+    // Your callback logic here
+    
     res.status(200).json({
         success: true,
-        message: 'Callback received'
+        message: 'Callback processed'
     });
 });
 
@@ -212,7 +203,8 @@ app.get('/', (req, res) => {
         message: 'KenyaVault Payment Server is running!',
         endpoints: {
             stk_push: 'POST /api/mpesa/stk-push',
-            health: 'GET /api/health'
+            health: 'GET /api/health',
+            callback: 'POST /api/mpesa/callback'
         }
     });
 });
@@ -220,7 +212,7 @@ app.get('/', (req, res) => {
 // ─── START SERVER ─────────────────────────────────────────────
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 KenyaVault Payment Server running on port ${PORT}`);
-    console.log(`📍 Health: http://localhost:${PORT}/api/health`);
+    console.log(`📍 Health: https://kenyavault.onrender.com/api/health`);
     console.log(`📞 MegaPay API: ${MEGAPAY_API_URL}`);
     console.log(`🔗 Callback URL: ${MEGAPAY_CALLBACK_URL}`);
     console.log(`✅ Server is ready!`);
