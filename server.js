@@ -1,6 +1,5 @@
 // ============================================================
-// KENYA VAULT - PAYMENT BACKEND SERVER (DEBUG VERSION)
-// Enhanced logging to debug MegaPay response
+// KENYA VAULT - PAYMENT BACKEND SERVER (FIXED)
 // ============================================================
 
 const express = require('express');
@@ -18,7 +17,7 @@ app.use(cors({ origin: '*' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Logging middleware
+// ─── LOGGING ──────────────────────────────────────────────────
 app.use((req, res, next) => {
     console.log(`📥 ${req.method} ${req.url}`);
     if (req.method === 'POST') {
@@ -49,7 +48,7 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
     try {
         const { phone, amount, order_id, customer_name } = req.body;
 
-        // Validate required fields
+        // Validate
         if (!phone || !amount || !order_id) {
             return res.status(400).json({
                 success: false,
@@ -74,9 +73,14 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
         }
 
         const reference = generateTransactionReference();
-        console.log('📤 Sending STK Push:', { phone: formattedPhone, amount: numericAmount, reference, order_id });
 
-        // Prepare MegaPay request
+        console.log('📤 Sending STK Push:');
+        console.log('Phone:', formattedPhone);
+        console.log('Amount:', numericAmount);
+        console.log('Reference:', reference);
+        console.log('Order ID:', order_id);
+
+        // ─── MEGAPAY PAYLOAD ──────────────────────────────────
         const megaPayPayload = {
             api_key: MEGAPAY_API_KEY,
             phone: formattedPhone,
@@ -85,7 +89,8 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
             callback: MEGAPAY_CALLBACK_URL,
             description: `Payment for order ${order_id}`
         };
-        console.log('📤 MegaPay Payload:', JSON.stringify(megaPayPayload));
+
+        console.log('📤 MegaPay Payload:', JSON.stringify(megaPayPayload, null, 2));
 
         // ─── CALL MEGAPAY API ──────────────────────────────
         const megaPayResponse = await fetch(MEGAPAY_API_URL, {
@@ -97,28 +102,38 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
             body: JSON.stringify(megaPayPayload)
         });
 
-        // Log the raw response for debugging
+        // Get the raw response
         const responseText = await megaPayResponse.text();
-        console.log('📥 MegaPay Raw Response:', responseText);
+        console.log('📥 MegaPay Raw Response (first 500 chars):', responseText.substring(0, 500));
 
+        // Try to parse as JSON
         let megaPayResult;
         try {
             megaPayResult = JSON.parse(responseText);
         } catch (e) {
-            console.error('❌ Failed to parse MegaPay response. Raw response:', responseText);
-            // Send the raw response back to the client for debugging
+            console.error('❌ Failed to parse MegaPay response as JSON');
+            console.error('❌ Raw response:', responseText);
+            
+            // Check if it's an HTML error page
+            if (responseText.includes('<!DOCTYPE') || responseText.includes('<html')) {
+                return res.status(500).json({
+                    success: false,
+                    error: 'MegaPay returned an HTML error page. Please check your API key and parameters.',
+                    raw_response: responseText.substring(0, 200)
+                });
+            }
+            
             return res.status(500).json({
                 success: false,
                 error: 'Invalid response from payment gateway',
-                raw_response: responseText
+                raw_response: responseText.substring(0, 200)
             });
         }
 
         console.log('📥 MegaPay Parsed Result:', JSON.stringify(megaPayResult, null, 2));
 
-        // ─── HANDLE RESPONSE ────────────────────────────────
-        // Check if STK Push was successful based on MegaPay's response structure
-        const isSuccess = megaPayResult.status === 'success' ||
+        // Check if STK Push was successful
+        const isSuccess = megaPayResult.status === 'success' || 
                          megaPayResult.success === true ||
                          (megaPayResult.message && megaPayResult.message.toLowerCase().includes('sent'));
 
