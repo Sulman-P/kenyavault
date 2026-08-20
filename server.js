@@ -2,7 +2,16 @@
 // KENYA VAULT - BACKEND SERVER (server.js)
 // Direct STK Push API - No new tab
 // ============================================================
+// Add this at the top of server.js
+require('dotenv').config();
 
+// Then use process.env for configuration
+const PORT = process.env.PORT || 3000;
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const MEGAPAY_API_KEY = process.env.MEGAPAY_API_KEY;
+const MEGAPAY_API_URL = process.env.MEGAPAY_API_URL;
+const MEGAPAY_CALLBACK_URL = process.env.MEGAPAY_CALLBACK_URL;
 const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
