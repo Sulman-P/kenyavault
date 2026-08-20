@@ -17,7 +17,7 @@ const PORT = process.env.PORT || 3000;
 
 // Supabase Configuration
 const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
-const SUPABASE_SERVICE_ROLE_KEY = ' '; // Replace with your service role key
+const SUPABASE_SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs'; // Replace with your service role key
 
 // MegaPay Configuration - UPDATED
 const MEGAPAY_API_KEY = 'MGPYDSg2lIYA';
