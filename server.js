@@ -190,66 +190,84 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
     }
 });
 
-// ─── SIMPLIFIED CALLBACK HANDLER ──────────────────────────────
+// ─── ENHANCED CALLBACK HANDLER ──────────────────────────────────
 app.post('/api/mpesa/callback', async (req, res) => {
     console.log('📥 M-Pesa Callback Received!');
+    console.log('Headers:', JSON.stringify(req.headers, null, 2));
     console.log('Body:', JSON.stringify(req.body, null, 2));
     
     try {
         const data = req.body;
         
-        // Extract reference from MegaPay response
-        // MegaPay sends reference in the response
-        const reference = data.reference || data.Reference || data.order_ref;
+        // ─── EXTRACT REFERENCE ──────────────────────────────────
+        let reference = data.reference || 
+                       data.Reference || 
+                       data.order_ref || 
+                       data.payment_reference ||
+                       data.MerchantRequestID ||
+                       data.CheckoutRequestID;
         
-        console.log(`🔍 Looking for reference: ${reference}`);
+        console.log(`🔍 Extracted reference: ${reference}`);
         
         if (!reference) {
             console.error('❌ No reference found in callback');
             return res.status(200).json({ 
                 success: true, 
-                message: 'No reference found' 
+                message: 'No reference found'
             });
         }
         
-        // ─── FIND THE ORDER BY REFERENCE ──────────────────────
-        const { data: order, error: findError } = await supabase
+        // ─── FIND THE ORDER ──────────────────────────────────────
+        let order = null;
+        
+        // Try by payment_reference
+        const { data: orderByRef, error: refError } = await supabase
             .from('orders')
             .select('*')
             .eq('payment_reference', reference)
             .single();
         
-        if (findError || !order) {
-            console.error(`❌ Order not found for reference: ${reference}`);
-            // Try to find by order_ref as fallback
-            const { data: orderByRef, error: refError } = await supabase
+        if (!refError && orderByRef) {
+            order = orderByRef;
+            console.log(`✅ Found order by payment_reference: ${order.id}`);
+            console.log(`📊 Current order status: ${order.status}, payment_verified: ${order.payment_verified}`);
+        }
+        
+        // Try by order_ref
+        if (!order) {
+            const { data: orderByOrderRef, error: orderRefError } = await supabase
                 .from('orders')
                 .select('*')
                 .eq('order_ref', reference)
                 .single();
             
-            if (refError || !orderByRef) {
-                console.error('❌ Order not found by any reference');
-                return res.status(200).json({ 
-                    success: true, 
-                    message: 'Order not found' 
-                });
+            if (!orderRefError && orderByOrderRef) {
+                order = orderByOrderRef;
+                console.log(`✅ Found order by order_ref: ${order.id}`);
+                console.log(`📊 Current order status: ${order.status}, payment_verified: ${order.payment_verified}`);
             }
-            var foundOrder = orderByRef;
-        } else {
-            var foundOrder = order;
         }
         
-        console.log(`✅ Found order: ${foundOrder.id}`);
+        if (!order) {
+            console.error(`❌ Order not found for reference: ${reference}`);
+            return res.status(200).json({ 
+                success: true, 
+                message: 'Order not found',
+                reference: reference
+            });
+        }
         
         // ─── CHECK IF PAID ──────────────────────────────────────
         // MegaPay uses ResultCode: '0' for success
         const isPaid = data.ResultCode === '0' || 
                       data.ResultCode === 0 ||
                       data.status === 'success' ||
-                      data.status === 'completed';
+                      data.status === 'completed' ||
+                      data.success === true;
         
-        console.log(`💰 Payment status: ${isPaid ? 'PAID ✅' : 'FAILED ❌'}`);
+        console.log(`💰 Payment ${isPaid ? 'PAID ✅' : 'FAILED ❌'}`);
+        console.log(`📊 ResultCode: ${data.ResultCode}`);
+        console.log(`📊 Status: ${data.status}`);
         
         // ─── UPDATE THE ORDER ──────────────────────────────────
         const updateData = {
@@ -257,45 +275,55 @@ app.post('/api/mpesa/callback', async (req, res) => {
             payment_status: isPaid ? 'paid' : 'failed',
             payment_verified: isPaid,
             payment_verified_at: isPaid ? new Date().toISOString() : null,
+            mpesa_transaction_id: data.TransactionID || data.transaction_id || null,
+            mpesa_code: data.TransactionID || data.transaction_id || null,
             updated_at: new Date().toISOString()
         };
         
-        const { error: updateError } = await supabase
+        console.log(`📝 Updating order with:`, JSON.stringify(updateData, null, 2));
+        
+        const { data: updatedOrder, error: updateError } = await supabase
             .from('orders')
             .update(updateData)
-            .eq('id', foundOrder.id);
+            .eq('id', order.id)
+            .select();
         
         if (updateError) {
             console.error('❌ Error updating order:', updateError);
-            return res.status(500).json({
+            return res.status(200).json({
                 success: false,
-                error: 'Failed to update order'
+                error: 'Failed to update order',
+                details: updateError
             });
         }
         
-        console.log(`✅ Order ${foundOrder.id} updated to ${isPaid ? 'PAID' : 'FAILED'}`);
+        console.log(`✅ Order ${order.id} updated successfully!`);
+        console.log(`📊 New status: ${isPaid ? 'PAID' : 'FAILED'}`);
+        console.log(`📊 Updated order:`, JSON.stringify(updatedOrder, null, 2));
         
-        // ─── GRANT ACCESS ──────────────────────────────────────
-        if (isPaid && foundOrder.resource_ids) {
-            await grantResourceAccess(foundOrder.id, foundOrder.resource_ids);
+        // ─── GRANT ACCESS IF PAID ──────────────────────────────
+        if (isPaid && order.resource_ids && order.resource_ids.length > 0) {
+            console.log(`📚 Granting access to resources: ${order.resource_ids}`);
+            await grantResourceAccess(order.id, order.resource_ids);
         }
         
         res.status(200).json({
             success: true,
             message: 'Callback processed',
-            order_id: foundOrder.id,
-            status: isPaid ? 'paid' : 'failed'
+            order_id: order.id,
+            status: isPaid ? 'paid' : 'failed',
+            updated_order: updatedOrder
         });
         
     } catch (error) {
         console.error('❌ Callback error:', error);
         res.status(200).json({
             success: false,
-            error: error.message
+            error: error.message,
+            stack: error.stack
         });
     }
 });
-
 // ─── ROOT ────────────────────────────────────────────────────
 app.get('/', (req, res) => {
     res.status(200).json({
