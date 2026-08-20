@@ -524,7 +524,7 @@
         }
         .level-card .lv-grades {
             font-size: 0.6rem;
-            color: var(--kv-muted-soft);
+            color: var(--kv-muted);
             margin-top: 2px;
         }
 
@@ -2783,12 +2783,12 @@ FOOTER
 </footer>
 
 <!-- ============================================================
-JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
+JAVASCRIPT — COMPLETE MARKETPLACE WITH FIXED PAYMENT
 ============================================================ -->
 <script>
     // ============================================================
     // KENYAVAULT — COMPLETE MARKETPLACE ENGINE
-    // With DIRECT STK Push (MegaPay) integration
+    // With FIXED payment confirmation from Supabase
     // ============================================================
 
     (function() {
@@ -3865,12 +3865,23 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
                 if (!items || items.length === 0) {
                     var filePath = order.resource_file_path || order.file_path || order.file_url || '';
                     var fileName = order.resource_file_name || order.file_name || 'resource.pdf';
+                    
+                    var product = allResources.find(function(r) { 
+                        return r.id === order.resource_id || r.id === items[0]?.id;
+                    });
+                    
+                    if (product) {
+                        filePath = product.file_path || product.file_url || filePath;
+                        fileName = product.file_name || fileName;
+                    }
+                    
                     var url = await generatePublicUrl(filePath, fileName);
                     if (url) {
                         showToast('Opening', 'Opening ' + fileName + '...', 'info');
                         openFileInNewTab(url, fileName);
                         return true;
                     }
+                    showToast('Error', 'File not found. Please contact support.', 'error');
                     return false;
                 }
 
@@ -3888,16 +3899,24 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
 
                     var url = await generatePublicUrl(filePath, fileName);
                     if (url) {
-                        setTimeout(function(url, fileName) {
+                        setTimeout(function(url, fileName, idx) {
                             showToast('Opening', 'Opening ' + fileName + '...', 'info');
                             openFileInNewTab(url, fileName);
-                        }, i * 800, url, fileName);
+                        }, i * 1000, url, fileName, i);
                         successCount++;
                     }
                 }
-                return successCount > 0;
+
+                if (successCount === 0) {
+                    showToast('Error', 'No files found. Please contact support.', 'error');
+                    return false;
+                }
+
+                showToast('Success', 'Opening ' + successCount + ' file(s)...', 'success');
+                return true;
             } catch (error) {
                 console.error('[Download] Error:', error);
+                showToast('Error', 'Download failed: ' + (error.message || 'Unknown error'), 'error');
                 return false;
             }
         }
@@ -4106,7 +4125,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
             }
         }
 
-        // ─── UPDATED: checkOrderPaymentStatus with better reference handling ──
+        // ─── FIXED: checkOrderPaymentStatus with multiple confirmation methods ──
         async function checkOrderPaymentStatus() {
             if (!currentOrderRef && !currentOrderId) {
                 console.warn('No order ID or reference to check');
@@ -4124,11 +4143,16 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
                 var response = await fetch(query, {
                     headers: {
                         'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
+                        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                        'Content-Type': 'application/json'
                     }
                 });
 
-                if (!response.ok) return;
+                if (!response.ok) {
+                    console.warn('Order fetch failed:', response.status);
+                    return;
+                }
+
                 var orders = await response.json();
                 if (orders.length === 0) {
                     console.warn('Order not found');
@@ -4136,37 +4160,125 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
                 }
 
                 var order = orders[0];
-                console.log('📊 Order status:', order.status, 'Payment verified:', order.payment_verified);
+                console.log('📊 Order status check:', {
+                    order_ref: order.order_ref,
+                    status: order.status,
+                    payment_status: order.payment_status,
+                    payment_verified: order.payment_verified,
+                    payment_confirmed: order.payment_confirmed,
+                    mpesa_code: order.mpesa_code,
+                    amount_paid: order.amount_paid,
+                    total_amount: order.total_amount
+                });
 
-                // Check various status fields
-                var isPaid = order.status === 'paid' ||
-                    order.payment_status === 'paid' ||
-                    order.payment_verified === true ||
-                    order.payment_verified === 'true';
+                // ─── CHECK MULTIPLE PAYMENT CONFIRMATION FIELDS ───
+                var isPaid = false;
+                var paymentMethod = '';
 
+                // 1. Check if payment_confirmed is true (admin confirmed)
+                if (order.payment_confirmed === true) {
+                    isPaid = true;
+                    paymentMethod = 'admin_confirmed';
+                }
+
+                // 2. Check if payment_verified is true
+                if (order.payment_verified === true || order.payment_verified === 'true') {
+                    isPaid = true;
+                    paymentMethod = 'verified';
+                }
+
+                // 3. Check status fields
+                if (order.status === 'paid' || order.status === 'completed' || order.status === 'success') {
+                    isPaid = true;
+                    paymentMethod = 'status';
+                }
+
+                if (order.payment_status === 'paid' || order.payment_status === 'completed' || order.payment_status === 'success') {
+                    isPaid = true;
+                    paymentMethod = 'payment_status';
+                }
+
+                // 4. Check if there's an M-PESA code AND amount matches
+                var mpesaCode = order.mpesa_code || order.mpesa_receipt || order.transaction_reference || order.payment_reference || '';
+                var amountPaid = Number(order.amount_paid || 0);
+                var totalAmount = Number(order.total_amount || 0);
+
+                if (mpesaCode.length > 0 && amountPaid >= totalAmount && totalAmount > 0) {
+                    isPaid = true;
+                    paymentMethod = 'mpesa_match';
+                }
+
+                // 5. Check if amount_paid matches total (auto-detection)
+                if (amountPaid >= totalAmount && totalAmount > 0 && !isPaid) {
+                    isPaid = true;
+                    paymentMethod = 'amount_match';
+                }
+
+                // ─── IF PAID, CONFIRM AND DOWNLOAD ───
                 if (isPaid) {
-                    // Payment successful!
                     stopPaymentPolling();
                     isPaymentVerified = true;
                     currentOrderId = order.id;
                     currentOrderRef = order.order_ref;
 
-                    showStkStatus('✅ Payment confirmed! Downloading your resource...', 'success');
+                    // Update order to confirmed if not already
+                    if (order.payment_confirmed !== true) {
+                        try {
+                            var updateResponse = await fetch(SUPABASE_URL + '/rest/v1/orders?id=eq.' + order.id, {
+                                method: 'PATCH',
+                                headers: {
+                                    'apikey': SUPABASE_ANON_KEY,
+                                    'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    payment_confirmed: true,
+                                    payment_status: 'paid',
+                                    status: 'paid',
+                                    confirmed_at: new Date().toISOString(),
+                                    updated_at: new Date().toISOString()
+                                })
+                            });
+                            if (updateResponse.ok) {
+                                console.log('✅ Order confirmed in Supabase via: ' + paymentMethod);
+                            } else {
+                                console.warn('⚠️ Failed to update order:', await updateResponse.text());
+                            }
+                        } catch (updateError) {
+                            console.warn('Update error:', updateError);
+                        }
+                    }
 
-                    await downloadOrderFiles(order);
+                    // Show success
+                    var mpesaDisplay = mpesaCode || '';
+                    showStkStatus('✅ Payment confirmed! ' + (mpesaDisplay ? 'M-PESA: ' + mpesaDisplay : ''), 'success');
+
+                    // Download the files
+                    try {
+                        await downloadOrderFiles(order);
+                    } catch (downloadError) {
+                        console.warn('Download error:', downloadError);
+                        showToast('Download', 'Payment confirmed but file download failed. Check your order.', 'warning');
+                    }
+
+                    // Show success modal
                     showSuccessWithShare(order.order_ref);
 
-                    if (checkoutMode === 'cart') clearCart();
+                    // Clear cart if cart checkout
+                    if (checkoutMode === 'cart') {
+                        clearCart();
+                    }
 
+                    // Close checkout after delay
                     setTimeout(function() {
                         hideStkStatus();
                         closeCheckoutModal();
-                    }, 3000);
+                    }, 4000);
 
                     return;
                 }
 
-                // Check if payment failed
+                // ─── CHECK IF PAYMENT FAILED ───
                 if (order.status === 'failed' || order.payment_status === 'failed') {
                     stopPaymentPolling();
                     showStkStatus('❌ Payment failed. Please try again.', 'error');
@@ -4177,35 +4289,63 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
                     return;
                 }
 
-                // Still pending - continue polling
+                // ─── CHECK IF PENDING FOR TOO LONG ───
+                var createdAt = new Date(order.created_at);
+                var now = new Date();
+                var elapsedMinutes = (now - createdAt) / (1000 * 60);
+
+                if (elapsedMinutes > 5 && !isPaid) {
+                    stopPaymentPolling();
+                    showStkStatus('⏰ Payment timeout. Please check your order status or try again.', 'error');
+                    payPrimaryBtn.style.display = 'flex';
+                    verifyOrderBtn.style.display = 'block';
+                    payPrimaryBtn.disabled = false;
+                    payPrimaryBtn.innerHTML = '<span class="btn-text">🔄 Retry Payment</span>';
+                    return;
+                }
+
+                // ─── STILL PENDING - CONTINUE POLLING ───
+                paymentCheckAttempts++;
                 console.log('⏳ Still pending (attempt ' + paymentCheckAttempts + '/' + MAX_POLL_ATTEMPTS + ')');
 
-                // Update the status message with attempts
-                if (paymentCheckAttempts % 3 === 0) {
+                if (paymentCheckAttempts % 3 === 0 || paymentCheckAttempts === 1) {
                     showStkStatus(
-                        '<span class="spinner"></span> Waiting for payment confirmation... (' + paymentCheckAttempts + '/' + MAX_POLL_ATTEMPTS + ')',
+                        '<span class="spinner"></span> Waiting for payment confirmation... (Attempt ' + paymentCheckAttempts +
+                        '/' + MAX_POLL_ATTEMPTS + ')',
                         'pending'
                     );
                 }
 
+                if (paymentCheckAttempts >= MAX_POLL_ATTEMPTS) {
+                    stopPaymentPolling();
+                    showStkStatus('⏰ Payment verification timed out. Please check your M-PESA and try again.', 'error');
+                    payPrimaryBtn.style.display = 'flex';
+                    verifyOrderBtn.style.display = 'block';
+                    payPrimaryBtn.disabled = false;
+                    payPrimaryBtn.innerHTML = '<span class="btn-text">🔄 Retry Payment</span>';
+                }
+
             } catch (error) {
                 console.error('Status check error:', error);
-                // Don't stop polling on network errors
             }
         }
 
-        // ─── UPDATED: initiatePayment with payment reference saving ──
+        // ─── FIXED: initiatePayment with proper order creation ──
         async function initiatePayment() {
+            // Reset state
             currentOrderId = null;
             currentOrderRef = null;
             currentPaymentReference = null;
             isPaymentVerified = false;
+            
             if (isProcessing) return;
-               // At the start of initiatePayment, reset the order state
+
+            // Get customer details
             var phone = phoneInput.value.trim().replace(/\s/g, '');
             var customerName = customerNameInput.value.trim();
             var customerEmail = customerName.toLowerCase().replace(/\s/g, '') + '@kenyavault.co.ke';
 
+            // Validate
             if (!customerName) {
                 customerNameInput.classList.add('error');
                 showToast('Error', 'Please enter your full name', 'error');
@@ -4220,7 +4360,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
             }
             phoneInput.classList.remove('error');
 
-            // Convert phone to MegaPay format (07XXXXXXXX)
+            // Format phone
             var formattedPhone = phone;
             if (phone.startsWith('254')) {
                 formattedPhone = '0' + phone.substring(3);
@@ -4238,6 +4378,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
                 return;
             }
 
+            // Check if free
             var isFreeCheckout = false;
             if (checkoutMode === 'single' && currentProduct) {
                 var pricing = getResourcePricing(currentProduct);
@@ -4260,6 +4401,24 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
                     currentOrderId = freeResult.orderId;
                     isPaymentVerified = true;
 
+                    // Mark as paid in database
+                    await fetch(SUPABASE_URL + '/rest/v1/orders?id=eq.' + freeResult.orderId, {
+                        method: 'PATCH',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            payment_status: 'paid',
+                            status: 'paid',
+                            payment_confirmed: true,
+                            confirmed_at: new Date().toISOString(),
+                            updated_at: new Date().toISOString()
+                        })
+                    });
+
+                    // Download
                     try {
                         var orderFetch = await fetch(SUPABASE_URL + '/rest/v1/orders?id=eq.' + freeResult.orderId +
                             '&select=*', {
@@ -4290,7 +4449,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
                 }
             }
 
-            // ─── PAID RESOURCE - DIRECT STK PUSH ──────────────────
+            // ─── PAID RESOURCE ──────────────────────────────────
             if (checkoutMode === 'single' && !currentProduct) return;
             if (checkoutMode === 'cart' && checkoutCartItems.length === 0) return;
 
@@ -4303,7 +4462,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
             try {
                 var orderRef, orderId, totalAmount;
 
-                // Create order first
+                // Create order
                 if (checkoutMode === 'cart') {
                     var cartResult = await createCartOrder(checkoutCartItems, customerName, formattedPhone);
                     orderRef = cartResult.orderRef;
@@ -4320,7 +4479,9 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
                 currentOrderId = orderId;
                 checkoutExpectedTotal = totalAmount;
 
-                // ─── CALL BACKEND TO SEND STK PUSH ────────────────
+                console.log('📝 Order created:', { orderRef, orderId, totalAmount });
+
+                // ─── SEND STK PUSH ────────────────────────────────
                 showStkStatus(
                     '<span class="spinner"></span> Sending STK Push to your phone...',
                     'pending'
@@ -4337,6 +4498,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
                         phone: formattedPhone,
                         amount: totalAmount,
                         order_id: orderId,
+                        order_ref: orderRef,
                         customer_name: customerName,
                         customer_email: customerEmail,
                         resource_ids: checkoutMode === 'cart' ? checkoutCartItems.map(function(i) { return i.id; }) : [currentProduct.id]
@@ -4354,22 +4516,22 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
                     throw new Error(result.error || 'Failed to send STK Push');
                 }
 
-                // ─── SAVE THE PAYMENT REFERENCE TO THE ORDER ──────────
+                // ─── SAVE PAYMENT REFERENCE ──────────────────────
                 var megaPayReference = result.data.reference;
-                console.log('📝 Saving MegaPay reference:', megaPayReference);
+                console.log('📝 MegaPay reference:', megaPayReference);
                 currentPaymentReference = megaPayReference;
 
-                // Update the order with the payment reference
+                // Update order with payment reference
                 var updateResponse = await fetch(SUPABASE_URL + '/rest/v1/orders?id=eq.' + orderId, {
                     method: 'PATCH',
                     headers: {
                         'apikey': SUPABASE_ANON_KEY,
                         'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
-                        'Content-Type': 'application/json',
-                        'Prefer': 'return=representation'
+                        'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
                         payment_reference: megaPayReference,
+                        transaction_reference: megaPayReference,
                         payment_status: 'pending',
                         updated_at: new Date().toISOString()
                     })
@@ -4378,12 +4540,12 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
                 if (!updateResponse.ok) {
                     console.warn('⚠️ Failed to update order with payment reference:', await updateResponse.text());
                 } else {
-                    console.log('✅ Order updated with payment reference:', megaPayReference);
+                    console.log('✅ Order updated with payment reference');
                 }
 
-                // STK Push sent successfully!
+                // ─── STK PUSH SENT - START POLLING ──────────────────
                 showStkStatus(
-                    '📱 STK Push sent! Check your phone for the M-Pesa PIN prompt.',
+                    '📱 STK Push sent! Check your phone for the M-PESA PIN prompt.',
                     'pending'
                 );
 
@@ -4391,9 +4553,13 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
                 verifyOrderBtn.style.display = 'block';
                 verifyOrderBtn.textContent = '🔓 Verify Payment';
                 verifyOrderBtn.disabled = false;
-                verifyOrderBtn.onclick = function() { checkOrderPaymentStatus(); };
+                verifyOrderBtn.onclick = function() { 
+                    paymentCheckAttempts = 0;
+                    checkOrderPaymentStatus(); 
+                };
 
                 // Start polling for payment confirmation
+                paymentCheckAttempts = 0;
                 startPaymentPolling();
 
                 // Also check for callback via URL params
@@ -4405,11 +4571,21 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
                 console.error('Payment initiation failed:', error);
                 showStkStatus('❌ ' + (error.message || 'Payment initiation failed'), 'error');
                 showToast('Error', 'Payment initiation failed: ' + (error.message || 'Unknown error'), 'error');
-            } finally {
-                isProcessing = false;
+                
+                // Reset UI
+                payPrimaryBtn.style.display = 'flex';
                 payPrimaryBtn.disabled = false;
                 payPrimaryBtn.classList.remove('loading');
                 payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Pay with M-PESA</span>';
+                verifyOrderBtn.style.display = 'block';
+                verifyOrderBtn.textContent = '🔓 Verify Payment';
+                verifyOrderBtn.disabled = false;
+                verifyOrderBtn.onclick = function() { 
+                    paymentCheckAttempts = 0;
+                    checkOrderPaymentStatus(); 
+                };
+            } finally {
+                isProcessing = false;
             }
         }
 
@@ -4417,43 +4593,53 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
             var params = new URLSearchParams(window.location.search);
             var status = params.get('status');
             var orderRef = params.get('order_ref') || localStorage.getItem('pendingOrderRef');
+            var paymentRef = params.get('payment_reference') || params.get('reference');
 
-            if ((status === 'success' || status === 'completed') && orderRef) {
-                (function() {
-                    var ref = orderRef;
-                    fetch(SUPABASE_URL + '/rest/v1/orders?order_ref=eq.' + ref + '&select=*', {
-                        headers: {
-                            'apikey': SUPABASE_ANON_KEY,
-                            'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
+            if ((status === 'success' || status === 'completed' || status === 'paid') && (orderRef || paymentRef)) {
+                var query = SUPABASE_URL + '/rest/v1/orders?select=*';
+                if (orderRef) {
+                    query += '&order_ref=eq.' + orderRef;
+                } else if (paymentRef) {
+                    query += '&payment_reference=eq.' + paymentRef;
+                }
+
+                fetch(query, {
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                        'Content-Type': 'application/json'
+                    }
+                })
+                .then(function(res) { return res.ok ? res.json() : null; })
+                .then(function(orders) {
+                    if (orders && orders.length > 0) {
+                        var order = orders[0];
+                        var isPaid = order.payment_status === 'paid' || order.payment_status === 'completed' ||
+                            order.status === 'paid' || order.status === 'completed' ||
+                            order.status === 'success' ||
+                            order.payment_confirmed === true ||
+                            order.payment_verified === true;
+
+                        if (isPaid) {
+                            isPaymentVerified = true;
+                            currentOrderId = order.id;
+                            currentOrderRef = order.order_ref;
+                            stopPaymentPolling();
+                            showStkStatus('✅ Payment confirmed! Downloading your resource...', 'success');
+                            downloadOrderFiles(order);
+                            showSuccessWithShare(order.order_ref);
+                            if (checkoutMode === 'cart') clearCart();
+                            setTimeout(function() { closeCheckoutModal(); }, 3000);
                         }
-                    })
-                    .then(function(res) { return res.ok ? res.json() : null; })
-                    .then(function(orders) {
-                        if (orders && orders.length > 0) {
-                            var order = orders[0];
-                            var isPaid = order.payment_status === 'paid' || order.payment_status ===
-                                'completed' ||
-                                order.status === 'paid' || order.status === 'completed' ||
-                                order.status === 'success';
-                            if (isPaid) {
-                                isPaymentVerified = true;
-                                currentOrderId = order.id;
-                                currentOrderRef = ref;
-                                stopPaymentPolling();
-                                showStkStatus('✅ Payment confirmed! Downloading your resource...', 'success');
-                                downloadOrderFiles(order);
-                                showSuccessWithShare(ref);
-                                if (checkoutMode === 'cart') clearCart();
-                                setTimeout(function() { closeCheckoutModal(); }, 3000);
-                            }
-                        }
-                        return null;
-                    })
-                    .catch(function(error) {
-                        console.error('Callback processing failed:', error);
-                    });
-                })();
+                    }
+                    return null;
+                })
+                .catch(function(error) {
+                    console.error('Callback processing failed:', error);
+                });
+
                 window.history.replaceState({}, document.title, window.location.pathname);
+                localStorage.removeItem('pendingOrderRef');
             }
         }
 
@@ -4695,6 +4881,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
                 console.log('[Levels] ' + LEVEL_ORDER.length + ' education levels');
                 console.log('[Payment] Direct STK Push mode enabled');
                 console.log('[Backend] Using: ' + BACKEND_URL);
+                console.log('[Payment] Multiple confirmation methods: status, payment_status, payment_confirmed, payment_verified, mpesa_code, amount_paid');
             } catch (e) {
                 renderError(e);
             }
@@ -4811,7 +4998,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
         document.addEventListener('DOMContentLoaded', init);
         console.log('✅ KenyaVault Marketplace — Category-Driven Design');
         console.log('✅ Direct STK Push mode enabled');
-        console.log('✅ No new tabs opened');
+        console.log('✅ Multiple payment confirmation methods');
         console.log('✅ Backend URL: ' + BACKEND_URL);
 
     })();
