@@ -1,5 +1,5 @@
 // ============================================================
-// KENYA VAULT - PAYMENT SERVER (FIXED CORS)
+// KENYA VAULT - PAYMENT SERVER (EMAIL FIXED)
 // ============================================================
 
 const express = require('express');
@@ -9,7 +9,7 @@ const crypto = require('crypto');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ─── FIXED: DYNAMIC CORS ──────────────────────────────────────
+// ─── CORS ──────────────────────────────────────────────────────
 const allowedOrigins = [
     'https://kenyavault.co.ke',
     'https://www.kenyavault.co.ke',
@@ -20,13 +20,10 @@ const allowedOrigins = [
 
 app.use(cors({
     origin: function(origin, callback) {
-        // Allow requests with no origin (like mobile apps or curl)
         if (!origin) return callback(null, true);
-        
         if (allowedOrigins.indexOf(origin) !== -1) {
             callback(null, true);
         } else {
-            console.log('❌ CORS blocked:', origin);
             callback(new Error('Not allowed by CORS'));
         }
     },
@@ -36,21 +33,12 @@ app.use(cors({
 }));
 
 app.options('*', cors());
-
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ─── LOGGING ──────────────────────────────────────────────────
-app.use((req, res, next) => {
-    console.log(`📥 ${req.method} ${req.url}`);
-    if (req.method === 'POST') {
-        console.log('Body:', JSON.stringify(req.body, null, 2));
-    }
-    next();
-});
-
 // ─── MEGAPAY CONFIG ──────────────────────────────────────────
 const MEGAPAY_API_KEY = 'MGPYDSg2lIYA';
+const MEGAPAY_EMAIL = 'adminnexalearn@gmail.com'; // ← YOUR REGISTERED MEGAPAY EMAIL
 const MEGAPAY_API_URL = 'https://megapay.co.ke/backend/v1/initiatestk';
 const MEGAPAY_CALLBACK_URL = 'https://kenyavault.onrender.com/api/mpesa/callback';
 
@@ -79,12 +67,21 @@ function validatePhoneNumber(phone) {
     return null;
 }
 
+// ─── LOGGING ──────────────────────────────────────────────────
+app.use((req, res, next) => {
+    console.log(`📥 ${req.method} ${req.url}`);
+    if (req.method === 'POST') {
+        console.log('Body:', JSON.stringify(req.body, null, 2));
+    }
+    next();
+});
+
 // ─── STK PUSH ENDPOINT ──────────────────────────────────────
 app.post('/api/mpesa/stk-push', async (req, res) => {
     console.log('🚀 STK Push endpoint called!');
     
     try {
-        const { phone, amount, order_id, customer_name, customer_email, resource_ids } = req.body;
+        const { phone, amount, order_id, customer_name } = req.body;
 
         // Validate
         if (!phone || !amount || !order_id) {
@@ -118,10 +115,10 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
         console.log('Reference:', reference);
         console.log('Order ID:', order_id);
 
-        // ─── MEGAPAY PAYLOAD ────────────────────────────────
+        // ─── MEGAPAY PAYLOAD (FIXED EMAIL) ─────────────────────
         const megaPayPayload = {
             api_key: MEGAPAY_API_KEY,
-            email: customer_email || 'customer@kenyavault.co.ke',
+            email: MEGAPAY_EMAIL,  // ← USING REGISTERED EMAIL
             amount: numericAmount,
             msisdn: formattedPhone,
             reference: reference
@@ -156,10 +153,10 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
 
         console.log('📥 MegaPay Result:', JSON.stringify(megaPayResult, null, 2));
 
-        // Check if successful
-        const isSuccess = megaPayResult.status === 'success' || 
-                         megaPayResult.success === true ||
-                         (megaPayResult.message && megaPayResult.message.toLowerCase().includes('sent'));
+        // Check if successful - MegaPay uses ResultCode: '0' for success
+        const isSuccess = megaPayResult.ResultCode === '0' || 
+                         megaPayResult.status === 'success' || 
+                         megaPayResult.success === true;
 
         if (isSuccess) {
             console.log('✅ STK Push sent successfully!');
@@ -179,7 +176,7 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
             console.log('❌ STK Push failed:', megaPayResult);
             return res.status(400).json({
                 success: false,
-                error: megaPayResult.message || megaPayResult.error || 'Failed to send STK Push',
+                error: megaPayResult.errorMessage || megaPayResult.message || 'Failed to send STK Push',
                 details: megaPayResult
             });
         }
@@ -197,16 +194,11 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
 app.post('/api/mpesa/callback', async (req, res) => {
     console.log('📥 M-Pesa Callback Received:');
     console.log(JSON.stringify(req.body, null, 2));
-    
-    res.status(200).json({
-        success: true,
-        message: 'Callback processed'
-    });
+    res.status(200).json({ success: true, message: 'Callback processed' });
 });
 
 // ─── HEALTH CHECK ─────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
-    console.log('✅ Health check called');
     res.status(200).json({
         status: 'healthy',
         timestamp: new Date().toISOString(),
