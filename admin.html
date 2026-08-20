@@ -2621,22 +2621,22 @@ TOAST CONTAINER
 <div class="toast-container" id="toastContainer"></div>
 
 <!-- ============================================================
-JAVASCRIPT — COMPLETE ADMIN
+JAVASCRIPT — COMPLETE ADMIN (FIXED - NO IIFE)
 ============================================================ -->
-   <script>
+<script>
     // ============================================================
-    // KENYA VAULT - ADMIN DASHBOARD (FIXED)
+    // 1. SUPABASE CONFIG
     // ============================================================
-
-    // ─── SUPABASE CONFIG ──────────────────────────────────────────
     var SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
     var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
     var supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     var SUPER_ADMIN_EMAIL = 'adminnexalearn@gmail.com';
     var SUPER_ADMIN_PASSWORD = 'KenyaVault2026';
 
-    // ─── STATE ──────────────────────────────────────────────────
-    var isAuthenticated = sessionStorage.getItem('kv-auth') === 'true';
+    // ============================================================
+    // 2. STATE
+    // ============================================================
+    var isAuthenticated = false;
     var currentModule = 'dashboard';
     var ordersData = [];
     var resourcesData = [];
@@ -2651,134 +2651,53 @@ JAVASCRIPT — COMPLETE ADMIN
     var adminPage = 1;
     var adminPageSize = 10;
     var currentCurrency = 'KES';
-    var previousStats = { total: 0, paid: 0, pending: 0, failed: 0, revenue: 0, resources: 0, learners: 0 };
-    var exchangeRates = { KES: 1, USD: 0.0078, EUR: 0.0072, GBP: 0.0061 };
     var massFiles = [];
     var massFileMetadata = [];
+    var exchangeRates = { KES: 1, USD: 0.0078, EUR: 0.0072, GBP: 0.0061 };
 
-    // ─── DOM READY ──────────────────────────────────────────────
-    document.addEventListener('DOMContentLoaded', function() {
-        console.log('Admin dashboard initialized');
-        
-        if (isAuthenticated) {
-            document.getElementById('loginOverlay').classList.remove('active');
-            initDashboard();
-        } else {
-            document.getElementById('loginOverlay').classList.add('active');
-        }
-        
-        loadTheme();
-        loadSettings();
-        setupEventListeners();
-    });
-
-    // ─── SETUP EVENT LISTENERS ──────────────────────────────────
-    function setupEventListeners() {
-        // Logout
-        document.getElementById('logoutBtn')?.addEventListener('click', function(e) {
-            e.preventDefault();
-            logout();
-        });
-
-        // Sidebar navigation
-        document.querySelectorAll('.sidebar-nav a[data-module]').forEach(function(link) {
-            link.addEventListener('click', function(e) {
-                e.preventDefault();
-                var module = this.dataset.module;
-                navigateTo(module);
-                if (window.innerWidth <= 900) closeSidebar();
-            });
-        });
-
-        // Modal close on overlay click
-        document.querySelectorAll('.modal-overlay').forEach(function(modal) {
-            modal.addEventListener('click', function(e) {
-                if (e.target === this) this.classList.remove('open');
-            });
-        });
-
-        // Hamburger menu
-        document.getElementById('hamburger')?.addEventListener('click', function() {
-            document.getElementById('navLinks')?.classList.toggle('open');
-        });
-
-        // Theme toggle
-        document.querySelector('.theme-toggle')?.addEventListener('click', toggleTheme);
-    }
-
-    // ─── LOAD SETTINGS ──────────────────────────────────────────
-    function loadSettings() {
+    // ============================================================
+    // 3. SAFE SESSION STORAGE HELPERS
+    // ============================================================
+    function safeGetUserData() {
         try {
-            var saved = localStorage.getItem('kv-settings');
-            if (saved) {
-                var settings = JSON.parse(saved);
-                document.getElementById('settingSiteName').value = settings.site_name || 'KenyaVault';
-                document.getElementById('settingTagline').value = settings.tagline || 'Complete Education Resources';
-                document.getElementById('settingCurrency').value = settings.currency || 'KES';
-                document.getElementById('settingPayout').value = settings.tutor_payout_percentage || 80;
-                document.getElementById('settingMinPayout').value = settings.min_payout || 500;
+            var stored = sessionStorage.getItem('kv-user');
+            if (stored && stored !== 'undefined' && stored !== 'null') {
+                return JSON.parse(stored);
             }
-        } catch (err) {
-            console.warn('Error loading settings:', err);
+        } catch (e) {
+            console.warn('Invalid user data in sessionStorage:', e.message);
+            sessionStorage.removeItem('kv-user');
+        }
+        return { email: SUPER_ADMIN_EMAIL, role: 'super_admin', name: 'Super Admin' };
+    }
+
+    function safeSetUserData(data) {
+        try {
+            sessionStorage.setItem('kv-user', JSON.stringify(data));
+        } catch (e) {
+            console.warn('Failed to set user data:', e.message);
         }
     }
 
-    // ─── LOAD THEME ─────────────────────────────────────────────
-    function loadTheme() {
-        var savedTheme = localStorage.getItem('kv-theme');
-        if (savedTheme === 'dark') {
-            document.body.classList.add('dark');
-            var icon = document.getElementById('themeIcon');
-            if (icon) icon.className = 'fas fa-sun';
+    function safeGetAuth() {
+        try {
+            return sessionStorage.getItem('kv-auth') === 'true';
+        } catch (e) {
+            return false;
         }
     }
 
-    // ─── TOAST ──────────────────────────────────────────────────
-    function showToast(title, message, type) {
-        type = type || 'success';
-        var container = document.getElementById('toastContainer');
-        if (!container) {
-            var newContainer = document.createElement('div');
-            newContainer.id = 'toastContainer';
-            newContainer.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:99999;max-width:380px;width:100%;';
-            document.body.appendChild(newContainer);
-            container = newContainer;
+    function safeSetAuth(value) {
+        try {
+            sessionStorage.setItem('kv-auth', value ? 'true' : 'false');
+        } catch (e) {
+            console.warn('Failed to set auth:', e.message);
         }
-
-        var toast = document.createElement('div');
-        var borderColor = type === 'success' ? 'var(--green)' : type === 'error' ? 'var(--red)' : 'var(--gold)';
-        toast.style.cssText = 'background:var(--surface);border-radius:var(--r);padding:14px 18px;box-shadow:var(--shadow-lg);border-left:4px solid ' + borderColor + ';margin-bottom:8px;animation:slideInRight 0.4s cubic-bezier(.34,1.56,.64,1);';
-        toast.innerHTML = '<div style="font-weight:700;font-size:0.85rem;color:var(--ink);">' + title + '</div><div style="font-size:0.8rem;color:var(--muted);">' + message + '</div>';
-        container.appendChild(toast);
-
-        setTimeout(function() {
-            toast.style.opacity = '0';
-            toast.style.transform = 'translateX(40px)';
-            toast.style.transition = 'all .3s';
-            setTimeout(function() { if (toast.parentNode) toast.remove(); }, 300);
-        }, 4000);
     }
 
-    // ─── SAFE SET TEXT CONTENT ──────────────────────────────────
-    function safeSetTextContent(id, value) {
-        var el = document.getElementById(id);
-        if (el) {
-            el.textContent = value;
-            return true;
-        }
-        console.warn('Element not found:', id);
-        return false;
-    }
-
-    // ─── FORMAT CURRENCY ────────────────────────────────────────
-    function formatCurrency(amount, currency) {
-        var symbol = currency === 'KES' ? 'KES ' :
-            currency === 'USD' ? '$' :
-            currency === 'EUR' ? '€' : '£';
-        return symbol + parseFloat(amount || 0).toFixed(2);
-    }
-
-    // ─── AUTHENTICATION ──────────────────────────────────────────
+    // ============================================================
+    // 4. AUTHENTICATION
+    // ============================================================
     function handleLogin(event) {
         event.preventDefault();
         var email = document.getElementById('loginEmail').value.trim();
@@ -2797,8 +2716,8 @@ JAVASCRIPT — COMPLETE ADMIN
         errorEl.style.display = 'none';
 
         if (email === SUPER_ADMIN_EMAIL && password === SUPER_ADMIN_PASSWORD) {
-            sessionStorage.setItem('kv-auth', 'true');
-            sessionStorage.setItem('kv-user', JSON.stringify({ email: email, role: 'super_admin' }));
+            safeSetAuth(true);
+            safeSetUserData({ email: email, role: 'super_admin', name: 'Super Admin' });
             isAuthenticated = true;
             loginBtn.textContent = '✅ Signed in';
             document.getElementById('loginOverlay').classList.remove('active');
@@ -2811,12 +2730,13 @@ JAVASCRIPT — COMPLETE ADMIN
             .then(function(result) {
                 if (result.error) throw result.error;
                 if (result.data.user) {
-                    sessionStorage.setItem('kv-auth', 'true');
-                    sessionStorage.setItem('kv-user', JSON.stringify({ 
-                        email: result.data.user.email, 
+                    safeSetAuth(true);
+                    safeSetUserData({
+                        email: result.data.user.email,
                         id: result.data.user.id,
-                        role: 'super_admin'
-                    }));
+                        role: 'super_admin',
+                        name: result.data.user.user_metadata?.name || result.data.user.email
+                    });
                     isAuthenticated = true;
                     document.getElementById('loginOverlay').classList.remove('active');
                     initDashboard();
@@ -2832,7 +2752,7 @@ JAVASCRIPT — COMPLETE ADMIN
     }
 
     function logout() {
-        sessionStorage.removeItem('kv-auth');
+        safeSetAuth(false);
         sessionStorage.removeItem('kv-user');
         isAuthenticated = false;
         document.getElementById('loginOverlay').classList.add('active');
@@ -2841,60 +2761,45 @@ JAVASCRIPT — COMPLETE ADMIN
         showToast('Logged Out', 'You have been signed out.');
     }
 
-    // ─── NAVIGATION ──────────────────────────────────────────────
-    function navigateTo(module) {
-        document.querySelectorAll('.module-container').forEach(function(el) {
-            el.classList.remove('active');
-        });
-
-        var target = document.getElementById('module-' + module);
-        if (target) target.classList.add('active');
-
-        document.querySelectorAll('.sidebar-nav a[data-module]').forEach(function(link) {
-            link.classList.remove('active');
-            if (link.dataset.module === module) link.classList.add('active');
-        });
-
-        var titles = {
-            dashboard: 'Dashboard',
-            resources: 'Resources',
-            tutors: 'Tutors',
-            learners: 'Learners',
-            orders: 'Orders',
-            withdrawals: 'Withdrawals',
-            settings: 'Settings',
-            uncategorized: 'Uncategorized'
-        };
-        var pageTitle = document.getElementById('pageTitle');
-        if (pageTitle) {
-            pageTitle.innerHTML = titles[module] + ' <small>' + (module === 'dashboard' ? 'overview' : 'management') + '</small>';
+    // ============================================================
+    // 5. DASHBOARD INITIALIZATION
+    // ============================================================
+    function initDashboard() {
+        if (!safeGetAuth()) {
+            console.warn('Not authenticated, skipping dashboard init');
+            return;
         }
 
-        currentModule = module;
-    }
+        isAuthenticated = true;
+        var userData = safeGetUserData();
 
-    // ─── SIDEBAR ──────────────────────────────────────────────────
-    function openSidebar() {
-        document.getElementById('sidebar').classList.add('open');
-        document.getElementById('sidebarOverlay').classList.add('open');
-    }
-
-    function closeSidebar() {
-        document.getElementById('sidebar').classList.remove('open');
-        document.getElementById('sidebarOverlay').classList.remove('open');
-    }
-
-    // ─── THEME ────────────────────────────────────────────────────
-    function toggleTheme() {
-        document.body.classList.toggle('dark');
-        var icon = document.getElementById('themeIcon');
-        if (icon) {
-            icon.className = document.body.classList.contains('dark') ? 'fas fa-sun' : 'fas fa-moon';
+        var avatarEl = document.getElementById('userAvatar');
+        if (avatarEl) {
+            var displayName = userData.name || userData.email || 'Admin';
+            avatarEl.textContent = displayName.substring(0, 2).toUpperCase();
         }
-        localStorage.setItem('kv-theme', document.body.classList.contains('dark') ? 'dark' : 'light');
+
+        try {
+            loadDashboardStats();
+            loadOrders();
+            loadResources();
+            loadTutors();
+            loadLearners();
+            loadWithdrawals();
+            loadUncategorized();
+            updateDateTime();
+            setInterval(updateDateTime, 1000);
+            updateExchangeRates();
+            console.log('✅ Dashboard initialized successfully');
+        } catch (err) {
+            console.error('Error initializing dashboard:', err);
+            showToast('Error', 'Failed to load dashboard data');
+        }
     }
 
-    // ─── UPDATE DATE/TIME ────────────────────────────────────────
+    // ============================================================
+    // 6. DATE & TIME
+    // ============================================================
     function updateDateTime() {
         var now = new Date();
         var dateEl = document.getElementById('dateDisplay');
@@ -2918,7 +2823,27 @@ JAVASCRIPT — COMPLETE ADMIN
         }
     }
 
-    // ─── UPDATE CURRENCY ─────────────────────────────────────────
+    // ============================================================
+    // 7. EXCHANGE RATES
+    // ============================================================
+    function updateExchangeRates() {
+        exchangeRates = { KES: 1, USD: 0.0078, EUR: 0.0072, GBP: 0.0061 };
+    }
+
+    function convertCurrency(amount, fromCurrency, toCurrency) {
+        if (!amount || amount === 0) return 0;
+        if (fromCurrency === toCurrency) return amount;
+        var inKES = amount / exchangeRates[fromCurrency];
+        return inKES * exchangeRates[toCurrency];
+    }
+
+    function formatCurrency(amount, currency) {
+        var symbol = currency === 'KES' ? 'KES ' :
+            currency === 'USD' ? '$' :
+            currency === 'EUR' ? '€' : '£';
+        return symbol + parseFloat(amount || 0).toFixed(2);
+    }
+
     function updateCurrency() {
         var select = document.getElementById('currencySelect');
         if (!select) return;
@@ -2939,14 +2864,19 @@ JAVASCRIPT — COMPLETE ADMIN
         }
     }
 
-    function convertCurrency(amount, fromCurrency, toCurrency) {
-        if (!amount || amount === 0) return 0;
-        if (fromCurrency === toCurrency) return amount;
-        var inKES = amount / exchangeRates[fromCurrency];
-        return inKES * exchangeRates[toCurrency];
+    // ============================================================
+    // 8. DASHBOARD STATS
+    // ============================================================
+    function safeSetTextContent(id, value) {
+        var el = document.getElementById(id);
+        if (el) {
+            el.textContent = value;
+            return true;
+        }
+        console.warn('Element not found:', id);
+        return false;
     }
 
-    // ─── DASHBOARD STATS ─────────────────────────────────────────
     async function loadDashboardStats() {
         try {
             var subIds = ['statTotalSub', 'statPublishedSub', 'statDraftSub', 'statFreeSub',
@@ -2963,10 +2893,11 @@ JAVASCRIPT — COMPLETE ADMIN
             var draft = await supabase.from('resources').select('*', { count: 'exact', head: true }).eq('status', 'draft');
             var free = await supabase.from('resources').select('*', { count: 'exact', head: true }).eq('is_free', true);
             var paid = await supabase.from('resources').select('*', { count: 'exact', head: true }).eq('is_free', false);
-            var featured = await supabase.from('resources').select('*', { count: 'exact', head: true }).eq('is_featured', true);
+            var featured = await supabase.from('resources').select('*', { count: 'exact', head: true }).eq('featured', true);
+            var uncategorized = await supabase.from('resources').select('*', { count: 'exact', head: true }).eq('category', '');
             var orders = await supabase.from('orders').select('*', { count: 'exact', head: true });
             var paidOrders = await supabase.from('orders').select('*', { count: 'exact', head: true }).eq('status', 'paid');
-            var pendingOrders = await supabase.from('orders').select('*', { count: 'exact', head: true }).in('status', ['pending', 'unverified']);
+            var pendingOrders = await supabase.from('orders').select('*', { count: 'exact', head: true }).eq('status', 'pending');
             var learners = await supabase.from('learners').select('*', { count: 'exact', head: true });
 
             var downloadData = await supabase.from('resources').select('download_count');
@@ -2992,13 +2923,13 @@ JAVASCRIPT — COMPLETE ADMIN
             safeSetTextContent('statPaidResources', paid.count || 0);
             safeSetTextContent('statFeatured', featured.count || 0);
             safeSetTextContent('statDownloads', totalDownloads);
-            safeSetTextContent('statUncategorized', 0);
+            safeSetTextContent('statUncategorized', uncategorized.count || 0);
             safeSetTextContent('statOrders', orders.count || 0);
             safeSetTextContent('statPaidOrders', paidOrders.count || 0);
             safeSetTextContent('statPendingOrders', pendingOrders.count || 0);
             safeSetTextContent('statRevenue', formatCurrency(totalRevenue, 'KES'));
             safeSetTextContent('resourceCountBadge', totalRes.count || 0);
-            safeSetTextContent('uncategorizedBadge', 0);
+            safeSetTextContent('uncategorizedBadge', uncategorized.count || 0);
             safeSetTextContent('pendingBadge', pendingOrders.count || 0);
             safeSetTextContent('learnerCountBadge', learners.count || 0);
 
@@ -3009,7 +2940,7 @@ JAVASCRIPT — COMPLETE ADMIN
             safeSetTextContent('statPaidSub', (paid.count || 0) + ' paid');
             safeSetTextContent('statFeaturedSub', (featured.count || 0) + ' featured');
             safeSetTextContent('statDownloadsSub', totalDownloads + ' downloads');
-            safeSetTextContent('statUncategorizedSub', '0 need classification');
+            safeSetTextContent('statUncategorizedSub', (uncategorized.count || 0) + ' need classification');
             safeSetTextContent('statOrdersSub', (orders.count || 0) + ' total orders');
             safeSetTextContent('statPaidOrdersSub', (paidOrders.count || 0) + ' paid');
             safeSetTextContent('statPendingOrdersSub', (pendingOrders.count || 0) + ' pending');
@@ -3031,7 +2962,9 @@ JAVASCRIPT — COMPLETE ADMIN
         }
     }
 
-    // ─── CHARTS ──────────────────────────────────────────────────
+    // ============================================================
+    // 9. CHARTS
+    // ============================================================
     async function loadCategoryChart() {
         try {
             var resources = await supabase.from('resources').select('category');
@@ -3077,12 +3010,12 @@ JAVASCRIPT — COMPLETE ADMIN
 
     async function loadLevelChart() {
         try {
-            var resources = await supabase.from('resources').select('education_level');
+            var resources = await supabase.from('resources').select('level');
             if (!resources.data) return;
 
             var levelCount = {};
             resources.data.forEach(function(r) {
-                var level = r.education_level || 'Unspecified';
+                var level = r.level || 'Unspecified';
                 levelCount[level] = (levelCount[level] || 0) + 1;
             });
 
@@ -3120,7 +3053,9 @@ JAVASCRIPT — COMPLETE ADMIN
         }
     }
 
-    // ─── ORDERS ──────────────────────────────────────────────────
+    // ============================================================
+    // 10. ORDERS
+    // ============================================================
     async function loadOrders(page, filter, search) {
         page = page || 1;
         filter = filter || 'all';
@@ -3132,9 +3067,7 @@ JAVASCRIPT — COMPLETE ADMIN
             var start = (page - 1) * pageSize;
             var query = supabase.from('orders').select('*', { count: 'exact' });
 
-            if (filter === 'unverified') {
-                query = query.in('status', ['pending', 'unverified']);
-            } else if (filter !== 'all') {
+            if (filter !== 'all') {
                 query = query.eq('status', filter);
             }
             if (search) {
@@ -3161,7 +3094,7 @@ JAVASCRIPT — COMPLETE ADMIN
             console.error('Error loading orders:', err);
             var tbody = document.getElementById('tableBody');
             if (tbody) {
-                tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--red);">⚠️ Error loading orders</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--red);">⚠️ Error loading orders</td></tr>';
             }
         }
     }
@@ -3171,7 +3104,7 @@ JAVASCRIPT — COMPLETE ADMIN
         if (!tbody) return;
 
         if (!orders || orders.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--muted);">No orders found</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--muted);">No orders found</td></tr>';
             return;
         }
 
@@ -3235,7 +3168,9 @@ JAVASCRIPT — COMPLETE ADMIN
         numbersEl.innerHTML = pages || '<span>1</span>';
     }
 
-    // ─── ORDER ACTIONS ────────────────────────────────────────────
+    // ============================================================
+    // 11. ORDER ACTIONS
+    // ============================================================
     async function approveOrder(orderId) {
         if (!confirm('Approve this order?')) return;
         try {
@@ -3266,7 +3201,9 @@ JAVASCRIPT — COMPLETE ADMIN
         showToast('Order', 'Viewing order: ' + orderId.substring(0, 8));
     }
 
-    // ─── EXPORT ORDERS ────────────────────────────────────────────
+    // ============================================================
+    // 12. EXPORT ORDERS
+    // ============================================================
     function exportOrdersCSV() {
         if (!ordersData || ordersData.length === 0) {
             showToast('No data', 'No orders to export');
@@ -3336,7 +3273,589 @@ JAVASCRIPT — COMPLETE ADMIN
         }
     }
 
-    // ─── RESOURCES ─────────────────────────────────────────────────
+    // ============================================================
+    // 13. RESOURCES - SINGLE UPLOAD
+    // ============================================================
+    function togglePriceField() {
+        var isFree = document.querySelector('input[name="resIsFree"]:checked')?.value === 'free';
+        var priceInput = document.getElementById('resPrice');
+        var priceHint = document.getElementById('priceHint');
+        var priceValidation = document.getElementById('priceValidationError');
+
+        if (priceInput) {
+            priceInput.disabled = isFree;
+            if (isFree) {
+                priceInput.value = '0';
+                if (priceHint) priceHint.textContent = 'Set to 0 for free resources';
+                if (priceValidation) priceValidation.classList.remove('visible');
+            } else {
+                if (priceInput.value === '0' || !priceInput.value) {
+                    priceInput.value = '100';
+                }
+                if (priceHint) priceHint.textContent = 'Enter price for paid resources';
+            }
+        }
+    }
+
+    function toggleEditPriceField() {
+        var isFree = document.querySelector('input[name="editResIsFree"]:checked')?.value === 'free';
+        var editPrice = document.getElementById('editResPrice');
+        var editPriceHint = document.getElementById('editPriceHint');
+        var editPriceValidation = document.getElementById('editPriceValidationError');
+
+        if (editPrice) {
+            editPrice.disabled = isFree;
+            if (isFree) {
+                editPrice.value = '0';
+                if (editPriceHint) editPriceHint.textContent = 'Set to 0 for free resources';
+                if (editPriceValidation) editPriceValidation.classList.remove('visible');
+            } else {
+                if (editPrice.value === '0' || !editPrice.value) {
+                    editPrice.value = '100';
+                }
+                if (editPriceHint) editPriceHint.textContent = 'Enter price for paid resources';
+            }
+        }
+    }
+
+    function clearFileInput() {
+        var fileInput = document.getElementById('fileInput');
+        if (fileInput) fileInput.value = '';
+        var preview = document.getElementById('uploadPreview');
+        if (preview) preview.classList.remove('show');
+    }
+
+    function resetUploadForm() {
+        var form = document.getElementById('uploadForm');
+        if (form) form.reset();
+        clearFileInput();
+        var priceInput = document.getElementById('resPrice');
+        if (priceInput) {
+            priceInput.disabled = true;
+            priceInput.value = '0';
+        }
+        var validation = document.getElementById('priceValidationError');
+        if (validation) validation.classList.remove('visible');
+        var btn = document.getElementById('uploadSubmitBtn');
+        if (btn) {
+            btn.classList.remove('loading');
+            btn.disabled = false;
+        }
+        var freeRadio = document.querySelector('input[name="resIsFree"][value="free"]');
+        if (freeRadio) freeRadio.checked = true;
+        showToast('Reset', 'Form has been reset');
+    }
+
+    async function handleSingleUpload(e) {
+        e.preventDefault();
+        var btn = document.getElementById('uploadSubmitBtn');
+        if (!btn) return;
+
+        var title = document.getElementById('resTitle')?.value.trim();
+        var description = document.getElementById('resDescription')?.value.trim();
+        var category = document.getElementById('resCategory')?.value;
+        var level = document.getElementById('resLevel')?.value;
+        var grade = document.getElementById('resGrade')?.value;
+        var subject = document.getElementById('resSubject')?.value;
+        var resourceType = document.getElementById('resResourceType')?.value;
+        var fileInput = document.getElementById('fileInput');
+
+        if (!title || !description || !category || !level || !grade || !subject || !resourceType) {
+            showToast('Error', 'Please fill in all required fields');
+            return;
+        }
+
+        if (!fileInput?.files?.length) {
+            showToast('Error', 'Please select a file to upload');
+            return;
+        }
+
+        var file = fileInput.files[0];
+        var isFree = document.querySelector('input[name="resIsFree"]:checked')?.value === 'free';
+        var price = parseInt(document.getElementById('resPrice')?.value) || 0;
+
+        if (!isFree && price <= 0) {
+            var validation = document.getElementById('priceValidationError');
+            if (validation) validation.classList.add('visible');
+            return;
+        }
+
+        btn.classList.add('loading');
+        btn.disabled = true;
+
+        try {
+            var fileExt = file.name.split('.').pop();
+            var fileName = Date.now() + '_' + file.name;
+            var filePath = 'resources/' + fileName;
+
+            var uploadResult = await supabase.storage.from('resources').upload(filePath, file);
+            if (uploadResult.error) throw uploadResult.error;
+
+            var urlResult = supabase.storage.from('resources').getPublicUrl(filePath);
+            var fileUrl = urlResult?.data?.publicUrl || '';
+
+            var resourceData = {
+                title: title,
+                description: description,
+                category: category,
+                level: level,
+                grade: grade,
+                subject: subject,
+                resource_type: resourceType,
+                term: document.getElementById('resTerm')?.value || 'Term 1',
+                curriculum: document.getElementById('resCurriculum')?.value || 'CBC',
+                year: parseInt(document.getElementById('resYear')?.value) || 2026,
+                is_free: isFree,
+                price: isFree ? 0 : price,
+                featured: document.getElementById('resFeatured')?.value === 'true',
+                status: document.getElementById('resStatus')?.value || 'published',
+                file_url: fileUrl,
+                file_name: file.name,
+                file_size: file.size,
+                file_type: file.type,
+                download_count: 0,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            };
+
+            var dbResult = await supabase.from('resources').insert([resourceData]).select();
+            if (dbResult.error) throw dbResult.error;
+
+            showToast('Success', 'Resource "' + title + '" uploaded successfully!');
+            resetUploadForm();
+            loadResources();
+            loadDashboardStats();
+
+        } catch (err) {
+            console.error('Upload error:', err);
+            showToast('Error', 'Upload failed: ' + (err.message || 'Unknown error'));
+        } finally {
+            btn.classList.remove('loading');
+            btn.disabled = false;
+        }
+    }
+
+    // ============================================================
+    // 14. MASS UPLOAD
+    // ============================================================
+    function toggleBatchPricing() {
+        var isFree = document.querySelector('input[name="batchPricing"]:checked')?.value === 'free';
+        var priceInput = document.getElementById('batchPrice');
+        if (priceInput) {
+            priceInput.disabled = isFree;
+            if (isFree) priceInput.value = '0';
+        }
+        updateReviewTablePrices();
+    }
+
+    function handleMassFileSelect(files) {
+        massFiles = Array.from(files);
+        massFileMetadata = massFiles.map(function(file) {
+            return {
+                file: file,
+                name: file.name,
+                size: file.size,
+                category: autoDetectCategory(file.name),
+                level: autoDetectLevel(file.name),
+                grade: autoDetectGrade(file.name),
+                subject: autoDetectSubject(file.name),
+                type: autoDetectType(file.name),
+                term: autoDetectTerm(file.name),
+                curriculum: autoDetectCurriculum(file.name),
+                price: parseInt(document.getElementById('batchPrice')?.value) || 0,
+                is_free: document.querySelector('input[name="batchPricing"]:checked')?.value === 'free'
+            };
+        });
+
+        renderReviewTable();
+        document.getElementById('reviewContainer').style.display = 'block';
+        document.getElementById('fileCountDisplay').textContent = massFiles.length + ' files selected';
+        document.getElementById('reviewContainer').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function autoDetectCategory(filename) {
+        var name = filename.toLowerCase();
+        var map = {
+            'exam': 'exams-assessments',
+            'assessment': 'exams-assessments',
+            'test': 'exams-assessments',
+            'scheme': 'schemes-of-work',
+            'lesson plan': 'lesson-plans',
+            'notes': 'notes',
+            'revision': 'topical-revision',
+            'topical': 'topical-revision',
+            'holiday': 'holiday-assessments',
+            'assignment': 'holiday-assessments',
+            'past paper': 'past-papers',
+            'kcse': 'past-papers',
+            'kjsea': 'past-papers',
+            'record': 'records-of-work',
+            'curriculum': 'curriculum-designs',
+            'booklet': 'booklets'
+        };
+        for (var key in map) {
+            if (name.includes(key)) return map[key];
+        }
+        return '';
+    }
+
+    function autoDetectLevel(filename) {
+        var name = filename.toLowerCase();
+        if (name.includes('pre-primary')) return 'pre-primary';
+        if (name.includes('grade 1') || name.includes('grade 2') || name.includes('grade 3') ||
+            name.includes('grade 4') || name.includes('grade 5') || name.includes('grade 6')) {
+            return 'primary';
+        }
+        if (name.includes('grade 7') || name.includes('grade 8') || name.includes('grade 9')) {
+            return 'jss';
+        }
+        if (name.includes('grade 10') || name.includes('grade 11') || name.includes('grade 12')) {
+            return 'senior-school';
+        }
+        if (name.includes('form 1') || name.includes('form 2') || name.includes('form 3') || name.includes('form 4')) {
+            return 'secondary-844';
+        }
+        return '';
+    }
+
+    function autoDetectGrade(filename) {
+        var name = filename.toLowerCase();
+        var patterns = [
+            { pattern: 'pre-primary 1', value: 'Pre-Primary 1' },
+            { pattern: 'pre-primary 2', value: 'Pre-Primary 2' },
+            { pattern: 'grade 1', value: 'Grade 1' },
+            { pattern: 'grade 2', value: 'Grade 2' },
+            { pattern: 'grade 3', value: 'Grade 3' },
+            { pattern: 'grade 4', value: 'Grade 4' },
+            { pattern: 'grade 5', value: 'Grade 5' },
+            { pattern: 'grade 6', value: 'Grade 6' },
+            { pattern: 'grade 7', value: 'Grade 7' },
+            { pattern: 'grade 8', value: 'Grade 8' },
+            { pattern: 'grade 9', value: 'Grade 9' },
+            { pattern: 'grade 10', value: 'Grade 10' },
+            { pattern: 'grade 11', value: 'Grade 11' },
+            { pattern: 'grade 12', value: 'Grade 12' },
+            { pattern: 'form 1', value: 'Form 1' },
+            { pattern: 'form 2', value: 'Form 2' },
+            { pattern: 'form 3', value: 'Form 3' },
+            { pattern: 'form 4', value: 'Form 4' }
+        ];
+        for (var i = 0; i < patterns.length; i++) {
+            if (name.includes(patterns[i].pattern)) return patterns[i].value;
+        }
+        return '';
+    }
+
+    function autoDetectSubject(filename) {
+        var name = filename.toLowerCase();
+        var subjects = ['mathematics', 'english', 'kiswahili', 'integrated-science', 'biology',
+            'chemistry', 'physics', 'agriculture', 'social-studies', 'cre', 'ire',
+            'geography', 'history', 'business-studies', 'computer-studies',
+            'pre-technical-studies', 'creative-arts', 'life-skills', 'sports',
+            'music', 'french', 'german'
+        ];
+        for (var i = 0; i < subjects.length; i++) {
+            if (name.includes(subjects[i])) return subjects[i];
+        }
+        return '';
+    }
+
+    function autoDetectType(filename) {
+        var name = filename.toLowerCase();
+        var map = {
+            'internal exam': 'internal-exam',
+            'revision exam': 'revision-exam',
+            'mock exam': 'mock-exam',
+            'mock': 'mock-exam',
+            'kjsea': 'kjsea-paper',
+            'kcse': 'kcse-paper',
+            'topical assessment': 'topical-assessment',
+            'end-term': 'end-term-exam',
+            'term 1 scheme': 'term-1-scheme',
+            'term 2 scheme': 'term-2-scheme',
+            'term 3 scheme': 'term-3-scheme',
+            'annual scheme': 'annual-scheme',
+            'cbc scheme': 'cbc-scheme',
+            'class notes': 'class-notes',
+            'revision notes': 'revision-notes',
+            'teacher notes': 'teacher-notes',
+            'topical notes': 'topical-notes',
+            'summary notes': 'summary-notes',
+            'daily lesson plan': 'daily-lesson-plan',
+            'weekly lesson plan': 'weekly-lesson-plan',
+            'term lesson plan': 'term-lesson-plan',
+            'records of work': 'records-of-work',
+            'curriculum design': 'curriculum-design',
+            'past paper': 'past-paper',
+            'revision booklet': 'revision-booklet',
+            'holiday assignment': 'holiday-assignment',
+            'worksheet': 'worksheet',
+            'practice exercise': 'practice-exercise',
+            'question bank': 'question-bank',
+            'topical questions': 'topical-questions',
+            'marking scheme': 'marking-scheme',
+            'answer key': 'answer-key',
+            'teachers guide': 'teachers-guide',
+            'teaching aid': 'teaching-aid'
+        };
+        for (var key in map) {
+            if (name.includes(key)) return map[key];
+        }
+        return '';
+    }
+
+    function autoDetectTerm(filename) {
+        var name = filename.toLowerCase();
+        if (name.includes('term 1')) return 'Term 1';
+        if (name.includes('term 2')) return 'Term 2';
+        if (name.includes('term 3')) return 'Term 3';
+        if (name.includes('holiday')) return 'Holiday';
+        return '';
+    }
+
+    function autoDetectCurriculum(filename) {
+        var name = filename.toLowerCase();
+        if (name.includes('cbc')) return 'CBC';
+        if (name.includes('8-4-4') || name.includes('844')) return '8-4-4';
+        if (name.includes('tvet')) return 'TVET';
+        return '';
+    }
+
+    function renderReviewTable() {
+        var tbody = document.getElementById('reviewTableBody');
+        if (!tbody) return;
+
+        if (!massFileMetadata || massFileMetadata.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:16px;color:var(--muted);">No files selected</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = massFileMetadata.map(function(item, index) {
+            return '<tr>' +
+                '<td>' + (index + 1) + '</td>' +
+                '<td class="file-name-cell" title="' + item.name + '">' + item.name + '</td>' +
+                '<td><select onchange="updateReviewField(' + index + ', \'category\', this.value)"><option value="">Auto</option>' + getCategoryOptions(item.category) + '</select></td>' +
+                '<td><select onchange="updateReviewField(' + index + ', \'level\', this.value)"><option value="">Auto</option>' + getLevelOptions(item.level) + '</select></td>' +
+                '<td><select onchange="updateReviewField(' + index + ', \'grade\', this.value)"><option value="">Auto</option>' + getGradeOptions(item.grade) + '</select></td>' +
+                '<td><select onchange="updateReviewField(' + index + ', \'subject\', this.value)"><option value="">Auto</option>' + getSubjectOptions(item.subject) + '</select></td>' +
+                '<td><select onchange="updateReviewField(' + index + ', \'type\', this.value)"><option value="">Auto</option>' + getTypeOptions(item.type) + '</select></td>' +
+                '<td><select onchange="updateReviewField(' + index + ', \'term\', this.value)"><option value="">Auto</option>' + getTermOptions(item.term) + '</select></td>' +
+                '<td><select onchange="updateReviewField(' + index + ', \'curriculum\', this.value)"><option value="">Auto</option>' + getCurriculumOptions(item.curriculum) + '</select></td>' +
+                '<td>' + (item.is_free ? 'Free' : 'KES <input type="number" value="' + item.price + '" min="0" style="width:60px;padding:2px 4px;font-size:.65rem;" onchange="updateReviewField(' + index + ', \'price\', parseFloat(this.value))" />') + '</td>' +
+                '<td><span class="status-badge ' + (item.category ? 'auto' : 'warning') + '">' + (item.category ? '✓ Auto' : '⚠️ Needs review') + '</span></td>' +
+                '</tr>';
+        }).join('');
+    }
+
+    function getCategoryOptions(selected) {
+        var cats = ['exams-assessments', 'schemes-of-work', 'lesson-plans', 'notes',
+            'topical-revision', 'holiday-assessments', 'past-papers',
+            'revision-materials', 'records-of-work', 'curriculum-designs', 'booklets'
+        ];
+        return cats.map(function(c) {
+            return '<option value="' + c + '" ' + (c === selected ? 'selected' : '') + '>' + c.replace(/-/g, ' ') + '</option>';
+        }).join('');
+    }
+
+    function getLevelOptions(selected) {
+        var levels = ['pre-primary', 'primary', 'jss', 'senior-school', 'secondary-844'];
+        var labels = { 'pre-primary': 'Pre-Primary', 'primary': 'Primary', 'jss': 'Junior Secondary', 'senior-school': 'Senior School', 'secondary-844': 'Secondary 8-4-4' };
+        return levels.map(function(l) {
+            return '<option value="' + l + '" ' + (l === selected ? 'selected' : '') + '>' + labels[l] + '</option>';
+        }).join('');
+    }
+
+    function getGradeOptions(selected) {
+        var grades = ['Pre-Primary 1', 'Pre-Primary 2', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12', 'Form 1', 'Form 2', 'Form 3', 'Form 4'];
+        return grades.map(function(g) {
+            return '<option value="' + g + '" ' + (g === selected ? 'selected' : '') + '>' + g + '</option>';
+        }).join('');
+    }
+
+    function getSubjectOptions(selected) {
+        var subjects = ['mathematics', 'english', 'kiswahili', 'integrated-science', 'biology',
+            'chemistry', 'physics', 'agriculture', 'social-studies', 'cre', 'ire',
+            'geography', 'history', 'business-studies', 'computer-studies',
+            'pre-technical-studies', 'creative-arts', 'life-skills', 'sports',
+            'music', 'french', 'german', 'other'
+        ];
+        return subjects.map(function(s) {
+            return '<option value="' + s + '" ' + (s === selected ? 'selected' : '') + '>' + s.replace(/-/g, ' ') + '</option>';
+        }).join('');
+    }
+
+    function getTypeOptions(selected) {
+        var types = ['internal-exam', 'revision-exam', 'assessment', 'mock-exam',
+            'kjsea-paper', 'kcse-paper', 'topical-assessment', 'end-term-exam',
+            'term-1-scheme', 'term-2-scheme', 'term-3-scheme', 'annual-scheme',
+            'cbc-scheme', 'class-notes', 'revision-notes', 'teacher-notes',
+            'topical-notes', 'summary-notes', 'booklet', 'daily-lesson-plan',
+            'weekly-lesson-plan', 'term-lesson-plan', 'records-of-work',
+            'curriculum-design', 'past-paper', 'revision-booklet',
+            'holiday-assignment', 'assignment', 'worksheet', 'practice-exercise',
+            'question-bank', 'topical-questions', 'marking-scheme', 'answer-key',
+            'teachers-guide', 'teaching-aid', 'educational-poster', 'flashcard',
+            'project', 'research-material', 'practical-guide',
+            'laboratory-resource', 'other-academic'
+        ];
+        return types.map(function(t) {
+            return '<option value="' + t + '" ' + (t === selected ? 'selected' : '') + '>' + t.replace(/-/g, ' ') + '</option>';
+        }).join('');
+    }
+
+    function getTermOptions(selected) {
+        var terms = ['Term 1', 'Term 2', 'Term 3', 'Holiday', 'All Terms', 'Not Applicable'];
+        return terms.map(function(t) {
+            return '<option value="' + t + '" ' + (t === selected ? 'selected' : '') + '>' + t + '</option>';
+        }).join('');
+    }
+
+    function getCurriculumOptions(selected) {
+        var curriculums = ['CBC', '8-4-4', 'TVET', 'University', 'College', 'Other'];
+        return curriculums.map(function(c) {
+            return '<option value="' + c + '" ' + (c === selected ? 'selected' : '') + '>' + c + '</option>';
+        }).join('');
+    }
+
+    function updateReviewField(index, field, value) {
+        if (massFileMetadata[index]) {
+            massFileMetadata[index][field] = value;
+        }
+    }
+
+    function updateReviewTablePrices() {
+        if (!massFileMetadata || massFileMetadata.length === 0) return;
+        var isFree = document.querySelector('input[name="batchPricing"]:checked')?.value === 'free';
+        var price = parseInt(document.getElementById('batchPrice')?.value) || 0;
+        var override = document.getElementById('batchPriceOverride')?.checked;
+
+        massFileMetadata.forEach(function(item) {
+            if (override) {
+                item.is_free = isFree;
+                item.price = isFree ? 0 : price;
+            }
+        });
+        renderReviewTable();
+    }
+
+    async function processMassUpload() {
+        var btn = document.getElementById('massUploadBtn');
+        if (!btn) return;
+
+        var invalid = massFileMetadata.filter(function(item) {
+            return !item.category || !item.level || !item.grade || !item.subject || !item.type;
+        });
+
+        if (invalid.length > 0) {
+            showToast('Validation Error', invalid.length + ' file(s) missing required fields. Please review.');
+            return;
+        }
+
+        btn.classList.add('loading');
+        btn.disabled = true;
+
+        var progressEl = document.getElementById('uploadProgress');
+        var progressFill = document.getElementById('progressFill');
+        var progressStats = document.getElementById('progressStats');
+        var progressItems = document.getElementById('progressItems');
+
+        if (progressEl) progressEl.classList.add('visible');
+
+        var success = 0;
+        var failed = 0;
+
+        for (var i = 0; i < massFileMetadata.length; i++) {
+            var item = massFileMetadata[i];
+            var file = item.file;
+
+            var progress = ((i + 1) / massFileMetadata.length) * 100;
+            if (progressFill) progressFill.style.width = progress + '%';
+            if (progressStats) progressStats.textContent = (i + 1) + ' / ' + massFileMetadata.length;
+
+            var statusDiv = document.createElement('div');
+            statusDiv.className = 'progress-item';
+            statusDiv.innerHTML = '<span class="p-status pending"><i class="fas fa-spinner fa-spin"></i></span><span class="p-name">' + file.name + '</span><span class="p-progress">Uploading...</span>';
+            if (progressItems) progressItems.appendChild(statusDiv);
+
+            try {
+                var fileExt = file.name.split('.').pop();
+                var fileName = Date.now() + '_' + file.name;
+                var filePath = 'resources/' + fileName;
+
+                var uploadResult = await supabase.storage.from('resources').upload(filePath, file);
+                if (uploadResult.error) throw uploadResult.error;
+
+                var urlResult = supabase.storage.from('resources').getPublicUrl(filePath);
+                var fileUrl = urlResult?.data?.publicUrl || '';
+
+                var resourceData = {
+                    title: file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '),
+                    description: 'Auto-uploaded resource: ' + file.name,
+                    category: item.category,
+                    level: item.level,
+                    grade: item.grade,
+                    subject: item.subject,
+                    resource_type: item.type,
+                    term: item.term || 'Term 1',
+                    curriculum: item.curriculum || 'CBC',
+                    year: parseInt(document.getElementById('batchYear')?.value) || 2026,
+                    is_free: item.is_free,
+                    price: item.is_free ? 0 : item.price,
+                    featured: false,
+                    status: 'published',
+                    file_url: fileUrl,
+                    file_name: file.name,
+                    file_size: file.size,
+                    file_type: file.type,
+                    download_count: 0,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                };
+
+                var dbResult = await supabase.from('resources').insert([resourceData]);
+                if (dbResult.error) throw dbResult.error;
+
+                success++;
+                statusDiv.innerHTML = '<span class="p-status success"><i class="fas fa-check-circle"></i></span><span class="p-name">' + file.name + '</span><span class="p-progress">✓ Uploaded</span>';
+
+            } catch (err) {
+                failed++;
+                statusDiv.innerHTML = '<span class="p-status error"><i class="fas fa-times-circle"></i></span><span class="p-name">' + file.name + '</span><span class="p-progress">❌ ' + (err.message || 'Failed') + '</span>';
+                console.error('Mass upload error:', err);
+            }
+
+            await new Promise(function(resolve) { setTimeout(resolve, 200); });
+        }
+
+        document.getElementById('summarySuccess').textContent = success;
+        document.getElementById('summaryFailed').textContent = failed;
+        document.getElementById('summarySkipped').textContent = 0;
+        document.getElementById('summaryTotal').textContent = massFileMetadata.length;
+        document.getElementById('uploadSummary').classList.add('visible');
+
+        btn.classList.remove('loading');
+        btn.disabled = false;
+
+        showToast('Upload Complete', success + ' uploaded, ' + failed + ' failed');
+        loadResources();
+        loadDashboardStats();
+    }
+
+    function clearMassUpload() {
+        massFiles = [];
+        massFileMetadata = [];
+        document.getElementById('reviewContainer').style.display = 'none';
+        document.getElementById('fileCountDisplay').textContent = '0 files selected';
+        document.getElementById('massFileInput').value = '';
+        document.getElementById('uploadProgress').classList.remove('visible');
+        document.getElementById('uploadSummary').classList.remove('visible');
+        document.getElementById('progressItems').innerHTML = '';
+        document.getElementById('progressFill').style.width = '0%';
+    }
+
+    // ============================================================
+    // 15. RESOURCES TABLE
+    // ============================================================
     async function loadResources(page, filter, search, category, level) {
         page = page || 1;
         filter = filter || 'all';
@@ -3354,10 +3873,10 @@ JAVASCRIPT — COMPLETE ADMIN
             else if (filter === 'paid') query = query.eq('is_free', false);
             else if (filter === 'published') query = query.eq('status', 'published');
             else if (filter === 'draft') query = query.eq('status', 'draft');
-            else if (filter === 'featured') query = query.eq('is_featured', true);
+            else if (filter === 'featured') query = query.eq('featured', true);
 
             if (category) query = query.eq('category', category);
-            if (level) query = query.eq('education_level', level);
+            if (level) query = query.eq('level', level);
             if (search) query = query.ilike('title', '%' + search + '%');
 
             var result = await query.order('created_at', { ascending: false }).range(start, start + adminPageSize - 1);
@@ -3397,14 +3916,14 @@ JAVASCRIPT — COMPLETE ADMIN
             return '<tr>' +
                 '<td data-label="Title" title="' + (r.title || '') + '">' + titleDisplay + '</td>' +
                 '<td data-label="Category">' + (r.category || '—') + '</td>' +
-                '<td data-label="Level">' + (r.education_level || '—') + '</td>' +
+                '<td data-label="Level">' + (r.level || '—') + '</td>' +
                 '<td data-label="Grade">' + (r.grade || '—') + '</td>' +
                 '<td data-label="Subject">' + (r.subject || '—') + '</td>' +
                 '<td data-label="Type">' + (r.resource_type || '—') + '</td>' +
                 '<td data-label="Access" class="numeric">' + (r.is_free ? '🟢 Free' : '🔵 Paid') + '</td>' +
                 '<td data-label="Price" class="numeric">' + (r.is_free ? 'Free' : formatCurrency(r.price || 0, 'KES')) + '</td>' +
                 '<td data-label="Status"><span class="status-badge ' + (r.status || 'draft') + '">' + (r.status || 'draft') + '</span></td>' +
-                '<td data-label="Featured">' + (r.is_featured ? '⭐ Yes' : '—') + '</td>' +
+                '<td data-label="Featured">' + (r.featured ? '⭐ Yes' : '—') + '</td>' +
                 '<td data-label="Downloads" class="numeric">' + (r.download_count || 0) + '</td>' +
                 '<td data-label="Actions" class="action-icons">' +
                 '<i class="fas fa-edit edit-btn" title="Edit" onclick="openEditResource(\'' + r.id + '\')"></i>' +
@@ -3420,7 +3939,188 @@ JAVASCRIPT — COMPLETE ADMIN
         loadResources(1, currentResourceFilter, search, category, level);
     }
 
-    // ─── TUTORS ──────────────────────────────────────────────────
+    // ============================================================
+    // 16. RESOURCE CRUD
+    // ============================================================
+    async function openEditResource(id) {
+        try {
+            var result = await supabase.from('resources').select('*').eq('id', id).single();
+            if (result.error) throw result.error;
+            var data = result.data;
+            if (!data) {
+                showToast('Error', 'Resource not found');
+                return;
+            }
+
+            document.getElementById('editResId').value = data.id;
+            document.getElementById('editResTitle').value = data.title || '';
+            document.getElementById('editResDescription').value = data.description || '';
+            document.getElementById('editResKeywords').value = data.keywords || '';
+            document.getElementById('editResCategory').value = data.category || '';
+            document.getElementById('editResLevel').value = data.level || '';
+            document.getElementById('editResSubject').value = data.subject || '';
+            document.getElementById('editResType').value = data.resource_type || '';
+            document.getElementById('editResTerm').value = data.term || 'Term 1';
+            document.getElementById('editResCurriculum').value = data.curriculum || 'CBC';
+            document.getElementById('editResYear').value = data.year || '2026';
+            document.getElementById('editResFeatured').value = data.featured ? 'true' : 'false';
+            document.getElementById('editResStatus').value = data.status || 'draft';
+            document.getElementById('editResPrice').value = data.price || 0;
+
+            var gradeMap = {
+                'pre-primary': ['Pre-Primary 1', 'Pre-Primary 2'],
+                'primary': ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8'],
+                'jss': ['Grade 7', 'Grade 8', 'Grade 9'],
+                'senior-school': ['Grade 10', 'Grade 11', 'Grade 12'],
+                'secondary-844': ['Form 1', 'Form 2', 'Form 3', 'Form 4']
+            };
+            var gradeSelect = document.getElementById('editResGrade');
+            var level = data.level;
+            var grades = gradeMap[level] || [];
+            gradeSelect.innerHTML = '<option value="">Select Grade/Form</option>' +
+                grades.map(function(g) {
+                    return '<option value="' + g + '" ' + (g === data.grade ? 'selected' : '') + '>' + g + '</option>';
+                }).join('');
+
+            var isFree = data.is_free;
+            document.getElementById('editResFreeRadio').checked = isFree;
+            document.getElementById('editResPaidRadio').checked = !isFree;
+            toggleEditPriceField();
+
+            document.getElementById('resourceEditModal').classList.add('open');
+
+        } catch (err) {
+            console.error('Error loading resource for edit:', err);
+            showToast('Error', 'Failed to load resource');
+        }
+    }
+
+    async function saveResourceEdit() {
+        var id = document.getElementById('editResId').value;
+        if (!id) {
+            showToast('Error', 'Invalid resource ID');
+            return;
+        }
+
+        var isFree = document.querySelector('input[name="editResIsFree"]:checked')?.value === 'free';
+        var price = parseInt(document.getElementById('editResPrice')?.value) || 0;
+
+        if (!isFree && price <= 0) {
+            document.getElementById('editPriceValidationError').classList.add('visible');
+            return;
+        }
+
+        var data = {
+            title: document.getElementById('editResTitle').value.trim(),
+            description: document.getElementById('editResDescription').value.trim(),
+            keywords: document.getElementById('editResKeywords').value.trim(),
+            category: document.getElementById('editResCategory').value,
+            level: document.getElementById('editResLevel').value,
+            grade: document.getElementById('editResGrade').value,
+            subject: document.getElementById('editResSubject').value,
+            resource_type: document.getElementById('editResType').value,
+            term: document.getElementById('editResTerm').value,
+            curriculum: document.getElementById('editResCurriculum').value,
+            year: parseInt(document.getElementById('editResYear').value) || 2026,
+            is_free: isFree,
+            price: isFree ? 0 : price,
+            featured: document.getElementById('editResFeatured').value === 'true',
+            status: document.getElementById('editResStatus').value,
+            updated_at: new Date().toISOString()
+        };
+
+        try {
+            var result = await supabase.from('resources').update(data).eq('id', id);
+            if (result.error) throw result.error;
+            showToast('Success', 'Resource updated successfully');
+            closeResourceModal();
+            loadResources();
+            loadDashboardStats();
+        } catch (err) {
+            console.error('Error updating resource:', err);
+            showToast('Error', 'Update failed: ' + err.message);
+        }
+    }
+
+    function closeResourceModal() {
+        document.getElementById('resourceEditModal').classList.remove('open');
+    }
+
+    async function deleteResource(id) {
+        if (!confirm('Are you sure you want to delete this resource? This action cannot be undone.')) return;
+
+        try {
+            var result = await supabase.from('resources').delete().eq('id', id);
+            if (result.error) throw result.error;
+            showToast('Deleted', 'Resource has been deleted');
+            loadResources();
+            loadDashboardStats();
+        } catch (err) {
+            console.error('Error deleting resource:', err);
+            showToast('Error', 'Delete failed: ' + err.message);
+        }
+    }
+
+    // ============================================================
+    // 17. UNCATEGORIZED
+    // ============================================================
+    async function loadUncategorized() {
+        try {
+            var result = await supabase.from('resources')
+                .select('*')
+                .or('category.is.null,category.eq.,level.is.null,level.eq.,grade.is.null,grade.eq.,subject.is.null,subject.eq.,resource_type.is.null,resource_type.eq.')
+                .order('created_at', { ascending: false });
+
+            if (result.error) throw result.error;
+            var data = result.data || [];
+
+            var tbody = document.getElementById('uncategorizedTableBody');
+            if (!tbody) return;
+
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--green);">✅ All resources are properly categorized!</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = data.map(function(r) {
+                var missing = [];
+                if (!r.category) missing.push('Category');
+                if (!r.level) missing.push('Level');
+                if (!r.grade) missing.push('Grade');
+                if (!r.subject) missing.push('Subject');
+                if (!r.resource_type) missing.push('Type');
+                return '<tr>' +
+                    '<td>' + (r.title || 'Untitled') + '</td>' +
+                    '<td><span style="color:var(--red);font-weight:600;">' + missing.join(', ') + '</span></td>' +
+                    '<td>' + (r.level || '—') + '</td>' +
+                    '<td>' + (r.grade || '—') + '</td>' +
+                    '<td>' + (r.subject || '—') + '</td>' +
+                    '<td>' + (r.resource_type || '—') + '</td>' +
+                    '<td><button class="btn-gold" style="padding:4px 12px;font-size:.7rem;" onclick="openEditResource(\'' + r.id + '\')"><i class="fas fa-edit"></i> Classify</button></td>' +
+                    '</tr>';
+            }).join('');
+
+        } catch (err) {
+            console.error('Error loading uncategorized:', err);
+            var tbody = document.getElementById('uncategorizedTableBody');
+            if (tbody) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--red);">⚠️ Error loading</td></tr>';
+            }
+        }
+    }
+
+    function filterUncategorized() {
+        var search = document.getElementById('uncategorizedSearch')?.value?.toLowerCase() || '';
+        var rows = document.querySelectorAll('#uncategorizedTableBody tr');
+        rows.forEach(function(row) {
+            var text = row.textContent.toLowerCase();
+            row.style.display = text.includes(search) ? '' : 'none';
+        });
+    }
+
+    // ============================================================
+    // 18. TUTORS
+    // ============================================================
     async function loadTutors(tab, search) {
         tab = tab || 'all';
         search = search || '';
@@ -3478,7 +4178,105 @@ JAVASCRIPT — COMPLETE ADMIN
         }
     }
 
-    // ─── LEARNERS ─────────────────────────────────────────────────
+    async function addTutor() {
+        var name = document.getElementById('tutorName')?.value.trim();
+        var email = document.getElementById('tutorEmail')?.value.trim();
+        var phone = document.getElementById('tutorPhone')?.value.trim();
+        var specialization = document.getElementById('tutorSpecialization')?.value;
+
+        if (!name || !email || !specialization) {
+            showToast('Error', 'Please fill in all required fields');
+            return;
+        }
+
+        try {
+            var result = await supabase.from('tutors').insert([{
+                name: name,
+                email: email,
+                phone: phone || null,
+                specialization: specialization,
+                status: 'pending',
+                created_at: new Date().toISOString()
+            }]).select();
+
+            if (result.error) throw result.error;
+            showToast('Success', 'Tutor added successfully');
+            document.getElementById('tutorForm').reset();
+            loadTutors(currentTutorTab);
+        } catch (err) {
+            console.error('Error adding tutor:', err);
+            showToast('Error', 'Failed to add tutor: ' + err.message);
+        }
+    }
+
+    async function approveTutor(id) {
+        if (!confirm('Approve this tutor application?')) return;
+        try {
+            var result = await supabase.from('tutors').update({ status: 'approved', updated_at: new Date().toISOString() }).eq('id', id);
+            if (result.error) throw result.error;
+            showToast('Approved', 'Tutor has been approved');
+            loadTutors(currentTutorTab);
+        } catch (err) {
+            console.error('Error approving tutor:', err);
+            showToast('Error', 'Failed to approve tutor');
+        }
+    }
+
+    async function rejectTutor(id) {
+        if (!confirm('Reject this tutor application?')) return;
+        try {
+            var result = await supabase.from('tutors').update({ status: 'rejected', updated_at: new Date().toISOString() }).eq('id', id);
+            if (result.error) throw result.error;
+            showToast('Rejected', 'Tutor has been rejected');
+            loadTutors(currentTutorTab);
+        } catch (err) {
+            console.error('Error rejecting tutor:', err);
+            showToast('Error', 'Failed to reject tutor');
+        }
+    }
+
+    function viewTutor(id) {
+        var tutor = tutorsData.find(function(t) { return t.id === id; });
+        if (!tutor) {
+            showToast('Error', 'Tutor not found');
+            return;
+        }
+
+        document.getElementById('tutorDetailName').textContent = tutor.name || 'Tutor';
+        document.getElementById('tutorDetailBody').innerHTML =
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px;">' +
+            '<div><strong>Email:</strong> ' + (tutor.email || '—') + '</div>' +
+            '<div><strong>Phone:</strong> ' + (tutor.phone || '—') + '</div>' +
+            '<div><strong>Specialization:</strong> ' + (tutor.specialization || '—') + '</div>' +
+            '<div><strong>Status:</strong> <span class="status-badge ' + (tutor.status || 'pending') + '">' + (tutor.status || 'pending') + '</span></div>' +
+            '<div><strong>Joined:</strong> ' + (tutor.created_at ? new Date(tutor.created_at).toLocaleString('en-KE') : '—') + '</div>' +
+            '</div>';
+        document.getElementById('tutorDetailModal').classList.add('open');
+    }
+
+    function openEditTutor(id) {
+        var tutor = tutorsData.find(function(t) { return t.id === id; });
+        if (!tutor) {
+            showToast('Error', 'Tutor not found');
+            return;
+        }
+
+        document.getElementById('editTutorId').value = tutor.id;
+        document.getElementById('editTutorName').value = tutor.name || '';
+        document.getElementById('editTutorEmail').value = tutor.email || '';
+        document.getElementById('editTutorPhone').value = tutor.phone || '';
+        document.getElementById('editTutorSpecialization').value = tutor.specialization || '';
+        document.getElementById('editTutorStatus').value = tutor.status || 'pending';
+        document.getElementById('tutorEditModal').classList.add('open');
+    }
+
+    function closeTutorEditModal() {
+        document.getElementById('tutorEditModal').classList.remove('open');
+    }
+
+    // ============================================================
+    // 19. LEARNERS
+    // ============================================================
     async function loadLearners(search) {
         search = search || '';
 
@@ -3520,7 +4318,18 @@ JAVASCRIPT — COMPLETE ADMIN
         }
     }
 
-    // ─── WITHDRAWALS ─────────────────────────────────────────────
+    function viewLearner(id) {
+        var learner = learnersData.find(function(l) { return l.id === id; });
+        if (!learner) {
+            showToast('Error', 'Learner not found');
+            return;
+        }
+        showToast('Learner', (learner.name || 'Unknown') + ' (' + (learner.email || 'No email') + ')');
+    }
+
+    // ============================================================
+    // 20. WITHDRAWALS
+    // ============================================================
     async function loadWithdrawals() {
         try {
             var result = await supabase.from('tutor_payouts').select('*').order('created_at', { ascending: false });
@@ -3560,37 +4369,56 @@ JAVASCRIPT — COMPLETE ADMIN
         }
     }
 
-    // ─── INIT DASHBOARD ──────────────────────────────────────────
-    function initDashboard() {
-        if (!isAuthenticated) {
-            console.warn('Not authenticated, skipping dashboard init');
-            return;
-        }
-
+    async function processWithdrawal(id) {
+        if (!confirm('Process this withdrawal request?')) return;
         try {
-            loadDashboardStats();
-            loadOrders();
-            loadResources();
-            loadTutors();
-            loadLearners();
+            var result = await supabase.from('tutor_payouts').update({ status: 'processed', processed_at: new Date().toISOString() }).eq('id', id);
+            if (result.error) throw result.error;
+            showToast('Processed', 'Withdrawal has been processed');
             loadWithdrawals();
-            loadUncategorized();
-            updateDateTime();
-            setInterval(updateDateTime, 1000);
-            updateExchangeRates();
-            console.log('✅ Dashboard initialized successfully');
         } catch (err) {
-            console.error('Error initializing dashboard:', err);
-            showToast('Error', 'Failed to load dashboard data');
+            console.error('Error processing withdrawal:', err);
+            showToast('Error', 'Failed to process withdrawal');
         }
     }
 
-    // ─── EXCHANGE RATES ──────────────────────────────────────────
-    function updateExchangeRates() {
-        exchangeRates = { KES: 1, USD: 0.0078, EUR: 0.0072, GBP: 0.0061 };
+    async function rejectWithdrawal(id) {
+        if (!confirm('Reject this withdrawal request?')) return;
+        try {
+            var result = await supabase.from('tutor_payouts').update({ status: 'rejected', updated_at: new Date().toISOString() }).eq('id', id);
+            if (result.error) throw result.error;
+            showToast('Rejected', 'Withdrawal has been rejected');
+            loadWithdrawals();
+        } catch (err) {
+            console.error('Error rejecting withdrawal:', err);
+            showToast('Error', 'Failed to reject withdrawal');
+        }
     }
 
-    // ─── SETTINGS ─────────────────────────────────────────────────
+    // ============================================================
+    // 21. SETTINGS
+    // ============================================================
+    function loadSettings() {
+        try {
+            var saved = localStorage.getItem('kv-settings');
+            if (saved) {
+                var settings = JSON.parse(saved);
+                var siteName = document.getElementById('settingSiteName');
+                if (siteName) siteName.value = settings.site_name || 'KenyaVault';
+                var tagline = document.getElementById('settingTagline');
+                if (tagline) tagline.value = settings.tagline || 'Complete Education Resources';
+                var currencySelect = document.getElementById('settingCurrency');
+                if (currencySelect) currencySelect.value = settings.currency || 'KES';
+                var payout = document.getElementById('settingPayout');
+                if (payout) payout.value = settings.tutor_payout_percentage || 80;
+                var minPayout = document.getElementById('settingMinPayout');
+                if (minPayout) minPayout.value = settings.min_payout || 500;
+            }
+        } catch (err) {
+            console.warn('Error loading settings:', err);
+        }
+    }
+
     async function saveSettings() {
         var settings = {
             site_name: document.getElementById('settingSiteName')?.value || 'KenyaVault',
@@ -3619,37 +4447,409 @@ JAVASCRIPT — COMPLETE ADMIN
         showToast('Reset', 'Settings reset to default');
     }
 
-    // ─── EXPOSE GLOBAL FUNCTIONS ─────────────────────────────────
-    window.handleLogin = handleLogin;
-    window.logout = logout;
-    window.toggleTheme = toggleTheme;
-    window.openSidebar = openSidebar;
-    window.closeSidebar = closeSidebar;
-    window.navigateTo = navigateTo;
-    window.updateCurrency = updateCurrency;
-    window.loadDashboardStats = loadDashboardStats;
-    window.loadOrders = loadOrders;
-    window.loadResources = loadResources;
-    window.loadTutors = loadTutors;
-    window.loadLearners = loadLearners;
-    window.loadWithdrawals = loadWithdrawals;
-    window.loadUncategorized = loadUncategorized;
-    window.approveOrder = approveOrder;
-    window.rejectOrder = rejectOrder;
-    window.viewOrder = viewOrder;
-    window.exportOrdersCSV = exportOrdersCSV;
-    window.exportOrdersExcel = exportOrdersExcel;
-    window.applyAdminFilters = applyAdminFilters;
-    window.saveSettings = saveSettings;
-    window.resetSettings = resetSettings;
-    window.showToast = showToast;
-    window.safeSetTextContent = safeSetTextContent;
-    window.formatCurrency = formatCurrency;
+    // ============================================================
+    // 22. NAVIGATION
+    // ============================================================
+    function navigateTo(module) {
+        document.querySelectorAll('.module-container').forEach(function(el) {
+            el.classList.remove('active');
+        });
 
-    console.log('✅ Admin dashboard loaded successfully');
-    console.log('📊 Supabase connected:', SUPABASE_URL);
-    console.log('👤 Auth status:', isAuthenticated ? 'Authenticated' : 'Not authenticated');
+        var target = document.getElementById('module-' + module);
+        if (target) target.classList.add('active');
 
+        document.querySelectorAll('.sidebar-nav a[data-module]').forEach(function(link) {
+            link.classList.remove('active');
+            if (link.dataset.module === module) link.classList.add('active');
+        });
+
+        var titles = {
+            dashboard: 'Dashboard',
+            resources: 'Resources',
+            tutors: 'Tutors',
+            learners: 'Learners',
+            orders: 'Orders',
+            withdrawals: 'Withdrawals',
+            settings: 'Settings',
+            uncategorized: 'Uncategorized'
+        };
+        var pageTitle = document.getElementById('pageTitle');
+        if (pageTitle) {
+            pageTitle.innerHTML = (titles[module] || module) + ' <small>' + (module === 'dashboard' ? 'overview' : 'management') + '</small>';
+        }
+
+        currentModule = module;
+    }
+
+    function openSidebar() {
+        document.getElementById('sidebar').classList.add('open');
+        document.getElementById('sidebarOverlay').classList.add('open');
+    }
+
+    function closeSidebar() {
+        document.getElementById('sidebar').classList.remove('open');
+        document.getElementById('sidebarOverlay').classList.remove('open');
+    }
+
+    // ============================================================
+    // 23. THEME TOGGLE
+    // ============================================================
+    function toggleTheme() {
+        document.body.classList.toggle('dark');
+        var icon = document.getElementById('themeIcon');
+        if (icon) {
+            icon.className = document.body.classList.contains('dark') ? 'fas fa-sun' : 'fas fa-moon';
+        }
+        localStorage.setItem('kv-theme', document.body.classList.contains('dark') ? 'dark' : 'light');
+    }
+
+    // ============================================================
+    // 24. TOAST SYSTEM
+    // ============================================================
+    function showToast(title, message, type) {
+        type = type || 'success';
+        var container = document.getElementById('toastContainer');
+        if (!container) return;
+
+        var toast = document.createElement('div');
+        var colors = { success: 'var(--green)', error: 'var(--red)', warning: 'var(--gold)', info: 'var(--blue)' };
+        toast.className = 'toast-item';
+        toast.style.borderLeftColor = colors[type] || colors.success;
+        toast.innerHTML = '<div class="toast-title">' + title + '</div><div class="toast-msg">' + message + '</div>';
+        container.appendChild(toast);
+
+        setTimeout(function() {
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateX(40px)';
+            setTimeout(function() { toast.remove(); }, 300);
+        }, 4000);
+    }
+
+    // ============================================================
+    // 25. EVENT LISTENERS & INIT
+    // ============================================================
+    document.addEventListener('DOMContentLoaded', function() {
+
+        // Check authentication
+        isAuthenticated = safeGetAuth();
+        if (isAuthenticated) {
+            document.getElementById('loginOverlay').classList.remove('active');
+            initDashboard();
+        } else {
+            document.getElementById('loginOverlay').classList.add('active');
+            try {
+                var userStr = sessionStorage.getItem('kv-user');
+                if (userStr) JSON.parse(userStr);
+            } catch (e) {
+                sessionStorage.removeItem('kv-user');
+            }
+        }
+
+        // Load theme
+        var savedTheme = localStorage.getItem('kv-theme');
+        if (savedTheme === 'dark') {
+            document.body.classList.add('dark');
+            var icon = document.getElementById('themeIcon');
+            if (icon) icon.className = 'fas fa-sun';
+        }
+
+        // Load settings
+        loadSettings();
+
+        // Navigation
+        document.querySelectorAll('.sidebar-nav a[data-module]').forEach(function(link) {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                navigateTo(this.dataset.module);
+                if (window.innerWidth <= 900) closeSidebar();
+            });
+        });
+
+        // Logout
+        document.getElementById('logoutBtn')?.addEventListener('click', function(e) {
+            e.preventDefault();
+            logout();
+        });
+
+        // Modal close on overlay click
+        document.querySelectorAll('.modal-overlay').forEach(function(modal) {
+            modal.addEventListener('click', function(e) {
+                if (e.target === this) this.classList.remove('open');
+            });
+        });
+
+        // Tutor tabs
+        document.querySelectorAll('#tutorTabs .tab-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('#tutorTabs .tab-btn').forEach(function(b) { b.classList.remove('active'); });
+                this.classList.add('active');
+                currentTutorTab = this.dataset.status;
+                var search = document.getElementById('tutorsSearch')?.value || '';
+                loadTutors(currentTutorTab, search);
+            });
+        });
+
+        // Tutor search
+        document.getElementById('tutorsSearch')?.addEventListener('input', function() {
+            loadTutors(currentTutorTab, this.value);
+        });
+
+        // Learner search
+        document.getElementById('learnersSearch')?.addEventListener('input', function() {
+            loadLearners(this.value);
+        });
+
+        // Resource search
+        document.getElementById('resourcesSearch')?.addEventListener('input', applyAdminFilters);
+
+        // Resource filter badges
+        document.querySelectorAll('[data-resource-filter]').forEach(function(badge) {
+            badge.addEventListener('click', function() {
+                document.querySelectorAll('[data-resource-filter]').forEach(function(b) { b.classList.remove('active'); });
+                this.classList.add('active');
+                currentResourceFilter = this.dataset.resourceFilter;
+                applyAdminFilters();
+            });
+        });
+
+        // Order filter badges - dashboard
+        document.querySelectorAll('#module-dashboard .filter-badge').forEach(function(badge) {
+            badge.addEventListener('click', function() {
+                var parent = this.closest('.filters');
+                if (parent) {
+                    parent.querySelectorAll('.filter-badge').forEach(function(b) { b.classList.remove('active'); });
+                }
+                this.classList.add('active');
+                var filter = this.dataset.filter;
+                var search = document.getElementById('tableSearch')?.value || '';
+                loadOrders(1, filter, search);
+            });
+        });
+
+        // Order filter badges - orders module
+        document.querySelectorAll('#module-orders .filter-badge').forEach(function(badge) {
+            badge.addEventListener('click', function() {
+                var parent = this.closest('.filters');
+                if (parent) {
+                    parent.querySelectorAll('.filter-badge').forEach(function(b) { b.classList.remove('active'); });
+                }
+                this.classList.add('active');
+                var filter = this.dataset.filter;
+                var search = document.getElementById('ordersSearch')?.value || '';
+                loadOrders(1, filter, search);
+            });
+        });
+
+        // Order search
+        document.getElementById('tableSearch')?.addEventListener('input', function() {
+            var filter = document.querySelector('#module-dashboard .filter-badge.active')?.dataset.filter || 'all';
+            loadOrders(1, filter, this.value);
+        });
+
+        document.getElementById('ordersSearch')?.addEventListener('input', function() {
+            var filter = document.querySelector('#module-orders .filter-badge.active')?.dataset.filter || 'all';
+            loadOrders(1, filter, this.value);
+        });
+
+        // Tutor form
+        document.getElementById('tutorForm')?.addEventListener('submit', function(e) {
+            e.preventDefault();
+            addTutor();
+        });
+
+        // Tutor edit form
+        document.getElementById('tutorEditForm')?.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            var id = document.getElementById('editTutorId').value;
+            var data = {
+                name: document.getElementById('editTutorName').value.trim(),
+                email: document.getElementById('editTutorEmail').value.trim(),
+                phone: document.getElementById('editTutorPhone').value.trim(),
+                specialization: document.getElementById('editTutorSpecialization').value.trim(),
+                status: document.getElementById('editTutorStatus').value,
+                updated_at: new Date().toISOString()
+            };
+
+            try {
+                var result = await supabase.from('tutors').update(data).eq('id', id);
+                if (result.error) throw result.error;
+                showToast('Success', 'Tutor updated successfully');
+                closeTutorEditModal();
+                loadTutors(currentTutorTab);
+            } catch (err) {
+                console.error('Error updating tutor:', err);
+                showToast('Error', 'Update failed: ' + err.message);
+            }
+        });
+
+        // Resource edit form
+        document.getElementById('resourceEditForm')?.addEventListener('submit', function(e) {
+            e.preventDefault();
+            saveResourceEdit();
+        });
+
+        // Single upload form
+        document.getElementById('uploadForm')?.addEventListener('submit', function(e) {
+            e.preventDefault();
+            handleSingleUpload(e);
+        });
+
+        // Settings form
+        document.getElementById('settingsForm')?.addEventListener('submit', function(e) {
+            e.preventDefault();
+            saveSettings();
+        });
+
+        // Mass upload zone
+        var massZone = document.getElementById('massUploadZone');
+        var massInput = document.getElementById('massFileInput');
+        if (massZone && massInput) {
+            massZone.addEventListener('click', function() { massInput.click(); });
+            massZone.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                this.classList.add('dragover');
+            });
+            massZone.addEventListener('dragleave', function() {
+                this.classList.remove('dragover');
+            });
+            massZone.addEventListener('drop', function(e) {
+                e.preventDefault();
+                this.classList.remove('dragover');
+                if (e.dataTransfer.files.length) {
+                    handleMassFileSelect(e.dataTransfer.files);
+                }
+            });
+            massInput.addEventListener('change', function() {
+                if (this.files.length) {
+                    handleMassFileSelect(this.files);
+                }
+            });
+        }
+
+        // Single upload zone
+        var uploadZone = document.getElementById('uploadZone');
+        var fileInput = document.getElementById('fileInput');
+        if (uploadZone && fileInput) {
+            uploadZone.addEventListener('click', function() { fileInput.click(); });
+            uploadZone.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                this.classList.add('dragover');
+            });
+            uploadZone.addEventListener('dragleave', function() {
+                this.classList.remove('dragover');
+            });
+            uploadZone.addEventListener('drop', function(e) {
+                e.preventDefault();
+                this.classList.remove('dragover');
+                if (e.dataTransfer.files.length) {
+                    fileInput.files = e.dataTransfer.files;
+                    handleFileSelect(e.dataTransfer.files[0]);
+                }
+            });
+            fileInput.addEventListener('change', function() {
+                if (this.files.length) {
+                    handleFileSelect(this.files[0]);
+                }
+            });
+        }
+
+        // Grade select population
+        var gradeMap = {
+            'pre-primary': ['Pre-Primary 1', 'Pre-Primary 2'],
+            'primary': ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8'],
+            'jss': ['Grade 7', 'Grade 8', 'Grade 9'],
+            'senior-school': ['Grade 10', 'Grade 11', 'Grade 12'],
+            'secondary-844': ['Form 1', 'Form 2', 'Form 3', 'Form 4']
+        };
+
+        var levelSelect = document.getElementById('resLevel');
+        var gradeSelect = document.getElementById('resGrade');
+        if (levelSelect && gradeSelect) {
+            levelSelect.addEventListener('change', function() {
+                var level = this.value;
+                var grades = gradeMap[level] || [];
+                gradeSelect.innerHTML = '<option value="">Select Grade/Form</option>' +
+                    grades.map(function(g) { return '<option value="' + g + '">' + g + '</option>'; }).join('');
+            });
+        }
+
+        var editLevelSelect = document.getElementById('editResLevel');
+        var editGradeSelect = document.getElementById('editResGrade');
+        if (editLevelSelect && editGradeSelect) {
+            editLevelSelect.addEventListener('change', function() {
+                var level = this.value;
+                var grades = gradeMap[level] || [];
+                editGradeSelect.innerHTML = '<option value="">Select Grade/Form</option>' +
+                    grades.map(function(g) { return '<option value="' + g + '">' + g + '</option>'; }).join('');
+            });
+        }
+
+        // Batch grade select
+        var batchLevelSelect = document.getElementById('batchLevel');
+        var batchGradeSelect = document.getElementById('batchGrade');
+        if (batchLevelSelect && batchGradeSelect) {
+            batchLevelSelect.addEventListener('change', function() {
+                var level = this.value;
+                var grades = gradeMap[level] || [];
+                batchGradeSelect.innerHTML = '<option value="">Auto-detect</option>' +
+                    grades.map(function(g) { return '<option value="' + g + '">' + g + '</option>'; }).join('');
+            });
+        }
+
+        // Batch defaults change
+        document.querySelectorAll('#batchDefaults select').forEach(function(select) {
+            select.addEventListener('change', function() {
+                if (massFileMetadata && massFileMetadata.length > 0) {
+                    updateReviewTableDefaults();
+                }
+            });
+        });
+
+        function updateReviewTableDefaults() {
+            var category = document.getElementById('batchCategory')?.value;
+            var level = document.getElementById('batchLevel')?.value;
+            var grade = document.getElementById('batchGrade')?.value;
+            var subject = document.getElementById('batchSubject')?.value;
+            var type = document.getElementById('batchType')?.value;
+            var term = document.getElementById('batchTerm')?.value;
+            var curriculum = document.getElementById('batchCurriculum')?.value;
+
+            massFileMetadata.forEach(function(item) {
+                if (category) item.category = category;
+                if (level) item.level = level;
+                if (grade) item.grade = grade;
+                if (subject) item.subject = subject;
+                if (type) item.type = type;
+                if (term) item.term = term;
+                if (curriculum) item.curriculum = curriculum;
+            });
+            renderReviewTable();
+        }
+
+        function handleFileSelect(file) {
+            if (!file) return;
+            var preview = document.getElementById('uploadPreview');
+            var fileName = document.getElementById('previewFileName');
+            var fileSize = document.getElementById('previewFileSize');
+
+            if (preview) preview.classList.add('show');
+            if (fileName) fileName.textContent = file.name;
+            if (fileSize) {
+                var sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+                fileSize.textContent = sizeMB + ' MB';
+            }
+        }
+
+        console.log('✅ KenyaVault Admin Dashboard loaded successfully');
+        console.log('📊 Supabase connected:', SUPABASE_URL);
+        console.log('👤 Auth status:', isAuthenticated ? 'Authenticated' : 'Not authenticated');
+    });
+
+    // Global error handler
+    window.onerror = function(msg, url, line, col, error) {
+        console.error('Uncaught error:', msg, error);
+        return false;
+    };
 </script>
 
 </body>
