@@ -1,21 +1,13 @@
 // ============================================================
 // KENYA VAULT - BACKEND SERVER (server.js)
-// Direct STK Push API - No new tab
+// Handles STK Push without opening new tabs
 // ============================================================
-// Add this at the top of server.js
-require('dotenv').config();
 
-// Then use process.env for configuration
-const PORT = process.env.PORT || 3000;
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const MEGAPAY_API_KEY = process.env.MEGAPAY_API_KEY;
-const MEGAPAY_API_URL = process.env.MEGAPAY_API_URL;
-const MEGAPAY_CALLBACK_URL = process.env.MEGAPAY_CALLBACK_URL;
 const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
+require('dotenv').config();
 
 const app = express();
 
@@ -23,7 +15,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
-const SUPABASE_SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs'; // Replace with your service role key
+const SUPABASE_SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs'; // REPLACE THIS!
 
 // MegaPay Configuration
 const MEGAPAY_API_KEY = 'MGPYDSg2lIYA';
@@ -65,10 +57,12 @@ function validatePhoneNumber(phone) {
     return null;
 }
 
-// ─── DIRECT STK PUSH (NO NEW TAB) ────────────────────────────
+// ─── DIRECT STK PUSH ENDPOINT ──────────────────────────────
 app.post('/api/mpesa/stk-push', async (req, res) => {
     try {
         const { phone, amount, order_id, customer_name, customer_email, resource_ids } = req.body;
+
+        console.log('📥 Received STK Push request:', { phone, amount, order_id });
 
         // Validate
         if (!phone || !amount || !order_id) {
@@ -97,6 +91,20 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
         // Generate reference
         const reference = generateTransactionReference();
 
+        // Update order with reference first
+        const { error: updateRefError } = await supabase
+            .from('orders')
+            .update({
+                payment_reference: reference,
+                stk_push_request_id: reference,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', order_id);
+
+        if (updateRefError) {
+            console.error('Error updating reference:', updateRefError);
+        }
+
         // Prepare MegaPay request
         const megaPayPayload = {
             api_key: MEGAPAY_API_KEY,
@@ -107,14 +115,13 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
             description: `Payment for order ${order_id}`
         };
 
-        console.log('📤 Sending STK Push:', {
+        console.log('📤 Sending to MegaPay:', {
             phone: formattedPhone,
             amount: numericAmount,
-            reference: reference,
-            order_id: order_id
+            reference: reference
         });
 
-        // Call MegaPay API
+        // ─── CALL MEGAPAY API ──────────────────────────────
         const megaPayResponse = await fetch(MEGAPAY_API_URL, {
             method: 'POST',
             headers: {
@@ -128,14 +135,17 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
 
         console.log('📥 MegaPay Response:', megaPayResult);
 
-        // Update order in database
+        // Check if STK Push was successful
+        const isSuccess = megaPayResult.status === 'success' || 
+                         megaPayResult.success === true ||
+                         megaPayResult.message?.toLowerCase().includes('sent');
+
+        // Update order with response
         const updateData = {
             status: 'pending',
             payment_method: 'mpesa',
             payment_reference: reference,
-            amount: numericAmount,
             payment_verified: false,
-            stk_push_request_id: reference,
             stk_push_response: megaPayResult,
             metadata: {
                 ...(req.body.metadata || {}),
@@ -151,21 +161,12 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
             updated_at: new Date().toISOString()
         };
 
-        const { error: updateError } = await supabase
+        await supabase
             .from('orders')
             .update(updateData)
             .eq('id', order_id);
 
-        if (updateError) {
-            console.error('Error updating order:', updateError);
-            return res.status(500).json({
-                success: false,
-                error: 'Failed to update order: ' + updateError.message
-            });
-        }
-
-        // Check if STK Push was successful
-        if (megaPayResult.status === 'success' || megaPayResult.success === true) {
+        if (isSuccess) {
             return res.status(200).json({
                 success: true,
                 message: 'STK Push sent successfully',
@@ -173,10 +174,20 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
                     reference: reference,
                     order_id: order_id,
                     check_interval: 3,
-                    status: 'pending'
+                    status: 'pending',
+                    phone: formattedPhone
                 }
             });
         } else {
+            // Update order as failed
+            await supabase
+                .from('orders')
+                .update({ 
+                    status: 'failed',
+                    payment_status: 'failed'
+                })
+                .eq('id', order_id);
+
             return res.status(400).json({
                 success: false,
                 error: megaPayResult.message || megaPayResult.error || 'Failed to send STK Push',
@@ -240,11 +251,13 @@ app.post('/api/mpesa/callback', async (req, res) => {
         // Update order
         const updateData = {
             status: orderStatus,
+            payment_status: orderStatus,
             payment_verified: paymentVerified,
             payment_verified_at: paymentVerified ? new Date().toISOString() : null,
             mpesa_transaction_id: transaction_id,
             mpesa_receipt: transaction_id,
             mpesa_code: transaction_id,
+            stk_push_verified: paymentVerified,
             amount: amount || order.amount,
             metadata: {
                 ...order.metadata,
@@ -336,7 +349,7 @@ app.get('/api/mpesa/status/:orderId', async (req, res) => {
 
         const { data: order, error } = await supabase
             .from('orders')
-            .select('status, payment_verified, payment_reference, amount, metadata')
+            .select('status, payment_verified, payment_reference, amount, payment_status, stk_push_verified')
             .eq('id', orderId)
             .single();
 
@@ -351,9 +364,10 @@ app.get('/api/mpesa/status/:orderId', async (req, res) => {
             success: true,
             data: {
                 status: order.status,
-                payment_verified: order.payment_verified || false,
+                payment_verified: order.payment_verified || order.stk_push_verified || false,
                 payment_reference: order.payment_reference,
-                amount: order.amount
+                amount: order.amount,
+                payment_status: order.payment_status
             }
         });
 
@@ -373,7 +387,8 @@ app.get('/api/health', (req, res) => {
         timestamp: new Date().toISOString(),
         services: {
             megapay: 'configured',
-            supabase: 'configured'
+            supabase: 'configured',
+            callback_url: MEGAPAY_CALLBACK_URL
         }
     });
 });
