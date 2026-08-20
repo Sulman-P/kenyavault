@@ -2928,351 +2928,611 @@
             await loadVisitors();
         }
 
-        // ============================================================
-        // 11. ORDERS LOAD
-        // ============================================================
-        async function loadOrders() {
-            try {
-                var result = await supabase.from('orders').select('*').order('created_at', { ascending: false });
-                if (result.error) throw result.error;
-                ordersData = (result.data || []).map(function(o) {
+       // ============================================================
+// CONFIRM ORDER - UPDATED FOR YOUR SCHEMA
+// ============================================================
+window.confirmOrder = async function(id) {
+    var order = ordersData.find(function(o) { return o.id === id; });
+    if (!order) {
+        showToast('Error', 'Order not found', 'error');
+        return;
+    }
+
+    var status = getPaymentStatus(order);
+    var msg = 'Confirm this order as PAID?\n\n';
+    msg += 'Order: #' + (order.order_ref || id.slice(0, 8)) + '\n';
+    msg += 'Customer: ' + (order.customer_name || 'N/A') + '\n';
+    msg += 'Amount: ' + formatCurrency(order.total_amount || order.amount || 0) + '\n';
+    msg += 'Status: ' + getStatusLabel(status);
+
+    // Show M-PESA info if available
+    var mpesaCode = order.mpesa_code || order.transaction_code || order.mpesa_receipt || order.transaction_reference || '';
+    if (mpesaCode) {
+        msg += '\nM-PESA: ' + mpesaCode;
+    }
+
+    if (!confirm(msg)) return;
+
+    try {
+        var updateData = {
+            payment_status: 'paid',
+            status: 'paid',
+            payment_confirmed: true,
+            amount_paid: order.total_amount || order.amount || 0,
+            paid_at: new Date().toISOString(),
+            confirmed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+        };
+
+        // Keep existing M-PESA code if present
+        if (mpesaCode) {
+            updateData.mpesa_code = mpesaCode;
+            updateData.transaction_code = mpesaCode;
+        }
+
+        console.log('[Confirm Order] Updating with data:', updateData);
+
+        var result = await supabase
+            .from('orders')
+            .update(updateData)
+            .eq('id', id);
+
+        if (result.error) throw result.error;
+
+        showToast('✅ Payment Confirmed', 'Order marked as paid' + (mpesaCode ? ' with M-PESA: ' + mpesaCode : ''));
+        await loadOrders();
+    } catch (e) {
+        console.error('Confirm order error:', e);
+        showToast('Error', 'Failed to confirm order: ' + e.message, 'error');
+    }
+};
+
+// ============================================================
+// REJECT ORDER - UPDATED FOR YOUR SCHEMA
+// ============================================================
+window.rejectOrder = async function(id) {
+    var order = ordersData.find(function(o) { return o.id === id; });
+    if (!order) {
+        showToast('Error', 'Order not found', 'error');
+        return;
+    }
+
+    var reason = prompt('Enter reason for rejection (optional):', '');
+    if (reason === null) return;
+
+    var confirmMsg = 'Reject this order?\n\n';
+    confirmMsg += 'Order: #' + (order.order_ref || id.slice(0, 8)) + '\n';
+    confirmMsg += 'Customer: ' + (order.customer_name || 'N/A') + '\n';
+    confirmMsg += 'Amount: ' + formatCurrency(order.total_amount || order.amount || 0) + '\n';
+    if (reason) confirmMsg += 'Reason: ' + reason;
+
+    if (!confirm(confirmMsg)) return;
+
+    try {
+        var updateData = {
+            payment_status: 'failed',
+            status: 'failed',
+            failure_reason: reason || 'Rejected by admin',
+            rejected_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+        };
+
+        console.log('[Reject Order] Updating with data:', updateData);
+
+        var result = await supabase
+            .from('orders')
+            .update(updateData)
+            .eq('id', id);
+
+        if (result.error) throw result.error;
+
+        showToast('❌ Rejected', 'Order marked as failed' + (reason ? ': ' + reason : ''));
+        await loadOrders();
+    } catch (e) {
+        console.error('Reject order error:', e);
+        showToast('Error', 'Failed to reject order: ' + e.message, 'error');
+    }
+};
+
+// ============================================================
+// ORDER STATUS HELPERS - UPDATED FOR YOUR SCHEMA
+// ============================================================
+function getPaymentStatus(order) {
+    // Check if payment is confirmed
+    if (order.payment_confirmed === true) {
+        return 'paid';
+    }
+
+    // Check explicit statuses
+    if (order.payment_status === 'paid' || order.payment_status === 'completed' ||
+        order.status === 'paid' || order.status === 'completed') {
+        return 'paid';
+    }
+
+    if (order.payment_status === 'failed' || order.status === 'failed') {
+        return 'failed';
+    }
+
+    // Check if there's an M-PESA code (payment received but not verified)
+    var mpesa = order.mpesa_code || order.transaction_code || order.mpesa_receipt || 
+                order.transaction_reference || order.payment_reference || '';
+    if (mpesa.length > 0 && order.payment_confirmed !== true) {
+        return 'pending_verification';
+    }
+
+    // Check if STK push was verified
+    if (order.stk_push_verified === true && order.payment_confirmed !== true) {
+        return 'pending_verification';
+    }
+
+    // Check payment amounts
+    var total = Number(order.total_amount || order.amount || 0);
+    var paid = Number(order.amount_paid || 0);
+    if (paid >= total && total > 0 && order.payment_confirmed !== true) {
+        return 'pending_verification';
+    }
+
+    // Check if payment is pending verification
+    if (order.payment_status === 'pending_verification' || order.status === 'pending_verification') {
+        return 'pending_verification';
+    }
+
+    if (order.payment_status === 'pending' || order.status === 'pending' || !order.payment_status) {
+        return 'pending';
+    }
+
+    return 'pending';
+}
+
+function getStatusClass(status) {
+    var map = {
+        'paid': 'status-success',
+        'pending': 'status-pending',
+        'pending_verification': 'status-verification',
+        'failed': 'status-error'
+    };
+    return map[status] || 'status-pending';
+}
+
+function getStatusLabel(status) {
+    var map = {
+        'paid': '✅ Paid',
+        'pending': '⏳ Pending',
+        'pending_verification': '🔍 Verify Payment',
+        'failed': '❌ Failed'
+    };
+    return map[status] || status;
+}
+
+function getOrderResources(order) {
+    // Check cart_items first
+    if (order.cart_items && typeof order.cart_items === 'string') {
+        try {
+            var items = JSON.parse(order.cart_items);
+            if (Array.isArray(items) && items.length) {
+                return items.map(function(i) {
+                    var title = i.title || i.name || 'Resource';
+                    var qty = i.quantity || 1;
+                    var price = i.price || 0;
+                    return title + ' (x' + qty + ' @ ' + formatCurrency(price) + ')';
+                }).join('; ');
+            }
+        } catch (e) {}
+    }
+
+    // Check for item_title
+    if (order.item_title) {
+        return order.item_title;
+    }
+
+    // Check resource_file_name
+    if (order.resource_file_name) {
+        return order.resource_file_name;
+    }
+
+    return 'N/A';
+}
+
+function getOrderAmount(order) {
+    return Number(order.total_amount || order.amount || order.cart_total || 0);
+}
+
+// ============================================================
+// LOAD ORDERS - UPDATED FOR YOUR SCHEMA
+// ============================================================
+async function loadOrders() {
+    try {
+        var result = await supabase.from('orders').select('*').order('created_at', { ascending: false });
+        if (result.error) throw result.error;
+        ordersData = (result.data || []).map(function(o) {
+            if (o.cart_items && typeof o.cart_items === 'string') {
+                try { o.cart_items = JSON.parse(o.cart_items); } catch (e) { o.cart_items = []; }
+            }
+            return o;
+        });
+
+        // Check for orders that need payment status updates
+        var needsUpdate = false;
+        var updatePromises = [];
+
+        for (var i = 0; i < ordersData.length; i++) {
+            var order = ordersData[i];
+            var status = order.payment_status || order.status || 'pending';
+            
+            // Check for M-PESA codes or payment data
+            var hasMpesa = order.mpesa_code || order.transaction_code || order.mpesa_receipt || 
+                          order.transaction_reference || order.payment_reference || '';
+            var hasStkVerified = order.stk_push_verified === true;
+            var hasAmountPaid = (Number(order.amount_paid || 0) > 0);
+
+            // If there's payment data but status is still pending, update to verification
+            if ((hasMpesa || hasStkVerified || hasAmountPaid) && 
+                (status === 'pending' || status === '' || status === null) &&
+                order.payment_confirmed !== true) {
+                needsUpdate = true;
+                updatePromises.push(
+                    supabase
+                    .from('orders')
+                    .update({
+                        payment_status: 'pending_verification',
+                        status: 'pending_verification',
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', order.id)
+                    .then(function(res) {
+                        if (res.error) {
+                            console.warn('Update error for order:', order.id, res.error.message);
+                        }
+                        return res;
+                    })
+                    .catch(function(e) {
+                        console.warn('Failed to update order:', order.id, e.message);
+                        return null;
+                    })
+                );
+            }
+        }
+
+        if (needsUpdate && updatePromises.length > 0) {
+            await Promise.all(updatePromises);
+
+            // Refresh data
+            var refreshed = await supabase.from('orders')
+                .select('*')
+                .order('created_at', { ascending: false });
+            if (!refreshed.error) {
+                ordersData = (refreshed.data || []).map(function(o) {
                     if (o.cart_items && typeof o.cart_items === 'string') {
                         try { o.cart_items = JSON.parse(o.cart_items); } catch (e) { o.cart_items = []; }
                     }
                     return o;
                 });
-
-                // Check for orders that need payment status updates
-                var needsUpdate = false;
-                for (var i = 0; i < ordersData.length; i++) {
-                    var order = ordersData[i];
-                    var status = order.payment_status || order.status || 'pending';
-                    var total = Number(order.total_amount) || 0;
-                    var paid = Number(order.amount_paid) || Number(order.paid_amount) || 0;
-                    var mpesa = order.mpesa_code || order.transaction_code || '';
-
-                    // If there's an M-PESA code but status is still pending, update to verification
-                    if (mpesa.length > 0 && (status === 'pending' || status === '' || status === null)) {
-                        needsUpdate = true;
-                        await supabase.from('orders')
-                            .update({
-                                payment_status: 'pending_verification',
-                                status: 'pending_verification',
-                                updated_at: new Date().toISOString()
-                            })
-                            .eq('id', order.id);
-                    }
-                }
-
-                if (needsUpdate) {
-                    var refreshed = await supabase.from('orders')
-                        .select('*')
-                        .order('created_at', { ascending: false });
-                    if (!refreshed.error) {
-                        ordersData = (refreshed.data || []).map(function(o) {
-                            if (o.cart_items && typeof o.cart_items === 'string') {
-                                try { o.cart_items = JSON.parse(o.cart_items); } catch (e) { o
-                                        .cart_items = []; }
-                            }
-                            return o;
-                        });
-                    }
-                }
-
-            } catch (e) {
-                console.error('Load orders error:', e);
-                ordersData = [];
-                showToast('Orders', 'Could not load orders', 'error');
             }
-            renderDashboardOrdersTable();
-            renderOrdersTable();
-            updateStatsUI();
-            updatePaymentChart();
-            updateSalesChart();
         }
 
-        function filteredOrders() {
-            return ordersData.filter(function(o) {
-                var status = getPaymentStatus(o);
-                return currentFilter === 'all' || status === currentFilter;
+    } catch (e) {
+        console.error('Load orders error:', e);
+        ordersData = [];
+        showToast('Orders', 'Could not load orders', 'error');
+    }
+    renderDashboardOrdersTable();
+    renderOrdersTable();
+    updateStatsUI();
+    updatePaymentChart();
+    updateSalesChart();
+}
+
+// ============================================================
+// BUILD ORDER ROW - UPDATED FOR YOUR SCHEMA
+// ============================================================
+function buildOrderRowHTML(o) {
+    var status = getPaymentStatus(o);
+    var ref = o.order_ref || (o.id || '').slice(0, 8).toUpperCase();
+    var date = o.created_at ? new Date(o.created_at).toLocaleString('en-KE') : '—';
+
+    // Show M-PESA code if available
+    var mpesaCode = o.mpesa_code || o.transaction_code || o.mpesa_receipt || 
+                    o.transaction_reference || o.payment_reference || '';
+    var paymentInfo = '';
+    if (mpesaCode) {
+        paymentInfo = ' <span style="font-size:0.65rem;color:var(--blue);">📱 ' + mpesaCode + '</span>';
+    }
+
+    var note = '';
+    if (status === 'pending') {
+        note = ' <span style="font-size:0.65rem;color:var(--gold);">(No payment received)</span>';
+    }
+    if (status === 'pending_verification') {
+        note = ' <span style="font-size:0.65rem;color:var(--blue);">(Payment received - verify)</span>';
+    }
+
+    var hasPaymentData = (o.mpesa_code || o.transaction_code || o.mpesa_receipt || 
+                          o.transaction_reference || o.amount_paid > 0 || o.stk_push_verified === true);
+
+    var actions = '';
+    if (status === 'pending') {
+        actions += '<i class="fas fa-check approve-btn" onclick="confirmOrder(\'' + o.id +
+            '\')" title="Mark as Paid"></i>';
+        actions += '<i class="fas fa-times reject-btn" onclick="rejectOrder(\'' + o.id +
+            '\')" title="Reject"></i>';
+    } else if (status === 'pending_verification') {
+        actions += '<i class="fas fa-check-circle approve-btn" onclick="confirmOrder(\'' + o.id +
+            '\')" title="Confirm Payment">✅</i>';
+        actions += '<i class="fas fa-times-circle reject-btn" onclick="rejectOrder(\'' + o.id +
+            '\')" title="Reject Payment">❌</i>';
+    }
+
+    if (hasPaymentData) {
+        actions += '<i class="fas fa-file-invoice" onclick="viewPaymentDetails(\'' + o.id +
+            '\')" title="Payment Details" style="color:var(--gold);"></i>';
+    }
+
+    var amount = getOrderAmount(o);
+
+    return '<tr>' +
+        '<td data-label="Order Ref">#' + ref + '</td>' +
+        '<td data-label="Customer">' + (o.customer_name || 'N/A') + '</td>' +
+        '<td data-label="Phone">' + (o.phone || o.customer_phone || '—') + '</td>' +
+        '<td data-label="Resources">' + getOrderResources(o) + '</td>' +
+        '<td data-label="Amount" class="numeric">' + formatCurrency(amount) + '</td>' +
+        '<td data-label="Status"><span class="status ' + getStatusClass(status) + '">' + getStatusLabel(
+            status) + note + paymentInfo + '</span></td>' +
+        '<td data-label="Date">' + date + '</td>' +
+        '<td data-label="Actions" class="action-icons">' +
+        '<i class="fas fa-eye" onclick="viewOrder(\'' + o.id + '\')" title="View Details"></i>' +
+        actions +
+        '</td></tr>';
+}
+
+// ============================================================
+// VIEW PAYMENT DETAILS - UPDATED FOR YOUR SCHEMA
+// ============================================================
+window.viewPaymentDetails = function(id) {
+    var order = ordersData.find(function(o) { return o.id === id; });
+    if (!order) {
+        showToast('Error', 'Order not found', 'error');
+        return;
+    }
+
+    var amount = getOrderAmount(order);
+    var mpesaCode = order.mpesa_code || order.transaction_code || order.mpesa_receipt || 
+                    order.transaction_reference || order.payment_reference || 'None';
+
+    var details = '📋 Order: #' + (order.order_ref || id.slice(0, 8)) + '\n';
+    details += '👤 Customer: ' + (order.customer_name || 'N/A') + '\n';
+    details += '📱 Phone: ' + (order.phone || order.customer_phone || '—') + '\n';
+    details += '💳 Amount: ' + formatCurrency(amount) + '\n';
+    details += '📅 Date: ' + (order.created_at ? new Date(order.created_at).toLocaleString('en-KE') : '—') + '\n\n';
+    details += '🔍 Payment Info:\n';
+    details += '  M-PESA Code: ' + mpesaCode + '\n';
+    details += '  Amount Paid: ' + formatCurrency(order.amount_paid || 0) + '\n';
+    details += '  Status: ' + getStatusLabel(getPaymentStatus(order)) + '\n';
+    details += '  Confirmed: ' + (order.payment_confirmed === true ? '✅ Yes' : '❌ No') + '\n';
+    
+    if (order.stk_push_verified === true) {
+        details += '  STK Push: ✅ Verified\n';
+    }
+    if (order.payment_method) {
+        details += '  Payment Method: ' + order.payment_method + '\n';
+    }
+    if (order.failure_reason) {
+        details += '  Failure Reason: ' + order.failure_reason + '\n';
+    }
+    if (order.payment_error) {
+        details += '  Payment Error: ' + order.payment_error + '\n';
+    }
+
+    alert(details);
+};
+
+// ============================================================
+// VIEW ORDER - UPDATED
+// ============================================================
+window.viewOrder = function(id) {
+    var order = ordersData.find(function(o) { return o.id === id; });
+    if (!order) {
+        showToast('Error', 'Order not found', 'error');
+        return;
+    }
+    
+    var status = getPaymentStatus(order);
+    var amount = getOrderAmount(order);
+    var mpesaCode = order.mpesa_code || order.transaction_code || order.mpesa_receipt || 'None';
+    
+    var details = '📋 Order: #' + (order.order_ref || id.slice(0, 8)) + '\n';
+    details += '👤 Customer: ' + (order.customer_name || 'N/A') + '\n';
+    details += '📱 Phone: ' + (order.phone || order.customer_phone || '—') + '\n';
+    details += '📧 Email: ' + (order.customer_email || '—') + '\n';
+    details += '💳 Amount: ' + formatCurrency(amount) + '\n';
+    details += '📊 Status: ' + getStatusLabel(status) + '\n';
+    details += '📱 M-PESA: ' + mpesaCode + '\n';
+    details += '📅 Date: ' + (order.created_at ? new Date(order.created_at).toLocaleString('en-KE') : '—') + '\n';
+    
+    if (order.cart_items && order.cart_items.length > 0) {
+        details += '\n📚 Items:\n';
+        if (Array.isArray(order.cart_items)) {
+            order.cart_items.forEach(function(item, idx) {
+                var title = item.title || item.name || 'Resource';
+                var qty = item.quantity || 1;
+                var price = item.price || 0;
+                details += '  ' + (idx + 1) + '. ' + title + ' (x' + qty + ' @ ' + formatCurrency(price) + ')\n';
             });
         }
+    }
+    
+    if (order.payment_confirmed) {
+        details += '\n✅ Payment confirmed at: ' + (order.confirmed_at ? new Date(order.confirmed_at).toLocaleString() : '—');
+    }
+    
+    alert(details);
+};
 
-        // ============================================================
-        // 12. BUILD ORDER ROW
-        // ============================================================
-        function buildOrderRowHTML(o) {
-            var status = getPaymentStatus(o);
-            var ref = o.order_ref || (o.id || '').slice(0, 8).toUpperCase();
-            var date = o.created_at ? new Date(o.created_at).toLocaleString('en-KE') : '—';
-
-            // Show M-PESA code if available
-            var mpesaCode = o.mpesa_code || o.transaction_code || '';
-            var paymentInfo = '';
-            if (mpesaCode) {
-                paymentInfo = ' <span style="font-size:0.65rem;color:var(--blue);">📱 ' + mpesaCode + '</span>';
-            }
-
-            var note = '';
-            if (status === 'pending') {
-                note = ' <span style="font-size:0.65rem;color:var(--gold);">(No payment received)</span>';
-            }
-            if (status === 'pending_verification') {
-                note = ' <span style="font-size:0.65rem;color:var(--blue);">(Payment received - verify)</span>';
-            }
-
-            var hasPaymentData = (o.mpesa_code || o.transaction_code || o.amount_paid > 0 || o.payment_confirmed === true);
-
-            var actions = '';
-            if (status === 'pending') {
-                actions += '<i class="fas fa-check approve-btn" onclick="confirmOrder(\'' + o.id +
-                    '\')" title="Mark as Paid"></i>';
-                actions += '<i class="fas fa-times reject-btn" onclick="rejectOrder(\'' + o.id +
-                    '\')" title="Reject"></i>';
-            } else if (status === 'pending_verification') {
-                actions += '<i class="fas fa-check-circle approve-btn" onclick="confirmOrder(\'' + o.id +
-                    '\')" title="Confirm Payment">✅</i>';
-                actions += '<i class="fas fa-times-circle reject-btn" onclick="rejectOrder(\'' + o.id +
-                    '\')" title="Reject Payment">❌</i>';
-            }
-
-            if (hasPaymentData) {
-                actions += '<i class="fas fa-file-invoice" onclick="viewPaymentDetails(\'' + o.id +
-                    '\')" title="Payment Details" style="color:var(--gold);"></i>';
-            }
-
-            return '<tr>' +
-                '<td data-label="Order Ref">#' + ref + '</td>' +
-                '<td data-label="Customer">' + (o.customer_name || 'N/A') + '</td>' +
-                '<td data-label="Phone">' + (o.phone || o.customer_phone || '—') + '</td>' +
-                '<td data-label="Resources">' + getOrderResources(o) + '</td>' +
-                '<td data-label="Amount" class="numeric">' + formatCurrency(o.total_amount || 0) + '</td>' +
-                '<td data-label="Status"><span class="status ' + getStatusClass(status) + '">' + getStatusLabel(
-                    status) + note + paymentInfo + '</span></td>' +
-                '<td data-label="Date">' + date + '</td>' +
-                '<td data-label="Actions" class="action-icons">' +
-                '<i class="fas fa-eye" onclick="viewOrder(\'' + o.id + '\')" title="View Details"></i>' +
-                actions +
-                '</td></tr>';
+// ============================================================
+// UPDATE STATS UI - FIXED FOR YOUR SCHEMA
+// ============================================================
+function updateStatsUI() {
+    var total = ordersData.length;
+    var paid = ordersData.filter(function(o) { return getPaymentStatus(o) === 'paid'; }).length;
+    var pending = ordersData.filter(function(o) { return getPaymentStatus(o) === 'pending'; }).length;
+    var verification = ordersData.filter(function(o) { return getPaymentStatus(o) === 'pending_verification'; }).length;
+    var failed = ordersData.filter(function(o) { return getPaymentStatus(o) === 'failed'; }).length;
+    
+    var revenue = ordersData.reduce(function(sum, o) {
+        if (getPaymentStatus(o) === 'paid') {
+            return sum + getOrderAmount(o);
         }
+        return sum;
+    }, 0);
+    
+    var resourceCount = resourcesData.length;
+    var learnerCount = learnersData.length;
 
-        // ============================================================
-        // 13. RENDER ORDERS TABLES
-        // ============================================================
-        function renderDashboardOrdersTable() {
-            var tbody = document.getElementById('tableBody');
-            if (!tbody) return;
-            var filtered = filteredOrders();
-            var totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-            if (currentPage > totalPages) currentPage = totalPages;
-            var start = (currentPage - 1) * pageSize;
-            var paginated = filtered.slice(start, start + pageSize);
+    var cT = getChange(total, previousStats.total);
+    var cP = getChange(paid, previousStats.paid);
+    var cD = getChange(pending, previousStats.pending);
+    var cV = getChange(verification, previousStats.verification);
+    var cF = getChange(failed, previousStats.failed);
+    var cR = getChange(revenue, previousStats.revenue);
+    var cRes = getChange(resourceCount, previousStats.resources);
+    var cLearners = getChange(learnerCount, previousStats.learners);
+    
+    previousStats = { 
+        total: total, 
+        paid: paid, 
+        pending: pending, 
+        verification: verification, 
+        failed: failed, 
+        revenue: revenue, 
+        resources: resourceCount, 
+        learners: learnerCount 
+    };
 
-            tbody.innerHTML = paginated.length ?
-                paginated.map(buildOrderRowHTML).join('') :
-                '<tr><td colspan="8"><div class="empty-state"><div class="ico">📭</div>No orders found</div></td></tr>';
+    document.getElementById('statOrders').textContent = total;
+    document.getElementById('statOrdersSub').innerHTML =
+        (cT.up ? '⬆' : '⬇') + ' <span class="' + (cT.up ? 'change-up' : 'change-down') + '">' + cT.pct + '%</span>';
+    document.getElementById('statPaid').textContent = paid;
+    document.getElementById('statPaidSub').innerHTML =
+        (cP.up ? '⬆' : '⬇') + ' <span class="' + (cP.up ? 'change-up' : 'change-down') + '">' + cP.pct + '%</span>';
+    document.getElementById('statPending').textContent = pending;
+    document.getElementById('statPendingSub').innerHTML =
+        (cD.up ? '⬆' : '⬇') + ' <span class="' + (cD.up ? 'change-up' : 'change-down') + '">' + cD.pct + '%</span>';
+    document.getElementById('statVerification').textContent = verification;
+    document.getElementById('statVerificationSub').innerHTML =
+        (cV.up ? '⬆' : '⬇') + ' <span class="' + (cV.up ? 'change-up' : 'change-down') + '">' + cV.pct + '%</span>';
+    document.getElementById('statFailed').textContent = failed;
+    document.getElementById('statFailedSub').innerHTML =
+        (cF.up ? '⬆' : '⬇') + ' <span class="' + (cF.up ? 'change-up' : 'change-down') + '">' + cF.pct + '%</span>';
+    document.getElementById('statRevenue').textContent = formatCurrency(revenue);
+    document.getElementById('statRevenueSub').innerHTML =
+        (cR.up ? '⬆' : '⬇') + ' <span class="' + (cR.up ? 'change-up' : 'change-down') + '">' + cR.pct + '%</span>';
 
-            renderPaginationControls(totalPages);
-        }
+    document.getElementById('statResources').textContent = resourceCount;
+    document.getElementById('statResourcesSub').innerHTML =
+        (cRes.up ? '⬆' : '⬇') + ' <span class="' + (cRes.up ? 'change-up' : 'change-down') + '">' + cRes.pct + '%</span>';
 
-        function renderOrdersTable() {
-            var tbody = document.getElementById('ordersTableBody');
-            if (!tbody) return;
-            var filtered = filteredOrders();
-            document.getElementById('ordersCountLabel').textContent =
-                'Showing all ' + filtered.length + ' order' + (filtered.length === 1 ? '' : 's') + (currentFilter !==
-                    'all' ? ' — filtered by ' + currentFilter : '');
-            tbody.innerHTML = filtered.length ?
-                filtered.map(buildOrderRowHTML).join('') :
-                '<tr><td colspan="8"><div class="empty-state"><div class="ico">📭</div>No orders found</div></td></tr>';
-        }
+    document.getElementById('statLearners').textContent = learnerCount;
+    document.getElementById('statLearnersSub').innerHTML =
+        (cLearners.up ? '⬆' : '⬇') + ' <span class="' + (cLearners.up ? 'change-up' : 'change-down') + '">' + cLearners.pct + '%</span>';
 
-        function renderPaginationControls(totalPages) {
-            var prev = document.getElementById('prevPage');
-            var next = document.getElementById('nextPage');
-            var nums = document.getElementById('pageNumbers');
-            prev.classList.toggle('disabled', currentPage <= 1);
-            next.classList.toggle('disabled', currentPage >= totalPages);
-            var html = '';
-            for (var p = 1; p <= totalPages; p++) {
-                html += '<span class="' + (p === currentPage ? 'active-page' : '') + '" data-page="' + p + '">' + p +
-                    '</span>';
-            }
-            nums.innerHTML = html;
-            nums.querySelectorAll('span[data-page]').forEach(function(el) {
-                el.addEventListener('click', function() {
-                    currentPage = parseInt(this.dataset.page);
-                    renderDashboardOrdersTable();
-                });
-            });
-        }
-        document.getElementById('prevPage').addEventListener('click', function() {
-            if (currentPage > 1) { currentPage--;
-                renderDashboardOrdersTable(); }
-        });
-        document.getElementById('nextPage').addEventListener('click', function() {
-            var totalPages = Math.max(1, Math.ceil(filteredOrders().length / pageSize));
-            if (currentPage < totalPages) { currentPage++;
-                renderDashboardOrdersTable(); }
-        });
+    document.getElementById('pendingBadge').textContent = pending + verification;
+    document.getElementById('pendingBadge').style.display = (pending + verification) > 0 ? '' : 'none';
 
-        // ============================================================
-        // 14. UPDATE STATS UI
-        // ============================================================
-        function updateStatsUI() {
-            var total = ordersData.length;
-            var paid = ordersData.filter(function(o) { return getPaymentStatus(o) === 'paid'; }).length;
-            var pending = ordersData.filter(function(o) { return getPaymentStatus(o) === 'pending'; }).length;
-            var verification = ordersData.filter(function(o) { return getPaymentStatus(o) === 'pending_verification'; })
-                .length;
-            var failed = ordersData.filter(function(o) { return getPaymentStatus(o) === 'failed'; }).length;
-            var revenue = ordersData.reduce(function(sum, o) {
-                if (getPaymentStatus(o) === 'paid') {
-                    return sum + (Number(o.total_amount) || 0);
+    var badge = document.getElementById('resourceCountBadge');
+    if (badge) {
+        badge.textContent = resourceCount;
+        badge.style.display = resourceCount > 0 ? '' : 'none';
+    }
+}
+
+// ============================================================
+// GET CHANGE HELPER
+// ============================================================
+function getChange(current, previous) {
+    if (previous === 0) return { pct: current > 0 ? 100 : 0, up: true };
+    var diff = current - previous;
+    return { pct: Math.abs(Math.round((diff / previous) * 100)), up: diff >= 0 };
+}
+
+// ============================================================
+// PAYMENT CHART - UPDATED
+// ============================================================
+function updatePaymentChart() {
+    var ctx = document.getElementById('paymentChart')?.getContext('2d');
+    if (!ctx) return;
+    if (paymentChartInstance) paymentChartInstance.destroy();
+
+    var paid = ordersData.filter(function(o) { return getPaymentStatus(o) === 'paid'; }).length;
+    var pending = ordersData.filter(function(o) { return getPaymentStatus(o) === 'pending'; }).length;
+    var verification = ordersData.filter(function(o) { return getPaymentStatus(o) === 'pending_verification'; }).length;
+    var failed = ordersData.filter(function(o) { return getPaymentStatus(o) === 'failed'; }).length;
+
+    paymentChartInstance = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Paid', 'Pending', 'Verify', 'Failed'],
+            datasets: [{
+                data: [paid, pending, verification, failed],
+                backgroundColor: ['#1F7A3A', '#C9971F', '#2A5C8A', '#C0392B'],
+                borderWidth: 0
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: { boxWidth: 12, padding: 12 }
                 }
-                return sum;
-            }, 0);
-            var resourceCount = resourcesData.length;
-            var learnerCount = learnersData.length;
+            },
+            cutout: '62%'
+        }
+    });
+}
 
-            var cT = getChange(total, previousStats.total);
-            var cP = getChange(paid, previousStats.paid);
-            var cD = getChange(pending, previousStats.pending);
-            var cV = getChange(verification, previousStats.verification);
-            var cF = getChange(failed, previousStats.failed);
-            var cR = getChange(revenue, previousStats.revenue);
-            var cRes = getChange(resourceCount, previousStats.resources);
-            var cLearners = getChange(learnerCount, previousStats.learners);
-            previousStats = { total: total, paid: paid, pending: pending, verification: verification, failed: failed,
-                revenue: revenue, resources: resourceCount, learners: learnerCount };
+// ============================================================
+// SALES CHART - UPDATED
+// ============================================================
+function updateSalesChart() {
+    var ctx = document.getElementById('salesChart')?.getContext('2d');
+    if (!ctx) return;
+    if (salesChartInstance) salesChartInstance.destroy();
 
-            document.getElementById('statOrders').textContent = total;
-            document.getElementById('statOrdersSub').innerHTML =
-                (cT.up ? '⬆' : '⬇') + ' <span class="' + (cT.up ? 'change-up' : 'change-down') + '">' + cT.pct +
-                '%</span>';
-            document.getElementById('statPaid').textContent = paid;
-            document.getElementById('statPaidSub').innerHTML =
-                (cP.up ? '⬆' : '⬇') + ' <span class="' + (cP.up ? 'change-up' : 'change-down') + '">' + cP.pct +
-                '%</span>';
-            document.getElementById('statPending').textContent = pending;
-            document.getElementById('statPendingSub').innerHTML =
-                (cD.up ? '⬆' : '⬇') + ' <span class="' + (cD.up ? 'change-up' : 'change-down') + '">' + cD.pct +
-                '%</span>';
-            document.getElementById('statVerification').textContent = verification;
-            document.getElementById('statVerificationSub').innerHTML =
-                (cV.up ? '⬆' : '⬇') + ' <span class="' + (cV.up ? 'change-up' : 'change-down') + '">' + cV.pct +
-                '%</span>';
-            document.getElementById('statFailed').textContent = failed;
-            document.getElementById('statFailedSub').innerHTML =
-                (cF.up ? '⬆' : '⬇') + ' <span class="' + (cF.up ? 'change-up' : 'change-down') + '">' + cF.pct +
-                '%</span>';
-            document.getElementById('statRevenue').textContent = formatCurrency(revenue);
-            document.getElementById('statRevenueSub').innerHTML =
-                (cR.up ? '⬆' : '⬇') + ' <span class="' + (cR.up ? 'change-up' : 'change-down') + '">' + cR.pct +
-                '%</span>';
+    var days = [];
+    var data = [];
+    for (var i = 6; i >= 0; i--) {
+        var d = new Date();
+        d.setDate(d.getDate() - i);
+        days.push(d.toLocaleDateString('en-KE', { weekday: 'short' }));
+        var key = d.toISOString().slice(0, 10);
+        data.push(ordersData.filter(function(o) {
+            var date = o.created_at || '';
+            return date.slice(0, 10) === key && getPaymentStatus(o) === 'paid';
+        }).length);
+    }
 
-            document.getElementById('statResources').textContent = resourceCount;
-            document.getElementById('statResourcesSub').innerHTML =
-                (cRes.up ? '⬆' : '⬇') + ' <span class="' + (cRes.up ? 'change-up' : 'change-down') + '">' + cRes
-                .pct + '%</span>';
-
-            document.getElementById('statLearners').textContent = learnerCount;
-            document.getElementById('statLearnersSub').innerHTML =
-                (cLearners.up ? '⬆' : '⬇') + ' <span class="' + (cLearners.up ? 'change-up' : 'change-down') +
-                '">' + cLearners.pct + '%</span>';
-
-            document.getElementById('pendingBadge').textContent = pending + verification;
-            document.getElementById('pendingBadge').style.display = (pending + verification) > 0 ? '' : 'none';
-
-            var badge = document.getElementById('resourceCountBadge');
-            if (badge) {
-                badge.textContent = resourceCount;
-                badge.style.display = resourceCount > 0 ? '' : 'none';
+    salesChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: days,
+            datasets: [{
+                label: 'Paid Orders',
+                data: data,
+                backgroundColor: '#1F7A3A',
+                borderRadius: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { beginAtZero: true, ticks: { precision: 0 } },
+                x: { grid: { display: false } }
             }
         }
-
-        // ============================================================
-        // 15. PAYMENT CHART
-        // ============================================================
-        function updatePaymentChart() {
-            var ctx = document.getElementById('paymentChart')?.getContext('2d');
-            if (!ctx) return;
-            if (paymentChartInstance) paymentChartInstance.destroy();
-
-            var paid = ordersData.filter(function(o) { return getPaymentStatus(o) === 'paid'; }).length;
-            var pending = ordersData.filter(function(o) { return getPaymentStatus(o) === 'pending'; }).length;
-            var verification = ordersData.filter(function(o) { return getPaymentStatus(o) === 'pending_verification'; })
-                .length;
-            var failed = ordersData.filter(function(o) { return getPaymentStatus(o) === 'failed'; }).length;
-
-            paymentChartInstance = new Chart(ctx, {
-                type: 'doughnut',
-                data: {
-                    labels: ['Paid', 'Pending', 'Verify', 'Failed'],
-                    datasets: [{
-                        data: [paid, pending, verification, failed],
-                        backgroundColor: ['#1F7A3A', '#C9971F', '#2A5C8A', '#C0392B'],
-                        borderWidth: 0
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    plugins: {
-                        legend: {
-                            position: 'bottom',
-                            labels: { boxWidth: 12, padding: 12 }
-                        }
-                    },
-                    cutout: '62%'
-                }
-            });
-        }
-
-        // ============================================================
-        // 16. SALES CHART
-        // ============================================================
-        function updateSalesChart() {
-            var ctx = document.getElementById('salesChart')?.getContext('2d');
-            if (!ctx) return;
-            if (salesChartInstance) salesChartInstance.destroy();
-
-            var days = [];
-            var data = [];
-            for (var i = 6; i >= 0; i--) {
-                var d = new Date();
-                d.setDate(d.getDate() - i);
-                days.push(d.toLocaleDateString('en-KE', { weekday: 'short' }));
-                var key = d.toISOString().slice(0, 10);
-                data.push(ordersData.filter(function(o) {
-                    var date = o.created_at || '';
-                    return date.slice(0, 10) === key && getPaymentStatus(o) === 'paid';
-                }).length);
-            }
-
-            salesChartInstance = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: days,
-                    datasets: [{
-                        label: 'Paid Orders',
-                        data: data,
-                        backgroundColor: '#1F7A3A',
-                        borderRadius: 6
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    plugins: { legend: { display: false } },
-                    scales: {
-                        y: { beginAtZero: true, ticks: { precision: 0 } },
-                        x: { grid: { display: false } }
-                    }
-                }
-            });
-        }
-
+    });
+}
         // ============================================================
         // 17. ORDER ACTIONS
         // ============================================================
