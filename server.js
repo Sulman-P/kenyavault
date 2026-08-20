@@ -1,5 +1,5 @@
 // ============================================================
-// KENYA VAULT - PAYMENT BACKEND SERVER (FIXED)
+// KENYA VAULT - PAYMENT BACKEND SERVER (MEGAPAY FIXED)
 // ============================================================
 
 const express = require('express');
@@ -10,7 +10,12 @@ const PORT = process.env.PORT || 3000;
 
 // MegaPay Configuration
 const MEGAPAY_API_KEY = 'MGPYDSg2lIYA';
-const MEGAPAY_API_URL = 'https://megapay.co.ke/backend/initiatestk';
+// Try both possible endpoints
+const MEGAPAY_API_URLS = [
+    'https://megapay.co.ke/backend/initiatestk',
+    'https://megapay.co.ke/api/initiatestk',
+    'https://api.megapay.co.ke/initiatestk'
+];
 const MEGAPAY_CALLBACK_URL = 'https://kenyavault.onrender.com/api/mpesa/callback';
 
 app.use(cors({ origin: '*' }));
@@ -80,65 +85,80 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
         console.log('Reference:', reference);
         console.log('Order ID:', order_id);
 
-        // ─── MEGAPAY PAYLOAD ──────────────────────────────────
-        const megaPayPayload = {
-            api_key: MEGAPAY_API_KEY,
-            phone: formattedPhone,
-            amount: numericAmount,
-            reference: reference,
-            callback: MEGAPAY_CALLBACK_URL,
-            description: `Payment for order ${order_id}`
-        };
+        // ─── TRY MULTIPLE MEGAPAY ENDPOINTS ──────────────────
+        let lastError = null;
+        let successResponse = null;
 
-        console.log('📤 MegaPay Payload:', JSON.stringify(megaPayPayload, null, 2));
-
-        // ─── CALL MEGAPAY API ──────────────────────────────
-        const megaPayResponse = await fetch(MEGAPAY_API_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
-            },
-            body: JSON.stringify(megaPayPayload)
-        });
-
-        // Get the raw response
-        const responseText = await megaPayResponse.text();
-        console.log('📥 MegaPay Raw Response (first 500 chars):', responseText.substring(0, 500));
-
-        // Try to parse as JSON
-        let megaPayResult;
-        try {
-            megaPayResult = JSON.parse(responseText);
-        } catch (e) {
-            console.error('❌ Failed to parse MegaPay response as JSON');
-            console.error('❌ Raw response:', responseText);
+        for (const apiUrl of MEGAPAY_API_URLS) {
+            console.log(`📤 Trying MegaPay endpoint: ${apiUrl}`);
             
-            // Check if it's an HTML error page
-            if (responseText.includes('<!DOCTYPE') || responseText.includes('<html')) {
-                return res.status(500).json({
-                    success: false,
-                    error: 'MegaPay returned an HTML error page. Please check your API key and parameters.',
-                    raw_response: responseText.substring(0, 200)
+            try {
+                // Prepare MegaPay request
+                const megaPayPayload = {
+                    api_key: MEGAPAY_API_KEY,
+                    phone: formattedPhone,
+                    amount: numericAmount,
+                    reference: reference,
+                    callback: MEGAPAY_CALLBACK_URL,
+                    description: `Payment for order ${order_id}`,
+                    // Additional fields that MegaPay might expect
+                    currency: 'KES',
+                    customer_name: customer_name || 'Customer'
+                };
+
+                console.log('📤 Payload:', JSON.stringify(megaPayPayload, null, 2));
+
+                const megaPayResponse = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify(megaPayPayload)
                 });
+
+                const responseText = await megaPayResponse.text();
+                console.log(`📥 Response from ${apiUrl} (first 300 chars):`, responseText.substring(0, 300));
+
+                // Check if response is HTML
+                if (responseText.includes('<!DOCTYPE') || responseText.includes('<html')) {
+                    console.log(`❌ ${apiUrl} returned HTML error page`);
+                    lastError = 'HTML error page from MegaPay';
+                    continue;
+                }
+
+                // Try to parse JSON
+                let megaPayResult;
+                try {
+                    megaPayResult = JSON.parse(responseText);
+                } catch (e) {
+                    console.log(`❌ ${apiUrl} returned non-JSON response`);
+                    lastError = 'Non-JSON response from MegaPay';
+                    continue;
+                }
+
+                // Check if successful
+                const isSuccess = megaPayResult.status === 'success' || 
+                                 megaPayResult.success === true ||
+                                 (megaPayResult.message && megaPayResult.message.toLowerCase().includes('sent'));
+
+                if (isSuccess) {
+                    console.log(`✅ STK Push successful via ${apiUrl}!`);
+                    successResponse = megaPayResult;
+                    break;
+                } else {
+                    console.log(`❌ ${apiUrl} returned error:`, megaPayResult);
+                    lastError = megaPayResult.message || megaPayResult.error || 'Unknown error';
+                }
+
+            } catch (error) {
+                console.log(`❌ Error with ${apiUrl}:`, error.message);
+                lastError = error.message;
             }
-            
-            return res.status(500).json({
-                success: false,
-                error: 'Invalid response from payment gateway',
-                raw_response: responseText.substring(0, 200)
-            });
         }
 
-        console.log('📥 MegaPay Parsed Result:', JSON.stringify(megaPayResult, null, 2));
-
-        // Check if STK Push was successful
-        const isSuccess = megaPayResult.status === 'success' || 
-                         megaPayResult.success === true ||
-                         (megaPayResult.message && megaPayResult.message.toLowerCase().includes('sent'));
-
-        if (isSuccess) {
-            console.log('✅ STK Push sent successfully!');
+        // ─── HANDLE RESPONSE ────────────────────────────────
+        if (successResponse) {
             return res.status(200).json({
                 success: true,
                 message: 'STK Push sent successfully',
@@ -148,15 +168,15 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
                     check_interval: 3,
                     status: 'pending',
                     phone: formattedPhone,
-                    mega_pay_response: megaPayResult
+                    mega_pay_response: successResponse
                 }
             });
         } else {
-            console.log('❌ STK Push failed:', megaPayResult);
-            return res.status(400).json({
+            console.log('❌ All MegaPay endpoints failed');
+            return res.status(500).json({
                 success: false,
-                error: megaPayResult.message || megaPayResult.error || 'Failed to send STK Push',
-                details: megaPayResult
+                error: 'MegaPay error: ' + lastError,
+                hint: 'Please check your MegaPay API key and ensure your account is active.'
             });
         }
 
@@ -197,7 +217,7 @@ app.get('/', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 KenyaVault Payment Server running on port ${PORT}`);
     console.log(`📍 Health: http://localhost:${PORT}/api/health`);
-    console.log(`📞 MegaPay API: ${MEGAPAY_API_URL}`);
+    console.log(`📞 MegaPay API Key: ${MEGAPAY_API_KEY}`);
     console.log(`🔗 Callback URL: ${MEGAPAY_CALLBACK_URL}`);
     console.log(`✅ Server is ready!`);
 });
