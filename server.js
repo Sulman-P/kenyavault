@@ -1,20 +1,31 @@
 // ============================================================
-// KENYA VAULT - PAYMENT BACKEND SERVER (MEGAPAY FIXED)
-// Using correct MegaPay API format from PHP example
+// KENYA VAULT - PAYMENT BACKEND SERVER (FIXED)
 // ============================================================
 
 const express = require('express');
 const cors = require('cors');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// MegaPay Configuration - UPDATED from PHP example
-const MEGAPAY_API_KEY = 'MGPYDSg2lIYA';
-const MEGAPAY_API_URL = 'https://megapay.co.ke/backend/v1/initiatestk'; // Note: /v1/ in URL
-const MEGAPAY_CALLBACK_URL = 'https://kenyavault.onrender.com/api/mpesa/callback';
+// ─── FIXED CORS ──────────────────────────────────────────────
+app.use(cors({
+    origin: [
+        'https://kenyavault.co.ke',
+        'https://www.kenyavault.co.ke',
+        'http://localhost:5500',
+        'http://localhost:3000',
+        'https://kenyavault.onrender.com'
+    ],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+    credentials: true
+}));
 
-app.use(cors({ origin: '*' }));
+// Handle preflight
+app.options('*', cors());
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -27,28 +38,29 @@ app.use((req, res, next) => {
     next();
 });
 
+// ─── MEGAPAY CONFIG ──────────────────────────────────────────
+const MEGAPAY_API_KEY = 'MGPYDSg2lIYA';
+const MEGAPAY_API_URL = 'https://megapay.co.ke/backend/v1/initiatestk';
+const MEGAPAY_CALLBACK_URL = 'https://kenyavault.onrender.com/api/mpesa/callback';
+
 // ─── HELPERS ──────────────────────────────────────────────────
 function generateTransactionReference() {
     const timestamp = Date.now().toString().slice(-8);
-    const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+    const random = crypto.randomBytes(4).toString('hex').toUpperCase();
     return `KV-${timestamp}-${random}`;
 }
 
 function validatePhoneNumber(phone) {
-    // Accept both 07XXXXXXXX and 2547XXXXXXXX formats
     let cleaned = phone.replace(/\D/g, '');
     
-    // If it starts with 0, keep as is (MegaPay accepts 07XXXXXXXX)
     if (cleaned.startsWith('0') && cleaned.length === 10) {
         return cleaned;
     }
     
-    // If it starts with 254, convert to 07XXXXXXXX
     if (cleaned.startsWith('254') && cleaned.length === 12) {
         return '0' + cleaned.substring(3);
     }
     
-    // If it has +254, convert to 07XXXXXXXX
     if (phone && phone.startsWith('+254')) {
         return '0' + phone.substring(4).replace(/\D/g, '');
     }
@@ -61,7 +73,7 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
     console.log('🚀 STK Push endpoint called!');
     
     try {
-        const { phone, amount, order_id, customer_name, customer_email } = req.body;
+        const { phone, amount, order_id, customer_name, customer_email, resource_ids } = req.body;
 
         // Validate
         if (!phone || !amount || !order_id) {
@@ -71,7 +83,6 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
             });
         }
 
-        // Format phone number for MegaPay (expects 07XXXXXXXX)
         const formattedPhone = validatePhoneNumber(phone);
         if (!formattedPhone) {
             return res.status(400).json({
@@ -96,12 +107,12 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
         console.log('Reference:', reference);
         console.log('Order ID:', order_id);
 
-        // ─── MEGAPAY PAYLOAD (MATCHES PHP EXAMPLE) ────────────
+        // ─── MEGAPAY PAYLOAD ────────────────────────────────
         const megaPayPayload = {
             api_key: MEGAPAY_API_KEY,
-            email: customer_email || 'adminnexalearn@gmail.com', // Required by MegaPay
+            email: customer_email || 'customer@kenyavault.co.ke',
             amount: numericAmount,
-            msisdn: formattedPhone, // Note: parameter name is 'msisdn'
+            msisdn: formattedPhone,
             reference: reference
         };
 
@@ -120,12 +131,11 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
         const responseText = await megaPayResponse.text();
         console.log('📥 MegaPay Raw Response:', responseText);
 
-        // Try to parse JSON
         let megaPayResult;
         try {
             megaPayResult = JSON.parse(responseText);
         } catch (e) {
-            console.error('❌ Failed to parse MegaPay response as JSON');
+            console.error('❌ Failed to parse MegaPay response');
             return res.status(500).json({
                 success: false,
                 error: 'Invalid response from payment gateway',
@@ -133,10 +143,9 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
             });
         }
 
-        console.log('📥 MegaPay Parsed Result:', JSON.stringify(megaPayResult, null, 2));
+        console.log('📥 MegaPay Result:', JSON.stringify(megaPayResult, null, 2));
 
-        // ─── HANDLE RESPONSE ────────────────────────────────
-        // Check if STK Push was successful
+        // Check if successful
         const isSuccess = megaPayResult.status === 'success' || 
                          megaPayResult.success === true ||
                          (megaPayResult.message && megaPayResult.message.toLowerCase().includes('sent'));
@@ -173,6 +182,17 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
     }
 });
 
+// ─── CALLBACK ENDPOINT ──────────────────────────────────────
+app.post('/api/mpesa/callback', async (req, res) => {
+    console.log('📥 M-Pesa Callback Received:');
+    console.log(JSON.stringify(req.body, null, 2));
+    
+    res.status(200).json({
+        success: true,
+        message: 'Callback received'
+    });
+});
+
 // ─── HEALTH CHECK ─────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
     console.log('✅ Health check called');
@@ -201,7 +221,7 @@ app.get('/', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 KenyaVault Payment Server running on port ${PORT}`);
     console.log(`📍 Health: http://localhost:${PORT}/api/health`);
-    console.log(`📞 MegaPay API URL: ${MEGAPAY_API_URL}`);
+    console.log(`📞 MegaPay API: ${MEGAPAY_API_URL}`);
     console.log(`🔗 Callback URL: ${MEGAPAY_CALLBACK_URL}`);
     console.log(`✅ Server is ready!`);
 });
