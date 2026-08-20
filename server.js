@@ -1,5 +1,5 @@
 // ============================================================
-// KENYA VAULT - FULL PAYMENT SERVER
+// KENYA VAULT - PAYMENT SERVER (FIXED CORS)
 // ============================================================
 
 const express = require('express');
@@ -9,21 +9,45 @@ const crypto = require('crypto');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ─── CORS ──────────────────────────────────────────────────────
+// ─── FIXED: DYNAMIC CORS ──────────────────────────────────────
+const allowedOrigins = [
+    'https://kenyavault.co.ke',
+    'https://www.kenyavault.co.ke',
+    'http://localhost:5500',
+    'http://localhost:3000',
+    'https://kenyavault.onrender.com'
+];
+
 app.use(cors({
-    origin: [
-        'https://kenyavault.co.ke',
-        'https://www.kenyavault.co.ke',
-        'http://localhost:5500',
-        'http://localhost:3000',
-        'https://kenyavault.onrender.com'
-    ],
+    origin: function(origin, callback) {
+        // Allow requests with no origin (like mobile apps or curl)
+        if (!origin) return callback(null, true);
+        
+        if (allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            console.log('❌ CORS blocked:', origin);
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+    credentials: true
 }));
+
+app.options('*', cors());
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// ─── LOGGING ──────────────────────────────────────────────────
+app.use((req, res, next) => {
+    console.log(`📥 ${req.method} ${req.url}`);
+    if (req.method === 'POST') {
+        console.log('Body:', JSON.stringify(req.body, null, 2));
+    }
+    next();
+});
 
 // ─── MEGAPAY CONFIG ──────────────────────────────────────────
 const MEGAPAY_API_KEY = 'MGPYDSg2lIYA';
@@ -58,7 +82,6 @@ function validatePhoneNumber(phone) {
 // ─── STK PUSH ENDPOINT ──────────────────────────────────────
 app.post('/api/mpesa/stk-push', async (req, res) => {
     console.log('🚀 STK Push endpoint called!');
-    console.log('📥 Request:', JSON.stringify(req.body, null, 2));
     
     try {
         const { phone, amount, order_id, customer_name, customer_email, resource_ids } = req.body;
@@ -170,13 +193,10 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
     }
 });
 
-// ─── M-PESA CALLBACK ──────────────────────────────────────────
+// ─── CALLBACK ──────────────────────────────────────────────
 app.post('/api/mpesa/callback', async (req, res) => {
     console.log('📥 M-Pesa Callback Received:');
     console.log(JSON.stringify(req.body, null, 2));
-    
-    // Process the callback (update order status, grant access, etc.)
-    // Your callback logic here
     
     res.status(200).json({
         success: true,
