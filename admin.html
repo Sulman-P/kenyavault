@@ -3348,7 +3348,363 @@ JAVASCRIPT
     // viewLearner, loadWithdrawals, processWithdrawal, rejectWithdrawal, 
     // loadSettings, saveSettings, resetSettings, navigateTo, openSidebar, 
     // closeSidebar, toggleTheme, showToast) ...
+// ============================================================
+// M-PESA STK PUSH - FRONTEND INTEGRATION
+// Using kenyavault.co.ke domain
+// ============================================================
 
+// Configuration - UPDATED with your domain
+const BACKEND_URL = 'https://kenyavault.co.ke';
+
+// ============================================================
+// 1. INITIATE PAYMENT (STK Push)
+// ============================================================
+async function initiatePayment(orderData) {
+    try {
+        // Validate phone number
+        const phone = document.getElementById('paymentPhone')?.value || orderData.phone;
+        if (!phone || phone.length < 10) {
+            showToast('❌ Error', 'Please enter a valid phone number');
+            return;
+        }
+
+        // Show loading state
+        const btn = document.getElementById('payNowBtn');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> Sending request...';
+        }
+
+        showToast('📤 Processing', 'Initiating payment request...');
+
+        // Create order first
+        const orderPayload = {
+            customer_name: orderData.customer_name || document.getElementById('customerName')?.value || 'Customer',
+            customer_email: orderData.customer_email || document.getElementById('customerEmail')?.value || '',
+            phone: phone,
+            resource_ids: orderData.resource_ids || [],
+            amount: orderData.amount || 0,
+            currency: 'KES'
+        };
+
+        // Create order via backend
+        const createResponse = await fetch(`${BACKEND_URL}/api/orders/create`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(orderPayload)
+        });
+
+        const createResult = await createResponse.json();
+
+        if (!createResult.success) {
+            throw new Error(createResult.error || 'Failed to create order');
+        }
+
+        const orderId = createResult.data.order.id;
+        const reference = createResult.data.payment.data?.reference || '';
+
+        showToast('📱 STK Push Sent', 'Please check your phone for the M-Pesa PIN prompt');
+
+        // Start polling for payment status
+        startPolling(orderId, reference);
+
+        return {
+            success: true,
+            orderId: orderId,
+            reference: reference,
+            data: createResult.data
+        };
+
+    } catch (error) {
+        console.error('❌ Payment initiation error:', error);
+        showToast('❌ Error', error.message || 'Failed to initiate payment');
+        return {
+            success: false,
+            error: error.message
+        };
+    } finally {
+        const btn = document.getElementById('payNowBtn');
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-credit-card"></i> Pay Now';
+        }
+    }
+}
+
+// ============================================================
+// 2. POLL PAYMENT STATUS
+// ============================================================
+let pollingInterval = null;
+let pollAttempts = 0;
+const MAX_POLL_ATTEMPTS = 30; // 30 * 3 seconds = 90 seconds
+const POLL_INTERVAL = 3000; // 3 seconds
+
+function startPolling(orderId, reference) {
+    if (pollingInterval) {
+        clearInterval(pollingInterval);
+        pollingInterval = null;
+    }
+
+    pollAttempts = 0;
+
+    showToast('⏳ Processing', 'Waiting for payment confirmation...');
+
+    pollingInterval = setInterval(async () => {
+        pollAttempts++;
+
+        try {
+            const response = await fetch(`${BACKEND_URL}/api/mpesa/status/${orderId}`);
+            const result = await response.json();
+
+            if (!result.success) {
+                console.error('Polling error:', result.error);
+                return;
+            }
+
+            const status = result.data.status;
+            const paymentVerified = result.data.payment_verified;
+
+            if (status === 'paid' && paymentVerified) {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+                
+                showToast('✅ Payment Confirmed', 'Your payment has been verified successfully!');
+                
+                updateOrderStatus(orderId, 'paid');
+                updatePaymentStatusCounts();
+                loadOrders();
+                loadDashboardStats();
+                
+                grantAccessUI();
+                
+                return;
+            }
+
+            if (status === 'failed') {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+                
+                showToast('❌ Payment Failed', 'The payment was not completed. Please try again.');
+                updateOrderStatus(orderId, 'failed');
+                updatePaymentStatusCounts();
+                
+                return;
+            }
+
+            if (pollAttempts % 5 === 0) {
+                showToast('⏳ Waiting', 'Waiting for your payment confirmation... (Attempt ' + pollAttempts + ')');
+            }
+
+            if (pollAttempts >= MAX_POLL_ATTEMPTS) {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+                showToast('⏰ Timeout', 'Payment verification timed out. Please check your order status.');
+            }
+
+        } catch (error) {
+            console.error('Polling error:', error);
+            if (pollAttempts >= MAX_POLL_ATTEMPTS) {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+                showToast('⏰ Timeout', 'Payment verification timed out. Please check your order status.');
+            }
+        }
+    }, POLL_INTERVAL);
+}
+
+// ============================================================
+// 3. CHECK PAYMENT STATUS
+// ============================================================
+async function checkPaymentStatus(orderId) {
+    try {
+        if (!orderId) {
+            showToast('❌ Error', 'Order ID is required');
+            return;
+        }
+
+        showToast('⏳ Checking', 'Checking payment status...');
+
+        const response = await fetch(`${BACKEND_URL}/api/mpesa/status/${orderId}`);
+        const result = await response.json();
+
+        if (!result.success) {
+            throw new Error(result.error || 'Failed to check status');
+        }
+
+        const status = result.data.status;
+        const paymentVerified = result.data.payment_verified;
+
+        let message = '';
+        let type = 'info';
+
+        if (status === 'paid' && paymentVerified) {
+            message = '✅ Payment verified successfully!';
+            type = 'success';
+            updatePaymentStatusCounts();
+            loadOrders();
+            loadDashboardStats();
+        } else if (status === 'failed') {
+            message = '❌ Payment failed. Please try again.';
+            type = 'error';
+        } else {
+            message = '⏳ Payment is still pending. Please wait...';
+            type = 'info';
+        }
+
+        showToast('📊 Status', message);
+
+        return result.data;
+
+    } catch (error) {
+        console.error('Status check error:', error);
+        showToast('❌ Error', error.message || 'Failed to check status');
+        return null;
+    }
+}
+
+// ============================================================
+// 4. RESEND STK PUSH
+// ============================================================
+async function resendSTK(orderId) {
+    try {
+        var order = ordersData.find(o => o.id === orderId);
+        if (!order) {
+            showToast('❌ Error', 'Order not found');
+            return;
+        }
+
+        if (!confirm('Resend STK Push to ' + (order.phone || 'customer') + '?')) return;
+
+        showToast('📤 Sending', 'Resending STK Push...');
+
+        const response = await fetch(`${BACKEND_URL}/api/mpesa/initiate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                phone: order.phone,
+                amount: order.amount,
+                order_id: orderId,
+                customer_name: order.customer_name,
+                customer_email: order.customer_email,
+                resource_ids: order.resource_ids || []
+            })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            showToast('✅ Sent', 'STK Push resent successfully');
+            startPolling(orderId, result.data.reference);
+        } else {
+            showToast('❌ Error', result.error || 'Failed to resend STK');
+        }
+
+    } catch (error) {
+        console.error('Resend STK error:', error);
+        showToast('❌ Error', error.message || 'Failed to resend');
+    }
+}
+
+// ============================================================
+// 5. PAYMENT FORM HTML (Add to your page)
+// ============================================================
+/*
+Add this to your HTML where you want the payment form:
+
+<div class="payment-form-container" style="max-width:500px;margin:20px auto;padding:24px;background:var(--surface);border-radius:var(--r-lg);border:1px solid var(--line);">
+    <h3 style="font-family:var(--font-display);margin-bottom:16px;">💳 Complete Your Payment</h3>
+    
+    <form id="paymentForm" onsubmit="handlePaymentFormSubmit(event)">
+        <div class="form-group">
+            <label>Full Name <span class="required">*</span></label>
+            <input type="text" name="customer_name" id="customerName" required placeholder="Enter your full name">
+        </div>
+        
+        <div class="form-group">
+            <label>Email Address</label>
+            <input type="email" name="customer_email" id="customerEmail" placeholder="Enter your email">
+        </div>
+        
+        <div class="form-group">
+            <label>Phone Number <span class="required">*</span></label>
+            <input type="tel" name="phone" id="paymentPhone" required placeholder="e.g., 0712345678">
+            <small style="color:var(--muted);font-size:.7rem;">Enter your M-Pesa registered phone number</small>
+        </div>
+        
+        <div class="form-group">
+            <label>Amount (KES) <span class="required">*</span></label>
+            <input type="number" name="amount" id="paymentAmount" required min="1" placeholder="Enter amount">
+        </div>
+        
+        <input type="hidden" name="resource_ids" id="resourceIds" value='[]'>
+        
+        <button type="submit" class="btn-gold" id="payNowBtn" style="width:100%;justify-content:center;padding:14px;">
+            <i class="fas fa-credit-card"></i> Pay Now with M-Pesa
+        </button>
+    </form>
+    
+    <div id="paymentStatus" style="margin-top:14px;"></div>
+    
+    <div style="margin-top:16px;padding:12px;background:var(--gold-soft);border-radius:var(--r);font-size:.75rem;color:var(--muted);">
+        <i class="fas fa-shield-alt" style="color:var(--gold);"></i>
+        Secure payment via MegaPay. You'll receive an M-Pesa prompt on your phone.
+    </div>
+</div>
+*/
+
+// ============================================================
+// 6. PAYMENT FORM HANDLER
+// ============================================================
+async function handlePaymentFormSubmit(event) {
+    event.preventDefault();
+    
+    const form = event.target;
+    const formData = new FormData(form);
+    
+    const orderData = {
+        customer_name: formData.get('customer_name') || 'Customer',
+        customer_email: formData.get('customer_email') || '',
+        phone: formData.get('phone'),
+        resource_ids: JSON.parse(formData.get('resource_ids') || '[]'),
+        amount: parseFloat(formData.get('amount')) || 0
+    };
+
+    if (!orderData.phone) {
+        showToast('❌ Error', 'Please enter your phone number');
+        return;
+    }
+
+    if (orderData.amount <= 0) {
+        showToast('❌ Error', 'Invalid amount');
+        return;
+    }
+
+    const result = await initiatePayment(orderData);
+    
+    if (result.success) {
+        document.getElementById('paymentStatus').innerHTML = `
+            <div style="padding:12px;background:var(--green-soft);border-radius:var(--r);color:var(--green);border:1px solid var(--green);">
+                <i class="fas fa-check-circle"></i>
+                <strong>Payment initiated successfully!</strong>
+                <br>
+                <small>Order ID: ${result.orderId.substring(0, 8)}</small>
+                <br>
+                <small>Reference: ${result.reference}</small>
+                <br>
+                <small>Check your phone for the M-Pesa PIN prompt.</small>
+            </div>
+        `;
+    } else {
+        document.getElementById('paymentStatus').innerHTML = `
+            <div style="padding:12px;background:var(--red-soft);border-radius:var(--r);color:var(--red);border:1px solid var(--red);">
+                <i class="fas fa-exclamation-circle"></i>
+                <strong>${result.error || 'Payment initiation failed'}</strong>
+                <br>
+                <small>Please try again or contact support.</small>
+            </div>
+        `;
+    }
+}
     // ============================================================
     // 26. EVENT LISTENERS
     // ============================================================
