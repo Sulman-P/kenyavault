@@ -2786,7 +2786,6 @@ FOOTER
 JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
 ============================================================ -->
 <script>
-   <script>
     // ============================================================
     // KENYAVAULT — COMPLETE MARKETPLACE ENGINE
     // With STK Push (MegaPay) IN-PAGE integration
@@ -2798,7 +2797,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
         // ─── CONFIG ──────────────────────────────────────────────
         var SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
         var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
-        var BACKEND_URL = 'https://kenyavault.onrender.com';
+        var BACKEND_URL = 'https://kenyavault.co.ke';
         var ITEMS_PER_PAGE = 20;
         var POLL_INTERVAL = 3000;
         var MAX_POLL_ATTEMPTS = 30;
@@ -4157,13 +4156,11 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
             }
         }
 
-        // ─── UPDATED: INITIATE PAYMENT WITH CORRECT MEGAPAY API ──
         async function initiatePayment() {
             if (isProcessing) return;
 
             var phone = phoneInput.value.trim().replace(/\s/g, '');
             var customerName = customerNameInput.value.trim();
-            var customerEmail = customerName.toLowerCase().replace(/\s/g, '') + '@kenyavault.co.ke';
 
             if (!customerName) {
                 customerNameInput.classList.add('error');
@@ -4179,21 +4176,15 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
             }
             phoneInput.classList.remove('error');
 
-            // Convert phone to MegaPay format (07XXXXXXXX)
             var formattedPhone = phone;
-            if (phone.startsWith('254')) {
-                formattedPhone = '0' + phone.substring(3);
-            } else if (phone.startsWith('+254')) {
-                formattedPhone = '0' + phone.substring(4);
-            } else if (phone.startsWith('0') && phone.length === 10) {
-                formattedPhone = phone;
-            } else if (phone.length === 9 && phone.startsWith('7')) {
-                formattedPhone = '0' + phone;
-            }
+            if (phone.startsWith('0')) formattedPhone = '254' + phone.substring(1);
+            else if (phone.startsWith('+')) formattedPhone = phone.substring(1);
+            else if (phone.length === 10 && phone.startsWith('07')) formattedPhone = '254' + phone.substring(1);
+            else if (phone.length === 9 && phone.startsWith('7')) formattedPhone = '254' + phone;
 
-            if (!/^07[0-9]{8}$/.test(formattedPhone)) {
+            if (!/^254[0-9]{9}$/.test(formattedPhone)) {
                 phoneInput.classList.add('error');
-                showToast('Error', 'Please enter a valid Safaricom phone number (e.g., 0712345678)', 'error');
+                showToast('Error', 'Please enter a valid Safaricom phone number', 'error');
                 return;
             }
 
@@ -4260,56 +4251,76 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
             hideStkStatus();
 
             try {
-                var orderRef, orderId, totalAmount;
+                var orderRef, orderId, totalAmount, description;
 
                 if (checkoutMode === 'cart') {
                     var cartResult = await createCartOrder(checkoutCartItems, customerName, formattedPhone);
                     orderRef = cartResult.orderRef;
                     orderId = cartResult.orderId;
                     totalAmount = checkoutExpectedTotal;
+                    description = 'KenyaVault cart — ' + checkoutCartItems.length + ' items';
                 } else {
                     var singleResult = await createSingleOrder(currentProduct, customerName, formattedPhone);
                     orderRef = singleResult.orderRef;
                     orderId = singleResult.orderId;
                     totalAmount = currentProduct.price || 0;
+                    description = currentProduct.title || 'Educational Resource';
                 }
 
                 currentOrderRef = orderRef;
                 currentOrderId = orderId;
                 checkoutExpectedTotal = totalAmount;
 
-                // ─── CALL BACKEND TO SEND STK PUSH ────────────────
+                // ─── MEGAPAY STK PUSH (IN-PAGE) ─────────────────
+                var siteUrl = window.location.origin;
+                var webhookUrl = SUPABASE_URL + '/functions/v1/mpesa-webhook';
+                var callbackUrl = encodeURIComponent(webhookUrl);
+                var returnUrl = encodeURIComponent(siteUrl + '/?payment=callback&order_ref=' + orderRef);
+
+                var metadata = JSON.stringify({
+                    order_ref: orderRef,
+                    order_id: orderId,
+                    customer_name: customerName,
+                    customer_phone: formattedPhone,
+                    amount: totalAmount,
+                    currency: 'KES',
+                    payment_method: 'stk_push',
+                    is_cart: checkoutMode === 'cart'
+                });
+
+                var megaPayUrl = 'https://megapay.co.ke/tags/S1Zzyjs' +
+                    '?phone=' + encodeURIComponent(formattedPhone) +
+                    '&amount=' + encodeURIComponent(totalAmount) +
+                    '&description=' + encodeURIComponent(description) +
+                    '&callback=' + callbackUrl +
+                    '&return_url=' + returnUrl +
+                    '&metadata=' + encodeURIComponent(metadata);
+
+                console.log('[KenyaVault] Initiating STK Push via MegaPay (In-Page)');
+
+                // ─── OPEN MEGAPAY IN SAME TAB ──────────────────
+                // Option 1: Navigate to MegaPay (user leaves site)
+                // window.location.href = megaPayUrl;
+
+                // Option 2: Open in popup (still leaves site but in popup)
+                // var popup = window.open(megaPayUrl, 'megapay', 'width=500,height=700,scrollbars=yes');
+
+                // Option 3: Iframe (recommended - stays on site)
+                // We'll use iframe approach for in-page experience
                 showStkStatus(
                     '<span class="spinner"></span> Sending STK Push to your phone...',
                     'pending'
                 );
 
-                var response = await fetch(BACKEND_URL + '/api/mpesa/stk-push', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        phone: formattedPhone,
-                        amount: totalAmount,
-                        order_id: orderId,
-                        customer_name: customerName,
-                        customer_email: customerEmail,
-                        resource_ids: checkoutMode === 'cart' ? checkoutCartItems.map(function(i) { return i.id; }) : [currentProduct.id]
-                    })
-                });
+                // Open in new window as fallback since iframe may be blocked
+                var megaPayWindow = window.open(megaPayUrl, '_blank', 'width=500,height=700,scrollbars=yes');
 
-                var result = await response.json();
-
-                if (!result.success) {
-                    throw new Error(result.error || 'Failed to send STK Push');
+                if (!megaPayWindow || megaPayWindow.closed) {
+                    // If popup is blocked, redirect
+                    if (confirm('Popup was blocked. Click OK to complete payment in a new tab.')) {
+                        window.open(megaPayUrl, '_blank');
+                    }
                 }
-
-                // STK Push sent successfully!
-                showStkStatus(
-                    '📱 STK Push sent! Check your phone for the M-Pesa PIN prompt.',
-                    'pending'
-                );
 
                 payPrimaryBtn.style.display = 'none';
                 verifyOrderBtn.style.display = 'block';
@@ -4317,13 +4328,21 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
                 verifyOrderBtn.disabled = false;
                 verifyOrderBtn.onclick = function() { checkOrderPaymentStatus(); };
 
-                // Start polling for payment confirmation
                 startPaymentPolling();
 
-                // Also check for callback via URL params
+                // ─── CHECK FOR CALLBACK VIA POLLING ────────────
+                // Also check URL params for callback
                 setTimeout(function() {
                     checkPaymentCallback();
                 }, 5000);
+
+                // Check every 15 seconds for callback
+                var callbackCheckInterval = setInterval(function() {
+                    checkPaymentCallback();
+                    if (isPaymentVerified) {
+                        clearInterval(callbackCheckInterval);
+                    }
+                }, 15000);
 
             } catch (error) {
                 console.error('Payment initiation failed:', error);
@@ -4455,6 +4474,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
             }
             document.getElementById('checkoutLineItems').innerHTML = '';
 
+            // Show verify button for paid resources
             if (!isFree && status !== 'unavailable') {
                 verifyOrderBtn.style.display = 'block';
                 verifyOrderBtn.textContent = '🔓 Verify Payment';
@@ -4518,6 +4538,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
                 } else {
                     checkoutTotal.textContent = 'KES ' + total;
                     checkoutTotal.className = 'summary-value price';
+                    // Show verify button for cart checkout
                     verifyOrderBtn.style.display = 'block';
                     verifyOrderBtn.textContent = '🔓 Verify Payment';
                     verifyOrderBtn.onclick = function() { checkOrderPaymentStatus(); };
@@ -4614,74 +4635,47 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
                 console.log('[Categories] ' + CATEGORY_DEFS.length + ' categories');
                 console.log('[Levels] ' + LEVEL_ORDER.length + ' education levels');
                 console.log('[Payment] STK Push In-Page mode enabled');
-                console.log('[Backend] Using: ' + BACKEND_URL);
             } catch (e) {
                 renderError(e);
             }
         }
 
         // ─── EVENT LISTENERS ──────────────────────────────────────
-        document.addEventListener('DOMContentLoaded', function() {
-            // Hamburger menu
-            var hamburger = document.getElementById('hamburger');
-            var navLinks = document.getElementById('navLinks');
-            if (hamburger && navLinks) {
-                hamburger.addEventListener('click', function() {
-                    navLinks.classList.toggle('open');
-                });
+        document.getElementById('hamburger').addEventListener('click', function() {
+            document.getElementById('navLinks').classList.toggle('open');
+        });
+
+        phoneInput.addEventListener('input', function() {
+            var val = this.value.replace(/\D/g, '');
+            if (val.length > 12) val = val.substring(0, 12);
+            this.value = val;
+            this.classList.remove('error');
+        });
+
+        customerNameInput.addEventListener('input', function() {
+            this.classList.remove('error');
+        });
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                if (checkoutModal.classList.contains('open')) closeCheckoutModal();
+                if (successModal.classList.contains('open')) closeSuccessModal();
+                if (previewModal.classList.contains('open')) closePreview();
+                if (document.getElementById('filterBottomSheet').classList.contains('open')) toggleMobileFilter();
+                if (document.getElementById('cartDrawer').classList.contains('open')) closeCartDrawer();
             }
+        });
 
-            // Phone input formatting
-            if (phoneInput) {
-                phoneInput.addEventListener('input', function() {
-                    var val = this.value.replace(/\D/g, '');
-                    if (val.length > 12) val = val.substring(0, 12);
-                    this.value = val;
-                    this.classList.remove('error');
-                });
-            }
+        checkoutModal.addEventListener('click', function(e) {
+            if (e.target === checkoutModal) closeCheckoutModal();
+        });
 
-            // Customer name input
-            if (customerNameInput) {
-                customerNameInput.addEventListener('input', function() {
-                    this.classList.remove('error');
-                });
-            }
+        successModal.addEventListener('click', function(e) {
+            if (e.target === successModal) closeSuccessModal();
+        });
 
-            // Escape key
-            document.addEventListener('keydown', function(e) {
-                if (e.key === 'Escape') {
-                    if (checkoutModal && checkoutModal.classList.contains('open')) closeCheckoutModal();
-                    if (successModal && successModal.classList.contains('open')) closeSuccessModal();
-                    if (previewModal && previewModal.classList.contains('open')) closePreview();
-                    var filterSheet = document.getElementById('filterBottomSheet');
-                    if (filterSheet && filterSheet.classList.contains('open')) toggleMobileFilter();
-                    var cartDrawer = document.getElementById('cartDrawer');
-                    if (cartDrawer && cartDrawer.classList.contains('open')) closeCartDrawer();
-                }
-            });
-
-            // Modal close on overlay click
-            if (checkoutModal) {
-                checkoutModal.addEventListener('click', function(e) {
-                    if (e.target === checkoutModal) closeCheckoutModal();
-                });
-            }
-
-            if (successModal) {
-                successModal.addEventListener('click', function(e) {
-                    if (e.target === successModal) closeSuccessModal();
-                });
-            }
-
-            if (previewModal) {
-                previewModal.addEventListener('click', function(e) {
-                    if (e.target === previewModal) closePreview();
-                });
-            }
-
-            // Initialize the marketplace
-            init();
+        previewModal.addEventListener('click', function(e) {
+            if (e.target === previewModal) closePreview();
         });
 
         // ─── CONSENT BANNER ───────────────────────────────────────
@@ -4754,12 +4748,13 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
         window.openCartCheckout = openCartCheckout;
         window.heroSearch = heroSearch;
 
+        document.addEventListener('DOMContentLoaded', init);
         console.log('✅ KenyaVault Marketplace — Category-Driven Design');
         console.log('✅ STK Push In-Page mode enabled');
         console.log('✅ Users stay on site during payment');
-        console.log('✅ Backend URL: ' + BACKEND_URL);
 
     })();
 </script>
+
 </body>
 </html>
