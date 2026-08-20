@@ -2785,12 +2785,6 @@ FOOTER
 <!-- ============================================================
 JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
 ============================================================ -->
-<!-- ============================================================
-JAVASCRIPT — COMPLETE MARKETPLACE ENGINE WITH STK PUSH
-============================================================ -->
-<!-- ============================================================
-JAVASCRIPT — COMPLETE MARKETPLACE ENGINE WITH STK PUSH
-============================================================ -->
 <script>
     // ============================================================
     // KENYAVAULT — COMPLETE MARKETPLACE ENGINE
@@ -2835,7 +2829,6 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE WITH STK PUSH
         var checkoutCartItems = [];
         var checkoutExpectedTotal = 0;
         var isPaymentVerified = false;
-        var currentOrder = null;
 
         // ─── DOM REFS ──────────────────────────────────────────────
         var productsGrid = document.getElementById('productsGrid');
@@ -3003,11 +2996,10 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE WITH STK PUSH
             var minutes = String(date.getMinutes()).padStart(2, '0');
             var seconds = String(date.getSeconds()).padStart(2, '0');
             var milliseconds = String(date.getMilliseconds()).padStart(3, '0');
-            orderRefCounter = (orderRefCounter || 0) + 1;
+            orderRefCounter++;
             if (orderRefCounter > 999) orderRefCounter = 1;
             var random = Math.random().toString(36).substring(2, 6).toUpperCase();
-            return 'ORD-' + year + month + day + '-' + hours + minutes + seconds + milliseconds + '-' +
-                String(orderRefCounter).padStart(3, '0') + '-' + random;
+            return 'ORD-' + year + month + day + '-' + hours + minutes + seconds + milliseconds + '-' + String(orderRefCounter).padStart(3, '0') + '-' + random;
         }
 
         function getSubjectEmoji(subject) {
@@ -3862,7 +3854,55 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE WITH STK PUSH
             }
         }
 
-        // ─── CREATE ORDER ──────────────────────────────────────────
+        // ─── DOWNLOAD ORDER FILES ──────────────────────────────────
+        async function downloadOrderFiles(order) {
+            try {
+                var items = order.cart_items;
+                if (typeof items === 'string') {
+                    try { items = JSON.parse(items); } catch (e) { items = []; }
+                }
+
+                if (!items || items.length === 0) {
+                    var filePath = order.resource_file_path || order.file_path || order.file_url || '';
+                    var fileName = order.resource_file_name || order.file_name || 'resource.pdf';
+                    var url = await generatePublicUrl(filePath, fileName);
+                    if (url) {
+                        showToast('Opening', 'Opening ' + fileName + '...', 'info');
+                        openFileInNewTab(url, fileName);
+                        return true;
+                    }
+                    return false;
+                }
+
+                var successCount = 0;
+                for (var i = 0; i < items.length; i++) {
+                    var item = items[i];
+                    var filePath = item.file_path || item.file_url || '';
+                    var fileName = item.file_name || (item.title || 'resource') + '.pdf';
+
+                    var product = allResources.find(function(r) { return r.id === item.id; });
+                    if (product) {
+                        filePath = product.file_path || product.file_url || filePath;
+                        fileName = product.file_name || fileName;
+                    }
+
+                    var url = await generatePublicUrl(filePath, fileName);
+                    if (url) {
+                        setTimeout(function(url, fileName) {
+                            showToast('Opening', 'Opening ' + fileName + '...', 'info');
+                            openFileInNewTab(url, fileName);
+                        }, i * 800, url, fileName);
+                        successCount++;
+                    }
+                }
+                return successCount > 0;
+            } catch (error) {
+                console.error('[Download] Error:', error);
+                return false;
+            }
+        }
+
+        // ─── CREATE ORDERS ────────────────────────────────────────
         async function createSingleOrder(product, customerName, phone, retryCount) {
             retryCount = retryCount || 0;
             var maxRetries = 3;
@@ -3890,13 +3930,11 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE WITH STK PUSH
             var orderData = {
                 order_ref: orderRef,
                 customer_name: customerName,
-                customer_phone: phone,
                 phone: phone,
                 session_id: sessionId,
                 item_title: product.title || 'Resource',
                 item_price: product.price || 0,
                 total_amount: product.price || 0,
-                amount: product.price || 0,
                 cart_items: [{
                     id: productId,
                     title: product.title || 'Resource',
@@ -3911,14 +3949,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE WITH STK PUSH
                 resource_id: productId,
                 resource_file_path: cleanFilePath,
                 resource_file_name: fileName,
-                resource_ids: [productId],
-                resource_count: 1,
-                status: 'pending',
-                payment_status: 'pending',
-                payment_verified: false,
-                currency: 'KES',
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
+                created_at: new Date().toISOString()
             };
 
             try {
@@ -3957,8 +3988,6 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE WITH STK PUSH
             var sessionId = 'guest_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
             var totalAmount = items.reduce(function(sum, item) { return sum + (item.price || 0) * item.qty; }, 0);
             var itemCount = items.reduce(function(sum, item) { return sum + item.qty; }, 0);
-            var resourceIds = items.map(function(item) { return item.id; });
-
             var cartItems = items.map(function(item) {
                 return {
                     id: item.id,
@@ -3978,25 +4007,16 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE WITH STK PUSH
             var orderData = {
                 order_ref: orderRef,
                 customer_name: customerName,
-                customer_phone: phone,
                 phone: phone,
                 session_id: sessionId,
                 item_title: summary,
                 item_price: totalAmount,
                 total_amount: totalAmount,
-                amount: totalAmount,
                 cart_total: totalAmount,
                 item_count: itemCount,
                 cart_items: cartItems,
-                resource_ids: resourceIds,
-                resource_count: itemCount,
                 description: 'Cart purchase: ' + itemCount + ' items. Total: KES ' + totalAmount,
-                status: 'pending',
-                payment_status: 'pending',
-                payment_verified: false,
-                currency: 'KES',
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
+                created_at: new Date().toISOString()
             };
 
             try {
@@ -4025,58 +4045,6 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE WITH STK PUSH
                 return { orderRef: orderRef, orderId: createdOrder.id };
             } catch (error) {
                 throw error;
-            }
-        }
-
-        // ─── DOWNLOAD ORDER FILES ──────────────────────────────────
-        async function downloadOrderFiles(order) {
-            try {
-                var items = order.cart_items;
-                if (typeof items === 'string') {
-                    try { items = JSON.parse(items); } catch (e) { items = []; }
-                }
-
-                if ((!items || items.length === 0) && order.resource_file_path) {
-                    var filePath = order.resource_file_path || order.file_path || '';
-                    var fileName = order.resource_file_name || order.file_name || 'resource.pdf';
-                    var url = await generatePublicUrl(filePath, fileName);
-                    if (url) {
-                        showToast('Opening', 'Opening ' + fileName + '...', 'info');
-                        openFileInNewTab(url, fileName);
-                        return true;
-                    }
-                    return false;
-                }
-
-                if (!items || items.length === 0) {
-                    return false;
-                }
-
-                var successCount = 0;
-                for (var i = 0; i < items.length; i++) {
-                    var item = items[i];
-                    var filePath = item.file_path || item.file_url || '';
-                    var fileName = item.file_name || (item.title || 'resource') + '.pdf';
-
-                    var product = allResources.find(function(r) { return r.id === item.id; });
-                    if (product) {
-                        filePath = product.file_path || product.file_url || filePath;
-                        fileName = product.file_name || fileName;
-                    }
-
-                    var url = await generatePublicUrl(filePath, fileName);
-                    if (url) {
-                        setTimeout(function(url, fileName) {
-                            showToast('Opening', 'Opening ' + fileName + '...', 'info');
-                            openFileInNewTab(url, fileName);
-                        }, i * 800, url, fileName);
-                        successCount++;
-                    }
-                }
-                return successCount > 0;
-            } catch (error) {
-                console.error('[Download] Error:', error);
-                return false;
             }
         }
 
@@ -4148,11 +4116,8 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE WITH STK PUSH
                 var order = orders[0];
 
                 var isPaid = false;
-                if (order.payment_verified === true ||
-                    order.payment_status === 'paid' ||
-                    order.payment_status === 'completed' ||
-                    order.status === 'paid' ||
-                    order.status === 'completed' ||
+                if (order.payment_status === 'paid' || order.payment_status === 'completed' ||
+                    order.status === 'paid' || order.status === 'completed' ||
                     order.status === 'success') {
                     isPaid = true;
                 }
@@ -4162,7 +4127,6 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE WITH STK PUSH
                     isPaymentVerified = true;
                     currentOrderId = order.id;
                     currentOrderRef = order.order_ref;
-                    currentOrder = order;
 
                     showStkStatus('✅ Payment confirmed! Downloading your resource...', 'success');
 
@@ -4307,7 +4271,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE WITH STK PUSH
                 currentOrderId = orderId;
                 checkoutExpectedTotal = totalAmount;
 
-                // ─── MEGAPAY STK PUSH ──────────────────────────
+                // ─── MEGAPAY STK PUSH (IN-PAGE) ─────────────────
                 var siteUrl = window.location.origin;
                 var webhookUrl = SUPABASE_URL + '/functions/v1/mpesa-webhook';
                 var callbackUrl = encodeURIComponent(webhookUrl);
@@ -4332,17 +4296,27 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE WITH STK PUSH
                     '&return_url=' + returnUrl +
                     '&metadata=' + encodeURIComponent(metadata);
 
-                console.log('[KenyaVault] Initiating STK Push via MegaPay');
+                console.log('[KenyaVault] Initiating STK Push via MegaPay (In-Page)');
 
+                // ─── OPEN MEGAPAY IN SAME TAB ──────────────────
+                // Option 1: Navigate to MegaPay (user leaves site)
+                // window.location.href = megaPayUrl;
+
+                // Option 2: Open in popup (still leaves site but in popup)
+                // var popup = window.open(megaPayUrl, 'megapay', 'width=500,height=700,scrollbars=yes');
+
+                // Option 3: Iframe (recommended - stays on site)
+                // We'll use iframe approach for in-page experience
                 showStkStatus(
                     '<span class="spinner"></span> Sending STK Push to your phone...',
                     'pending'
                 );
 
-                // Open MegaPay in new window
+                // Open in new window as fallback since iframe may be blocked
                 var megaPayWindow = window.open(megaPayUrl, '_blank', 'width=500,height=700,scrollbars=yes');
 
                 if (!megaPayWindow || megaPayWindow.closed) {
+                    // If popup is blocked, redirect
                     if (confirm('Popup was blocked. Click OK to complete payment in a new tab.')) {
                         window.open(megaPayUrl, '_blank');
                     }
@@ -4356,11 +4330,13 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE WITH STK PUSH
 
                 startPaymentPolling();
 
-                // Check for callback
+                // ─── CHECK FOR CALLBACK VIA POLLING ────────────
+                // Also check URL params for callback
                 setTimeout(function() {
                     checkPaymentCallback();
                 }, 5000);
 
+                // Check every 15 seconds for callback
                 var callbackCheckInterval = setInterval(function() {
                     checkPaymentCallback();
                     if (isPaymentVerified) {
@@ -4398,11 +4374,9 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE WITH STK PUSH
                     .then(function(orders) {
                         if (orders && orders.length > 0) {
                             var order = orders[0];
-                            var isPaid = order.payment_verified === true ||
-                                order.payment_status === 'paid' ||
-                                order.payment_status === 'completed' ||
-                                order.status === 'paid' ||
-                                order.status === 'completed' ||
+                            var isPaid = order.payment_status === 'paid' || order.payment_status ===
+                                'completed' ||
+                                order.status === 'paid' || order.status === 'completed' ||
                                 order.status === 'success';
                             if (isPaid) {
                                 isPaymentVerified = true;
@@ -4500,6 +4474,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE WITH STK PUSH
             }
             document.getElementById('checkoutLineItems').innerHTML = '';
 
+            // Show verify button for paid resources
             if (!isFree && status !== 'unavailable') {
                 verifyOrderBtn.style.display = 'block';
                 verifyOrderBtn.textContent = '🔓 Verify Payment';
@@ -4563,6 +4538,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE WITH STK PUSH
                 } else {
                     checkoutTotal.textContent = 'KES ' + total;
                     checkoutTotal.className = 'summary-value price';
+                    // Show verify button for cart checkout
                     verifyOrderBtn.style.display = 'block';
                     verifyOrderBtn.textContent = '🔓 Verify Payment';
                     verifyOrderBtn.onclick = function() { checkOrderPaymentStatus(); };
