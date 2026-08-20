@@ -1,5 +1,6 @@
 // ============================================================
-// KENYA VAULT - COMPLETE PAYMENT SERVER
+// KENYA VAULT - BACKEND SERVER (server.js)
+// Direct STK Push API - No new tab
 // ============================================================
 
 const express = require('express');
@@ -9,23 +10,20 @@ const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 
-// ============================================================
-// CONFIGURATION
-// ============================================================
+// ─── CONFIG ──────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 
 const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
 const SUPABASE_SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs'; // Replace with your service role key
 
+// MegaPay Configuration
 const MEGAPAY_API_KEY = 'MGPYDSg2lIYA';
 const MEGAPAY_API_URL = 'https://megapay.co.ke/backend/initiatestk';
 const MEGAPAY_CALLBACK_URL = 'https://kenyavault.co.ke/api/mpesa/callback';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-// ============================================================
-// MIDDLEWARE
-// ============================================================
+// ─── MIDDLEWARE ──────────────────────────────────────────────
 app.use(cors({
     origin: ['http://localhost:5500', 'https://kenyavault.co.ke', 'https://www.kenyavault.co.ke'],
     credentials: true
@@ -33,9 +31,7 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ============================================================
-// HELPER FUNCTIONS
-// ============================================================
+// ─── HELPERS ──────────────────────────────────────────────────
 function generateTransactionReference() {
     const timestamp = Date.now().toString().slice(-8);
     const random = crypto.randomBytes(4).toString('hex').toUpperCase();
@@ -60,35 +56,24 @@ function validatePhoneNumber(phone) {
     return null;
 }
 
-// ============================================================
-// 1. CREATE ORDER AND INITIATE PAYMENT
-// ============================================================
-app.post('/api/checkout/initiate', async (req, res) => {
+// ─── DIRECT STK PUSH (NO NEW TAB) ────────────────────────────
+app.post('/api/mpesa/stk-push', async (req, res) => {
     try {
-        const {
-            customer_name,
-            customer_email,
-            phone,
-            resource_id,
-            resource_title,
-            amount,
-            resource_data
-        } = req.body;
+        const { phone, amount, order_id, customer_name, customer_email, resource_ids } = req.body;
 
-        // Validate required fields
-        if (!customer_name || !phone || !amount) {
+        // Validate
+        if (!phone || !amount || !order_id) {
             return res.status(400).json({
                 success: false,
-                error: 'Missing required fields: name, phone, amount'
+                error: 'Missing required fields: phone, amount, order_id'
             });
         }
 
-        // Validate phone number
         const formattedPhone = validatePhoneNumber(phone);
         if (!formattedPhone) {
             return res.status(400).json({
                 success: false,
-                error: 'Invalid phone number. Use 07XXXXXXXX or 2547XXXXXXXX'
+                error: 'Invalid phone number. Use 2547XXXXXXXX or 07XXXXXXXX'
             });
         }
 
@@ -96,59 +81,12 @@ app.post('/api/checkout/initiate', async (req, res) => {
         if (isNaN(numericAmount) || numericAmount <= 0) {
             return res.status(400).json({
                 success: false,
-                error: 'Invalid amount'
+                error: 'Invalid amount. Must be a positive number.'
             });
         }
 
-        // Create order in database - using 'amount' column
-        const orderData = {
-            customer_name: customer_name,
-            customer_email: customer_email || null,
-            phone: formattedPhone,
-            resource_ids: resource_id ? [resource_id] : [],
-            resource_count: resource_id ? 1 : 0,
-            amount: numericAmount,  // ← USING 'amount' column
-            currency: 'KES',
-            status: 'pending',
-            payment_method: 'mpesa',
-            payment_verified: false,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            metadata: {
-                resource_id: resource_id,
-                resource_title: resource_title,
-                resource_data: resource_data || {},
-                source: 'checkout',
-                initiated_at: new Date().toISOString()
-            }
-        };
-
-        const { data: order, error: orderError } = await supabase
-            .from('orders')
-            .insert([orderData])
-            .select()
-            .single();
-
-        if (orderError) {
-            console.error('❌ Order creation error:', orderError);
-            return res.status(500).json({
-                success: false,
-                error: 'Failed to create order: ' + orderError.message
-            });
-        }
-
-        // Generate transaction reference
+        // Generate reference
         const reference = generateTransactionReference();
-
-        // Update order with reference
-        const { error: refError } = await supabase
-            .from('orders')
-            .update({ payment_reference: reference })
-            .eq('id', order.id);
-
-        if (refError) {
-            console.error('❌ Reference update error:', refError);
-        }
 
         // Prepare MegaPay request
         const megaPayPayload = {
@@ -157,10 +95,15 @@ app.post('/api/checkout/initiate', async (req, res) => {
             amount: numericAmount,
             reference: reference,
             callback: MEGAPAY_CALLBACK_URL,
-            description: `Payment for ${resource_title || 'KenyaVault resource'}`
+            description: `Payment for order ${order_id}`
         };
 
-        console.log('📤 MegaPay Request:', megaPayPayload);
+        console.log('📤 Sending STK Push:', {
+            phone: formattedPhone,
+            amount: numericAmount,
+            reference: reference,
+            order_id: order_id
+        });
 
         // Call MegaPay API
         const megaPayResponse = await fetch(MEGAPAY_API_URL, {
@@ -176,51 +119,64 @@ app.post('/api/checkout/initiate', async (req, res) => {
 
         console.log('📥 MegaPay Response:', megaPayResult);
 
-        // Store MegaPay response in order metadata
-        const { error: metaError } = await supabase
-            .from('orders')
-            .update({
-                metadata: {
-                    ...order.metadata,
-                    mega_pay_request: megaPayPayload,
-                    mega_pay_response: megaPayResult,
-                    transaction_reference: reference
-                }
-            })
-            .eq('id', order.id);
+        // Update order in database
+        const updateData = {
+            status: 'pending',
+            payment_method: 'mpesa',
+            payment_reference: reference,
+            amount: numericAmount,
+            payment_verified: false,
+            stk_push_request_id: reference,
+            stk_push_response: megaPayResult,
+            metadata: {
+                ...(req.body.metadata || {}),
+                transaction_reference: reference,
+                mega_pay_request: megaPayPayload,
+                mega_pay_response: megaPayResult,
+                phone: formattedPhone,
+                customer_name: customer_name || null,
+                customer_email: customer_email || null,
+                resource_ids: resource_ids || [],
+                initiated_at: new Date().toISOString()
+            },
+            updated_at: new Date().toISOString()
+        };
 
-        if (metaError) {
-            console.error('❌ Metadata update error:', metaError);
+        const { error: updateError } = await supabase
+            .from('orders')
+            .update(updateData)
+            .eq('id', order_id);
+
+        if (updateError) {
+            console.error('Error updating order:', updateError);
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to update order: ' + updateError.message
+            });
         }
 
-        // Check if MegaPay was successful
+        // Check if STK Push was successful
         if (megaPayResult.status === 'success' || megaPayResult.success === true) {
             return res.status(200).json({
                 success: true,
                 message: 'STK Push sent successfully',
                 data: {
-                    order_id: order.id,
                     reference: reference,
-                    status: 'pending',
-                    check_interval: 3
+                    order_id: order_id,
+                    check_interval: 3,
+                    status: 'pending'
                 }
             });
         } else {
-            // MegaPay failed - update order status
-            await supabase
-                .from('orders')
-                .update({ status: 'failed' })
-                .eq('id', order.id);
-
             return res.status(400).json({
                 success: false,
-                error: megaPayResult.message || 'Failed to initiate payment',
+                error: megaPayResult.message || megaPayResult.error || 'Failed to send STK Push',
                 details: megaPayResult
             });
         }
 
     } catch (error) {
-        console.error('❌ Checkout error:', error);
+        console.error('❌ STK Push Error:', error);
         return res.status(500).json({
             success: false,
             error: 'Internal server error: ' + error.message
@@ -228,55 +184,7 @@ app.post('/api/checkout/initiate', async (req, res) => {
     }
 });
 
-// ============================================================
-// 2. CHECK ORDER STATUS
-// ============================================================
-app.get('/api/checkout/status/:orderId', async (req, res) => {
-    try {
-        const { orderId } = req.params;
-
-        if (!orderId) {
-            return res.status(400).json({
-                success: false,
-                error: 'Order ID required'
-            });
-        }
-
-        const { data: order, error } = await supabase
-            .from('orders')
-            .select('status, payment_verified, payment_reference, amount, metadata')
-            .eq('id', orderId)
-            .single();
-
-        if (error || !order) {
-            return res.status(404).json({
-                success: false,
-                error: 'Order not found'
-            });
-        }
-
-        return res.status(200).json({
-            success: true,
-            data: {
-                status: order.status,
-                payment_verified: order.payment_verified || false,
-                payment_reference: order.payment_reference,
-                amount: order.amount
-            }
-        });
-
-    } catch (error) {
-        console.error('❌ Status check error:', error);
-        return res.status(500).json({
-            success: false,
-            error: 'Internal server error'
-        });
-    }
-});
-
-// ============================================================
-// 3. M-PESA CALLBACK
-// ============================================================
+// ─── M-PESA CALLBACK ──────────────────────────────────────────
 app.post('/api/mpesa/callback', async (req, res) => {
     try {
         console.log('📥 M-Pesa Callback Received:');
@@ -325,6 +233,10 @@ app.post('/api/mpesa/callback', async (req, res) => {
             status: orderStatus,
             payment_verified: paymentVerified,
             payment_verified_at: paymentVerified ? new Date().toISOString() : null,
+            mpesa_transaction_id: transaction_id,
+            mpesa_receipt: transaction_id,
+            mpesa_code: transaction_id,
+            amount: amount || order.amount,
             metadata: {
                 ...order.metadata,
                 callback_data: {
@@ -377,15 +289,12 @@ app.post('/api/mpesa/callback', async (req, res) => {
     }
 });
 
-// ============================================================
-// 4. GRANT RESOURCE ACCESS
-// ============================================================
+// ─── GRANT RESOURCE ACCESS ────────────────────────────────────
 async function grantResourceAccess(orderId, resourceIds) {
     try {
         for (let i = 0; i < resourceIds.length; i++) {
             const resourceId = resourceIds[i];
             
-            // Update download count
             const { data: resource } = await supabase
                 .from('resources')
                 .select('download_count')
@@ -404,28 +313,51 @@ async function grantResourceAccess(orderId, resourceIds) {
 
             console.log(`✅ Updated download count for resource ${resourceId}`);
         }
-
-        // Create access record
-        await supabase
-            .from('resource_downloads')
-            .insert({
-                resource_id: resourceIds[0],
-                order_id: orderId,
-                user_type: 'customer',
-                created_at: new Date().toISOString()
-            });
-
         return true;
-
     } catch (error) {
         console.error('❌ Grant access error:', error);
         return false;
     }
+}
+
+// ─── CHECK ORDER STATUS ──────────────────────────────────────
+app.get('/api/mpesa/status/:orderId', async (req, res) => {
+    try {
+        const { orderId } = req.params;
+
+        const { data: order, error } = await supabase
+            .from('orders')
+            .select('status, payment_verified, payment_reference, amount, metadata')
+            .eq('id', orderId)
+            .single();
+
+        if (error || !order) {
+            return res.status(404).json({
+                success: false,
+                error: 'Order not found'
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            data: {
+                status: order.status,
+                payment_verified: order.payment_verified || false,
+                payment_reference: order.payment_reference,
+                amount: order.amount
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Status check error:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Internal server error'
+        });
+    }
 });
 
-// ============================================================
-// 5. HEALTH CHECK
-// ============================================================
+// ─── HEALTH CHECK ─────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
     res.status(200).json({
         status: 'healthy',
@@ -437,14 +369,12 @@ app.get('/api/health', (req, res) => {
     });
 });
 
-// ============================================================
-// START SERVER
-// ============================================================
+// ─── START SERVER ─────────────────────────────────────────────
 app.listen(PORT, () => {
     console.log(`🚀 KenyaVault Payment Server running on port ${PORT}`);
     console.log(`📍 Health: http://localhost:${PORT}/api/health`);
-    console.log(`🔗 Callback: ${MEGAPAY_CALLBACK_URL}`);
-    console.log(`🔑 MegaPay: ${MEGAPAY_API_KEY.substring(0, 8)}...`);
+    console.log(`📞 MegaPay API: ${MEGAPAY_API_URL}`);
+    console.log(`🔗 Callback URL: ${MEGAPAY_CALLBACK_URL}`);
 });
 
 module.exports = app;
