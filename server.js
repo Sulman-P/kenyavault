@@ -227,14 +227,16 @@ app.post('/api/mpesa/callback', async (req, res) => {
         
         console.log(`💰 Payment ${isPaid ? 'PAID ✅' : 'FAILED ❌'}`);
         
-        // Update the order
-        const updateData = {
-            status: isPaid ? 'paid' : 'failed',
-            payment_status: isPaid ? 'paid' : 'failed',
-            payment_verified: isPaid,
-            payment_verified_at: isPaid ? new Date().toISOString() : null,
-            updated_at: new Date().toISOString()
-        };
+        // ─── UPDATE THE ORDER ──────────────────────────────────────────
+  const updateData = {
+    status: isPaid ? 'paid' : 'failed',
+    payment_status: isPaid ? 'paid' : 'failed',  // ← Add this line
+    payment_verified: isPaid,
+    payment_verified_at: isPaid ? new Date().toISOString() : null,
+    mpesa_transaction_id: data.TransactionID || data.transaction_id || null,
+    mpesa_code: data.TransactionID || data.transaction_id || null,
+    updated_at: new Date().toISOString()
+ };
         
         const { error: updateError } = await supabase
             .from('orders')
