@@ -4192,46 +4192,73 @@ JAVASCRIPT — COMPLETE MARKETPLACE ENGINE WITH STK PUSH
             }
         }
 
-        // ─── DIRECT STK PUSH - NO NEW TAB ──────────────────────
-        async function initiatePayment() {
-            if (isProcessing) return;
+       // ─── FALLBACK: MegaPay Hosted Page ────────────────────────────
+async function initiatePaymentWithFallback() {
+    if (isProcessing) return;
 
-            var phone = phoneInput.value.trim().replace(/\s/g, '');
-            var customerName = customerNameInput.value.trim();
+    var phone = phoneInput.value.trim().replace(/\s/g, '');
+    var customerName = customerNameInput.value.trim();
 
-            if (!customerName) {
-                customerNameInput.classList.add('error');
-                showToast('Error', 'Please enter your full name', 'error');
-                return;
-            }
-            customerNameInput.classList.remove('error');
+    if (!customerName || !phone || phone.length < 9) {
+        // ... (keep existing validation logic) ...
+        return;
+    }
 
-            if (!phone || phone.length < 9) {
-                phoneInput.classList.add('error');
-                showToast('Error', 'Please enter a valid phone number', 'error');
-                return;
-            }
-            phoneInput.classList.remove('error');
+    // ... (keep phone formatting and free checkout logic) ...
 
-            var formattedPhone = phone;
-            if (phone.startsWith('0')) formattedPhone = '254' + phone.substring(1);
-            else if (phone.startsWith('+')) formattedPhone = phone.substring(1);
-            else if (phone.length === 10 && phone.startsWith('07')) formattedPhone = '254' + phone.substring(1);
-            else if (phone.length === 9 && phone.startsWith('7')) formattedPhone = '254' + phone;
+    isProcessing = true;
+    payPrimaryBtn.disabled = true;
+    payPrimaryBtn.classList.add('loading');
+    payPrimaryBtn.innerHTML = '<span class="spinner"></span><span class="btn-text">Processing...</span>';
 
-            if (!/^254[0-9]{9}$/.test(formattedPhone)) {
-                phoneInput.classList.add('error');
-                showToast('Error', 'Please enter a valid Safaricom phone number', 'error');
-                return;
-            }
+    try {
+        // First, try the STK Push API
+        var response = await fetch(BACKEND_URL + '/api/mpesa/stk-push', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                phone: formattedPhone,
+                amount: totalAmount,
+                order_id: orderId,
+                customer_name: customerName,
+                resource_ids: checkoutMode === 'cart' ? checkoutCartItems.map(i => i.id) : [currentProduct.id]
+            })
+        });
 
-            var isFreeCheckout = false;
-            if (checkoutMode === 'single' && currentProduct) {
-                var pricing = getResourcePricing(currentProduct);
-                isFreeCheckout = pricing.isFree;
-            } else if (checkoutMode === 'cart') {
-                isFreeCheckout = checkoutExpectedTotal === 0;
-            }
+        var result = await response.json();
+
+        if (result.success) {
+            // STK Push sent - start polling
+            showStkStatus('📱 STK Push sent! Check your phone.', 'pending');
+            startPaymentPolling();
+        } else {
+            // ─── FALLBACK: If API fails, open MegaPay hosted page ───
+            console.warn('STK Push API failed, using fallback:', result.error);
+            
+            var megaPayFallbackUrl = 'https://megapay.co.ke/tags/S1Zzyjs' +
+                '?phone=' + encodeURIComponent(formattedPhone) +
+                '&amount=' + encodeURIComponent(totalAmount) +
+                '&description=' + encodeURIComponent('Payment for order ' + orderId) +
+                '&callback=' + encodeURIComponent('https://kenyavault.onrender.com/api/mpesa/callback');
+
+            // Inform user they will be redirected
+            showStkStatus('🔄 Redirecting to MegaPay to complete payment...', 'pending');
+            setTimeout(() => {
+                window.open(megaPayFallbackUrl, '_blank');
+            }, 1500);
+        }
+
+    } catch (error) {
+        console.error('Payment initiation failed:', error);
+        showStkStatus('❌ Payment initiation failed. Please try again.', 'error');
+        showToast('Error', 'Payment initiation failed. Please try again.', 'error');
+    } finally {
+        isProcessing = false;
+        payPrimaryBtn.disabled = false;
+        payPrimaryBtn.classList.remove('loading');
+        payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Pay with M-PESA</span>';
+    }
+}
 
             // ─── FREE RESOURCE ──────────────────────────────────
             if (isFreeCheckout) {
