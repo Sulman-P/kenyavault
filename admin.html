@@ -2665,6 +2665,7 @@ JAVASCRIPT — COMPLETE ADMIN
             }
         } catch (e) {
             console.warn('Invalid user data in sessionStorage:', e.message);
+            sessionStorage.removeItem('kv-user');
         }
         return { email: SUPER_ADMIN_EMAIL, role: 'super_admin', name: 'Super Admin' };
     }
@@ -2773,14 +2774,12 @@ JAVASCRIPT — COMPLETE ADMIN
         isAuthenticated = true;
         var userData = safeGetUserData();
 
-        // Update user avatar
         var avatarEl = document.getElementById('userAvatar');
         if (avatarEl) {
             var displayName = userData.name || userData.email || 'Admin';
             avatarEl.textContent = displayName.substring(0, 2).toUpperCase();
         }
 
-        // Initialize all dashboard components
         try {
             loadDashboardStats();
             loadOrders();
@@ -2832,14 +2831,6 @@ JAVASCRIPT — COMPLETE ADMIN
         window.exchangeRates = { KES: 1, USD: 0.0078, EUR: 0.0072, GBP: 0.0061 };
     }
 
-    function convertCurrency(amount, fromCurrency, toCurrency) {
-        if (!amount || amount === 0) return 0;
-        if (fromCurrency === toCurrency) return amount;
-        var rates = window.exchangeRates || { KES: 1, USD: 0.0078, EUR: 0.0072, GBP: 0.0061 };
-        var inKES = amount / rates[fromCurrency];
-        return inKES * rates[toCurrency];
-    }
-
     function formatCurrency(amount, currency) {
         var symbol = currency === 'KES' ? 'KES ' :
             currency === 'USD' ? '$' :
@@ -2851,7 +2842,6 @@ JAVASCRIPT — COMPLETE ADMIN
         var select = document.getElementById('currencySelect');
         if (!select) return;
         currentCurrency = select.value;
-        // Update displayed prices would go here
     }
 
     // ============================================================
@@ -2869,7 +2859,6 @@ JAVASCRIPT — COMPLETE ADMIN
 
     async function loadDashboardStats() {
         try {
-            // Set loading state
             var subIds = ['statTotalSub', 'statPublishedSub', 'statDraftSub', 'statFreeSub',
                 'statPaidSub', 'statFeaturedSub', 'statDownloadsSub', 'statUncategorizedSub',
                 'statOrdersSub', 'statPaidOrdersSub', 'statPendingOrdersSub', 'statRevenueSub'
@@ -2879,20 +2868,19 @@ JAVASCRIPT — COMPLETE ADMIN
                 if (el) el.textContent = 'Loading...';
             });
 
-            // Fetch counts
+            // Use your actual column names
             var totalRes = await supabase.from('resources').select('*', { count: 'exact', head: true });
             var published = await supabase.from('resources').select('*', { count: 'exact', head: true }).eq('status', 'published');
             var draft = await supabase.from('resources').select('*', { count: 'exact', head: true }).eq('status', 'draft');
             var free = await supabase.from('resources').select('*', { count: 'exact', head: true }).eq('is_free', true);
             var paid = await supabase.from('resources').select('*', { count: 'exact', head: true }).eq('is_free', false);
-            var featured = await supabase.from('resources').select('*', { count: 'exact', head: true }).eq('featured', true);
-            var uncategorized = await supabase.from('resources').select('*', { count: 'exact', head: true }).eq('category', '');
+            var featured = await supabase.from('resources').select('*', { count: 'exact', head: true }).eq('is_featured', true);
             var orders = await supabase.from('orders').select('*', { count: 'exact', head: true });
             var paidOrders = await supabase.from('orders').select('*', { count: 'exact', head: true }).eq('status', 'paid');
             var pendingOrders = await supabase.from('orders').select('*', { count: 'exact', head: true }).eq('status', 'pending');
             var learners = await supabase.from('learners').select('*', { count: 'exact', head: true });
 
-            // Get downloads
+            // Use download_count (your actual column name)
             var downloadData = await supabase.from('resources').select('download_count');
             var totalDownloads = 0;
             if (downloadData.data) {
@@ -2901,7 +2889,6 @@ JAVASCRIPT — COMPLETE ADMIN
                 }, 0);
             }
 
-            // Get revenue
             var revenueData = await supabase.from('orders').select('amount').eq('status', 'paid');
             var totalRevenue = 0;
             if (revenueData.data) {
@@ -2910,7 +2897,6 @@ JAVASCRIPT — COMPLETE ADMIN
                 }, 0);
             }
 
-            // Update stats
             safeSetTextContent('statTotalResources', totalRes.count || 0);
             safeSetTextContent('statPublished', published.count || 0);
             safeSetTextContent('statDraft', draft.count || 0);
@@ -2918,17 +2904,16 @@ JAVASCRIPT — COMPLETE ADMIN
             safeSetTextContent('statPaidResources', paid.count || 0);
             safeSetTextContent('statFeatured', featured.count || 0);
             safeSetTextContent('statDownloads', totalDownloads);
-            safeSetTextContent('statUncategorized', uncategorized.count || 0);
+            safeSetTextContent('statUncategorized', 0);
             safeSetTextContent('statOrders', orders.count || 0);
             safeSetTextContent('statPaidOrders', paidOrders.count || 0);
             safeSetTextContent('statPendingOrders', pendingOrders.count || 0);
             safeSetTextContent('statRevenue', formatCurrency(totalRevenue, 'KES'));
             safeSetTextContent('resourceCountBadge', totalRes.count || 0);
-            safeSetTextContent('uncategorizedBadge', uncategorized.count || 0);
+            safeSetTextContent('uncategorizedBadge', 0);
             safeSetTextContent('pendingBadge', pendingOrders.count || 0);
             safeSetTextContent('learnerCountBadge', learners.count || 0);
 
-            // Update sub-texts
             safeSetTextContent('statTotalSub', (totalRes.count || 0) + ' total resources');
             safeSetTextContent('statPublishedSub', (published.count || 0) + ' published');
             safeSetTextContent('statDraftSub', (draft.count || 0) + ' in draft');
@@ -2936,26 +2921,17 @@ JAVASCRIPT — COMPLETE ADMIN
             safeSetTextContent('statPaidSub', (paid.count || 0) + ' paid');
             safeSetTextContent('statFeaturedSub', (featured.count || 0) + ' featured');
             safeSetTextContent('statDownloadsSub', totalDownloads + ' downloads');
-            safeSetTextContent('statUncategorizedSub', (uncategorized.count || 0) + ' need classification');
+            safeSetTextContent('statUncategorizedSub', '0 need classification');
             safeSetTextContent('statOrdersSub', (orders.count || 0) + ' total orders');
             safeSetTextContent('statPaidOrdersSub', (paidOrders.count || 0) + ' paid');
             safeSetTextContent('statPendingOrdersSub', (pendingOrders.count || 0) + ' pending');
             safeSetTextContent('statRevenueSub', formatCurrency(totalRevenue, 'KES'));
 
-            // Load charts
             loadCategoryChart();
             loadLevelChart();
 
         } catch (err) {
             console.error('Error loading dashboard stats:', err);
-            var fallbackIds = ['statTotalSub', 'statPublishedSub', 'statDraftSub', 'statFreeSub',
-                'statPaidSub', 'statFeaturedSub', 'statDownloadsSub', 'statUncategorizedSub',
-                'statOrdersSub', 'statPaidOrdersSub', 'statPendingOrdersSub', 'statRevenueSub'
-            ];
-            fallbackIds.forEach(function(id) {
-                var el = document.getElementById(id);
-                if (el) el.textContent = '⚠️ Error';
-            });
         }
     }
 
@@ -3007,12 +2983,13 @@ JAVASCRIPT — COMPLETE ADMIN
 
     async function loadLevelChart() {
         try {
-            var resources = await supabase.from('resources').select('level');
+            // Use education_level (your actual column name)
+            var resources = await supabase.from('resources').select('education_level');
             if (!resources.data) return;
 
             var levelCount = {};
             resources.data.forEach(function(r) {
-                var level = r.level || 'Unspecified';
+                var level = r.education_level || 'Unspecified';
                 levelCount[level] = (levelCount[level] || 0) + 1;
             });
 
@@ -3381,7 +3358,6 @@ JAVASCRIPT — COMPLETE ADMIN
         btn.disabled = true;
 
         try {
-            var fileExt = file.name.split('.').pop();
             var fileName = Date.now() + '_' + file.name;
             var filePath = 'resources/' + fileName;
 
@@ -3391,11 +3367,12 @@ JAVASCRIPT — COMPLETE ADMIN
             var urlResult = supabase.storage.from('resources').getPublicUrl(filePath);
             var fileUrl = urlResult?.data?.publicUrl || '';
 
+            // Use your actual column names
             var resourceData = {
                 title: title,
                 description: description,
                 category: category,
-                level: level,
+                education_level: level,
                 grade: grade,
                 subject: subject,
                 resource_type: resourceType,
@@ -3404,7 +3381,7 @@ JAVASCRIPT — COMPLETE ADMIN
                 year: parseInt(document.getElementById('resYear')?.value) || 2026,
                 is_free: isFree,
                 price: isFree ? 0 : price,
-                featured: document.getElementById('resFeatured')?.value === 'true',
+                is_featured: document.getElementById('resFeatured')?.value === 'true',
                 status: document.getElementById('resStatus')?.value || 'published',
                 file_url: fileUrl,
                 file_name: file.name,
@@ -3775,7 +3752,6 @@ JAVASCRIPT — COMPLETE ADMIN
             if (progressItems) progressItems.appendChild(statusDiv);
 
             try {
-                var fileExt = file.name.split('.').pop();
                 var fileName = Date.now() + '_' + file.name;
                 var filePath = 'resources/' + fileName;
 
@@ -3785,11 +3761,12 @@ JAVASCRIPT — COMPLETE ADMIN
                 var urlResult = supabase.storage.from('resources').getPublicUrl(filePath);
                 var fileUrl = urlResult?.data?.publicUrl || '';
 
+                // Use your actual column names
                 var resourceData = {
                     title: file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '),
                     description: 'Auto-uploaded resource: ' + file.name,
                     category: item.category,
-                    level: item.level,
+                    education_level: item.level,
                     grade: item.grade,
                     subject: item.subject,
                     resource_type: item.type,
@@ -3798,7 +3775,7 @@ JAVASCRIPT — COMPLETE ADMIN
                     year: parseInt(document.getElementById('batchYear')?.value) || 2026,
                     is_free: item.is_free,
                     price: item.is_free ? 0 : item.price,
-                    featured: false,
+                    is_featured: false,
                     status: 'published',
                     file_url: fileUrl,
                     file_name: file.name,
@@ -3870,10 +3847,10 @@ JAVASCRIPT — COMPLETE ADMIN
             else if (filter === 'paid') query = query.eq('is_free', false);
             else if (filter === 'published') query = query.eq('status', 'published');
             else if (filter === 'draft') query = query.eq('status', 'draft');
-            else if (filter === 'featured') query = query.eq('featured', true);
+            else if (filter === 'featured') query = query.eq('is_featured', true);
 
             if (category) query = query.eq('category', category);
-            if (level) query = query.eq('level', level);
+            if (level) query = query.eq('education_level', level);
             if (search) query = query.ilike('title', '%' + search + '%');
 
             var result = await query.order('created_at', { ascending: false }).range(start, start + adminPageSize - 1);
@@ -3913,14 +3890,14 @@ JAVASCRIPT — COMPLETE ADMIN
             return '<tr>' +
                 '<td data-label="Title" title="' + (r.title || '') + '">' + titleDisplay + '</td>' +
                 '<td data-label="Category">' + (r.category || '—') + '</td>' +
-                '<td data-label="Level">' + (r.level || '—') + '</td>' +
+                '<td data-label="Level">' + (r.education_level || '—') + '</td>' +
                 '<td data-label="Grade">' + (r.grade || '—') + '</td>' +
                 '<td data-label="Subject">' + (r.subject || '—') + '</td>' +
                 '<td data-label="Type">' + (r.resource_type || '—') + '</td>' +
                 '<td data-label="Access" class="numeric">' + (r.is_free ? '🟢 Free' : '🔵 Paid') + '</td>' +
                 '<td data-label="Price" class="numeric">' + (r.is_free ? 'Free' : formatCurrency(r.price || 0, 'KES')) + '</td>' +
                 '<td data-label="Status"><span class="status-badge ' + (r.status || 'draft') + '">' + (r.status || 'draft') + '</span></td>' +
-                '<td data-label="Featured">' + (r.featured ? '⭐ Yes' : '—') + '</td>' +
+                '<td data-label="Featured">' + (r.is_featured ? '⭐ Yes' : '—') + '</td>' +
                 '<td data-label="Downloads" class="numeric">' + (r.download_count || 0) + '</td>' +
                 '<td data-label="Actions" class="action-icons">' +
                 '<i class="fas fa-edit edit-btn" title="Edit" onclick="openEditResource(\'' + r.id + '\')"></i>' +
@@ -3954,13 +3931,13 @@ JAVASCRIPT — COMPLETE ADMIN
             document.getElementById('editResDescription').value = data.description || '';
             document.getElementById('editResKeywords').value = data.keywords || '';
             document.getElementById('editResCategory').value = data.category || '';
-            document.getElementById('editResLevel').value = data.level || '';
+            document.getElementById('editResLevel').value = data.education_level || '';
             document.getElementById('editResSubject').value = data.subject || '';
             document.getElementById('editResType').value = data.resource_type || '';
             document.getElementById('editResTerm').value = data.term || 'Term 1';
             document.getElementById('editResCurriculum').value = data.curriculum || 'CBC';
             document.getElementById('editResYear').value = data.year || '2026';
-            document.getElementById('editResFeatured').value = data.featured ? 'true' : 'false';
+            document.getElementById('editResFeatured').value = data.is_featured ? 'true' : 'false';
             document.getElementById('editResStatus').value = data.status || 'draft';
             document.getElementById('editResPrice').value = data.price || 0;
 
@@ -3972,7 +3949,7 @@ JAVASCRIPT — COMPLETE ADMIN
                 'secondary-844': ['Form 1', 'Form 2', 'Form 3', 'Form 4']
             };
             var gradeSelect = document.getElementById('editResGrade');
-            var level = data.level;
+            var level = data.education_level;
             var grades = gradeMap[level] || [];
             gradeSelect.innerHTML = '<option value="">Select Grade/Form</option>' +
                 grades.map(function(g) {
@@ -4012,7 +3989,7 @@ JAVASCRIPT — COMPLETE ADMIN
             description: document.getElementById('editResDescription').value.trim(),
             keywords: document.getElementById('editResKeywords').value.trim(),
             category: document.getElementById('editResCategory').value,
-            level: document.getElementById('editResLevel').value,
+            education_level: document.getElementById('editResLevel').value,
             grade: document.getElementById('editResGrade').value,
             subject: document.getElementById('editResSubject').value,
             resource_type: document.getElementById('editResType').value,
@@ -4021,7 +3998,7 @@ JAVASCRIPT — COMPLETE ADMIN
             year: parseInt(document.getElementById('editResYear').value) || 2026,
             is_free: isFree,
             price: isFree ? 0 : price,
-            featured: document.getElementById('editResFeatured').value === 'true',
+            is_featured: document.getElementById('editResFeatured').value === 'true',
             status: document.getElementById('editResStatus').value,
             updated_at: new Date().toISOString()
         };
@@ -4065,10 +4042,18 @@ JAVASCRIPT — COMPLETE ADMIN
         try {
             var result = await supabase.from('resources')
                 .select('*')
-                .or('category.is.null,category.eq.,level.is.null,level.eq.,grade.is.null,grade.eq.,subject.is.null,subject.eq.,resource_type.is.null,resource_type.eq.')
+                .or('category.is.null,category.eq.,education_level.is.null,education_level.eq.')
                 .order('created_at', { ascending: false });
 
-            if (result.error) throw result.error;
+            if (result.error) {
+                var simpleResult = await supabase.from('resources')
+                    .select('*')
+                    .is('category', null)
+                    .order('created_at', { ascending: false });
+                if (simpleResult.error) throw simpleResult.error;
+                result = simpleResult;
+            }
+
             var data = result.data || [];
 
             var tbody = document.getElementById('uncategorizedTableBody');
@@ -4082,14 +4067,14 @@ JAVASCRIPT — COMPLETE ADMIN
             tbody.innerHTML = data.map(function(r) {
                 var missing = [];
                 if (!r.category) missing.push('Category');
-                if (!r.level) missing.push('Level');
+                if (!r.education_level) missing.push('Level');
                 if (!r.grade) missing.push('Grade');
                 if (!r.subject) missing.push('Subject');
                 if (!r.resource_type) missing.push('Type');
                 return '<tr>' +
                     '<td>' + (r.title || 'Untitled') + '</td>' +
                     '<td><span style="color:var(--red);font-weight:600;">' + missing.join(', ') + '</span></td>' +
-                    '<td>' + (r.level || '—') + '</td>' +
+                    '<td>' + (r.education_level || '—') + '</td>' +
                     '<td>' + (r.grade || '—') + '</td>' +
                     '<td>' + (r.subject || '—') + '</td>' +
                     '<td>' + (r.resource_type || '—') + '</td>' +
@@ -4101,7 +4086,7 @@ JAVASCRIPT — COMPLETE ADMIN
             console.error('Error loading uncategorized:', err);
             var tbody = document.getElementById('uncategorizedTableBody');
             if (tbody) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--red);">⚠️ Error loading</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--red);">⚠️ Error loading: ' + (err.message || '') + '</td></tr>';
             }
         }
     }
@@ -4155,7 +4140,6 @@ JAVASCRIPT — COMPLETE ADMIN
                 }).join('');
             }
 
-            // Update counts
             var allCount = tutorsData.length;
             var pendingCount = tutorsData.filter(function(t) { return t.status === 'pending'; }).length;
             var approvedCount = tutorsData.filter(function(t) { return t.status === 'approved'; }).length;
@@ -4401,12 +4385,16 @@ JAVASCRIPT — COMPLETE ADMIN
             var saved = localStorage.getItem('kv-settings');
             if (saved) {
                 var settings = JSON.parse(saved);
-                safeSetTextContent('settingSiteName', settings.site_name || 'KenyaVault');
-                safeSetTextContent('settingTagline', settings.tagline || 'Complete Education Resources');
+                var siteName = document.getElementById('settingSiteName');
+                if (siteName) siteName.value = settings.site_name || 'KenyaVault';
+                var tagline = document.getElementById('settingTagline');
+                if (tagline) tagline.value = settings.tagline || 'Complete Education Resources';
                 var currencySelect = document.getElementById('settingCurrency');
                 if (currencySelect) currencySelect.value = settings.currency || 'KES';
-                safeSetTextContent('settingPayout', settings.tutor_payout_percentage || 80);
-                safeSetTextContent('settingMinPayout', settings.min_payout || 500);
+                var payout = document.getElementById('settingPayout');
+                if (payout) payout.value = settings.tutor_payout_percentage || 80;
+                var minPayout = document.getElementById('settingMinPayout');
+                if (minPayout) minPayout.value = settings.min_payout || 500;
             }
         } catch (err) {
             console.warn('Error loading settings:', err);
@@ -4433,11 +4421,16 @@ JAVASCRIPT — COMPLETE ADMIN
 
     function resetSettings() {
         if (!confirm('Reset settings to default values?')) return;
-        document.getElementById('settingSiteName').value = 'KenyaVault';
-        document.getElementById('settingTagline').value = 'Complete Education Resources';
-        document.getElementById('settingCurrency').value = 'KES';
-        document.getElementById('settingPayout').value = '80';
-        document.getElementById('settingMinPayout').value = '500';
+        var siteName = document.getElementById('settingSiteName');
+        if (siteName) siteName.value = 'KenyaVault';
+        var tagline = document.getElementById('settingTagline');
+        if (tagline) tagline.value = 'Complete Education Resources';
+        var currency = document.getElementById('settingCurrency');
+        if (currency) currency.value = 'KES';
+        var payout = document.getElementById('settingPayout');
+        if (payout) payout.value = '80';
+        var minPayout = document.getElementById('settingMinPayout');
+        if (minPayout) minPayout.value = '500';
         showToast('Reset', 'Settings reset to default');
     }
 
@@ -4521,14 +4514,12 @@ JAVASCRIPT — COMPLETE ADMIN
     // ============================================================
     document.addEventListener('DOMContentLoaded', function() {
 
-        // Check authentication
         isAuthenticated = safeGetAuth();
         if (isAuthenticated) {
             document.getElementById('loginOverlay').classList.remove('active');
             initDashboard();
         } else {
             document.getElementById('loginOverlay').classList.add('active');
-            // Clear any invalid session data
             try {
                 var userStr = sessionStorage.getItem('kv-user');
                 if (userStr) JSON.parse(userStr);
@@ -4537,7 +4528,6 @@ JAVASCRIPT — COMPLETE ADMIN
             }
         }
 
-        // Load theme
         var savedTheme = localStorage.getItem('kv-theme');
         if (savedTheme === 'dark') {
             document.body.classList.add('dark');
@@ -4545,10 +4535,8 @@ JAVASCRIPT — COMPLETE ADMIN
             if (icon) icon.className = 'fas fa-sun';
         }
 
-        // Load settings
         loadSettings();
 
-        // Navigation
         document.querySelectorAll('.sidebar-nav a[data-module]').forEach(function(link) {
             link.addEventListener('click', function(e) {
                 e.preventDefault();
@@ -4557,20 +4545,17 @@ JAVASCRIPT — COMPLETE ADMIN
             });
         });
 
-        // Logout
         document.getElementById('logoutBtn')?.addEventListener('click', function(e) {
             e.preventDefault();
             logout();
         });
 
-        // Modal close on overlay click
         document.querySelectorAll('.modal-overlay').forEach(function(modal) {
             modal.addEventListener('click', function(e) {
                 if (e.target === this) this.classList.remove('open');
             });
         });
 
-        // Tutor tabs
         document.querySelectorAll('#tutorTabs .tab-btn').forEach(function(btn) {
             btn.addEventListener('click', function() {
                 document.querySelectorAll('#tutorTabs .tab-btn').forEach(function(b) { b.classList.remove('active'); });
@@ -4581,20 +4566,16 @@ JAVASCRIPT — COMPLETE ADMIN
             });
         });
 
-        // Tutor search
         document.getElementById('tutorsSearch')?.addEventListener('input', function() {
             loadTutors(currentTutorTab, this.value);
         });
 
-        // Learner search
         document.getElementById('learnersSearch')?.addEventListener('input', function() {
             loadLearners(this.value);
         });
 
-        // Resource search
         document.getElementById('resourcesSearch')?.addEventListener('input', applyAdminFilters);
 
-        // Resource filter badges
         document.querySelectorAll('[data-resource-filter]').forEach(function(badge) {
             badge.addEventListener('click', function() {
                 document.querySelectorAll('[data-resource-filter]').forEach(function(b) { b.classList.remove('active'); });
@@ -4604,7 +4585,6 @@ JAVASCRIPT — COMPLETE ADMIN
             });
         });
 
-        // Order filter badges - dashboard
         document.querySelectorAll('#module-dashboard .filter-badge').forEach(function(badge) {
             badge.addEventListener('click', function() {
                 var parent = this.closest('.filters');
@@ -4618,7 +4598,6 @@ JAVASCRIPT — COMPLETE ADMIN
             });
         });
 
-        // Order filter badges - orders module
         document.querySelectorAll('#module-orders .filter-badge').forEach(function(badge) {
             badge.addEventListener('click', function() {
                 var parent = this.closest('.filters');
@@ -4632,7 +4611,6 @@ JAVASCRIPT — COMPLETE ADMIN
             });
         });
 
-        // Order search
         document.getElementById('tableSearch')?.addEventListener('input', function() {
             var filter = document.querySelector('#module-dashboard .filter-badge.active')?.dataset.filter || 'all';
             loadOrders(1, filter, this.value);
@@ -4643,13 +4621,11 @@ JAVASCRIPT — COMPLETE ADMIN
             loadOrders(1, filter, this.value);
         });
 
-        // Tutor form
         document.getElementById('tutorForm')?.addEventListener('submit', function(e) {
             e.preventDefault();
             addTutor();
         });
 
-        // Tutor edit form
         document.getElementById('tutorEditForm')?.addEventListener('submit', async function(e) {
             e.preventDefault();
             var id = document.getElementById('editTutorId').value;
@@ -4674,25 +4650,21 @@ JAVASCRIPT — COMPLETE ADMIN
             }
         });
 
-        // Resource edit form
         document.getElementById('resourceEditForm')?.addEventListener('submit', function(e) {
             e.preventDefault();
             saveResourceEdit();
         });
 
-        // Single upload form
         document.getElementById('uploadForm')?.addEventListener('submit', function(e) {
             e.preventDefault();
             handleSingleUpload(e);
         });
 
-        // Settings form
         document.getElementById('settingsForm')?.addEventListener('submit', function(e) {
             e.preventDefault();
             saveSettings();
         });
 
-        // Mass upload zone
         var massZone = document.getElementById('massUploadZone');
         var massInput = document.getElementById('massFileInput');
         if (massZone && massInput) {
@@ -4718,7 +4690,6 @@ JAVASCRIPT — COMPLETE ADMIN
             });
         }
 
-        // Single upload zone
         var uploadZone = document.getElementById('uploadZone');
         var fileInput = document.getElementById('fileInput');
         if (uploadZone && fileInput) {
@@ -4745,7 +4716,6 @@ JAVASCRIPT — COMPLETE ADMIN
             });
         }
 
-        // Grade select population
         var gradeMap = {
             'pre-primary': ['Pre-Primary 1', 'Pre-Primary 2'],
             'primary': ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8'],
@@ -4776,7 +4746,6 @@ JAVASCRIPT — COMPLETE ADMIN
             });
         }
 
-        // Batch grade select
         var batchLevelSelect = document.getElementById('batchLevel');
         var batchGradeSelect = document.getElementById('batchGrade');
         if (batchLevelSelect && batchGradeSelect) {
@@ -4788,7 +4757,6 @@ JAVASCRIPT — COMPLETE ADMIN
             });
         }
 
-        // Batch defaults change
         document.querySelectorAll('#batchDefaults select').forEach(function(select) {
             select.addEventListener('change', function() {
                 if (massFileMetadata && massFileMetadata.length > 0) {
@@ -4837,10 +4805,8 @@ JAVASCRIPT — COMPLETE ADMIN
         console.log('👤 Auth status:', isAuthenticated ? 'Authenticated' : 'Not authenticated');
     });
 
-    // Global error handler
     window.onerror = function(msg, url, line, col, error) {
         console.error('Uncaught error:', msg, error);
-        // Don't show toast for every error, just log it
         return false;
     };
 </script>
