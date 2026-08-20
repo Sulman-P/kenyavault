@@ -1,41 +1,36 @@
 // ============================================================
-// KENYA VAULT - BACKEND SERVER (server.js)
-// Handles STK Push without opening new tabs
+// KENYA VAULT - PAYMENT BACKEND SERVER (FIXED)
 // ============================================================
 
 const express = require('express');
 const cors = require('cors');
-const crypto = require('crypto');
-const { createClient } = require('@supabase/supabase-js');
-require('dotenv').config();
 
 const app = express();
-
-// ─── CONFIG ──────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
-
-const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
-const SUPABASE_SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs'; // REPLACE THIS!
 
 // MegaPay Configuration
 const MEGAPAY_API_KEY = 'MGPYDSg2lIYA';
 const MEGAPAY_API_URL = 'https://megapay.co.ke/backend/initiatestk';
-const MEGAPAY_CALLBACK_URL = 'https://kenyavault.co.ke/api/mpesa/callback';
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+const MEGAPAY_CALLBACK_URL = 'https://kenyavault.onrender.com/api/mpesa/callback';
 
 // ─── MIDDLEWARE ──────────────────────────────────────────────
-app.use(cors({
-    origin: ['http://localhost:5500', 'https://kenyavault.co.ke', 'https://www.kenyavault.co.ke'],
-    credentials: true
-}));
+app.use(cors({ origin: '*' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// ─── LOGGING ──────────────────────────────────────────────────
+app.use((req, res, next) => {
+    console.log(`📥 ${req.method} ${req.url}`);
+    if (req.method === 'POST') {
+        console.log('Body:', JSON.stringify(req.body, null, 2));
+    }
+    next();
+});
 
 // ─── HELPERS ──────────────────────────────────────────────────
 function generateTransactionReference() {
     const timestamp = Date.now().toString().slice(-8);
-    const random = crypto.randomBytes(4).toString('hex').toUpperCase();
+    const random = Math.random().toString(36).substring(2, 6).toUpperCase();
     return `KV-${timestamp}-${random}`;
 }
 
@@ -50,22 +45,23 @@ function validatePhoneNumber(phone) {
         return cleaned;
     }
     
-    if (phone.startsWith('+254')) {
+    if (phone && phone.startsWith('+254')) {
         return phone.substring(1);
     }
     
     return null;
 }
 
-// ─── DIRECT STK PUSH ENDPOINT ──────────────────────────────
+// ─── STK PUSH ENDPOINT ──────────────────────────────────────
 app.post('/api/mpesa/stk-push', async (req, res) => {
+    console.log('🚀 STK Push endpoint called!');
+    
     try {
         const { phone, amount, order_id, customer_name, customer_email, resource_ids } = req.body;
 
-        console.log('📥 Received STK Push request:', { phone, amount, order_id });
-
         // Validate
         if (!phone || !amount || !order_id) {
+            console.log('❌ Missing required fields');
             return res.status(400).json({
                 success: false,
                 error: 'Missing required fields: phone, amount, order_id'
@@ -74,6 +70,7 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
 
         const formattedPhone = validatePhoneNumber(phone);
         if (!formattedPhone) {
+            console.log('❌ Invalid phone number:', phone);
             return res.status(400).json({
                 success: false,
                 error: 'Invalid phone number. Use 2547XXXXXXXX or 07XXXXXXXX'
@@ -82,28 +79,20 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
 
         const numericAmount = parseFloat(amount);
         if (isNaN(numericAmount) || numericAmount <= 0) {
+            console.log('❌ Invalid amount:', amount);
             return res.status(400).json({
                 success: false,
                 error: 'Invalid amount. Must be a positive number.'
             });
         }
 
-        // Generate reference
         const reference = generateTransactionReference();
 
-        // Update order with reference first
-        const { error: updateRefError } = await supabase
-            .from('orders')
-            .update({
-                payment_reference: reference,
-                stk_push_request_id: reference,
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', order_id);
-
-        if (updateRefError) {
-            console.error('Error updating reference:', updateRefError);
-        }
+        console.log('📤 Sending STK Push:');
+        console.log('Phone:', formattedPhone);
+        console.log('Amount:', numericAmount);
+        console.log('Reference:', reference);
+        console.log('Order ID:', order_id);
 
         // Prepare MegaPay request
         const megaPayPayload = {
@@ -115,11 +104,7 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
             description: `Payment for order ${order_id}`
         };
 
-        console.log('📤 Sending to MegaPay:', {
-            phone: formattedPhone,
-            amount: numericAmount,
-            reference: reference
-        });
+        console.log('📤 Calling MegaPay API...');
 
         // ─── CALL MEGAPAY API ──────────────────────────────
         const megaPayResponse = await fetch(MEGAPAY_API_URL, {
@@ -131,42 +116,30 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
             body: JSON.stringify(megaPayPayload)
         });
 
-        const megaPayResult = await megaPayResponse.json();
+        const responseText = await megaPayResponse.text();
+        console.log('📥 MegaPay Raw Response:', responseText);
 
-        console.log('📥 MegaPay Response:', megaPayResult);
+        let megaPayResult;
+        try {
+            megaPayResult = JSON.parse(responseText);
+        } catch (e) {
+            console.log('❌ Failed to parse MegaPay response:', e.message);
+            return res.status(500).json({
+                success: false,
+                error: 'Invalid response from payment gateway',
+                raw: responseText
+            });
+        }
+
+        console.log('📥 MegaPay Parsed:', JSON.stringify(megaPayResult, null, 2));
 
         // Check if STK Push was successful
         const isSuccess = megaPayResult.status === 'success' || 
                          megaPayResult.success === true ||
-                         megaPayResult.message?.toLowerCase().includes('sent');
-
-        // Update order with response
-        const updateData = {
-            status: 'pending',
-            payment_method: 'mpesa',
-            payment_reference: reference,
-            payment_verified: false,
-            stk_push_response: megaPayResult,
-            metadata: {
-                ...(req.body.metadata || {}),
-                transaction_reference: reference,
-                mega_pay_request: megaPayPayload,
-                mega_pay_response: megaPayResult,
-                phone: formattedPhone,
-                customer_name: customer_name || null,
-                customer_email: customer_email || null,
-                resource_ids: resource_ids || [],
-                initiated_at: new Date().toISOString()
-            },
-            updated_at: new Date().toISOString()
-        };
-
-        await supabase
-            .from('orders')
-            .update(updateData)
-            .eq('id', order_id);
+                         (megaPayResult.message && megaPayResult.message.toLowerCase().includes('sent'));
 
         if (isSuccess) {
+            console.log('✅ STK Push sent successfully!');
             return res.status(200).json({
                 success: true,
                 message: 'STK Push sent successfully',
@@ -175,19 +148,12 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
                     order_id: order_id,
                     check_interval: 3,
                     status: 'pending',
-                    phone: formattedPhone
+                    phone: formattedPhone,
+                    mega_pay_response: megaPayResult
                 }
             });
         } else {
-            // Update order as failed
-            await supabase
-                .from('orders')
-                .update({ 
-                    status: 'failed',
-                    payment_status: 'failed'
-                })
-                .eq('id', order_id);
-
+            console.log('❌ STK Push failed:', megaPayResult);
             return res.status(400).json({
                 success: false,
                 error: megaPayResult.message || megaPayResult.error || 'Failed to send STK Push',
@@ -204,201 +170,37 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
     }
 });
 
-// ─── M-PESA CALLBACK ──────────────────────────────────────────
-app.post('/api/mpesa/callback', async (req, res) => {
-    try {
-        console.log('📥 M-Pesa Callback Received:');
-        console.log(JSON.stringify(req.body, null, 2));
-
-        const {
-            reference,
-            status,
-            transaction_id,
-            amount,
-            phone,
-            result_code,
-            result_description
-        } = req.body;
-
-        // Find order by reference
-        const { data: order, error: orderError } = await supabase
-            .from('orders')
-            .select('*')
-            .eq('payment_reference', reference)
-            .single();
-
-        if (orderError || !order) {
-            console.error('❌ Order not found for reference:', reference);
-            return res.status(404).json({
-                success: false,
-                error: 'Order not found'
-            });
-        }
-
-        // Determine payment status
-        let orderStatus = 'failed';
-        let paymentVerified = false;
-
-        if (status === 'completed' || status === 'success' || result_code === '0' || result_code === 0) {
-            orderStatus = 'paid';
-            paymentVerified = true;
-        } else if (status === 'pending' || status === 'processing') {
-            orderStatus = 'pending';
-        } else {
-            orderStatus = 'failed';
-        }
-
-        // Update order
-        const updateData = {
-            status: orderStatus,
-            payment_status: orderStatus,
-            payment_verified: paymentVerified,
-            payment_verified_at: paymentVerified ? new Date().toISOString() : null,
-            mpesa_transaction_id: transaction_id,
-            mpesa_receipt: transaction_id,
-            mpesa_code: transaction_id,
-            stk_push_verified: paymentVerified,
-            amount: amount || order.amount,
-            metadata: {
-                ...order.metadata,
-                callback_data: {
-                    reference,
-                    status,
-                    transaction_id,
-                    amount,
-                    phone,
-                    result_code,
-                    result_description,
-                    received_at: new Date().toISOString()
-                }
-            },
-            updated_at: new Date().toISOString()
-        };
-
-        const { error: updateError } = await supabase
-            .from('orders')
-            .update(updateData)
-            .eq('id', order.id);
-
-        if (updateError) {
-            console.error('❌ Update error:', updateError);
-            return res.status(500).json({
-                success: false,
-                error: 'Failed to update order'
-            });
-        }
-
-        // Grant access if payment verified
-        if (paymentVerified && order.resource_ids && order.resource_ids.length > 0) {
-            await grantResourceAccess(order.id, order.resource_ids);
-        }
-
-        console.log(`✅ Payment processed: ${reference} -> ${orderStatus}`);
-
-        return res.status(200).json({
-            success: true,
-            message: 'Callback processed',
-            order_id: order.id,
-            status: orderStatus
-        });
-
-    } catch (error) {
-        console.error('❌ Callback error:', error);
-        return res.status(500).json({
-            success: false,
-            error: 'Internal server error'
-        });
-    }
-});
-
-// ─── GRANT RESOURCE ACCESS ────────────────────────────────────
-async function grantResourceAccess(orderId, resourceIds) {
-    try {
-        for (let i = 0; i < resourceIds.length; i++) {
-            const resourceId = resourceIds[i];
-            
-            const { data: resource } = await supabase
-                .from('resources')
-                .select('download_count')
-                .eq('id', resourceId)
-                .single();
-
-            const currentCount = resource?.download_count || 0;
-
-            await supabase
-                .from('resources')
-                .update({
-                    download_count: currentCount + 1,
-                    updated_at: new Date().toISOString()
-                })
-                .eq('id', resourceId);
-
-            console.log(`✅ Updated download count for resource ${resourceId}`);
-        }
-        return true;
-    } catch (error) {
-        console.error('❌ Grant access error:', error);
-        return false;
-    }
-}
-
-// ─── CHECK ORDER STATUS ──────────────────────────────────────
-app.get('/api/mpesa/status/:orderId', async (req, res) => {
-    try {
-        const { orderId } = req.params;
-
-        const { data: order, error } = await supabase
-            .from('orders')
-            .select('status, payment_verified, payment_reference, amount, payment_status, stk_push_verified')
-            .eq('id', orderId)
-            .single();
-
-        if (error || !order) {
-            return res.status(404).json({
-                success: false,
-                error: 'Order not found'
-            });
-        }
-
-        return res.status(200).json({
-            success: true,
-            data: {
-                status: order.status,
-                payment_verified: order.payment_verified || order.stk_push_verified || false,
-                payment_reference: order.payment_reference,
-                amount: order.amount,
-                payment_status: order.payment_status
-            }
-        });
-
-    } catch (error) {
-        console.error('❌ Status check error:', error);
-        return res.status(500).json({
-            success: false,
-            error: 'Internal server error'
-        });
-    }
-});
-
 // ─── HEALTH CHECK ─────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
+    console.log('✅ Health check called');
     res.status(200).json({
         status: 'healthy',
         timestamp: new Date().toISOString(),
         services: {
             megapay: 'configured',
-            supabase: 'configured',
             callback_url: MEGAPAY_CALLBACK_URL
         }
     });
 });
 
+// ─── ROOT ────────────────────────────────────────────────────
+app.get('/', (req, res) => {
+    res.status(200).json({
+        message: 'KenyaVault Payment Server is running!',
+        endpoints: {
+            stk_push: 'POST /api/mpesa/stk-push',
+            health: 'GET /api/health'
+        }
+    });
+});
+
 // ─── START SERVER ─────────────────────────────────────────────
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 KenyaVault Payment Server running on port ${PORT}`);
     console.log(`📍 Health: http://localhost:${PORT}/api/health`);
     console.log(`📞 MegaPay API: ${MEGAPAY_API_URL}`);
     console.log(`🔗 Callback URL: ${MEGAPAY_CALLBACK_URL}`);
+    console.log(`✅ Server is ready!`);
 });
 
 module.exports = app;
