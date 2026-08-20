@@ -2794,14 +2794,14 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
     (function() {
         'use strict';
 
-        // ─── CONFIG ──────────────────────────────────────────────
-        var SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
-        var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
-        // ─── UPDATED: Use Render backend URL ────────────────────
-        var BACKEND_URL = 'https://kenyavault.onrender.com';
-        var ITEMS_PER_PAGE = 20;
-        var POLL_INTERVAL = 3000;
-        var MAX_POLL_ATTEMPTS = 30;
+       // ─── CONFIG ──────────────────────────────────────────────
+    var SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
+    var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
+    // ─── CRITICAL: Use Render backend URL ──────────────────
+   var BACKEND_URL = 'https://kenyavault.onrender.com';
+   var ITEMS_PER_PAGE = 20;
+  var POLL_INTERVAL = 3000;
+  var MAX_POLL_ATTEMPTS = 30;
 
         // ─── STATE ──────────────────────────────────────────────
         var allResources = [];
@@ -4164,187 +4164,193 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH STK PUSH IN-PAGE
             }
         }
 
-        // ─── UPDATED: DIRECT STK PUSH (NO NEW TAB) ──────────────
-        async function initiatePayment() {
-            if (isProcessing) return;
+       // ─── UPDATED: DIRECT STK PUSH (NO NEW TAB) ──────────────
+async function initiatePayment() {
+    if (isProcessing) return;
 
-            var phone = phoneInput.value.trim().replace(/\s/g, '');
-            var customerName = customerNameInput.value.trim();
-            var customerEmail = customerName.toLowerCase().replace(/\s/g, '') + '@kenyavault.co.ke';
+    var phone = phoneInput.value.trim().replace(/\s/g, '');
+    var customerName = customerNameInput.value.trim();
+    var customerEmail = customerName.toLowerCase().replace(/\s/g, '') + '@kenyavault.co.ke';
 
-            if (!customerName) {
-                customerNameInput.classList.add('error');
-                showToast('Error', 'Please enter your full name', 'error');
-                return;
-            }
-            customerNameInput.classList.remove('error');
+    if (!customerName) {
+        customerNameInput.classList.add('error');
+        showToast('Error', 'Please enter your full name', 'error');
+        return;
+    }
+    customerNameInput.classList.remove('error');
 
-            if (!phone || phone.length < 9) {
-                phoneInput.classList.add('error');
-                showToast('Error', 'Please enter a valid phone number', 'error');
-                return;
-            }
-            phoneInput.classList.remove('error');
+    if (!phone || phone.length < 9) {
+        phoneInput.classList.add('error');
+        showToast('Error', 'Please enter a valid phone number', 'error');
+        return;
+    }
+    phoneInput.classList.remove('error');
 
-            // Convert phone to MegaPay format (07XXXXXXXX)
-            var formattedPhone = phone;
-            if (phone.startsWith('254')) {
-                formattedPhone = '0' + phone.substring(3);
-            } else if (phone.startsWith('+254')) {
-                formattedPhone = '0' + phone.substring(4);
-            } else if (phone.startsWith('0') && phone.length === 10) {
-                formattedPhone = phone;
-            } else if (phone.length === 9 && phone.startsWith('7')) {
-                formattedPhone = '0' + phone;
-            }
+    // Convert phone to MegaPay format (07XXXXXXXX)
+    var formattedPhone = phone;
+    if (phone.startsWith('254')) {
+        formattedPhone = '0' + phone.substring(3);
+    } else if (phone.startsWith('+254')) {
+        formattedPhone = '0' + phone.substring(4);
+    } else if (phone.startsWith('0') && phone.length === 10) {
+        formattedPhone = phone;
+    } else if (phone.length === 9 && phone.startsWith('7')) {
+        formattedPhone = '0' + phone;
+    }
 
-            if (!/^07[0-9]{8}$/.test(formattedPhone)) {
-                phoneInput.classList.add('error');
-                showToast('Error', 'Please enter a valid Safaricom phone number (e.g., 0712345678)', 'error');
-                return;
-            }
+    if (!/^07[0-9]{8}$/.test(formattedPhone)) {
+        phoneInput.classList.add('error');
+        showToast('Error', 'Please enter a valid Safaricom phone number (e.g., 0712345678)', 'error');
+        return;
+    }
 
-            var isFreeCheckout = false;
-            if (checkoutMode === 'single' && currentProduct) {
-                var pricing = getResourcePricing(currentProduct);
-                isFreeCheckout = pricing.isFree;
-            } else if (checkoutMode === 'cart') {
-                isFreeCheckout = checkoutExpectedTotal === 0;
-            }
+    var isFreeCheckout = false;
+    if (checkoutMode === 'single' && currentProduct) {
+        var pricing = getResourcePricing(currentProduct);
+        isFreeCheckout = pricing.isFree;
+    } else if (checkoutMode === 'cart') {
+        isFreeCheckout = checkoutExpectedTotal === 0;
+    }
 
-            // ─── FREE RESOURCE ──────────────────────────────────
-            if (isFreeCheckout) {
-                try {
-                    var freeResult;
-                    if (checkoutMode === 'single') {
-                        freeResult = await createSingleOrder(currentProduct, customerName, formattedPhone);
-                    } else {
-                        freeResult = await createCartOrder(checkoutCartItems, customerName, formattedPhone);
-                    }
-
-                    currentOrderRef = freeResult.orderRef;
-                    currentOrderId = freeResult.orderId;
-                    isPaymentVerified = true;
-
-                    try {
-                        var orderFetch = await fetch(SUPABASE_URL + '/rest/v1/orders?id=eq.' + freeResult.orderId +
-                            '&select=*', {
-                                headers: {
-                                    'apikey': SUPABASE_ANON_KEY,
-                                    'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
-                                }
-                            });
-                        if (orderFetch.ok) {
-                            var orderData = await orderFetch.json();
-                            if (orderData && orderData.length > 0) {
-                                showStkStatus('✅ Downloading your free resource...', 'success');
-                                await downloadOrderFiles(orderData[0]);
-                            }
-                        }
-                    } catch (downloadError) {
-                        console.warn('Download error:', downloadError);
-                    }
-
-                    showSuccessWithShare(freeResult.orderRef);
-                    if (checkoutMode === 'cart') clearCart();
-                    setTimeout(function() { closeCheckoutModal(); }, 3000);
-                    return;
-                } catch (error) {
-                    console.error('Free download error:', error);
-                    showToast('Error', 'Failed to process: ' + (error.message || 'Unknown error'), 'error');
-                    return;
-                }
+    // ─── FREE RESOURCE ──────────────────────────────────
+    if (isFreeCheckout) {
+        try {
+            var freeResult;
+            if (checkoutMode === 'single') {
+                freeResult = await createSingleOrder(currentProduct, customerName, formattedPhone);
+            } else {
+                freeResult = await createCartOrder(checkoutCartItems, customerName, formattedPhone);
             }
 
-            // ─── PAID RESOURCE - DIRECT STK PUSH ──────────────────
-            if (checkoutMode === 'single' && !currentProduct) return;
-            if (checkoutMode === 'cart' && checkoutCartItems.length === 0) return;
-
-            isProcessing = true;
-            payPrimaryBtn.disabled = true;
-            payPrimaryBtn.classList.add('loading');
-            payPrimaryBtn.innerHTML = '<span class="spinner"></span><span class="btn-text">Processing...</span>';
-            hideStkStatus();
+            currentOrderRef = freeResult.orderRef;
+            currentOrderId = freeResult.orderId;
+            isPaymentVerified = true;
 
             try {
-                var orderRef, orderId, totalAmount;
-
-                if (checkoutMode === 'cart') {
-                    var cartResult = await createCartOrder(checkoutCartItems, customerName, formattedPhone);
-                    orderRef = cartResult.orderRef;
-                    orderId = cartResult.orderId;
-                    totalAmount = checkoutExpectedTotal;
-                } else {
-                    var singleResult = await createSingleOrder(currentProduct, customerName, formattedPhone);
-                    orderRef = singleResult.orderRef;
-                    orderId = singleResult.orderId;
-                    totalAmount = currentProduct.price || 0;
+                var orderFetch = await fetch(SUPABASE_URL + '/rest/v1/orders?id=eq.' + freeResult.orderId +
+                    '&select=*', {
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
+                        }
+                    });
+                if (orderFetch.ok) {
+                    var orderData = await orderFetch.json();
+                    if (orderData && orderData.length > 0) {
+                        showStkStatus('✅ Downloading your free resource...', 'success');
+                        await downloadOrderFiles(orderData[0]);
+                    }
                 }
-
-                currentOrderRef = orderRef;
-                currentOrderId = orderId;
-                checkoutExpectedTotal = totalAmount;
-
-                // ─── CALL BACKEND TO SEND STK PUSH ────────────────
-                showStkStatus(
-                    '<span class="spinner"></span> Sending STK Push to your phone...',
-                    'pending'
-                );
-
-                // ─── USING THE CORRECT BACKEND URL ──────────────
-                var response = await fetch(BACKEND_URL + '/api/mpesa/stk-push', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        phone: formattedPhone,  // 07XXXXXXXX format
-                        amount: totalAmount,
-                        order_id: orderId,
-                        customer_name: customerName,
-                        customer_email: customerEmail,
-                        resource_ids: checkoutMode === 'cart' ? checkoutCartItems.map(function(i) { return i.id; }) : [currentProduct.id]
-                    })
-                });
-
-                var result = await response.json();
-
-                if (!result.success) {
-                    throw new Error(result.error || 'Failed to send STK Push');
-                }
-
-                // STK Push sent successfully!
-                showStkStatus(
-                    '📱 STK Push sent! Check your phone for the M-Pesa PIN prompt.',
-                    'pending'
-                );
-
-                payPrimaryBtn.style.display = 'none';
-                verifyOrderBtn.style.display = 'block';
-                verifyOrderBtn.textContent = '🔓 Verify Payment';
-                verifyOrderBtn.disabled = false;
-                verifyOrderBtn.onclick = function() { checkOrderPaymentStatus(); };
-
-                // Start polling for payment confirmation
-                startPaymentPolling();
-
-                // Also check for callback via URL params
-                setTimeout(function() {
-                    checkPaymentCallback();
-                }, 5000);
-
-            } catch (error) {
-                console.error('Payment initiation failed:', error);
-                showStkStatus('❌ ' + (error.message || 'Payment initiation failed'), 'error');
-                showToast('Error', 'Payment initiation failed: ' + (error.message || 'Unknown error'), 'error');
-            } finally {
-                isProcessing = false;
-                payPrimaryBtn.disabled = false;
-                payPrimaryBtn.classList.remove('loading');
-                payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Pay with M-PESA</span>';
+            } catch (downloadError) {
+                console.warn('Download error:', downloadError);
             }
+
+            showSuccessWithShare(freeResult.orderRef);
+            if (checkoutMode === 'cart') clearCart();
+            setTimeout(function() { closeCheckoutModal(); }, 3000);
+            return;
+        } catch (error) {
+            console.error('Free download error:', error);
+            showToast('Error', 'Failed to process: ' + (error.message || 'Unknown error'), 'error');
+            return;
+        }
+    }
+
+    // ─── PAID RESOURCE - DIRECT STK PUSH ──────────────────
+    if (checkoutMode === 'single' && !currentProduct) return;
+    if (checkoutMode === 'cart' && checkoutCartItems.length === 0) return;
+
+    isProcessing = true;
+    payPrimaryBtn.disabled = true;
+    payPrimaryBtn.classList.add('loading');
+    payPrimaryBtn.innerHTML = '<span class="spinner"></span><span class="btn-text">Processing...</span>';
+    hideStkStatus();
+
+    try {
+        var orderRef, orderId, totalAmount;
+
+        // Create order first
+        if (checkoutMode === 'cart') {
+            var cartResult = await createCartOrder(checkoutCartItems, customerName, formattedPhone);
+            orderRef = cartResult.orderRef;
+            orderId = cartResult.orderId;
+            totalAmount = checkoutExpectedTotal;
+        } else {
+            var singleResult = await createSingleOrder(currentProduct, customerName, formattedPhone);
+            orderRef = singleResult.orderRef;
+            orderId = singleResult.orderId;
+            totalAmount = currentProduct.price || 0;
         }
 
+        currentOrderRef = orderRef;
+        currentOrderId = orderId;
+        checkoutExpectedTotal = totalAmount;
+
+        // ─── CALL BACKEND TO SEND STK PUSH ────────────────
+        showStkStatus(
+            '<span class="spinner"></span> Sending STK Push to your phone...',
+            'pending'
+        );
+
+        // ─── USING THE CORRECT BACKEND URL ──────────────
+        var response = await fetch(BACKEND_URL + '/api/mpesa/stk-push', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                phone: formattedPhone,  // 07XXXXXXXX format
+                amount: totalAmount,
+                order_id: orderId,
+                customer_name: customerName,
+                customer_email: customerEmail,
+                resource_ids: checkoutMode === 'cart' ? checkoutCartItems.map(function(i) { return i.id; }) : [currentProduct.id]
+            })
+        });
+
+        // Check if response is OK
+        if (!response.ok) {
+            var errorText = await response.text();
+            throw new Error('Server error: ' + response.status + ' - ' + errorText);
+        }
+
+        var result = await response.json();
+
+        if (!result.success) {
+            throw new Error(result.error || 'Failed to send STK Push');
+        }
+
+        // STK Push sent successfully!
+        showStkStatus(
+            '📱 STK Push sent! Check your phone for the M-Pesa PIN prompt.',
+            'pending'
+        );
+
+        payPrimaryBtn.style.display = 'none';
+        verifyOrderBtn.style.display = 'block';
+        verifyOrderBtn.textContent = '🔓 Verify Payment';
+        verifyOrderBtn.disabled = false;
+        verifyOrderBtn.onclick = function() { checkOrderPaymentStatus(); };
+
+        // Start polling for payment confirmation
+        startPaymentPolling();
+
+        // Also check for callback via URL params
+        setTimeout(function() {
+            checkPaymentCallback();
+        }, 5000);
+
+    } catch (error) {
+        console.error('Payment initiation failed:', error);
+        showStkStatus('❌ ' + (error.message || 'Payment initiation failed'), 'error');
+        showToast('Error', 'Payment initiation failed: ' + (error.message || 'Unknown error'), 'error');
+    } finally {
+        isProcessing = false;
+        payPrimaryBtn.disabled = false;
+        payPrimaryBtn.classList.remove('loading');
+        payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Pay with M-PESA</span>';
+    }
+}
         function checkPaymentCallback() {
             var params = new URLSearchParams(window.location.search);
             var status = params.get('status');
