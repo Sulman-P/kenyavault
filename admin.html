@@ -3073,7 +3073,53 @@
             updatePaymentChart();
             updateSalesChart();
         }
+                       // In admin.html - Batch update function
+            async function batchConfirmOrders() {
+      // Get all pending orders with M-PESA codes
+       var pendingWithMpesa = ordersData.filter(function(o) {
+        var status = getPaymentStatus(o);
+         var hasMpesa = o.mpesa_code || o.transaction_code || o.mpesa_receipt || o.payment_reference || '';
+        return status === 'pending' && hasMpesa.length > 0;
+     });
+    
+     if (pendingWithMpesa.length === 0) {
+        showToast('Info', 'No pending orders with M-PESA codes found');
+        return;
+    }
+    
+    if (!confirm(`Found ${pendingWithMpesa.length} pending orders with M-PESA codes. Confirm all?`)) return;
+    
+    var success = 0;
+    var failed = 0;
+    
+    for (var i = 0; i < pendingWithMpesa.length; i++) {
+        var order = pendingWithMpesa[i];
+        try {
+            await supabase
+                .from('orders')
+                .update({
+                    status: 'paid',
+                    payment_status: 'paid',
+                    payment_confirmed: true,
+                    payment_verified: true,
+                    confirmed_at: new Date().toISOString(),
+                    paid_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', order.id);
+            success++;
+           } catch (e) {
+            failed++;
+            console.error('Failed to update order:', order.id, e);
+        }
+    }
+    
+    showToast('Batch Update Complete', `${success} confirmed, ${failed} failed`);
+    await loadOrders();
+    }
 
+// Add a button in the admin interface
+// <button class="btn-gold" onclick="batchConfirmOrders()">✅ Confirm All Pending with M-PESA</button>
         // ============================================================
         // 13. DASHBOARD
         // ============================================================
