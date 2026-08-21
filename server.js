@@ -286,10 +286,9 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
     }
 });
 
-// ─── MEGAPAY CALLBACK / WEBHOOK ──────────────────────────────────
+// ─── MEGAPAY CALLBACK / WEBHOOK (SIMPLIFIED) ──────────────────
 app.post('/api/mpesa/callback', async (req, res) => {
     console.log('📥 MegaPay Callback received!');
-    console.log('📥 Headers:', JSON.stringify(req.headers, null, 2));
     console.log('📥 Body:', JSON.stringify(req.body, null, 2));
 
     try {
@@ -301,71 +300,82 @@ app.post('/api/mpesa/callback', async (req, res) => {
         console.log(`🔍 MegaPay sent reference: ${reference}`);
         
         if (!reference) {
-            console.warn('⚠️ No reference found in callback');
             return res.status(200).json({ 
                 success: true, 
                 message: 'No reference found - acknowledged' 
             });
         }
         
-        // ─── SEARCH FOR ORDER ──────────────────────────────────
+        // ─── SEARCH FOR ORDER - SEARCH ALL FIELDS ──────────────
         let order = null;
         
-        // Try ALL possible reference fields
-        const searchFields = [
-            { field: 'provider_reference', label: 'provider_reference' },
-            { field: 'payment_reference', label: 'payment_reference' },
-            { field: 'order_ref', label: 'order_ref' },
-            { field: 'transaction_reference', label: 'transaction_reference' }
+        // Try each field individually with explicit logging
+        const fieldsToTry = [
+            { field: 'provider_reference', value: reference },
+            { field: 'payment_reference', value: reference },
+            { field: 'order_ref', value: reference },
+            { field: 'transaction_reference', value: reference }
         ];
         
-        for (const search of searchFields) {
-            if (order) break;
+        for (const search of fieldsToTry) {
+            console.log(`🔍 Trying to find order by ${search.field}: ${search.value}`);
             
             const { data: found, error } = await supabase
                 .from('orders')
                 .select('*')
-                .eq(search.field, reference)
+                .eq(search.field, search.value)
                 .maybeSingle();
+            
+            if (error) {
+                console.log(`❌ Error searching by ${search.field}:`, error.message);
+            }
             
             if (found) {
                 order = found;
-                console.log(`✅ Found order by ${search.label}: ${order.order_ref}`);
+                console.log(`✅ Found order by ${search.field}: ${order.order_ref}`);
                 break;
             }
         }
         
-        // If still not found, try to find by partial match (KV-XXXXXXXX-XXXX)
-        if (!order && reference.startsWith('KV-')) {
-            const { data: partialMatch, error } = await supabase
+        // ─── IF STILL NOT FOUND, DO A WILDCARD SEARCH ──────────
+        if (!order) {
+            console.log(`🔍 Trying wildcard search for: ${reference}`);
+            
+            const { data: wildcardResults, error: wildcardError } = await supabase
                 .from('orders')
                 .select('*')
-                .like('payment_reference', `%${reference}%`)
-                .maybeSingle();
+                .or(`payment_reference.ilike.%${reference}%,provider_reference.ilike.%${reference}%,order_ref.ilike.%${reference}%`)
+                .limit(1);
             
-            if (partialMatch) {
-                order = partialMatch;
-                console.log(`✅ Found order by partial match: ${order.order_ref}`);
+            if (wildcardError) {
+                console.log('❌ Wildcard search error:', wildcardError.message);
+            }
+            
+            if (wildcardResults && wildcardResults.length > 0) {
+                order = wildcardResults[0];
+                console.log(`✅ Found order by wildcard search: ${order.order_ref}`);
             }
         }
         
         if (!order) {
-            console.log(`❌ Order not found for reference: ${reference}`);
+            console.log(`❌ Order NOT found for reference: ${reference}`);
             
-            // Log recent orders for debugging
-            const { data: recentOrders, error: recentError } = await supabase
+            // Log all pending orders for debugging
+            const { data: allPending, error: pendingError } = await supabase
                 .from('orders')
-                .select('order_ref, payment_reference, provider_reference, status, created_at')
+                .select('order_ref, payment_reference, provider_reference, status')
                 .eq('status', 'pending')
-                .order('created_at', { ascending: false })
-                .limit(5);
+                .limit(10);
             
-            console.log('📋 Recent pending orders:', recentOrders);
+            console.log('📋 All pending orders:', JSON.stringify(allPending, null, 2));
             
             return res.status(200).json({ 
                 success: true, 
                 message: 'Order not found but acknowledged',
-                reference: reference 
+                reference: reference,
+                debug: {
+                    pendingOrders: allPending?.length || 0
+                }
             });
         }
         
