@@ -1,20 +1,21 @@
 // ============================================================
-// KENYA VAULT - PAYMENT SERVER (SIMPLIFIED & ROBUST)
+// KENYA VAULT - PAYMENT SERVER (WITH SERVICE ROLE KEY)
 // ============================================================
 
 const express = require('express');
 const cors = require('cors');
-const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ─── SUPABASE CONFIG ──────────────────────────────────────────
+// ─── SUPABASE CONFIG (USING SERVICE ROLE KEY) ──────────────────
 const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
-const SUPABASE_SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MTc0OTM5OSwiZXhwIjoyMDk3MzI1Mzk5fQ.X2Rz5vLgv0Z-sPR7WqWj_yXItwxrX_JLtJAb4S2r8jE';
+const SUPABASE_SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MTc0OTM5OSwiZXhwIjoyMDk3MzI1Mzk5fQ.qkL7O1o1dhf9jCFuIQIUyJWFUBaq404ePWU0X4I5p1k';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+console.log('✅ Supabase initialized with Service Role Key');
 
 // ─── CORS ──────────────────────────────────────────────────────
 app.use(cors({
@@ -109,7 +110,6 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
     try {
         const { phone, amount, order_id, order_ref, customer_name, customer_email } = req.body;
 
-        // Validate
         if (!phone || !amount || !order_id) {
             return res.status(400).json({
                 success: false,
@@ -133,9 +133,8 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
             });
         }
 
-        // ─── GENERATE REFERENCES ──────────────────────────────────
-        const kvReference = generateTransactionReference(); // KV-XXXXXXXX-XXXX
-        const orderRef = order_ref || generateOrderRef(); // ORD-20260821-XXXXX
+        const kvReference = generateTransactionReference();
+        const orderRef = order_ref || generateOrderRef();
 
         logPaymentEvent('STK_INITIATED', { 
             phone: formattedPhone, 
@@ -146,32 +145,13 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
         });
 
         // ─── UPDATE ORDER WITH REFERENCE ──────────────────────────
-        // Only update fields that exist in the table
         const updateData = {
             order_ref: orderRef,
             payment_reference: kvReference,
+            provider_reference: kvReference,
             payment_status: 'pending',
             updated_at: new Date().toISOString()
         };
-
-        // Try to add provider_reference if the column exists
-        try {
-            // Check if column exists by trying a simple query
-            const { data: columnCheck, error: checkError } = await supabase
-                .from('orders')
-                .select('provider_reference')
-                .limit(1);
-            
-            if (!checkError) {
-                // Column exists, add it to update
-                updateData.provider_reference = kvReference;
-                console.log('✅ provider_reference column exists, updating it');
-            } else {
-                console.log('ℹ️ provider_reference column does not exist, skipping');
-            }
-        } catch (e) {
-            console.log('ℹ️ provider_reference column check failed, skipping');
-        }
 
         console.log('📝 Updating order with:', updateData);
 
@@ -227,7 +207,6 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
             });
         }
 
-        // ─── CHECK MEGAPAY RESPONSE ──────────────────────────────
         const isSuccess = megaPayResult.ResultCode === '0' || 
                          megaPayResult.ResultCode === 0 ||
                          megaPayResult.ResultCode === '00' ||
@@ -282,31 +261,24 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
     }
 });
 
-// ─── MEGAPAY CALLBACK / WEBHOOK ──────────────────────────────────
+// ─── MEGAPAY CALLBACK ──────────────────────────────────────────────
 app.post('/api/mpesa/callback', async (req, res) => {
     console.log('📥 MegaPay Callback received!');
     console.log('📥 Body:', JSON.stringify(req.body, null, 2));
 
     try {
         const data = req.body;
-        
-        // ─── EXTRACT REFERENCE ──────────────────────────────────
         let reference = data.reference || data.Reference || data.order_ref || data.payment_reference || data.checkout_request_id;
         
         console.log(`🔍 MegaPay sent reference: ${reference}`);
         
         if (!reference) {
-            return res.status(200).json({ 
-                success: true, 
-                message: 'No reference found - acknowledged' 
-            });
+            return res.status(200).json({ success: true, message: 'No reference found' });
         }
         
         // ─── SEARCH FOR ORDER ──────────────────────────────────
         let order = null;
-        let searchMethod = 'none';
         
-        // 1. Try payment_reference
         const { data: orderByPayment, error: error1 } = await supabase
             .from('orders')
             .select('*')
@@ -315,13 +287,24 @@ app.post('/api/mpesa/callback', async (req, res) => {
         
         if (orderByPayment) {
             order = orderByPayment;
-            searchMethod = 'payment_reference';
             console.log(`✅ Found order by payment_reference: ${order.order_ref}`);
         }
         
-        // 2. Try order_ref
         if (!order) {
-            const { data: orderByOrderRef, error: error2 } = await supabase
+            const { data: orderByProvider, error: error2 } = await supabase
+                .from('orders')
+                .select('*')
+                .eq('provider_reference', reference)
+                .maybeSingle();
+            
+            if (orderByProvider) {
+                order = orderByProvider;
+                console.log(`✅ Found order by provider_reference: ${order.order_ref}`);
+            }
+        }
+        
+        if (!order) {
+            const { data: orderByOrderRef, error: error3 } = await supabase
                 .from('orders')
                 .select('*')
                 .eq('order_ref', reference)
@@ -329,42 +312,7 @@ app.post('/api/mpesa/callback', async (req, res) => {
             
             if (orderByOrderRef) {
                 order = orderByOrderRef;
-                searchMethod = 'order_ref';
                 console.log(`✅ Found order by order_ref: ${order.order_ref}`);
-            }
-        }
-        
-        // 3. Try provider_reference (if column exists)
-        if (!order) {
-            try {
-                const { data: orderByProvider, error: error3 } = await supabase
-                    .from('orders')
-                    .select('*')
-                    .eq('provider_reference', reference)
-                    .maybeSingle();
-                
-                if (orderByProvider) {
-                    order = orderByProvider;
-                    searchMethod = 'provider_reference';
-                    console.log(`✅ Found order by provider_reference: ${order.order_ref}`);
-                }
-            } catch (e) {
-                console.log('ℹ️ provider_reference column not available');
-            }
-        }
-        
-        // 4. Try wildcard search
-        if (!order) {
-            const { data: wildcardResults, error: wildcardError } = await supabase
-                .from('orders')
-                .select('*')
-                .or(`payment_reference.ilike.%${reference}%,order_ref.ilike.%${reference}%`)
-                .limit(1);
-            
-            if (wildcardResults && wildcardResults.length > 0) {
-                order = wildcardResults[0];
-                searchMethod = 'wildcard';
-                console.log(`✅ Found order by wildcard search: ${order.order_ref}`);
             }
         }
         
@@ -376,8 +324,6 @@ app.post('/api/mpesa/callback', async (req, res) => {
                 reference: reference 
             });
         }
-        
-        console.log(`📊 Found order: ${order.order_ref} (${searchMethod})`);
         
         // ─── CHECK IF ALREADY PROCESSED ──────────────────────────
         if (order.payment_status === 'paid' || order.payment_confirmed === true) {
@@ -405,7 +351,6 @@ app.post('/api/mpesa/callback', async (req, res) => {
             const transactionId = data.TransactionID || data.transaction_id || data.TransactionId || 'N/A';
             const amountPaid = data.Amount || data.amount || order.total_amount || 0;
             
-            // ─── UPDATE ORDER TO PAID ──────────────────────────────
             const updateData = {
                 status: 'paid',
                 payment_status: 'paid',
@@ -420,22 +365,6 @@ app.post('/api/mpesa/callback', async (req, res) => {
                 updated_at: new Date().toISOString(),
                 callback_received_at: new Date().toISOString()
             };
-
-            // Try to add provider fields if they exist
-            try {
-                const { data: columnCheck } = await supabase
-                    .from('orders')
-                    .select('provider_reference')
-                    .limit(1);
-                
-                if (!columnCheck || columnCheck.length >= 0) {
-                    // Column exists, add it
-                    updateData.provider_transaction_id = transactionId;
-                    updateData.provider_reference = reference;
-                }
-            } catch (e) {
-                console.log('ℹ️ Provider columns not available, skipping');
-            }
 
             const { error: updateError } = await supabase
                 .from('orders')
@@ -452,7 +381,6 @@ app.post('/api/mpesa/callback', async (req, res) => {
 
             console.log(`✅ Order ${order.order_ref} marked as PAID`);
 
-            // ─── FULFILL PURCHASE ──────────────────────────────
             try {
                 await fulfillPurchase(order.id);
             } catch (fulfillError) {
@@ -468,7 +396,6 @@ app.post('/api/mpesa/callback', async (req, res) => {
             });
 
         } else {
-            // ─── PAYMENT FAILED ──────────────────────────────────
             const failureReason = data.ResultDesc || data.errorMessage || 'Payment failed';
 
             await supabase
@@ -477,7 +404,6 @@ app.post('/api/mpesa/callback', async (req, res) => {
                     status: 'failed',
                     payment_status: 'failed',
                     failure_reason: failureReason,
-                    payment_error: failureReason,
                     updated_at: new Date().toISOString(),
                     callback_received_at: new Date().toISOString()
                 })
@@ -520,14 +446,14 @@ app.get('/api/mpesa/verify/:reference', async (req, res) => {
         if (orderByRef) {
             order = orderByRef;
         } else {
-            const { data: orderByOrderRef, error: orderError } = await supabase
+            const { data: orderByProvider, error: providerError } = await supabase
                 .from('orders')
                 .select('*')
-                .eq('order_ref', reference)
+                .eq('provider_reference', reference)
                 .maybeSingle();
             
-            if (orderByOrderRef) {
-                order = orderByOrderRef;
+            if (orderByProvider) {
+                order = orderByProvider;
             }
         }
 
@@ -550,6 +476,7 @@ app.get('/api/mpesa/verify/:reference', async (req, res) => {
                 payment_confirmed: order.payment_confirmed,
                 payment_verified: order.payment_verified,
                 payment_reference: order.payment_reference,
+                provider_reference: order.provider_reference,
                 isPaid: isPaid,
                 order_ref: order.order_ref
             }
@@ -596,6 +523,7 @@ app.get('/api/mpesa/status/:orderId', async (req, res) => {
                 payment_confirmed: order.payment_confirmed,
                 payment_verified: order.payment_verified,
                 payment_reference: order.payment_reference,
+                provider_reference: order.provider_reference,
                 isPaid: isPaid,
                 order_ref: order.order_ref,
                 mpesa_code: order.mpesa_code
@@ -644,6 +572,7 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`📞 MegaPay API: ${MEGAPAY_API_URL}`);
     console.log(`🔗 Callback URL: ${MEGAPAY_CALLBACK_URL}`);
     console.log(`✅ Server is ready!`);
+    console.log(`🔑 Using Service Role Key for Supabase`);
 });
 
 module.exports = app;
