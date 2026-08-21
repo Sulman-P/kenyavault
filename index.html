@@ -4125,209 +4125,182 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH FIXED PAYMENT
             }
         }
 
-        // ─── FIXED: checkOrderPaymentStatus with multiple confirmation methods ──
-        async function checkOrderPaymentStatus() {
-            if (!currentOrderRef && !currentOrderId) {
-                console.warn('No order ID or reference to check');
-                return;
-            }
+        // ─── FIXED: checkOrderPaymentStatus with server verification ──
+async function checkOrderPaymentStatus() {
+    if (!currentOrderRef && !currentOrderId) {
+        console.warn('No order ID or reference to check');
+        return;
+    }
 
+    try {
+        // First check Supabase directly
+        var query = SUPABASE_URL + '/rest/v1/orders?select=*';
+        if (currentOrderRef) {
+            query += '&order_ref=eq.' + currentOrderRef;
+        } else if (currentOrderId) {
+            query += '&id=eq.' + currentOrderId;
+        }
+
+        var response = await fetch(query, {
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            console.warn('Order fetch failed:', response.status);
+            return;
+        }
+
+        var orders = await response.json();
+        if (orders.length === 0) {
+            console.warn('Order not found');
+            return;
+        }
+
+        var order = orders[0];
+        console.log('📊 Order status check:', {
+            order_ref: order.order_ref,
+            status: order.status,
+            payment_status: order.payment_status,
+            payment_confirmed: order.payment_confirmed,
+            payment_verified: order.payment_verified,
+            mpesa_code: order.mpesa_code,
+            amount_paid: order.amount_paid,
+            total_amount: order.total_amount
+        });
+
+        // ─── CHECK MULTIPLE PAYMENT CONFIRMATION FIELDS ───
+        var isPaid = false;
+        var paymentMethod = '';
+
+        // 1. Check if payment_confirmed is true (admin confirmed)
+        if (order.payment_confirmed === true) {
+            isPaid = true;
+            paymentMethod = 'admin_confirmed';
+        }
+
+        // 2. Check if payment_verified is true
+        if (order.payment_verified === true || order.payment_verified === 'true') {
+            isPaid = true;
+            paymentMethod = 'verified';
+        }
+
+        // 3. Check status fields
+        if (order.status === 'paid' || order.status === 'completed' || order.status === 'success') {
+            isPaid = true;
+            paymentMethod = 'status';
+        }
+
+        if (order.payment_status === 'paid' || order.payment_status === 'completed' || order.payment_status === 'success') {
+            isPaid = true;
+            paymentMethod = 'payment_status';
+        }
+
+        // 4. Check if there's an M-PESA code AND amount matches
+        var mpesaCode = order.mpesa_code || order.mpesa_receipt || order.transaction_reference || order.payment_reference || '';
+        var amountPaid = Number(order.amount_paid || 0);
+        var totalAmount = Number(order.total_amount || 0);
+
+        if (mpesaCode.length > 0 && amountPaid >= totalAmount && totalAmount > 0) {
+            isPaid = true;
+            paymentMethod = 'mpesa_match';
+        }
+
+        // 5. Check if amount_paid matches total (auto-detection)
+        if (amountPaid >= totalAmount && totalAmount > 0 && !isPaid) {
+            isPaid = true;
+            paymentMethod = 'amount_match';
+        }
+
+        // ─── IF PAID, CONFIRM AND DOWNLOAD ───
+        if (isPaid) {
+            stopPaymentPolling();
+            isPaymentVerified = true;
+            currentOrderId = order.id;
+            currentOrderRef = order.order_ref;
+
+            // Show success
+            var mpesaDisplay = mpesaCode || '';
+            showStkStatus('✅ Payment confirmed! ' + (mpesaDisplay ? 'M-PESA: ' + mpesaDisplay : ''), 'success');
+
+            // Download the files
             try {
-                var query = SUPABASE_URL + '/rest/v1/orders?select=*';
-                if (currentOrderRef) {
-                    query += '&order_ref=eq.' + currentOrderRef;
-                } else if (currentOrderId) {
-                    query += '&id=eq.' + currentOrderId;
-                }
-
-                var response = await fetch(query, {
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
-                        'Content-Type': 'application/json'
-                    }
-                });
-
-                if (!response.ok) {
-                    console.warn('Order fetch failed:', response.status);
-                    return;
-                }
-
-                var orders = await response.json();
-                if (orders.length === 0) {
-                    console.warn('Order not found');
-                    return;
-                }
-
-                var order = orders[0];
-                console.log('📊 Order status check:', {
-                    order_ref: order.order_ref,
-                    status: order.status,
-                    payment_status: order.payment_status,
-                    payment_verified: order.payment_verified,
-                    payment_confirmed: order.payment_confirmed,
-                    mpesa_code: order.mpesa_code,
-                    amount_paid: order.amount_paid,
-                    total_amount: order.total_amount
-                });
-
-                // ─── CHECK MULTIPLE PAYMENT CONFIRMATION FIELDS ───
-                var isPaid = false;
-                var paymentMethod = '';
-
-                // 1. Check if payment_confirmed is true (admin confirmed)
-                if (order.payment_confirmed === true) {
-                    isPaid = true;
-                    paymentMethod = 'admin_confirmed';
-                }
-
-                // 2. Check if payment_verified is true
-                if (order.payment_verified === true || order.payment_verified === 'true') {
-                    isPaid = true;
-                    paymentMethod = 'verified';
-                }
-
-                // 3. Check status fields
-                if (order.status === 'paid' || order.status === 'completed' || order.status === 'success') {
-                    isPaid = true;
-                    paymentMethod = 'status';
-                }
-
-                if (order.payment_status === 'paid' || order.payment_status === 'completed' || order.payment_status === 'success') {
-                    isPaid = true;
-                    paymentMethod = 'payment_status';
-                }
-
-                // 4. Check if there's an M-PESA code AND amount matches
-                var mpesaCode = order.mpesa_code || order.mpesa_receipt || order.transaction_reference || order.payment_reference || '';
-                var amountPaid = Number(order.amount_paid || 0);
-                var totalAmount = Number(order.total_amount || 0);
-
-                if (mpesaCode.length > 0 && amountPaid >= totalAmount && totalAmount > 0) {
-                    isPaid = true;
-                    paymentMethod = 'mpesa_match';
-                }
-
-                // 5. Check if amount_paid matches total (auto-detection)
-                if (amountPaid >= totalAmount && totalAmount > 0 && !isPaid) {
-                    isPaid = true;
-                    paymentMethod = 'amount_match';
-                }
-
-                // ─── IF PAID, CONFIRM AND DOWNLOAD ───
-                if (isPaid) {
-                    stopPaymentPolling();
-                    isPaymentVerified = true;
-                    currentOrderId = order.id;
-                    currentOrderRef = order.order_ref;
-
-                    // Update order to confirmed if not already
-                    if (order.payment_confirmed !== true) {
-                        try {
-                            var updateResponse = await fetch(SUPABASE_URL + '/rest/v1/orders?id=eq.' + order.id, {
-                                method: 'PATCH',
-                                headers: {
-                                    'apikey': SUPABASE_ANON_KEY,
-                                    'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
-                                    'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify({
-                                    payment_confirmed: true,
-                                    payment_status: 'paid',
-                                    status: 'paid',
-                                    confirmed_at: new Date().toISOString(),
-                                    updated_at: new Date().toISOString()
-                                })
-                            });
-                            if (updateResponse.ok) {
-                                console.log('✅ Order confirmed in Supabase via: ' + paymentMethod);
-                            } else {
-                                console.warn('⚠️ Failed to update order:', await updateResponse.text());
-                            }
-                        } catch (updateError) {
-                            console.warn('Update error:', updateError);
-                        }
-                    }
-
-                    // Show success
-                    var mpesaDisplay = mpesaCode || '';
-                    showStkStatus('✅ Payment confirmed! ' + (mpesaDisplay ? 'M-PESA: ' + mpesaDisplay : ''), 'success');
-
-                    // Download the files
-                    try {
-                        await downloadOrderFiles(order);
-                    } catch (downloadError) {
-                        console.warn('Download error:', downloadError);
-                        showToast('Download', 'Payment confirmed but file download failed. Check your order.', 'warning');
-                    }
-
-                    // Show success modal
-                    showSuccessWithShare(order.order_ref);
-
-                    // Clear cart if cart checkout
-                    if (checkoutMode === 'cart') {
-                        clearCart();
-                    }
-
-                    // Close checkout after delay
-                    setTimeout(function() {
-                        hideStkStatus();
-                        closeCheckoutModal();
-                    }, 4000);
-
-                    return;
-                }
-
-                // ─── CHECK IF PAYMENT FAILED ───
-                if (order.status === 'failed' || order.payment_status === 'failed') {
-                    stopPaymentPolling();
-                    showStkStatus('❌ Payment failed. Please try again.', 'error');
-                    payPrimaryBtn.style.display = 'flex';
-                    verifyOrderBtn.style.display = 'block';
-                    payPrimaryBtn.disabled = false;
-                    payPrimaryBtn.innerHTML = '<span class="btn-text">🔄 Retry Payment</span>';
-                    return;
-                }
-
-                // ─── CHECK IF PENDING FOR TOO LONG ───
-                var createdAt = new Date(order.created_at);
-                var now = new Date();
-                var elapsedMinutes = (now - createdAt) / (1000 * 60);
-
-                if (elapsedMinutes > 5 && !isPaid) {
-                    stopPaymentPolling();
-                    showStkStatus('⏰ Payment timeout. Please check your order status or try again.', 'error');
-                    payPrimaryBtn.style.display = 'flex';
-                    verifyOrderBtn.style.display = 'block';
-                    payPrimaryBtn.disabled = false;
-                    payPrimaryBtn.innerHTML = '<span class="btn-text">🔄 Retry Payment</span>';
-                    return;
-                }
-
-                // ─── STILL PENDING - CONTINUE POLLING ───
-                paymentCheckAttempts++;
-                console.log('⏳ Still pending (attempt ' + paymentCheckAttempts + '/' + MAX_POLL_ATTEMPTS + ')');
-
-                if (paymentCheckAttempts % 3 === 0 || paymentCheckAttempts === 1) {
-                    showStkStatus(
-                        '<span class="spinner"></span> Waiting for payment confirmation... (Attempt ' + paymentCheckAttempts +
-                        '/' + MAX_POLL_ATTEMPTS + ')',
-                        'pending'
-                    );
-                }
-
-                if (paymentCheckAttempts >= MAX_POLL_ATTEMPTS) {
-                    stopPaymentPolling();
-                    showStkStatus('⏰ Payment verification timed out. Please check your M-PESA and try again.', 'error');
-                    payPrimaryBtn.style.display = 'flex';
-                    verifyOrderBtn.style.display = 'block';
-                    payPrimaryBtn.disabled = false;
-                    payPrimaryBtn.innerHTML = '<span class="btn-text">🔄 Retry Payment</span>';
-                }
-
-            } catch (error) {
-                console.error('Status check error:', error);
+                await downloadOrderFiles(order);
+            } catch (downloadError) {
+                console.warn('Download error:', downloadError);
+                showToast('Download', 'Payment confirmed but file download failed. Check your order.', 'warning');
             }
+
+            // Show success modal
+            showSuccessWithShare(order.order_ref);
+
+            // Clear cart if cart checkout
+            if (checkoutMode === 'cart') {
+                clearCart();
+            }
+
+            // Close checkout after delay
+            setTimeout(function() {
+                hideStkStatus();
+                closeCheckoutModal();
+            }, 4000);
+
+            return;
+        }
+
+        // ─── CHECK IF PAYMENT FAILED ───
+        if (order.status === 'failed' || order.payment_status === 'failed') {
+            stopPaymentPolling();
+            showStkStatus('❌ Payment failed. Please try again.', 'error');
+            payPrimaryBtn.style.display = 'flex';
+            verifyOrderBtn.style.display = 'block';
+            payPrimaryBtn.disabled = false;
+            payPrimaryBtn.innerHTML = '<span class="btn-text">🔄 Retry Payment</span>';
+            return;
+        }
+
+        // ─── CHECK IF PENDING FOR TOO LONG ───
+        var createdAt = new Date(order.created_at);
+        var now = new Date();
+        var elapsedMinutes = (now - createdAt) / (1000 * 60);
+
+        if (elapsedMinutes > 5 && !isPaid) {
+            stopPaymentPolling();
+            showStkStatus('⏰ Payment timeout. Please check your order status or try again.', 'error');
+            payPrimaryBtn.style.display = 'flex';
+            verifyOrderBtn.style.display = 'block';
+            payPrimaryBtn.disabled = false;
+            payPrimaryBtn.innerHTML = '<span class="btn-text">🔄 Retry Payment</span>';
+            return;
+        }
+
+        // ─── STILL PENDING - CONTINUE POLLING ───
+        paymentCheckAttempts++;
+        console.log('⏳ Still pending (attempt ' + paymentCheckAttempts + '/' + MAX_POLL_ATTEMPTS + ')');
+
+        if (paymentCheckAttempts % 3 === 0 || paymentCheckAttempts === 1) {
+            showStkStatus(
+                '<span class="spinner"></span> Waiting for payment confirmation... (Attempt ' + paymentCheckAttempts +
+                '/' + MAX_POLL_ATTEMPTS + ')',
+                'pending'
+            );
+        }
+
+        if (paymentCheckAttempts >= MAX_POLL_ATTEMPTS) {
+            stopPaymentPolling();
+            showStkStatus('⏰ Payment verification timed out. Please check your M-PESA and try again.', 'error');
+            payPrimaryBtn.style.display = 'flex';
+            verifyOrderBtn.style.display = 'block';
+            payPrimaryBtn.disabled = false;
+            payPrimaryBtn.innerHTML = '<span class="btn-text">🔄 Retry Payment</span>';
+        }
+
+          } catch (error) {
+            console.error('Status check error:', error);
+         }
         }
 
         // ─── FIXED: initiatePayment with proper order creation ──
