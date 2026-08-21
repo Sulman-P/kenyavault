@@ -944,7 +944,123 @@ app.get('/', (req, res) => {
         }
     });
 });
-
+// ─── DIAGNOSTIC: Test MegaPay STK Push Response ──────────────────
+app.post('/api/diagnose/stk-test', async (req, res) => {
+    console.log('🧪 Diagnostic: Testing MegaPay STK Push');
+    
+    try {
+        const { phone, amount } = req.body;
+        
+        const formattedPhone = phone || '0712345678';
+        const testAmount = amount || 1;
+        const testReference = 'DIAG-' + Date.now();
+        
+        const response = await fetch('https://megapay.co.ke/backend/v1/initiatestk', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({
+                api_key: 'MGPYDSg2lIYA',
+                email: 'adminnexalearn@gmail.com',
+                amount: testAmount.toString(),
+                msisdn: formattedPhone,
+                reference: testReference
+            })
+        });
+        
+        const responseText = await response.text();
+        console.log('📥 MegaPay Raw Response:', responseText);
+        
+        let result;
+        try {
+            result = JSON.parse(responseText);
+        } catch (e) {
+            result = { raw: responseText, parseError: e.message };
+        }
+        
+        // ─── LOG ALL FIELDS ──────────────────────────────────────
+        console.log('📊 MegaPay Response Fields:');
+        for (const key of Object.keys(result)) {
+            console.log(`  ${key}: ${result[key]}`);
+        }
+        
+        return res.status(200).json({
+            success: response.ok,
+            status: response.status,
+            response: result,
+            raw: responseText,
+            fieldNames: Object.keys(result)
+        });
+        
+    } catch (error) {
+        console.error('❌ Diagnostic error:', error);
+        return res.status(500).json({
+            error: error.message,
+            stack: error.stack
+        });
+    }
+});
+// ─── DIAGNOSTIC: Check Order Details ──────────────────────────────
+app.get('/api/diagnose/order/:orderRef', async (req, res) => {
+    try {
+        const { orderRef } = req.params;
+        
+        const { data: order, error } = await supabase
+            .from('orders')
+            .select('*')
+            .eq('order_ref', orderRef)
+            .single();
+        
+        if (error || !order) {
+            return res.status(404).json({ error: 'Order not found' });
+        }
+        
+        // Check if there's a transaction_request_id
+        const hasTransactionId = !!(order.transaction_request_id || order.checkout_request_id || order.mpesa_transaction_id);
+        
+        let statusResult = null;
+        if (order.transaction_request_id) {
+            try {
+                const response = await fetch('https://megapay.co.ke/backend/v1/transactionstatus', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        api_key: MEGAPAY_API_KEY,
+                        email: MEGAPAY_EMAIL,
+                        transaction_request_id: order.transaction_request_id
+                    })
+                });
+                statusResult = await response.json();
+            } catch (e) {
+                statusResult = { error: e.message };
+            }
+        }
+        
+        return res.status(200).json({
+            order: {
+                id: order.id,
+                order_ref: order.order_ref,
+                status: order.status,
+                payment_status: order.payment_status,
+                payment_reference: order.payment_reference,
+                provider_reference: order.provider_reference,
+                transaction_request_id: order.transaction_request_id,
+                checkout_request_id: order.checkout_request_id,
+                mpesa_transaction_id: order.mpesa_transaction_id,
+                mpesa_code: order.mpesa_code,
+                created_at: order.created_at,
+                updated_at: order.updated_at
+            },
+            hasTransactionId: hasTransactionId,
+            megaPayStatus: statusResult
+        });
+        
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
 // ─── START SERVER ─────────────────────────────────────────────
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 KenyaVault Payment Server running on port ${PORT}`);
