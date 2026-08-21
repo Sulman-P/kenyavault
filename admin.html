@@ -4306,7 +4306,185 @@ PAYMENT VERIFICATION SECTION (ADMIN)
                 await loadTutors();
             } catch (e) { showToast('Error', 'Failed to add tutor', 'error'); }
         });
+    // ─── LOAD PENDING VERIFICATIONS ──────────────────────────────────
+async function loadVerifications() {
+    try {
+        var response = await fetch(BACKEND_URL + '/api/admin/pending-verifications');
+        var result = await response.json();
+        
+        if (!result.success) {
+            throw new Error(result.error || 'Failed to load verifications');
+        }
+        
+        var verifications = result.data || [];
+        renderVerifications(verifications);
+        
+    } catch (error) {
+        console.error('Load verifications error:', error);
+        document.getElementById('verificationsList').innerHTML = 
+            '<p style="text-align:center;color:var(--red);padding:20px;">❌ Failed to load verifications</p>';
+    }
+}
 
+// ─── RENDER VERIFICATIONS ──────────────────────────────────────
+function renderVerifications(verifications) {
+    var container = document.getElementById('verificationsList');
+    
+    if (!verifications || verifications.length === 0) {
+        container.innerHTML = '<div class="empty-state"><div class="ico">✅</div><h3>All caught up!</h3><p>No pending verifications.</p></div>';
+        return;
+    }
+    
+    var html = '<div style="overflow-x:auto;">';
+    html += '<table><thead><tr>';
+    html += '<th>Order Ref</th>';
+    html += '<th>Customer</th>';
+    html += '<th>Phone</th>';
+    html += '<th class="numeric">Amount</th>';
+    html += '<th>M-PESA Code</th>';
+    html += '<th>Submitted</th>';
+    html += '<th>Status</th>';
+    html += '<th>Actions</th>';
+    html += '</tr></thead><tbody>';
+    
+    for (var i = 0; i < verifications.length; i++) {
+        var v = verifications[i];
+        var status = v.status || 'verifying';
+        var statusClass = status === 'paid' ? 'status-success' : 
+                         status === 'rejected' ? 'status-error' : 
+                         'status-pending';
+        var statusLabel = status === 'paid' ? '✅ Paid' : 
+                         status === 'rejected' ? '❌ Rejected' : 
+                         '⏳ Verifying';
+        var date = v.verification_submitted_at ? new Date(v.verification_submitted_at).toLocaleString() : '—';
+        var amount = Number(v.total_amount || v.amount || 0);
+        
+        html += '<tr data-status="' + status + '">';
+        html += '<td data-label="Order Ref">#' + (v.order_ref || v.id.slice(0,8)) + '</td>';
+        html += '<td data-label="Customer">' + (v.customer_name || 'N/A') + '</td>';
+        html += '<td data-label="Phone">' + (v.phone || v.customer_phone || '—') + '</td>';
+        html += '<td data-label="Amount" class="numeric">' + formatCurrency(amount) + '</td>';
+        html += '<td data-label="M-PESA"><code style="font-size:0.75rem;background:var(--paper);padding:2px 8px;border-radius:4px;">' + (v.mpesa_code || '—') + '</code></td>';
+        html += '<td data-label="Submitted">' + date + '</td>';
+        html += '<td data-label="Status"><span class="status ' + statusClass + '">' + statusLabel + '</span></td>';
+        html += '<td data-label="Actions" class="action-icons">';
+        
+        if (status === 'verifying' || status === 'pending') {
+            html += '<i class="fas fa-check-circle approve-btn" onclick="adminVerifyPayment(\'' + v.id + '\', \'verify\')" title="Verify Payment" style="color:var(--green);font-size:1rem;"></i>';
+            html += '<i class="fas fa-times-circle reject-btn" onclick="adminVerifyPayment(\'' + v.id + '\', \'reject\')" title="Reject Payment" style="color:var(--red);font-size:1rem;"></i>';
+        }
+        
+        html += '<i class="fas fa-eye" onclick="viewOrderDetails(\'' + v.id + '\')" title="View Order"></i>';
+        html += '</td></tr>';
+    }
+    
+    html += '</tbody></table></div>';
+    container.innerHTML = html;
+}
+
+// ─── ADMIN VERIFY PAYMENT ──────────────────────────────────────
+async function adminVerifyPayment(orderId, action) {
+    var actionLabel = action === 'verify' ? 'VERIFY' : 'REJECT';
+    var confirmMsg = action === 'verify' 
+        ? 'Confirm this payment and release resources?' 
+        : 'Reject this payment? The customer will be notified.';
+    
+    if (!confirm(confirmMsg)) return;
+    
+    var notes = prompt('Optional notes (for your reference):', '');
+    if (notes === null) return;
+    
+    try {
+        var response = await fetch(BACKEND_URL + '/api/admin/verify-payment', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({
+                order_id: orderId,
+                action: action,
+                admin_id: 'admin',
+                notes: notes || null
+            })
+        });
+        
+        var result = await response.json();
+        
+        if (!result.success) {
+            throw new Error(result.error || 'Action failed');
+        }
+        
+        showToast('✅ ' + actionLabel + ' Success', 'Order ' + result.order_ref + ' marked as ' + result.status);
+        loadVerifications();
+        loadOrders();
+        
+    } catch (error) {
+        console.error('Admin verification error:', error);
+        showToast('Error', 'Failed to ' + action + ' payment: ' + error.message, 'error');
+    }
+}
+
+// ─── FILTER VERIFICATIONS ──────────────────────────────────────
+function filterVerifications(filter) {
+    var rows = document.querySelectorAll('#verificationsList tbody tr');
+    rows.forEach(function(row) {
+        if (filter === 'all' || row.dataset.status === filter) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+}
+
+// ─── VIEW ORDER DETAILS ──────────────────────────────────────
+function viewOrderDetails(orderId) {
+    var order = ordersData.find(function(o) { return o.id === orderId; });
+    if (!order) {
+        showToast('Error', 'Order not found', 'error');
+        return;
+    }
+    
+    var details = '📋 Order Details\n';
+    details += '━━━━━━━━━━━━━━━━━━━━━━━\n';
+    details += '🆔 Order Ref: ' + (order.order_ref || order.id.slice(0,8)) + '\n';
+    details += '👤 Customer: ' + (order.customer_name || 'N/A') + '\n';
+    details += '📱 Phone: ' + (order.phone || order.customer_phone || '—') + '\n';
+    details += '💳 Amount: ' + formatCurrency(getOrderAmount(order)) + '\n';
+    details += '📊 Status: ' + getStatusLabel(getPaymentStatus(order)) + '\n';
+    details += '📅 Created: ' + (order.created_at ? new Date(order.created_at).toLocaleString() : '—') + '\n';
+    details += '━━━━━━━━━━━━━━━━━━━━━━━\n';
+    details += '🔍 Payment Info:\n';
+    details += '  M-PESA Code: ' + (order.mpesa_code || 'Not provided') + '\n';
+    details += '  Verification Status: ' + (order.status || 'pending') + '\n';
+    details += '  Admin Required: ' + (order.admin_required ? '✅ Yes' : 'No') + '\n';
+    details += '  Submitted At: ' + (order.verification_submitted_at ? new Date(order.verification_submitted_at).toLocaleString() : '—') + '\n';
+    details += '━━━━━━━━━━━━━━━━━━━━━━━\n';
+    details += '📚 Resources:\n';
+    
+    if (order.cart_items && Array.isArray(order.cart_items)) {
+        order.cart_items.forEach(function(item, idx) {
+            var title = item.title || item.name || 'Resource';
+            details += '  ' + (idx+1) + '. ' + title + '\n';
+        });
+    } else {
+        details += '  No items found\n';
+    }
+    
+    alert(details);
+}
+
+// ─── REFRESH VERIFICATIONS ──────────────────────────────────────
+function refreshVerifications() {
+    document.getElementById('verificationsList').innerHTML = '<p style="text-align:center;color:var(--muted);padding:20px;">Loading...</p>';
+    loadVerifications();
+}
+
+// ─── NAVIGATION UPDATE ──────────────────────────────────────────
+// Add to navigation function:
+if (mod === 'verifications') {
+    loadVerifications();
+}
         // ============================================================
         // 30. LEARNERS
         // ============================================================
