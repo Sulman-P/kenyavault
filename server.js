@@ -184,7 +184,7 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
     }
 });
 
-// ─── CALLBACK ENDPOINT ──────────────────────────────────────
+// ─── CALLBACK ENDPOINT - FIXED ──────────────────────────────────────
 app.post('/api/mpesa/callback', async (req, res) => {
     console.log('📥 Callback received!');
     console.log('Body:', JSON.stringify(req.body, null, 2));
@@ -214,29 +214,53 @@ app.post('/api/mpesa/callback', async (req, res) => {
         
         if (findError || !order) {
             console.error(`❌ Order not found for reference: ${reference}`);
-            return res.status(200).json({ 
-                success: true, 
-                message: 'Order not found',
-                reference: reference 
-            });
+            // Try finding by order_ref or id
+            const { data: orderByRef, error: refError } = await supabase
+                .from('orders')
+                .select('*')
+                .eq('order_ref', reference)
+                .single();
+            
+            if (refError || !orderByRef) {
+                return res.status(200).json({ 
+                    success: true, 
+                    message: 'Order not found',
+                    reference: reference 
+                });
+            }
+            // Use the found order
+            order = orderByRef;
         }
         
         // Check if paid
         const isPaid = data.ResultCode === '0' || data.ResultCode === 0 ||
-                      data.status === 'success' || data.status === 'completed';
+                      data.status === 'success' || data.status === 'completed' ||
+                      data.ResultCode === 'SUCCESS';
         
         console.log(`💰 Payment ${isPaid ? 'PAID ✅' : 'FAILED ❌'}`);
+        console.log(`📊 Order ID: ${order.id}, Current status: ${order.status}`);
         
-        // ─── UPDATE THE ORDER ──────────────────────────────────────────
-  const updateData = {
-    status: isPaid ? 'paid' : 'failed',
-    payment_status: isPaid ? 'paid' : 'failed',  // ← Add this line
-    payment_verified: isPaid,
-    payment_verified_at: isPaid ? new Date().toISOString() : null,
-    mpesa_transaction_id: data.TransactionID || data.transaction_id || null,
-    mpesa_code: data.TransactionID || data.transaction_id || null,
-    updated_at: new Date().toISOString()
- };
+        // ─── FIX: UPDATE ALL PAYMENT FIELDS ──────────────────────────
+        const updateData = {
+            status: isPaid ? 'paid' : 'failed',
+            payment_status: isPaid ? 'paid' : 'failed',
+            payment_confirmed: isPaid,  // ← CRITICAL FIX: Set this to true
+            payment_verified: isPaid,
+            payment_verified_at: isPaid ? new Date().toISOString() : null,
+            mpesa_transaction_id: data.TransactionID || data.transaction_id || null,
+            mpesa_code: data.TransactionID || data.transaction_id || null,
+            transaction_code: data.TransactionID || data.transaction_id || null,
+            confirmed_at: isPaid ? new Date().toISOString() : null,
+            paid_at: isPaid ? new Date().toISOString() : null,
+            updated_at: new Date().toISOString()
+        };
+        
+        // If payment failed, add failure reason
+        if (!isPaid) {
+            updateData.failure_reason = data.ResultDesc || data.errorMessage || 'Payment failed';
+        }
+        
+        console.log('📝 Updating order with:', updateData);
         
         const { error: updateError } = await supabase
             .from('orders')
@@ -247,17 +271,35 @@ app.post('/api/mpesa/callback', async (req, res) => {
             console.error('❌ Update error:', updateError);
             return res.status(200).json({
                 success: false,
-                error: 'Failed to update order'
+                error: 'Failed to update order: ' + updateError.message
             });
         }
         
-        console.log(`✅ Order ${order.id} updated to ${isPaid ? 'PAID' : 'FAILED'}`);
+        console.log(`✅ Order ${order.id} updated to ${isPaid ? 'PAID ✅' : 'FAILED ❌'}`);
+        
+        // ─── VERIFY THE UPDATE ──────────────────────────────────────
+        const { data: verifyOrder, error: verifyError } = await supabase
+            .from('orders')
+            .select('*')
+            .eq('id', order.id)
+            .single();
+        
+        if (!verifyError && verifyOrder) {
+            console.log('🔍 Verified order status:', {
+                id: verifyOrder.id,
+                status: verifyOrder.status,
+                payment_status: verifyOrder.payment_status,
+                payment_confirmed: verifyOrder.payment_confirmed,
+                payment_verified: verifyOrder.payment_verified
+            });
+        }
         
         res.status(200).json({
             success: true,
             message: 'Callback processed',
             order_id: order.id,
-            status: isPaid ? 'paid' : 'failed'
+            status: isPaid ? 'paid' : 'failed',
+            payment_confirmed: isPaid
         });
         
     } catch (error) {
@@ -268,7 +310,6 @@ app.post('/api/mpesa/callback', async (req, res) => {
         });
     }
 });
-
 // ─── CHECK ORDER STATUS ──────────────────────────────────────
 app.get('/api/mpesa/status/:orderId', async (req, res) => {
     try {
