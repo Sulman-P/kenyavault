@@ -3212,56 +3212,51 @@
         // ============================================================
         // 15. CONFIRM ORDER - FIXED FOR CHECK CONSTRAINT
         // ============================================================
-        window.confirmOrder = async function(id) {
-            var order = ordersData.find(function(o) { return o.id === id; });
-            if (!order) {
-                showToast('Error', 'Order not found', 'error');
-                return;
-            }
-
-            var status = getPaymentStatus(order);
-            var msg = 'Confirm this order as PAID?\n\n';
-            msg += 'Order: #' + (order.order_ref || id.slice(0, 8)) + '\n';
-            msg += 'Customer: ' + (order.customer_name || 'N/A') + '\n';
-            msg += 'Amount: ' + formatCurrency(getOrderAmount(order)) + '\n';
-            msg += 'Status: ' + getStatusLabel(status);
-
-            var mpesaCode = order.mpesa_code || order.transaction_code || order.mpesa_receipt ||
+       function getPaymentStatus(order) {
+    // 1. Check if payment_confirmed is true (admin confirmed)
+    if (order.payment_confirmed === true) {
+        return 'paid';
+    }
+    
+    // 2. Check if payment_verified is true
+    if (order.payment_verified === true || order.payment_verified === 'true') {
+        return 'paid';
+    }
+    
+    // 3. Check explicit statuses
+    if (order.payment_status === 'paid' || order.payment_status === 'completed' ||
+        order.status === 'paid' || order.status === 'completed' || order.status === 'success') {
+        return 'paid';
+    }
+    
+    // 4. Check if there's an M-PESA code (payment was made)
+    var mpesa = order.mpesa_code || order.transaction_code || order.mpesa_receipt || 
                 order.transaction_reference || order.payment_reference || '';
-            if (mpesaCode) {
-                msg += '\nM-PESA: ' + mpesaCode;
-            }
-
-            if (!confirm(msg)) return;
-
-            try {
-                var updateData = {
-                    status: 'paid',
-                    payment_status: 'paid',
-                    payment_confirmed: true,
-                    amount_paid: getOrderAmount(order),
-                    confirmed_at: new Date().toISOString(),
-                    paid_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString()
-                };
-
-                console.log('[Confirm Order] Updating with data:', updateData);
-
-                var result = await supabase
-                    .from('orders')
-                    .update(updateData)
-                    .eq('id', id);
-
-                if (result.error) throw result.error;
-
-                showToast('✅ Payment Confirmed', 'Order marked as paid' + (mpesaCode ? ' with M-PESA: ' + mpesaCode :
-                ''));
-                await loadOrders();
-            } catch (e) {
-                console.error('Confirm order error:', e);
-                showToast('Error', 'Failed to confirm order: ' + e.message, 'error');
-            }
-        };
+    if (mpesa.length > 0) {
+        // Check if amount_paid matches total_amount
+        var total = Number(order.total_amount || order.amount || 0);
+        var paid = Number(order.amount_paid || 0);
+        if (paid >= total && total > 0) {
+            return 'paid';  // ← This will show as paid even if payment_confirmed is not set
+        }
+        // If there's an M-PESA code, it's a valid payment
+        return 'pending';  // Still pending confirmation, but we show "Payment received - verify"
+    }
+    
+    // 5. Check if amount_paid matches total_amount
+    var totalAmt = Number(order.total_amount || order.amount || 0);
+    var paidAmt = Number(order.amount_paid || 0);
+    if (paidAmt >= totalAmt && totalAmt > 0) {
+        return 'paid';
+    }
+    
+      // 6. Check if failed
+                if (order.payment_status === 'failed' || order.status === 'failed') {
+                     return 'failed';
+       }
+    
+         return 'pending';
+         }
 
         // ============================================================
         // 16. REJECT ORDER - FIXED FOR CHECK CONSTRAINT
