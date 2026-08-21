@@ -991,6 +991,51 @@ app.get('/', (req, res) => {
         }
     });
 });
+// ─── DIAGNOSTIC: Test MegaPay STK Push ──────────────────────────
+app.post('/api/diagnose/stk-test', async (req, res) => {
+    try {
+        const { phone, amount } = req.body;
+        
+        const formattedPhone = phone || '0712345678';
+        const testAmount = amount || 1;
+        
+        const response = await fetch('https://megapay.co.ke/backend/v1/initiatestk', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({
+                api_key: 'MGPYDSg2lIYA',
+                email: 'adminnexalearn@gmail.com',
+                amount: testAmount.toString(),
+                msisdn: formattedPhone,
+                reference: 'DIAG-' + Date.now()
+            })
+        });
+        
+        const responseText = await response.text();
+        let result;
+        try {
+            result = JSON.parse(responseText);
+        } catch (e) {
+            result = { raw: responseText };
+        }
+        
+        return res.status(200).json({
+            success: response.ok,
+            status: response.status,
+            response: result,
+            raw: responseText
+        });
+        
+    } catch (error) {
+        return res.status(500).json({
+            error: error.message,
+            stack: error.stack
+        });
+    }
+});
 
 // ─── START SERVER ─────────────────────────────────────────────
 app.listen(PORT, '0.0.0.0', () => {
