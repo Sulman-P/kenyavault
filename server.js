@@ -124,13 +124,17 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
         }
 
         // ─── MEGAPAY PAYLOAD ────────────────────────────────────
-        const megaPayPayload = {
-            api_key: MEGAPAY_API_KEY,
-            email: MEGAPAY_EMAIL,
-            amount: numericAmount,
-            msisdn: formattedPhone,
-            reference: reference
-        };
+       // In the STK Push endpoint - add order_ref to the payload
+       const megaPayPayload = {
+               api_key: MEGAPAY_API_KEY,
+              email: MEGAPAY_EMAIL,
+              amount: numericAmount,
+              msisdn: formattedPhone,
+              reference: reference,
+             callback_url: MEGAPAY_CALLBACK_URL,
+            order_ref: orderRef,  // ← Add this
+           order_id: order_id    // ← Add this
+         };
 
         const megaPayResponse = await fetch(MEGAPAY_API_URL, {
             method: 'POST',
