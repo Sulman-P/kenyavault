@@ -327,6 +327,44 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
             });
         }
 
+        console.log('📥 MegaPay Result:', JSON.stringify(megaPayResult, null, 2));
+
+        // ─── CHECK FOR SUCCESS ──────────────────────────────────────────
+        // MegaPay returns "success": "200" on success
+const isSuccess = megaPayResult.success === '200' || 
+                 megaPayResult.success === 200 ||
+                 megaPayResult.ResultCode === '0' ||
+                 megaPayResult.ResultCode === 0;
+
+if (isSuccess) {
+    // ─── SAVE TRANSACTION REQUEST ID ──────────────────────────
+    // MegaPay returns "transaction_request_id" in the response
+    const transactionRequestId = megaPayResult.transaction_request_id || 
+                                megaPayResult.TransactionID || 
+                                megaPayResult.CheckoutRequestID;
+    
+    console.log(`✅ Transaction Request ID: ${transactionRequestId}`);
+    
+    if (transactionRequestId) {
+        const { error: updateError } = await supabase
+            .from('orders')
+            .update({
+                transaction_request_id: transactionRequestId,
+                checkout_request_id: transactionRequestId,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', order_id);
+        
+        if (updateError) {
+            console.error('❌ Error saving transaction_request_id:', updateError);
+        } else {
+            console.log(`✅ Saved transaction_request_id: ${transactionRequestId}`);
+        }
+    } else {
+        console.warn('⚠️ No transaction_request_id in MegaPay response');
+        console.warn('📥 Full response:', JSON.stringify(megaPayResult, null, 2));
+    }
+    
         const kvReference = generateTransactionReference();
         const orderRef = order_ref || generateOrderRef();
 
@@ -848,7 +886,18 @@ app.get('/api/mpesa/verify/:reference', async (req, res) => {
                 mpesa_code: order.mpesa_code
             }
         });
-
+     // ─── IN BACKGROUND VERIFICATION ────────────────────────────────────
+for (const order of pendingOrders) {
+    // Try multiple fields for the transaction ID
+    const transactionRequestId = order.transaction_request_id || 
+                                order.checkout_request_id || 
+                                order.mpesa_transaction_id;
+    
+    if (!transactionRequestId) {
+        console.log(`ℹ️ No transaction_request_id for order ${order.order_ref}, skipping`);
+        continue;
+    }
+    
     } catch (error) {
         console.error('❌ Verification error:', error);
         return res.status(500).json({
