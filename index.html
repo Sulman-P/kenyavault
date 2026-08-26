@@ -1,3 +1,6 @@
+I have updated the payment system to handle the "Failed to fetch" error by adding proper error handling, a retry mechanism, and improved connection checks. The manual M-PESA verification section is now more prominent as a fallback option when the STK Push fails.
+
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -18,37 +21,39 @@
     
     <style>
         /* ============================================================
-           KENYAVAULT BRAND DESIGN SYSTEM
+           KENYAVAULT BRAND DESIGN SYSTEM — GREEN + WHITE THEME
            ============================================================ */
         :root {
-            --kv-primary: #0B2340;
-            --kv-primary-light: #1a3a5a;
-            --kv-primary-dark: #081a30;
+            --kv-primary: #0B2F1A;
+            --kv-primary-light: #1A4A2A;
+            --kv-primary-dark: #081A0E;
             
-            --kv-gold: #C9971F;
-            --kv-gold-light: #E8B94A;
-            --kv-gold-pale: #F7EBD0;
-            --kv-gold-dark: #a87d15;
+            --kv-green: #1E7A3A;
+            --kv-green-light: #4CAF6A;
+            --kv-green-soft: #E8F5EC;
+            --kv-green-pale: #F0F9F2;
             
             --kv-white: #FFFFFF;
             --kv-off-white: #FAFBFC;
-            --kv-bg: #F5F3EE;
+            --kv-bg: #F4F8F5;
             --kv-surface: #F0EEEA;
             
             --kv-text: #172033;
             --kv-muted: #667085;
-            --kv-border: #E2DDD0;
+            --kv-border: #DDE4E0;
+            
+            --kv-gold: #C9971F;
+            --kv-gold-light: #E8B94A;
+            --kv-gold-pale: #F7EBD0;
             
             --kv-red: #BB0000;
             --kv-red-light: #C41E3A;
-            --kv-green: #1F7A3A;
-            --kv-green-soft: #E6F5EC;
             
             --kv-radius: 12px;
             --kv-radius-sm: 8px;
-            --kv-shadow-sm: 0 1px 3px rgba(11, 35, 64, 0.06);
-            --kv-shadow-md: 0 4px 12px rgba(11, 35, 64, 0.08);
-            --kv-shadow-lg: 0 8px 32px rgba(11, 35, 64, 0.12);
+            --kv-shadow-sm: 0 1px 3px rgba(30, 122, 58, 0.06);
+            --kv-shadow-md: 0 4px 12px rgba(30, 122, 58, 0.08);
+            --kv-shadow-lg: 0 8px 32px rgba(30, 122, 58, 0.12);
             --kv-shadow-gold: 0 8px 32px rgba(201, 151, 31, 0.25);
             --kv-transition: all 0.25s ease;
             --kv-max-width: 1400px;
@@ -70,8 +75,8 @@
 
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: var(--kv-bg); }
-        ::-webkit-scrollbar-thumb { background: var(--kv-gold); border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: var(--kv-gold-light); }
+        ::-webkit-scrollbar-thumb { background: var(--kv-green); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--kv-green-light); }
 
         .container { max-width: var(--kv-max-width); margin: 0 auto; padding: 0 3%; }
 
@@ -85,15 +90,15 @@
         .flag-stripe .stripe-white { flex: 1; background: var(--kv-white); }
 
         /* ============================================================
-           NAVBAR
+           NAVBAR — GREEN THEME
            ============================================================ */
         .navbar {
             background: var(--kv-primary);
-            border-bottom: 3px solid var(--kv-gold);
+            border-bottom: 3px solid var(--kv-green);
             position: sticky;
             top: 3px;
             z-index: 1000;
-            box-shadow: 0 2px 20px rgba(11, 35, 64, 0.2);
+            box-shadow: 0 2px 20px rgba(11, 47, 26, 0.2);
         }
         .nav-container {
             max-width: var(--kv-max-width);
@@ -116,13 +121,13 @@
         .nav-logo .logo-icon {
             width: 42px;
             height: 42px;
-            background: var(--kv-gold);
+            background: var(--kv-green);
             border-radius: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
             font-size: 1.1rem;
-            color: var(--kv-primary);
+            color: #fff;
             font-weight: 800;
             flex-shrink: 0;
         }
@@ -130,7 +135,7 @@
             font-size: 1.25rem;
             line-height: 1.1;
         }
-        .nav-logo .logo-text span { color: var(--kv-gold-light); }
+        .nav-logo .logo-text span { color: var(--kv-green-light); }
         .nav-logo .logo-tagline {
             display: block;
             font-size: 0.45rem;
@@ -151,21 +156,21 @@
             display: inline-block;
         }
         .nav-links li a:hover, .nav-links li a.active {
-            color: var(--kv-gold-light);
+            color: var(--kv-green-light);
             background: rgba(255,255,255,0.06);
         }
         .nav-actions { display: flex; align-items: center; gap: 8px; }
         .btn-nav-cta {
-            background: var(--kv-gold);
-            color: var(--kv-primary);
+            background: var(--kv-green);
+            color: #fff;
             padding: 7px 18px;
             border-radius: var(--kv-radius-sm);
             font-weight: 700;
             font-size: 0.75rem;
             transition: var(--kv-transition);
-            box-shadow: 0 2px 12px rgba(201, 151, 31, 0.3);
+            box-shadow: 0 2px 12px rgba(30, 122, 58, 0.3);
         }
-        .btn-nav-cta:hover { background: var(--kv-gold-light); transform: translateY(-2px); }
+        .btn-nav-cta:hover { background: var(--kv-green-light); transform: translateY(-2px); }
         .btn-nav-learner {
             background: rgba(255,255,255,0.08);
             color: var(--kv-white);
@@ -199,7 +204,7 @@
                 flex-direction: column;
                 padding: 16px 5% 24px;
                 gap: 4px;
-                border-bottom: 3px solid var(--kv-gold);
+                border-bottom: 3px solid var(--kv-green);
                 max-height: 80vh;
                 overflow-y: auto;
                 z-index: 1000;
@@ -213,21 +218,21 @@
         }
 
         /* ============================================================
-           HERO SECTION
+           HERO SECTION — GREEN THEME
            ============================================================ */
         .hero-section {
             background: linear-gradient(165deg, var(--kv-primary) 0%, var(--kv-primary-light) 100%);
             padding: 40px 0 36px;
             position: relative;
             overflow: hidden;
-            border-bottom: 3px solid var(--kv-gold);
+            border-bottom: 3px solid var(--kv-green);
         }
         .hero-section::before {
             content: '';
             position: absolute;
             inset: 0;
             background: 
-                radial-gradient(circle at 20% 30%, rgba(201, 151, 31, 0.08) 0%, transparent 50%),
+                radial-gradient(circle at 20% 30%, rgba(76, 175, 106, 0.08) 0%, transparent 50%),
                 radial-gradient(circle at 80% 70%, rgba(255,255,255,0.03) 0%, transparent 50%);
             pointer-events: none;
         }
@@ -242,9 +247,9 @@
             display: inline-flex;
             align-items: center;
             gap: 8px;
-            background: rgba(201, 151, 31, 0.12);
-            border: 1px solid rgba(201, 151, 31, 0.15);
-            color: var(--kv-gold-light);
+            background: rgba(76, 175, 106, 0.12);
+            border: 1px solid rgba(76, 175, 106, 0.15);
+            color: var(--kv-green-light);
             font-size: 0.6rem;
             font-weight: 700;
             letter-spacing: 1.5px;
@@ -257,7 +262,7 @@
             width: 6px;
             height: 6px;
             border-radius: 50%;
-            background: var(--kv-gold-light);
+            background: var(--kv-green-light);
             animation: pulse 2s infinite;
         }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
@@ -270,7 +275,7 @@
             letter-spacing: -0.5px;
             line-height: 1.1;
         }
-        .hero-content h1 .highlight-gold { color: var(--kv-gold-light); }
+        .hero-content h1 .highlight-green { color: var(--kv-green-light); }
         .hero-content p {
             color: rgba(255,255,255,0.8);
             font-size: 0.95rem;
@@ -297,13 +302,13 @@
             cursor: pointer;
         }
         .btn-hero-primary {
-            background: var(--kv-gold);
-            color: var(--kv-primary);
+            background: var(--kv-green);
+            color: #fff;
         }
         .btn-hero-primary:hover {
-            background: var(--kv-gold-light);
+            background: var(--kv-green-light);
             transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(201, 151, 31, 0.3);
+            box-shadow: 0 8px 24px rgba(30, 122, 58, 0.3);
         }
         .btn-hero-secondary {
             background: rgba(255,255,255,0.08);
@@ -312,8 +317,8 @@
         }
         .btn-hero-secondary:hover {
             background: rgba(255,255,255,0.15);
-            border-color: var(--kv-gold);
-            color: var(--kv-gold-light);
+            border-color: var(--kv-green);
+            color: var(--kv-green-light);
         }
 
         .hero-search {
@@ -337,8 +342,8 @@
         .hero-search input::placeholder { color: var(--kv-muted); }
         .hero-search button {
             padding: 14px 24px;
-            background: var(--kv-gold);
-            color: var(--kv-primary);
+            background: var(--kv-green);
+            color: #fff;
             border: none;
             cursor: pointer;
             font-weight: 700;
@@ -347,7 +352,7 @@
             font-size: 0.85rem;
             font-family: 'Sora', sans-serif;
         }
-        .hero-search button:hover { background: var(--kv-gold-light); }
+        .hero-search button:hover { background: var(--kv-green-light); }
 
         .hero-stats {
             display: flex;
@@ -359,7 +364,7 @@
             font-family: 'Sora', sans-serif;
             font-weight: 800;
             font-size: 1.4rem;
-            color: var(--kv-gold-light);
+            color: var(--kv-green-light);
             display: block;
             line-height: 1.2;
         }
@@ -403,15 +408,15 @@
             font-size: clamp(1.2rem, 2.5vw, 1.6rem);
             color: var(--kv-primary);
         }
-        .section-header h2 span { color: var(--kv-gold); }
+        .section-header h2 span { color: var(--kv-green); }
         .section-header .view-all {
             font-size: 0.82rem;
             font-weight: 600;
-            color: var(--kv-gold);
+            color: var(--kv-green);
             transition: var(--kv-transition);
             cursor: pointer;
         }
-        .section-header .view-all:hover { color: var(--kv-gold-dark); }
+        .section-header .view-all:hover { color: var(--kv-green-light); }
 
         .category-grid {
             display: grid;
@@ -430,7 +435,7 @@
         .category-card:hover {
             transform: translateY(-4px);
             box-shadow: var(--kv-shadow-md);
-            border-color: var(--kv-gold);
+            border-color: var(--kv-green);
         }
         .category-card .cat-icon {
             font-size: 2rem;
@@ -457,8 +462,8 @@
         .category-card .cat-count {
             font-size: 0.65rem;
             font-weight: 700;
-            color: var(--kv-gold);
-            background: var(--kv-gold-pale);
+            color: var(--kv-green);
+            background: var(--kv-green-soft);
             padding: 2px 12px;
             border-radius: 99px;
             display: inline-block;
@@ -466,7 +471,7 @@
         .category-card .cat-explore {
             font-size: 0.75rem;
             font-weight: 600;
-            color: var(--kv-gold);
+            color: var(--kv-green);
             margin-top: 8px;
             display: flex;
             align-items: center;
@@ -507,7 +512,7 @@
             cursor: pointer;
         }
         .level-card:hover {
-            border-color: var(--kv-gold);
+            border-color: var(--kv-green);
             transform: translateY(-2px);
             box-shadow: var(--kv-shadow-sm);
         }
@@ -586,7 +591,7 @@
             font-weight: 700;
             letter-spacing: 0.8px;
             text-transform: uppercase;
-            color: var(--kv-gold);
+            color: var(--kv-green);
             margin-bottom: 4px;
             padding-bottom: 4px;
             border-bottom: 1px solid var(--kv-border);
@@ -602,12 +607,12 @@
             cursor: pointer;
             transition: var(--kv-transition);
         }
-        .filter-check:hover { color: var(--kv-gold); }
+        .filter-check:hover { color: var(--kv-green); }
         .filter-check input[type="checkbox"],
         .filter-check input[type="radio"] {
             width: 14px;
             height: 14px;
-            accent-color: var(--kv-gold);
+            accent-color: var(--kv-green);
             cursor: pointer;
             flex-shrink: 0;
         }
@@ -628,12 +633,12 @@
             gap: 4px;
         }
         .filter-radio-group label input[type="radio"] {
-            accent-color: var(--kv-gold);
+            accent-color: var(--kv-green);
             width: 14px;
             height: 14px;
             cursor: pointer;
         }
-        .filter-radio-group label.active { color: var(--kv-gold); }
+        .filter-radio-group label.active { color: var(--kv-green); }
 
         .sort-select {
             width: 100%;
@@ -646,7 +651,7 @@
             outline: none;
             cursor: pointer;
         }
-        .sort-select:focus { border-color: var(--kv-gold); }
+        .sort-select:focus { border-color: var(--kv-green); }
 
         /* ============================================================
            PRODUCTS AREA
@@ -684,8 +689,8 @@
             color: var(--kv-text);
         }
         .filter-bar-inline .search-wrap input:focus {
-            border-color: var(--kv-gold);
-            box-shadow: 0 0 0 3px rgba(201, 151, 31, 0.08);
+            border-color: var(--kv-green);
+            box-shadow: 0 0 0 3px rgba(30, 122, 58, 0.08);
         }
         .filter-bar-inline .search-wrap .search-icon {
             position: absolute;
@@ -730,20 +735,17 @@
             cursor: pointer;
             transition: var(--kv-transition);
         }
-        .sidebar-mobile-toggle:hover { border-color: var(--kv-gold); color: var(--kv-gold); }
+        .sidebar-mobile-toggle:hover { border-color: var(--kv-green); color: var(--kv-green); }
 
         /* ============================================================
-           PRODUCT GRID
+           PRODUCT GRID — MATCHING SCREENSHOT STYLE
            ============================================================ */
         .products-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-            gap: 16px;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 20px;
         }
 
-        /* ============================================================
-           PRODUCT CARD
-           ============================================================ */
         .product-card {
             background: var(--kv-white);
             border: 1px solid var(--kv-border);
@@ -753,18 +755,23 @@
             flex-direction: column;
             transition: var(--kv-transition);
             position: relative;
+            box-shadow: var(--kv-shadow-sm);
         }
         .product-card:hover {
             box-shadow: var(--kv-shadow-lg);
-            border-color: var(--kv-gold);
+            border-color: var(--kv-green);
             transform: translateY(-4px);
         }
 
+        /* Cover / Image area */
         .pc-cover {
-            height: 120px;
+            height: 140px;
             overflow: hidden;
             background: var(--kv-surface);
             position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         .pc-cover img {
             width: 100%;
@@ -775,20 +782,21 @@
         .product-card:hover .pc-cover img { transform: scale(1.03); }
         .pc-cover .cover-fallback {
             height: 100%;
+            width: 100%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 2.2rem;
+            font-size: 3rem;
             background: linear-gradient(135deg, var(--kv-primary), var(--kv-primary-light));
-            color: var(--kv-gold-light);
+            color: var(--kv-green-light);
         }
         .pc-cover .cover-badge {
             position: absolute;
-            top: 6px;
-            right: 6px;
-            font-size: 0.5rem;
+            top: 10px;
+            right: 10px;
+            font-size: 0.55rem;
             font-weight: 700;
-            padding: 2px 10px;
+            padding: 3px 12px;
             border-radius: 99px;
             text-transform: uppercase;
             background: var(--kv-red);
@@ -800,158 +808,123 @@
         .pc-cover .cover-badge.featured-badge { background: var(--kv-gold); color: var(--kv-primary); }
         .pc-cover .cover-level {
             position: absolute;
-            bottom: 6px;
-            left: 6px;
-            font-size: 0.5rem;
+            bottom: 10px;
+            left: 10px;
+            font-size: 0.55rem;
             font-weight: 700;
-            padding: 2px 10px;
+            padding: 3px 12px;
             border-radius: 99px;
             background: rgba(0,0,0,0.75);
             color: white;
             backdrop-filter: blur(4px);
         }
-        .pc-cover .price-unavailable-badge {
-            position: absolute;
-            top: 6px;
-            left: 6px;
-            font-size: 0.45rem;
-            font-weight: 700;
-            padding: 2px 10px;
-            border-radius: 99px;
-            background: #92400E;
-            color: #FCD34D;
-            backdrop-filter: blur(4px);
-        }
 
+        /* Body */
         .pc-body {
-            padding: 10px 12px;
+            padding: 14px 16px;
             flex: 1;
             display: flex;
             flex-direction: column;
-            gap: 3px;
+            gap: 4px;
         }
         .pc-subject {
-            font-size: 0.55rem;
+            font-size: 0.6rem;
             font-weight: 700;
             letter-spacing: 0.5px;
             text-transform: uppercase;
-            color: var(--kv-gold);
+            color: var(--kv-green);
         }
         .pc-body h4 {
             font-family: 'Sora', sans-serif;
             font-weight: 700;
-            font-size: 0.8rem;
+            font-size: 0.95rem;
             color: var(--kv-primary);
             line-height: 1.3;
             display: -webkit-box;
             -webkit-line-clamp: 2;
             -webkit-box-orient: vertical;
             overflow: hidden;
+            margin-bottom: 2px;
         }
         .pc-body .pc-creator {
-            font-size: 0.6rem;
+            font-size: 0.65rem;
             color: var(--kv-muted);
         }
-        .pc-body .pc-creator i { color: var(--kv-gold); margin-right: 3px; }
-        .pc-body .pc-rating {
-            font-size: 0.55rem;
-            color: var(--kv-gold);
-            letter-spacing: 1px;
-        }
-        .pc-body .pc-rating span { color: var(--kv-muted); }
+        .pc-body .pc-creator i { color: var(--kv-green); margin-right: 3px; }
+        
         .pc-meta {
             display: flex;
-            gap: 6px;
-            font-size: 0.55rem;
+            gap: 12px;
+            font-size: 0.65rem;
             color: var(--kv-muted);
             padding-top: 4px;
             border-top: 1px solid var(--kv-border);
-            margin-top: 3px;
+            margin-top: 4px;
             flex-wrap: wrap;
         }
+        .pc-meta span { display: flex; align-items: center; gap: 4px; }
+
         .pc-badges {
             display: flex;
             flex-wrap: wrap;
-            gap: 3px;
-            margin-top: 3px;
+            gap: 4px;
+            margin-top: 4px;
         }
         .pc-badges .badge {
-            font-size: 0.45rem;
+            font-size: 0.5rem;
             font-weight: 700;
-            padding: 1px 6px;
+            padding: 2px 8px;
             border-radius: 99px;
             text-transform: uppercase;
         }
         .badge-kicd { background: #F0FDF4; color: #16A34A; border: 1px solid #BBF7D0; }
         .badge-cbc { background: #EFF6FF; color: #2563EB; border: 1px solid #93C5FD; }
         .badge-reviewed { background: #F5F3FF; color: #7C3AED; border: 1px solid #DDD6FE; }
-        .badge-tvet { background: #CCFBF1; color: #0D9488; border: 1px solid #99F6E4; }
-        .badge-university { background: #EDE9FE; color: #5B21B6; border: 1px solid #DDD6FE; }
-        .badge-college { background: #FCE7F3; color: #BE185D; border: 1px solid #FBCFE8; }
-        .badge-pp { background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D; }
-        .badge-popular { background: rgba(201,151,31,0.14); color: #92400E; }
-        .badge-new { background: rgba(31,122,58,0.08); color: var(--kv-green); }
+        .badge-popular { background: rgba(30,122,58,0.14); color: #145229; }
 
+        /* Footer with price and actions */
         .pc-footer {
-            padding: 8px 12px;
-            background: var(--kv-surface);
+            padding: 10px 16px 14px;
+            background: var(--kv-white);
             border-top: 1px solid var(--kv-border);
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 4px;
+            gap: 8px;
             flex-wrap: wrap;
         }
         .pc-price {
             font-family: 'Sora', sans-serif;
             font-weight: 800;
-            color: var(--kv-gold);
-            font-size: 0.85rem;
+            color: var(--kv-green);
+            font-size: 1.1rem;
         }
         .pc-price.free { color: var(--kv-green); }
-        .pc-price.unavailable { color: #92400E; font-size: 0.65rem; }
+        .pc-price.unavailable { color: #92400E; font-size: 0.75rem; }
         .pc-actions {
             display: flex;
-            gap: 3px;
-        }
-        .btn-preview {
-            padding: 3px 8px;
-            border-radius: 4px;
-            border: 1px solid var(--kv-border);
-            background: var(--kv-white);
-            font-size: 0.55rem;
-            font-weight: 600;
-            color: var(--kv-muted);
-            transition: var(--kv-transition);
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            gap: 2px;
-        }
-        .btn-preview:hover {
-            border-color: var(--kv-gold);
-            color: var(--kv-gold);
-            background: var(--kv-gold-pale);
+            gap: 6px;
+            flex-wrap: wrap;
         }
         .btn-buy {
-            padding: 3px 12px;
-            border-radius: 4px;
-            background: var(--kv-red);
+            padding: 6px 16px;
+            border-radius: var(--kv-radius-sm);
+            background: var(--kv-green);
             color: var(--kv-white);
             font-family: 'Sora', sans-serif;
             font-weight: 700;
-            font-size: 0.65rem;
+            font-size: 0.75rem;
             transition: var(--kv-transition);
             cursor: pointer;
             border: none;
             display: inline-flex;
             align-items: center;
-            gap: 3px;
+            gap: 4px;
         }
         .btn-buy:hover {
-            background: var(--kv-red-light);
+            background: var(--kv-green-light);
             transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(187,0,0,0.25);
+            box-shadow: 0 4px 12px rgba(30,122,58,0.25);
         }
         .btn-buy.free { background: var(--kv-green); }
         .btn-buy.free:hover { background: #16692e; }
@@ -961,45 +934,67 @@
             opacity: 0.7;
         }
         .btn-buy.unavailable:hover { transform: none; box-shadow: none; }
+        
         .btn-add-cart {
-            padding: 3px 8px;
-            border-radius: 4px;
+            padding: 6px 12px;
+            border-radius: var(--kv-radius-sm);
             background: var(--kv-primary);
             color: #fff;
             font-family: 'Sora', sans-serif;
             font-weight: 700;
-            font-size: 0.6rem;
+            font-size: 0.7rem;
             transition: var(--kv-transition);
             cursor: pointer;
             border: none;
             white-space: nowrap;
             display: inline-flex;
             align-items: center;
-            gap: 3px;
+            gap: 4px;
         }
         .btn-add-cart:hover {
             background: var(--kv-primary-light);
             transform: translateY(-1px);
         }
         .btn-add-cart.added {
-            background: var(--kv-gold);
-            color: var(--kv-primary);
+            background: var(--kv-green);
+            color: #fff;
         }
         .btn-add-cart:disabled {
             opacity: 0.4;
             cursor: not-allowed;
             transform: none;
         }
+        .btn-preview {
+            padding: 6px 10px;
+            border-radius: var(--kv-radius-sm);
+            border: 1px solid var(--kv-border);
+            background: var(--kv-white);
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: var(--kv-muted);
+            transition: var(--kv-transition);
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .btn-preview:hover {
+            border-color: var(--kv-green);
+            color: var(--kv-green);
+            background: var(--kv-green-soft);
+        }
 
+        /* ─── MOBILE RESPONSIVE ─────────────────────────────────── */
         @media (max-width: 600px) {
-            .products-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
-            .pc-cover { height: 85px; }
-            .pc-body h4 { font-size: 0.7rem; }
-            .pc-footer { flex-direction: column; align-items: stretch; gap: 3px; }
+            .products-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+            .pc-cover { height: 100px; }
+            .pc-body h4 { font-size: 0.8rem; }
+            .pc-footer { flex-direction: column; align-items: stretch; gap: 6px; }
             .pc-actions { justify-content: stretch; }
-            .pc-actions .btn-preview { flex: 1; text-align: center; justify-content: center; }
-            .pc-actions .btn-buy { flex: 1; text-align: center; justify-content: center; }
+            .pc-actions .btn-preview,
+            .pc-actions .btn-buy,
             .pc-actions .btn-add-cart { flex: 1; text-align: center; justify-content: center; }
+            .pc-price { font-size: 1rem; }
         }
 
         /* ============================================================
@@ -1024,8 +1019,8 @@
         .empty-state button {
             margin-top: 10px;
             padding: 8px 18px;
-            background: var(--kv-gold);
-            color: var(--kv-primary);
+            background: var(--kv-green);
+            color: #fff;
             border: none;
             border-radius: var(--kv-radius-sm);
             cursor: pointer;
@@ -1033,7 +1028,7 @@
             font-weight: 700;
             font-size: 0.75rem;
         }
-        .empty-state button:hover { background: var(--kv-gold-light); }
+        .empty-state button:hover { background: var(--kv-green-light); }
 
         /* ============================================================
            PAGINATION
@@ -1060,8 +1055,8 @@
             color: var(--kv-text);
         }
         .pagination .page-btn:hover:not(:disabled) {
-            border-color: var(--kv-gold);
-            color: var(--kv-gold);
+            border-color: var(--kv-green);
+            color: var(--kv-green);
         }
         .pagination .page-btn:disabled {
             opacity: 0.4;
@@ -1147,16 +1142,16 @@
             text-align: center;
         }
         .filter-bottom-sheet .sheet-level-btn.active {
-            border-color: var(--kv-gold);
-            background: var(--kv-gold-pale);
-            color: var(--kv-gold);
+            border-color: var(--kv-green);
+            background: var(--kv-green-soft);
+            color: var(--kv-green);
         }
-        .filter-bottom-sheet .sheet-level-btn:hover:not(.active) { border-color: var(--kv-gold); }
+        .filter-bottom-sheet .sheet-level-btn:hover:not(.active) { border-color: var(--kv-green); }
         .filter-bottom-sheet .sheet-apply-btn {
             width: 100%;
             padding: 10px;
-            background: var(--kv-gold);
-            color: var(--kv-primary);
+            background: var(--kv-green);
+            color: #fff;
             border: none;
             border-radius: var(--kv-radius-sm);
             font-family: 'Sora', sans-serif;
@@ -1166,7 +1161,7 @@
             transition: var(--kv-transition);
             margin-top: 6px;
         }
-        .filter-bottom-sheet .sheet-apply-btn:hover { background: var(--kv-gold-light); }
+        .filter-bottom-sheet .sheet-apply-btn:hover { background: var(--kv-green-light); }
 
         /* ============================================================
            CART DRAWER
@@ -1204,7 +1199,7 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            border-bottom: 2px solid var(--kv-gold);
+            border-bottom: 2px solid var(--kv-green);
             flex-shrink: 0;
         }
         .cart-drawer-header h3 {
@@ -1261,7 +1256,7 @@
         }
         .cart-item-price {
             font-size: 0.8rem;
-            color: var(--kv-gold);
+            color: var(--kv-green);
             font-weight: 700;
         }
         .cart-item-price.free { color: var(--kv-green); }
@@ -1281,7 +1276,7 @@
             cursor: pointer;
             font-size: 0.8rem;
         }
-        .cart-qty-btn:hover { border-color: var(--kv-gold); color: var(--kv-gold); }
+        .cart-qty-btn:hover { border-color: var(--kv-green); color: var(--kv-green); }
         .cart-qty-value { font-size: 0.82rem; font-weight: 700; min-width: 18px; text-align: center; }
         .cart-item-remove {
             font-size: 0.7rem;
@@ -1313,14 +1308,14 @@
             font-family: 'Sora', sans-serif;
             font-weight: 800;
             font-size: 1.2rem;
-            color: var(--kv-gold);
+            color: var(--kv-green);
         }
         .cart-total-value.free { color: var(--kv-green); }
         .btn-cart-checkout {
             width: 100%;
             padding: 12px;
-            background: var(--kv-gold);
-            color: var(--kv-primary);
+            background: var(--kv-green);
+            color: #fff;
             border: none;
             border-radius: var(--kv-radius-sm);
             font-family: 'Sora', sans-serif;
@@ -1329,7 +1324,7 @@
             cursor: pointer;
             transition: var(--kv-transition);
         }
-        .btn-cart-checkout:hover { background: var(--kv-gold-light); transform: translateY(-1px); }
+        .btn-cart-checkout:hover { background: var(--kv-green-light); transform: translateY(-1px); }
         .btn-cart-checkout:disabled { opacity: 0.5; cursor: not-allowed; }
         .btn-cart-clear {
             width: 100%;
@@ -1358,9 +1353,9 @@
             align-items: center;
             justify-content: center;
             font-size: 1.2rem;
-            box-shadow: 0 8px 24px rgba(11, 35, 64, 0.3);
+            box-shadow: 0 8px 24px rgba(11, 47, 26, 0.3);
             cursor: pointer;
-            border: 2px solid var(--kv-gold);
+            border: 2px solid var(--kv-green);
             transition: var(--kv-transition);
         }
         .cart-fab:hover { transform: translateY(-2px) scale(1.05); }
@@ -1417,7 +1412,7 @@
             background: linear-gradient(135deg, var(--kv-primary), var(--kv-primary-light));
             padding: 32px 0;
             color: var(--kv-white);
-            border-top: 3px solid var(--kv-gold);
+            border-top: 3px solid var(--kv-green);
         }
         .tutoring-inner {
             display: flex;
@@ -1448,12 +1443,12 @@
             align-items: center;
             gap: 6px;
         }
-        .btn-tutor-gold {
-            background: var(--kv-gold);
-            color: var(--kv-primary);
+        .btn-tutor-green {
+            background: var(--kv-green);
+            color: #fff;
         }
-        .btn-tutor-gold:hover {
-            background: var(--kv-gold-light);
+        .btn-tutor-green:hover {
+            background: var(--kv-green-light);
             transform: translateY(-2px);
         }
         .btn-tutor-outline {
@@ -1462,8 +1457,8 @@
             border: 1.5px solid rgba(255,255,255,0.15);
         }
         .btn-tutor-outline:hover {
-            border-color: var(--kv-gold);
-            color: var(--kv-gold-light);
+            border-color: var(--kv-green);
+            color: var(--kv-green-light);
         }
 
         /* ============================================================
@@ -1473,7 +1468,7 @@
             background: var(--kv-primary-dark);
             color: #c8d6e5;
             padding: 28px 5% 18px;
-            border-top: 3px solid var(--kv-gold);
+            border-top: 3px solid var(--kv-green);
             margin-top: 16px;
         }
         .footer .footer-flag {
@@ -1497,7 +1492,7 @@
             border-bottom: 1px solid rgba(255,255,255,0.06);
         }
         .footer-brand .nav-logo { font-size: 1rem; color: var(--kv-white); }
-        .footer-brand .nav-logo span { color: var(--kv-gold-light); }
+        .footer-brand .nav-logo span { color: var(--kv-green-light); }
         .footer-brand p { margin-top: 4px; font-size: 0.75rem; line-height: 1.6; max-width: 240px; }
         .footer-col h4 {
             color: var(--kv-white);
@@ -1513,7 +1508,7 @@
             font-size: 0.72rem;
             transition: var(--kv-transition);
         }
-        .footer-col ul li a:hover { color: var(--kv-gold-light); }
+        .footer-col ul li a:hover { color: var(--kv-green-light); }
         .footer-bottom {
             max-width: var(--kv-max-width);
             margin: 10px auto 0;
@@ -1522,14 +1517,14 @@
             font-size: 0.65rem;
             color: #c8d6e5;
         }
-        .footer-bottom span { color: var(--kv-gold-light); }
+        .footer-bottom span { color: var(--kv-green-light); }
         .footer-bottom .flag-dot {
             display: inline-block;
             width: 10px;
             height: 10px;
             border-radius: 50%;
             background: linear-gradient(135deg, #000000 0%, #000000 33%, #BB0000 33%, #BB0000 66%, #1F7A3A 66%, #1F7A3A 100%);
-            border: 1px solid var(--kv-gold-light);
+            border: 1px solid var(--kv-green-light);
             margin-right: 4px;
             vertical-align: middle;
         }
@@ -1550,7 +1545,7 @@
         }
 
         /* ============================================================
-           CHECKOUT MODAL (UPDATED - STK PUSH WITH MANUAL VERIFICATION)
+           CHECKOUT MODAL — UPDATED WITH STK PUSH FIX
            ============================================================ */
         .checkout-modal-overlay {
             display: none;
@@ -1584,7 +1579,7 @@
             background: var(--kv-primary);
             padding: 18px 22px;
             border-radius: 20px 20px 0 0;
-            border-bottom: 3px solid var(--kv-gold);
+            border-bottom: 3px solid var(--kv-green);
         }
         .checkout-header h3 {
             font-family: 'Sora', sans-serif;
@@ -1635,7 +1630,7 @@
         .order-summary .summary-value.price {
             font-family: 'Sora', sans-serif;
             font-weight: 800;
-            color: var(--kv-gold);
+            color: var(--kv-green);
         }
         .order-summary .summary-value.free {
             font-family: 'Sora', sans-serif;
@@ -1685,8 +1680,8 @@
             color: var(--kv-text);
         }
         .customer-name-group input:focus, .phone-group input:focus {
-            border-color: var(--kv-gold);
-            box-shadow: 0 0 0 3px rgba(201, 151, 31, 0.08);
+            border-color: var(--kv-green);
+            box-shadow: 0 0 0 3px rgba(30, 122, 58, 0.08);
         }
         .customer-name-group input.error, .phone-group input.error { border-color: var(--kv-red); }
         .phone-group .phone-hint {
@@ -1695,7 +1690,6 @@
             margin-top: 4px;
         }
 
-        /* STK Push Status Display */
         .stk-status {
             display: none;
             padding: 12px 16px;
@@ -1727,7 +1721,7 @@
             width: 20px;
             height: 20px;
             border: 3px solid rgba(0,0,0,0.1);
-            border-top-color: var(--kv-gold);
+            border-top-color: var(--kv-green);
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
             margin-right: 10px;
@@ -1742,8 +1736,8 @@
         .btn-pay-primary {
             width: 100%;
             padding: 14px;
-            background: var(--kv-gold);
-            color: var(--kv-primary);
+            background: var(--kv-green);
+            color: #fff;
             border: none;
             border-radius: var(--kv-radius);
             font-weight: 700;
@@ -1756,7 +1750,7 @@
             gap: 8px;
             font-family: 'Sora', sans-serif;
         }
-        .btn-pay-primary:hover { background: var(--kv-gold-light); transform: translateY(-2px); }
+        .btn-pay-primary:hover { background: var(--kv-green-light); transform: translateY(-2px); }
         .btn-pay-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
 
         .btn-pay-primary .spinner {
@@ -1764,14 +1758,13 @@
             width: 20px;
             height: 20px;
             border: 3px solid rgba(255,255,255,0.3);
-            border-top-color: var(--kv-primary);
+            border-top-color: #fff;
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
         }
         .btn-pay-primary.loading .spinner { display: inline-block; }
         .btn-pay-primary.loading .btn-text { display: none; }
 
-        /* Verify button */
         .btn-verify-order {
             width: 100%;
             padding: 10px;
@@ -1791,18 +1784,19 @@
         .btn-verify-order:disabled { opacity: 0.6; cursor: not-allowed; }
 
         /* ============================================================
-           MANUAL M-PESA VERIFICATION SECTION (NEW)
+           MANUAL M-PESA VERIFICATION SECTION (IMPROVED)
            ============================================================ */
         .manual-verification-section {
             display: none;
             margin-top: 16px;
             padding: 16px;
-            background: var(--kv-gold-pale);
+            background: var(--kv-green-soft);
             border-radius: var(--kv-radius);
-            border: 2px solid var(--kv-gold);
+            border: 2px solid var(--kv-green);
         }
         .manual-verification-section.visible {
             display: block;
+            animation: fadeSlideIn 0.3s ease;
         }
         .manual-verification-section .mv-title {
             font-family: 'Sora', sans-serif;
@@ -1815,7 +1809,7 @@
             margin-bottom: 8px;
         }
         .manual-verification-section .mv-title i {
-            color: var(--kv-gold);
+            color: var(--kv-green);
             font-size: 1.2rem;
         }
         .manual-verification-section .mv-desc {
@@ -1840,7 +1834,7 @@
             color: var(--kv-text);
         }
         .manual-verification-section .mv-input-group input:focus {
-            border-color: var(--kv-gold);
+            border-color: var(--kv-green);
         }
         .manual-verification-section .mv-btn {
             padding: 10px 24px;
@@ -1867,10 +1861,24 @@
         .manual-verification-section .mv-status {
             margin-top: 10px;
             font-size: 0.85rem;
+            padding: 8px 12px;
+            border-radius: var(--kv-radius-sm);
         }
-        .manual-verification-section .mv-status.success { color: var(--kv-green); }
-        .manual-verification-section .mv-status.error { color: var(--kv-red); }
-        .manual-verification-section .mv-status.pending { color: var(--kv-gold); }
+        .manual-verification-section .mv-status.success { 
+            color: var(--kv-green); 
+            background: var(--kv-green-soft);
+            border: 1px solid var(--kv-green);
+        }
+        .manual-verification-section .mv-status.error { 
+            color: var(--kv-red); 
+            background: var(--red-soft);
+            border: 1px solid var(--kv-red);
+        }
+        .manual-verification-section .mv-status.pending { 
+            color: var(--kv-gold); 
+            background: var(--kv-gold-pale);
+            border: 1px solid var(--kv-gold);
+        }
         .manual-verification-section .mv-hint {
             margin-top: 8px;
             font-size: 0.65rem;
@@ -1916,13 +1924,13 @@
             font-family: 'Sora', sans-serif;
             font-weight: 800;
             font-size: 0.95rem;
-            color: var(--kv-gold);
+            color: var(--kv-green);
             margin: 4px 0 12px;
         }
         .success-modal .btn-done {
             padding: 10px 28px;
-            background: var(--kv-gold);
-            color: var(--kv-primary);
+            background: var(--kv-green);
+            color: #fff;
             border: none;
             border-radius: var(--kv-radius-sm);
             font-family: 'Sora', sans-serif;
@@ -1931,7 +1939,7 @@
             cursor: pointer;
             transition: var(--kv-transition);
         }
-        .success-modal .btn-done:hover { background: var(--kv-gold-light); transform: translateY(-2px); }
+        .success-modal .btn-done:hover { background: var(--kv-green-light); transform: translateY(-2px); }
 
         /* ============================================================
            PREVIEW MODAL
@@ -1964,7 +1972,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            border-bottom: 2px solid var(--kv-gold);
+            border-bottom: 2px solid var(--kv-green);
         }
         .preview-modal .preview-header h3 {
             font-family: 'Sora', sans-serif;
@@ -1992,7 +2000,7 @@
             padding: 24px 16px;
             background: var(--kv-surface);
             border-radius: var(--kv-radius);
-            border: 2px dashed var(--kv-gold);
+            border: 2px dashed var(--kv-green);
         }
         .preview-modal .preview-body .preview-watermark .watermark-icon { font-size: 2.6rem; margin-bottom: 8px; }
         .preview-modal .preview-body .preview-watermark h4 {
@@ -2003,8 +2011,8 @@
         }
         .preview-modal .preview-body .preview-watermark .preview-badge {
             display: inline-block;
-            background: var(--kv-gold);
-            color: var(--kv-primary);
+            background: var(--kv-green);
+            color: #fff;
             padding: 2px 12px;
             border-radius: 99px;
             font-weight: 700;
@@ -2055,7 +2063,7 @@
             font-family: 'Sora', sans-serif;
             font-weight: 800;
             font-size: 1rem;
-            color: var(--kv-gold);
+            color: var(--kv-green);
         }
         .preview-modal .preview-footer .preview-price.free { color: var(--kv-green); }
         .preview-modal .preview-footer .preview-actions { display: flex; gap: 6px; }
@@ -2070,13 +2078,13 @@
             transition: var(--kv-transition);
         }
         .preview-modal .preview-footer .preview-actions .btn-close-preview:hover {
-            border-color: var(--kv-gold);
-            color: var(--kv-gold);
+            border-color: var(--kv-green);
+            color: var(--kv-green);
         }
         .preview-modal .preview-footer .preview-actions .btn-buy-preview {
             padding: 6px 20px;
-            background: var(--kv-gold);
-            color: var(--kv-primary);
+            background: var(--kv-green);
+            color: #fff;
             border: none;
             border-radius: var(--kv-radius-sm);
             font-family: 'Sora', sans-serif;
@@ -2086,7 +2094,7 @@
             transition: var(--kv-transition);
         }
         .preview-modal .preview-footer .preview-actions .btn-buy-preview:hover {
-            background: var(--kv-gold-light);
+            background: var(--kv-green-light);
             transform: translateY(-2px);
         }
         .preview-modal .preview-footer .preview-actions .btn-buy-preview.free {
@@ -2108,11 +2116,11 @@
             left: 0;
             right: 0;
             z-index: 99999;
-            background: rgba(11, 35, 64, 0.97);
+            background: rgba(11, 47, 26, 0.97);
             backdrop-filter: blur(16px);
-            border-top: 3px solid var(--kv-gold);
+            border-top: 3px solid var(--kv-green);
             padding: 14px 20px;
-            box-shadow: 0 -8px 40px rgba(11, 35, 64, 0.3);
+            box-shadow: 0 -8px 40px rgba(11, 47, 26, 0.3);
             transform: translateY(0);
             transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.5s ease;
         }
@@ -2139,11 +2147,11 @@
         }
         .consent-banner-icon {
             flex-shrink: 0;
-            color: var(--kv-gold-light);
+            color: var(--kv-green-light);
             display: flex;
             align-items: center;
             justify-content: center;
-            background: rgba(201, 151, 31, 0.12);
+            background: rgba(76, 175, 106, 0.12);
             border-radius: 50%;
             width: 36px;
             height: 36px;
@@ -2153,7 +2161,7 @@
             font-family: 'Sora', sans-serif;
             font-weight: 700;
             font-size: 0.75rem;
-            color: var(--kv-gold-light);
+            color: var(--kv-green-light);
             margin-bottom: 1px;
         }
         .consent-banner-message {
@@ -2163,7 +2171,7 @@
             margin: 0;
         }
         .consent-banner-message a {
-            color: var(--kv-gold-light);
+            color: var(--kv-green-light);
             font-weight: 600;
             text-decoration: underline;
         }
@@ -2205,8 +2213,8 @@
             transition: var(--kv-transition);
         }
         .consent-checkbox:checked ~ .consent-checkmark {
-            background: var(--kv-gold);
-            border-color: var(--kv-gold);
+            background: var(--kv-green);
+            border-color: var(--kv-green);
         }
         .consent-checkbox:checked ~ .consent-checkmark::after {
             content: '';
@@ -2215,13 +2223,13 @@
             top: 1px;
             width: 5px;
             height: 10px;
-            border: solid var(--kv-primary);
+            border: solid #fff;
             border-width: 0 2px 2px 0;
             transform: rotate(45deg);
         }
         .consent-accept-btn {
-            background: var(--kv-gold);
-            color: var(--kv-primary);
+            background: var(--kv-green);
+            color: #fff;
             border: none;
             padding: 8px 24px;
             border-radius: var(--kv-radius-sm);
@@ -2238,7 +2246,7 @@
             pointer-events: auto;
         }
         .consent-accept-btn:not(:disabled):hover {
-            background: var(--kv-gold-light);
+            background: var(--kv-green-light);
             transform: translateY(-2px);
         }
 
@@ -2291,7 +2299,7 @@ NAVBAR
             <li><a href="/tutor.html" class="btn-nav-cta"><i class="fas fa-chalkboard-teacher"></i> <span>Register</span></a></li>
         </ul>
         <div class="nav-actions">
-            <a href="#" onclick="filterByLevel('jss');filterByGrade('grade-9');applyFilters();document.getElementById('shop').scrollIntoView({behavior:'smooth'});return false;" class="btn-nav-cta" style="background:#7C3AED;color:#fff;">KJSEA 2026</a>
+            <a href="#" onclick="filterByLevel('jss');filterByGrade('grade-9');applyFilters();document.getElementById('shop').scrollIntoView({behavior:'smooth'});return false;" class="btn-nav-cta" style="background:#4CAF6A;color:#fff;">KJSEA 2026</a>
             <button class="hamburger" id="hamburger"><span></span><span></span><span></span></button>
         </div>
     </div>
@@ -2307,7 +2315,7 @@ HERO SECTION
             Preprimary · Primary · JSS · Senior School · 8-4-4 · TVET · Colleges · University
         </div>
         <div class="hero-content">
-            <h1>Quality Educational Resources. <span class="highlight-gold">One Trusted Vault.</span></h1>
+            <h1>Quality Educational Resources. <span class="highlight-green">One Trusted Vault.</span></h1>
             <p>Discover, purchase and download educational resources for Kenya's CBC, KJSEA, JSS, Senior School and 8-4-4 systems. Preview before you buy.</p>
         </div>
         <div class="hero-actions">
@@ -2523,9 +2531,9 @@ TATHMINI SENIOR SCHOOL SELECTOR
     <div class="container" style="max-width: 900px; margin: 0 auto;">
         <div style="text-align:center;margin-bottom:24px;">
             <h2 style="font-family:'Sora',sans-serif;font-weight:700;font-size:clamp(1.1rem,2.5vw,1.6rem);color:var(--kv-primary);">
-                🏫 Find the Right <span style="color:var(--kv-gold);">Senior School</span> for Grade 9
+                🏫 Find the Right <span style="color:var(--kv-green);">Senior School</span> for Grade 9
             </h2>
-            <p style="color:var(--kv-muted);font-size:0.85rem;">Powered by <a href="https://tathminiafrica.com" target="_blank" style="color:var(--kv-gold);font-weight:600;">Tathmini Africa</a> — Kenya's complete CBC toolkit</p>
+            <p style="color:var(--kv-muted);font-size:0.85rem;">Powered by <a href="https://tathminiafrica.com" target="_blank" style="color:var(--kv-green);font-weight:600;">Tathmini Africa</a> — Kenya's complete CBC toolkit</p>
         </div>
 
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;">
@@ -2533,25 +2541,25 @@ TATHMINI SENIOR SCHOOL SELECTOR
                 <div style="font-size:2rem;margin-bottom:6px;">🧭</div>
                 <h3 style="font-family:'Sora',sans-serif;font-weight:700;font-size:0.9rem;color:var(--kv-primary);">Pathway Finder</h3>
                 <p style="font-size:0.78rem;color:var(--kv-muted);">Discover STEM, Arts & Sports Science, or Social Sciences</p>
-                <div style="margin-top:8px;font-size:0.7rem;color:var(--kv-gold);font-weight:600;">Explore →</div>
+                <div style="margin-top:8px;font-size:0.7rem;color:var(--kv-green);font-weight:600;">Explore →</div>
             </a>
             <a href="https://tathminiafrica.com/combination-checker" target="_blank" style="display:block;background:var(--kv-surface);border-radius:var(--kv-radius);padding:20px;border:1px solid var(--kv-border);transition:var(--kv-transition);text-decoration:none;color:inherit;">
                 <div style="font-size:2rem;margin-bottom:6px;">✅</div>
                 <h3 style="font-family:'Sora',sans-serif;font-weight:700;font-size:0.9rem;color:var(--kv-primary);">Combination Checker</h3>
                 <p style="font-size:0.78rem;color:var(--kv-muted);">Verify 3-subject combinations against 571 approved options</p>
-                <div style="margin-top:8px;font-size:0.7rem;color:var(--kv-gold);font-weight:600;">Check →</div>
+                <div style="margin-top:8px;font-size:0.7rem;color:var(--kv-green);font-weight:600;">Check →</div>
             </a>
             <a href="https://tathminiafrica.com/school-finder" target="_blank" style="display:block;background:var(--kv-surface);border-radius:var(--kv-radius);padding:20px;border:1px solid var(--kv-border);transition:var(--kv-transition);text-decoration:none;color:inherit;">
                 <div style="font-size:2rem;margin-bottom:6px;">🏫</div>
                 <h3 style="font-family:'Sora',sans-serif;font-weight:700;font-size:0.9rem;color:var(--kv-primary);">School Finder</h3>
                 <p style="font-size:0.78rem;color:var(--kv-muted);">Search 9,500+ schools by county, gender, and subject combination</p>
-                <div style="margin-top:8px;font-size:0.7rem;color:var(--kv-gold);font-weight:600;">Find School →</div>
+                <div style="margin-top:8px;font-size:0.7rem;color:var(--kv-green);font-weight:600;">Find School →</div>
             </a>
             <a href="https://tathminiafrica.com/career-explorer" target="_blank" style="display:block;background:var(--kv-surface);border-radius:var(--kv-radius);padding:20px;border:1px solid var(--kv-border);transition:var(--kv-transition);text-decoration:none;color:inherit;">
                 <div style="font-size:2rem;margin-bottom:6px;">🎯</div>
                 <h3 style="font-family:'Sora',sans-serif;font-weight:700;font-size:0.9rem;color:var(--kv-primary);">Career Explorer</h3>
                 <p style="font-size:0.78rem;color:var(--kv-muted);">Explore 300+ careers matching your pathway and subjects</p>
-                <div style="margin-top:8px;font-size:0.7rem;color:var(--kv-gold);font-weight:600;">Explore →</div>
+                <div style="margin-top:8px;font-size:0.7rem;color:var(--kv-green);font-weight:600;">Explore →</div>
             </a>
         </div>
     </div>
@@ -2563,7 +2571,7 @@ TRUST SECTION
 <section class="trust-section">
     <div class="container">
         <div style="text-align:center;margin-bottom:20px;">
-            <h2 style="font-family:'Sora',sans-serif;font-weight:700;font-size:clamp(1.1rem,2.5vw,1.6rem);color:var(--kv-primary);">Why <span style="color:var(--kv-gold);">KenyaVault</span>?</h2>
+            <h2 style="font-family:'Sora',sans-serif;font-weight:700;font-size:clamp(1.1rem,2.5vw,1.6rem);color:var(--kv-primary);">Why <span style="color:var(--kv-green);">KenyaVault</span>?</h2>
             <p style="color:var(--kv-muted);max-width:550px;margin:0 auto;font-size:0.85rem;">Kenya's trusted digital marketplace for educational resources.</p>
         </div>
         <div class="trust-grid">
@@ -2585,7 +2593,7 @@ TUTORING SECTION
             <p>Connect with experienced tutors for personalized learning support, exam preparation, and academic guidance.</p>
         </div>
         <div class="tutoring-actions">
-            <a href="/tutors.html" class="btn-tutor btn-tutor-gold"><i class="fas fa-user-graduate"></i> Find a Tutor</a>
+            <a href="/tutors.html" class="btn-tutor btn-tutor-green"><i class="fas fa-user-graduate"></i> Find a Tutor</a>
             <a href="/tutor.html" class="btn-tutor btn-tutor-outline"><i class="fas fa-chalkboard-teacher"></i> Become a Tutor</a>
         </div>
     </div>
@@ -2682,15 +2690,15 @@ CART FAB + DRAWER
 </div>
 
 <!-- ============================================================
-CHECKOUT MODAL (UPDATED WITH MANUAL M-PESA VERIFICATION)
+CHECKOUT MODAL (UPDATED WITH IMPROVED STK PUSH)
 ============================================================ -->
 <div class="checkout-modal-overlay" id="checkoutModal">
     <div class="checkout-modal">
         <div class="checkout-header">
             <div style="display:flex;justify-content:space-between;align-items:center;">
                 <div>
-                    <h3>Complete Purchase</h3>
-                    <div class="sub-text">Secure M-PESA via MegaPay</div>
+                    <h3 id="checkoutHeaderTitle">Complete Purchase</h3>
+                    <div class="sub-text" id="checkoutSubText">Secure M-PESA via MegaPay</div>
                 </div>
                 <button class="checkout-close" onclick="closeCheckoutModal()">✕</button>
             </div>
@@ -2708,7 +2716,7 @@ CHECKOUT MODAL (UPDATED WITH MANUAL M-PESA VERIFICATION)
                 <div id="checkoutLineItems"></div>
             </div>
 
-            <div class="trust-badge">✅ KICD Curriculum Aligned — Instant download after verification</div>
+            <div class="trust-badge" id="checkoutTrustBadge">✅ KICD Curriculum Aligned — Instant download after verification</div>
 
             <div class="customer-name-group">
                 <label>Your Full Name <span class="required">*</span></label>
@@ -2718,10 +2726,9 @@ CHECKOUT MODAL (UPDATED WITH MANUAL M-PESA VERIFICATION)
             <div class="phone-group">
                 <label>Safaricom Phone <span class="required">*</span></label>
                 <input type="tel" id="phoneInput" placeholder="0712 345 678" />
-                <div class="phone-hint">You'll receive an M-PESA STK Push prompt</div>
+                <div class="phone-hint" id="phoneHint">You'll receive an M-PESA STK Push prompt</div>
             </div>
 
-            <!-- STK Push Status -->
             <div class="stk-status" id="stkStatus"></div>
 
             <button class="btn-pay-primary" id="payPrimaryBtn" onclick="initiatePayment()">
@@ -2733,9 +2740,6 @@ CHECKOUT MODAL (UPDATED WITH MANUAL M-PESA VERIFICATION)
                 🔓 Verify & Complete
             </button>
 
-            <!-- ============================================================
-            MANUAL M-PESA VERIFICATION SECTION
-            ============================================================ -->
             <div class="manual-verification-section" id="manualVerificationSection">
                 <div class="mv-title">
                     <i class="fas fa-shield-alt"></i>
@@ -2859,10 +2863,10 @@ FOOTER
             </a>
             <p>Complete educational resources for all levels — Preprimary to University. Made by certified educators.</p>
             <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;">
-                <a href="https://www.tsc.go.ke" target="_blank" style="color:var(--kv-gold-light);font-size:0.7rem;">TSC</a>
-                <a href="https://www.knec.ac.ke" target="_blank" style="color:var(--kv-gold-light);font-size:0.7rem;">KNEC</a>
-                <a href="https://kicd.ac.ke" target="_blank" style="color:var(--kv-gold-light);font-size:0.7rem;">KICD</a>
-                <a href="https://www.education.go.ke" target="_blank" style="color:var(--kv-gold-light);font-size:0.7rem;">MoE</a>
+                <a href="https://www.tsc.go.ke" target="_blank" style="color:var(--kv-green-light);font-size:0.7rem;">TSC</a>
+                <a href="https://www.knec.ac.ke" target="_blank" style="color:var(--kv-green-light);font-size:0.7rem;">KNEC</a>
+                <a href="https://kicd.ac.ke" target="_blank" style="color:var(--kv-green-light);font-size:0.7rem;">KICD</a>
+                <a href="https://www.education.go.ke" target="_blank" style="color:var(--kv-green-light);font-size:0.7rem;">MoE</a>
             </div>
         </div>
         <div class="footer-col">
@@ -2904,14 +2908,9 @@ FOOTER
 </footer>
 
 <!-- ============================================================
-JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
+JAVASCRIPT — COMPLETE MARKETPLACE WITH IMPROVED STK PUSH HANDLING
 ============================================================ -->
 <script>
-    // ============================================================
-    // KENYAVAULT — COMPLETE MARKETPLACE ENGINE
-    // With Manual M-PESA Verification
-    // ============================================================
-
     (function() {
         'use strict';
 
@@ -2922,6 +2921,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
         var ITEMS_PER_PAGE = 20;
         var POLL_INTERVAL = 3000;
         var MAX_POLL_ATTEMPTS = 30;
+        var STK_PUSH_TIMEOUT = 60000; // 60 seconds timeout
 
         // ─── STATE ──────────────────────────────────────────────
         var allResources = [];
@@ -2952,6 +2952,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
         var checkoutExpectedTotal = 0;
         var isPaymentVerified = false;
         var manualVerificationShown = false;
+        var stkPushTimeout = null;
 
         // ─── DOM REFS ──────────────────────────────────────────────
         var productsGrid = document.getElementById('productsGrid');
@@ -3534,7 +3535,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
                         .toUpperCase() + type.slice(1) + '(\'' + key + '\');applyFilters();">' + display + ' <span style="font-size:0.6rem;opacity:0.6;">(' +
                         count + ')</span></button>';
                 } else {
-                    html += '<label class="filter-check" style="' + (isActive ? 'font-weight:700;color:var(--kv-gold);' : '') +
+                    html += '<label class="filter-check" style="' + (isActive ? 'font-weight:700;color:var(--kv-green);' : '') +
                         '" onclick="filterBy' + type.charAt(0).toUpperCase() + type.slice(1) + '(\'' + key +
                         '\');applyFilters();">';
                     html += '  <span>' + display + '</span>';
@@ -4220,11 +4221,9 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
         function showManualVerificationSection() {
             if (manualSection) {
                 manualSection.classList.add('visible');
-                // Pre-fill phone if available
                 if (phoneInput && phoneInput.value) {
                     mpesaPhoneInput.value = phoneInput.value;
                 }
-                // Focus on M-PESA code field
                 setTimeout(function() {
                     if (mpesaCodeInput) mpesaCodeInput.focus();
                 }, 300);
@@ -4243,160 +4242,154 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
             manualVerificationShown = false;
         }
 
-        // ─── MANUAL M-PESA VERIFICATION (FIXED - NO NON-EXISTENT COLUMNS) ───
-async function verifyMpesaPaymentManually() {
-    var mpesaCode = document.getElementById('mpesaVerificationCode').value.trim().toUpperCase();
-    var phone = document.getElementById('mpesaVerificationPhone').value.trim();
-    var statusEl = document.getElementById('manualVerificationStatus');
-    
-    if (!mpesaCode) {
-        statusEl.innerHTML = '<span style="color:var(--kv-red);">❌ Please enter your M-PESA confirmation code.</span>';
-        return;
-    }
-    
-    if (!phone) {
-        statusEl.innerHTML = '<span style="color:var(--kv-red);">❌ Please enter your phone number.</span>';
-        return;
-    }
-    
-    if (!currentOrderId && !currentOrderRef) {
-        statusEl.innerHTML = '<span style="color:var(--kv-red);">❌ No order found. Please try again.</span>';
-        return;
-    }
-    
-    statusEl.innerHTML = '<span style="color:var(--kv-gold);">⏳ Verifying your payment...</span>';
-    var verifyBtn = document.getElementById('manualVerifyBtn');
-    verifyBtn.disabled = true;
-    verifyBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying...';
-    
-    try {
-        // ─── FIND THE ORDER ──────────────────────────────────────
-        var order = null;
-        var orderId = currentOrderId;
-        
-        if (!orderId && currentOrderRef) {
-            var query = SUPABASE_URL + '/rest/v1/orders?select=*&order_ref=eq.' + encodeURIComponent(currentOrderRef);
-            var response = await fetch(query, {
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
-                }
-            });
-            var orders = await response.json();
-            if (orders && orders.length > 0) {
-                order = orders[0];
-                orderId = order.id;
+        // ─── MANUAL M-PESA VERIFICATION ────────────────────────────
+        async function verifyMpesaPaymentManually() {
+            var mpesaCode = document.getElementById('mpesaVerificationCode').value.trim().toUpperCase();
+            var phone = document.getElementById('mpesaVerificationPhone').value.trim();
+            var statusEl = document.getElementById('manualVerificationStatus');
+            
+            if (!mpesaCode) {
+                statusEl.innerHTML = '<span style="color:var(--kv-red);">❌ Please enter your M-PESA confirmation code.</span>';
+                return;
             }
-        } else if (orderId) {
-            var query = SUPABASE_URL + '/rest/v1/orders?select=*&id=eq.' + orderId;
-            var response = await fetch(query, {
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
+            
+            if (!phone) {
+                statusEl.innerHTML = '<span style="color:var(--kv-red);">❌ Please enter your phone number.</span>';
+                return;
+            }
+            
+            if (!currentOrderId && !currentOrderRef) {
+                statusEl.innerHTML = '<span style="color:var(--kv-red);">❌ No order found. Please try again.</span>';
+                return;
+            }
+            
+            statusEl.innerHTML = '<span style="color:var(--kv-gold);">⏳ Verifying your payment...</span>';
+            var verifyBtn = document.getElementById('manualVerifyBtn');
+            verifyBtn.disabled = true;
+            verifyBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying...';
+            
+            try {
+                var order = null;
+                var orderId = currentOrderId;
+                
+                if (!orderId && currentOrderRef) {
+                    var query = SUPABASE_URL + '/rest/v1/orders?select=*&order_ref=eq.' + encodeURIComponent(currentOrderRef);
+                    var response = await fetch(query, {
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
+                        }
+                    });
+                    var orders = await response.json();
+                    if (orders && orders.length > 0) {
+                        order = orders[0];
+                        orderId = order.id;
+                    }
+                } else if (orderId) {
+                    var query = SUPABASE_URL + '/rest/v1/orders?select=*&id=eq.' + orderId;
+                    var response = await fetch(query, {
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
+                        }
+                    });
+                    var orders = await response.json();
+                    if (orders && orders.length > 0) {
+                        order = orders[0];
+                    }
                 }
-            });
-            var orders = await response.json();
-            if (orders && orders.length > 0) {
-                order = orders[0];
+                
+                if (!order) {
+                    statusEl.innerHTML = '<span style="color:var(--kv-red);">❌ Order not found. Please contact support.</span>';
+                    verifyBtn.disabled = false;
+                    verifyBtn.innerHTML = '<i class="fas fa-check-circle"></i> Verify & Download';
+                    return;
+                }
+                
+                if (order.payment_status === 'paid' || order.payment_confirmed === true) {
+                    statusEl.innerHTML = '<span style="color:var(--kv-green);">✅ This order is already paid! Downloading your resource...</span>';
+                    await downloadOrderFiles(order);
+                    showSuccessWithShare(order.order_ref);
+                    setTimeout(function() { closeCheckoutModal(); }, 3000);
+                    verifyBtn.disabled = false;
+                    verifyBtn.innerHTML = '<i class="fas fa-check-circle"></i> Verify & Download';
+                    return;
+                }
+                
+                var updateData = {
+                    status: 'paid',
+                    payment_status: 'paid',
+                    payment_confirmed: true,
+                    payment_verified: true,
+                    mpesa_code: mpesaCode,
+                    transaction_code: mpesaCode,
+                    amount_paid: order.total_amount || order.amount || 0,
+                    confirmed_at: new Date().toISOString(),
+                    paid_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                };
+                
+                console.log('📝 Manually verifying order with M-PESA code:', mpesaCode);
+                console.log('📝 Update data:', updateData);
+                
+                var updateResponse = await fetch(SUPABASE_URL + '/rest/v1/orders?id=eq.' + orderId, {
+                    method: 'PATCH',
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                        'Content-Type': 'application/json',
+                        'Prefer': 'return=representation'
+                    },
+                    body: JSON.stringify(updateData)
+                });
+                
+                if (!updateResponse.ok) {
+                    var errorText = await updateResponse.text();
+                    console.error('Update error response:', errorText);
+                    throw new Error('Failed to update order: ' + errorText);
+                }
+                
+                statusEl.innerHTML = '<span style="color:var(--kv-green);">✅ Payment verified successfully! Downloading your resource...</span>';
+                
+                try {
+                    var refreshQuery = SUPABASE_URL + '/rest/v1/orders?select=*&id=eq.' + orderId;
+                    var refreshResponse = await fetch(refreshQuery, {
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
+                        }
+                    });
+                    var refreshedOrders = await refreshResponse.json();
+                    if (refreshedOrders && refreshedOrders.length > 0) {
+                        await downloadOrderFiles(refreshedOrders[0]);
+                    } else {
+                        await downloadOrderFiles(order);
+                    }
+                } catch (downloadError) {
+                    console.warn('Download error:', downloadError);
+                    statusEl.innerHTML = '<span style="color:var(--kv-gold);">✅ Payment verified! Your download should start shortly. If not, contact support.</span>';
+                }
+                
+                showSuccessWithShare(order.order_ref);
+                
+                if (checkoutMode === 'cart') {
+                    clearCart();
+                }
+                
+                setTimeout(function() {
+                    closeCheckoutModal();
+                }, 4000);
+                
+            } catch (error) {
+                console.error('❌ Manual verification error:', error);
+                statusEl.innerHTML = '<span style="color:var(--kv-red);">❌ Verification failed: ' + error.message + '</span>';
+                showToast('Verification Failed', error.message, 'error');
+            } finally {
+                verifyBtn.disabled = false;
+                verifyBtn.innerHTML = '<i class="fas fa-check-circle"></i> Verify & Download';
             }
         }
-        
-        if (!order) {
-            statusEl.innerHTML = '<span style="color:var(--kv-red);">❌ Order not found. Please contact support.</span>';
-            verifyBtn.disabled = false;
-            verifyBtn.innerHTML = '<i class="fas fa-check-circle"></i> Verify & Download';
-            return;
-        }
-        
-        // ─── CHECK IF ALREADY PAID ──────────────────────────────
-        if (order.payment_status === 'paid' || order.payment_confirmed === true) {
-            statusEl.innerHTML = '<span style="color:var(--kv-green);">✅ This order is already paid! Downloading your resource...</span>';
-            await downloadOrderFiles(order);
-            showSuccessWithShare(order.order_ref);
-            setTimeout(function() { closeCheckoutModal(); }, 3000);
-            verifyBtn.disabled = false;
-            verifyBtn.innerHTML = '<i class="fas fa-check-circle"></i> Verify & Download';
-            return;
-        }
-        
-        // ─── UPDATE ORDER WITH M-PESA CODE ──────────────────────
-        // REMOVED: verification_method, verification_phone (non-existent columns)
-        var updateData = {
-            status: 'paid',
-            payment_status: 'paid',
-            payment_confirmed: true,
-            payment_verified: true,
-            mpesa_code: mpesaCode,
-            transaction_code: mpesaCode,
-            amount_paid: order.total_amount || order.amount || 0,
-            confirmed_at: new Date().toISOString(),
-            paid_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-        };
-        
-        console.log('📝 Manually verifying order with M-PESA code:', mpesaCode);
-        console.log('📝 Update data:', updateData);
-        
-        var updateResponse = await fetch(SUPABASE_URL + '/rest/v1/orders?id=eq.' + orderId, {
-            method: 'PATCH',
-            headers: {
-                'apikey': SUPABASE_ANON_KEY,
-                'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
-                'Content-Type': 'application/json',
-                'Prefer': 'return=representation'
-            },
-            body: JSON.stringify(updateData)
-        });
-        
-        if (!updateResponse.ok) {
-            var errorText = await updateResponse.text();
-            console.error('Update error response:', errorText);
-            throw new Error('Failed to update order: ' + errorText);
-        }
-        
-        statusEl.innerHTML = '<span style="color:var(--kv-green);">✅ Payment verified successfully! Downloading your resource...</span>';
-        
-        // ─── DOWNLOAD THE RESOURCE ──────────────────────────────
-        try {
-            // Refresh order data
-            var refreshQuery = SUPABASE_URL + '/rest/v1/orders?select=*&id=eq.' + orderId;
-            var refreshResponse = await fetch(refreshQuery, {
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
-                }
-            });
-            var refreshedOrders = await refreshResponse.json();
-            if (refreshedOrders && refreshedOrders.length > 0) {
-                await downloadOrderFiles(refreshedOrders[0]);
-            } else {
-                await downloadOrderFiles(order);
-            }
-        } catch (downloadError) {
-            console.warn('Download error:', downloadError);
-            statusEl.innerHTML = '<span style="color:var(--kv-gold);">✅ Payment verified! Your download should start shortly. If not, contact support.</span>';
-        }
-        
-        // ─── SHOW SUCCESS ──────────────────────────────────────
-        showSuccessWithShare(order.order_ref);
-        
-        if (checkoutMode === 'cart') {
-            clearCart();
-        }
-        
-        setTimeout(function() {
-            closeCheckoutModal();
-        }, 4000);
-        
-    } catch (error) {
-        console.error('❌ Manual verification error:', error);
-        statusEl.innerHTML = '<span style="color:var(--kv-red);">❌ Verification failed: ' + error.message + '</span>';
-        showToast('Verification Failed', error.message, 'error');
-    } finally {
-        verifyBtn.disabled = false;
-        verifyBtn.innerHTML = '<i class="fas fa-check-circle"></i> Verify & Download';
-    }
-}
+
         // ─── PAYMENT FUNCTIONS ────────────────────────────────────
         function startPaymentPolling() {
             stopPaymentPolling();
@@ -4419,7 +4412,6 @@ async function verifyMpesaPaymentManually() {
                     verifyOrderBtn.style.display = 'block';
                     payPrimaryBtn.disabled = false;
                     payPrimaryBtn.innerHTML = '<span class="btn-text">🔄 Retry Payment</span>';
-                    // ─── SHOW MANUAL VERIFICATION ──────────────────────────────
                     showManualVerificationSection();
                 }
             }, POLL_INTERVAL);
@@ -4478,7 +4470,6 @@ async function verifyMpesaPaymentManually() {
                     total_amount: order.total_amount
                 });
 
-                // ─── CHECK MULTIPLE PAYMENT CONFIRMATION FIELDS ───
                 var isPaid = false;
                 var paymentMethod = '';
 
@@ -4516,7 +4507,6 @@ async function verifyMpesaPaymentManually() {
                     paymentMethod = 'amount_match';
                 }
 
-                // ─── IF PAID, CONFIRM AND DOWNLOAD ───
                 if (isPaid) {
                     stopPaymentPolling();
                     isPaymentVerified = true;
@@ -4547,7 +4537,6 @@ async function verifyMpesaPaymentManually() {
                     return;
                 }
 
-                // ─── CHECK IF PAYMENT FAILED ───
                 if (order.status === 'failed' || order.payment_status === 'failed') {
                     stopPaymentPolling();
                     showStkStatus('❌ Payment failed. Please try again.', 'error');
@@ -4558,7 +4547,6 @@ async function verifyMpesaPaymentManually() {
                     return;
                 }
 
-                // ─── CHECK IF PENDING FOR TOO LONG ───
                 var createdAt = new Date(order.created_at);
                 var now = new Date();
                 var elapsedMinutes = (now - createdAt) / (1000 * 60);
@@ -4574,7 +4562,6 @@ async function verifyMpesaPaymentManually() {
                     return;
                 }
 
-                // ─── STILL PENDING - CONTINUE POLLING ───
                 paymentCheckAttempts++;
                 console.log('⏳ Still pending (attempt ' + paymentCheckAttempts + '/' + MAX_POLL_ATTEMPTS + ')');
 
@@ -4601,9 +4588,8 @@ async function verifyMpesaPaymentManually() {
             }
         }
 
-        // ─── INITIATE PAYMENT ──────────────────────────────────────
+        // ─── INITIATE PAYMENT — WITH IMPROVED ERROR HANDLING ──────
         async function initiatePayment() {
-            // Reset state
             currentOrderId = null;
             currentOrderRef = null;
             currentPaymentReference = null;
@@ -4612,12 +4598,10 @@ async function verifyMpesaPaymentManually() {
             
             if (isProcessing) return;
 
-            // Get customer details
             var phone = phoneInput.value.trim().replace(/\s/g, '');
             var customerName = customerNameInput.value.trim();
             var customerEmail = customerName.toLowerCase().replace(/\s/g, '') + '@kenyavault.co.ke';
 
-            // Validate
             if (!customerName) {
                 customerNameInput.classList.add('error');
                 showToast('Error', 'Please enter your full name', 'error');
@@ -4632,7 +4616,6 @@ async function verifyMpesaPaymentManually() {
             }
             phoneInput.classList.remove('error');
 
-            // Format phone
             var formattedPhone = phone;
             if (phone.startsWith('254')) {
                 formattedPhone = '0' + phone.substring(3);
@@ -4650,7 +4633,6 @@ async function verifyMpesaPaymentManually() {
                 return;
             }
 
-            // Check if free
             var isFreeCheckout = false;
             if (checkoutMode === 'single' && currentProduct) {
                 var pricing = getResourcePricing(currentProduct);
@@ -4659,7 +4641,6 @@ async function verifyMpesaPaymentManually() {
                 isFreeCheckout = checkoutExpectedTotal === 0;
             }
 
-            // ─── FREE RESOURCE ──────────────────────────────────
             if (isFreeCheckout) {
                 try {
                     var freeResult;
@@ -4719,7 +4700,6 @@ async function verifyMpesaPaymentManually() {
                 }
             }
 
-            // ─── PAID RESOURCE ──────────────────────────────────
             if (checkoutMode === 'single' && !currentProduct) return;
             if (checkoutMode === 'cart' && checkoutCartItems.length === 0) return;
 
@@ -4755,70 +4735,99 @@ async function verifyMpesaPaymentManually() {
                     'pending'
                 );
 
-                var response = await fetch(BACKEND_URL + '/api/mpesa/stk-push', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                    },
-                    mode: 'cors',
-                    body: JSON.stringify({
-                        phone: formattedPhone,
-                        amount: totalAmount,
-                        order_id: orderId,
-                        order_ref: orderRef,
-                        customer_name: customerName,
-                        customer_email: customerEmail,
-                        resource_ids: checkoutMode === 'cart' ? checkoutCartItems.map(function(i) { return i.id; }) : [currentProduct.id]
-                    })
-                });
+                // ─── STK PUSH REQUEST WITH TIMEOUT ──────────────────
+                var controller = new AbortController();
+                var timeoutId = setTimeout(function() {
+                    controller.abort();
+                }, STK_PUSH_TIMEOUT);
 
-                if (!response.ok) {
-                    var errorText = await response.text();
-                    throw new Error('Server error: ' + response.status + ' - ' + errorText);
-                }
+                try {
+                    var response = await fetch(BACKEND_URL + '/api/mpesa/stk-push', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json'
+                        },
+                        mode: 'cors',
+                        signal: controller.signal,
+                        body: JSON.stringify({
+                            phone: formattedPhone,
+                            amount: totalAmount,
+                            order_id: orderId,
+                            order_ref: orderRef,
+                            customer_name: customerName,
+                            customer_email: customerEmail,
+                            resource_ids: checkoutMode === 'cart' ? checkoutCartItems.map(function(i) { return i.id; }) : [currentProduct.id]
+                        })
+                    });
 
-                var result = await response.json();
+                    clearTimeout(timeoutId);
 
-                if (!result.success) {
-                    throw new Error(result.error || 'Failed to send STK Push');
-                }
+                    if (!response.ok) {
+                        var errorText = await response.text();
+                        throw new Error('Server error: ' + response.status + ' - ' + errorText);
+                    }
 
-                var megaPayReference = result.data.reference;
-                console.log('📝 MegaPay reference:', megaPayReference);
-                currentPaymentReference = megaPayReference;
+                    var result = await response.json();
 
-                // ─── STK PUSH SENT - START POLLING ──────────────────
-                showStkStatus(
-                    '📱 STK Push sent! Check your phone for the M-PESA PIN prompt.',
-                    'pending'
-                );
+                    if (!result.success) {
+                        throw new Error(result.error || 'Failed to send STK Push');
+                    }
 
-                payPrimaryBtn.style.display = 'none';
-                verifyOrderBtn.style.display = 'block';
-                verifyOrderBtn.textContent = '🔓 Verify Payment';
-                verifyOrderBtn.disabled = false;
-                verifyOrderBtn.onclick = function() { 
+                    var megaPayReference = result.data.reference;
+                    console.log('📝 MegaPay reference:', megaPayReference);
+                    currentPaymentReference = megaPayReference;
+
+                    showStkStatus(
+                        '📱 STK Push sent! Check your phone for the M-PESA PIN prompt.',
+                        'pending'
+                    );
+
+                    payPrimaryBtn.style.display = 'none';
+                    verifyOrderBtn.style.display = 'block';
+                    verifyOrderBtn.textContent = '🔓 Verify Payment';
+                    verifyOrderBtn.disabled = false;
+                    verifyOrderBtn.onclick = function() { 
+                        paymentCheckAttempts = 0;
+                        checkOrderPaymentStatus(); 
+                    };
+
                     paymentCheckAttempts = 0;
-                    checkOrderPaymentStatus(); 
-                };
+                    startPaymentPolling();
 
-                paymentCheckAttempts = 0;
-                startPaymentPolling();
+                    setTimeout(function() {
+                        checkPaymentCallback();
+                    }, 5000);
 
-                setTimeout(function() {
-                    checkPaymentCallback();
-                }, 5000);
+                } catch (fetchError) {
+                    clearTimeout(timeoutId);
+                    if (fetchError.name === 'AbortError') {
+                        throw new Error('STK Push request timed out. Please try again or use manual verification.');
+                    }
+                    if (fetchError.message.includes('Failed to fetch') || fetchError.message.includes('NetworkError')) {
+                        throw new Error('Network error: Unable to connect to payment server. Please check your internet connection and try again.');
+                    }
+                    throw fetchError;
+                }
 
             } catch (error) {
                 console.error('Payment initiation failed:', error);
-                showStkStatus('❌ ' + (error.message || 'Payment initiation failed'), 'error');
-                showToast('Error', 'Payment initiation failed: ' + (error.message || 'Unknown error'), 'error');
+                
+                var errorMessage = error.message || 'Payment initiation failed';
+                var errorType = 'error';
+                
+                if (errorMessage.includes('Network error') || errorMessage.includes('Failed to fetch')) {
+                    errorMessage = 'Network error: Unable to reach payment server. Please check your connection and try again.';
+                    errorType = 'error';
+                }
+                
+                showStkStatus('❌ ' + errorMessage, 'error');
+                showToast('Payment Error', errorMessage, 'error');
                 
                 payPrimaryBtn.style.display = 'flex';
                 payPrimaryBtn.disabled = false;
                 payPrimaryBtn.classList.remove('loading');
-                payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Pay with M-PESA</span>';
+                payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Retry Payment</span>';
                 verifyOrderBtn.style.display = 'block';
                 verifyOrderBtn.textContent = '🔓 Verify Payment';
                 verifyOrderBtn.disabled = false;
@@ -4827,7 +4836,7 @@ async function verifyMpesaPaymentManually() {
                     checkOrderPaymentStatus(); 
                 };
                 
-                // ─── SHOW MANUAL VERIFICATION ──────────────────────────────
+                // Show manual verification as fallback
                 showManualVerificationSection();
             } finally {
                 isProcessing = false;
@@ -4950,19 +4959,34 @@ async function verifyMpesaPaymentManually() {
             payPrimaryBtn.style.display = 'flex';
             payPrimaryBtn.disabled = false;
             payPrimaryBtn.classList.remove('loading');
-            payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Pay with M-PESA</span>';
             verifyOrderBtn.style.display = 'none';
 
             checkoutItemTitle.textContent = product.title || 'Resource';
+
             if (isFree) {
                 checkoutTotal.textContent = 'FREE';
                 checkoutTotal.className = 'summary-value free';
+                if (document.getElementById('checkoutHeaderTitle')) document.getElementById('checkoutHeaderTitle').textContent = 'Get Your Free Resource';
+                if (document.getElementById('checkoutSubText')) document.getElementById('checkoutSubText').textContent = 'No payment required';
+                if (document.getElementById('checkoutTrustBadge')) document.getElementById('checkoutTrustBadge').innerHTML = '✅ KICD Curriculum Aligned — Instant free download';
+                if (document.getElementById('phoneHint')) document.getElementById('phoneHint').textContent = "We'll use this to confirm your download only — no charges apply";
+                payPrimaryBtn.innerHTML = '<span class="btn-text">🎁 Get Free Download</span>';
             } else if (status === 'unavailable') {
                 checkoutTotal.textContent = 'Price unavailable';
                 checkoutTotal.className = 'summary-value';
+                if (document.getElementById('checkoutHeaderTitle')) document.getElementById('checkoutHeaderTitle').textContent = 'Complete Purchase';
+                if (document.getElementById('checkoutSubText')) document.getElementById('checkoutSubText').textContent = 'Secure M-PESA via MegaPay';
+                if (document.getElementById('checkoutTrustBadge')) document.getElementById('checkoutTrustBadge').innerHTML = '✅ KICD Curriculum Aligned — Instant download after verification';
+                if (document.getElementById('phoneHint')) document.getElementById('phoneHint').textContent = "You'll receive an M-PESA STK Push prompt";
+                payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Pay with M-PESA</span>';
             } else {
                 checkoutTotal.textContent = 'KES ' + (product.price || 0);
                 checkoutTotal.className = 'summary-value price';
+                if (document.getElementById('checkoutHeaderTitle')) document.getElementById('checkoutHeaderTitle').textContent = 'Complete Purchase';
+                if (document.getElementById('checkoutSubText')) document.getElementById('checkoutSubText').textContent = 'Secure M-PESA via MegaPay';
+                if (document.getElementById('checkoutTrustBadge')) document.getElementById('checkoutTrustBadge').innerHTML = '✅ KICD Curriculum Aligned — Instant download after verification';
+                if (document.getElementById('phoneHint')) document.getElementById('phoneHint').textContent = "You'll receive an M-PESA STK Push prompt";
+                payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Pay with M-PESA</span>';
             }
             document.getElementById('checkoutLineItems').innerHTML = '';
 
@@ -5007,7 +5031,6 @@ async function verifyMpesaPaymentManually() {
                 payPrimaryBtn.style.display = 'flex';
                 payPrimaryBtn.disabled = false;
                 payPrimaryBtn.classList.remove('loading');
-                payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Pay with M-PESA</span>';
                 verifyOrderBtn.style.display = 'none';
 
                 var lineItemsHtml = '';
@@ -5027,9 +5050,19 @@ async function verifyMpesaPaymentManually() {
                 if (allFree) {
                     checkoutTotal.textContent = 'FREE';
                     checkoutTotal.className = 'summary-value free';
+                    if (document.getElementById('checkoutHeaderTitle')) document.getElementById('checkoutHeaderTitle').textContent = 'Get Your Free Resources';
+                    if (document.getElementById('checkoutSubText')) document.getElementById('checkoutSubText').textContent = 'No payment required';
+                    if (document.getElementById('checkoutTrustBadge')) document.getElementById('checkoutTrustBadge').innerHTML = '✅ KICD Curriculum Aligned — Instant free download';
+                    if (document.getElementById('phoneHint')) document.getElementById('phoneHint').textContent = "We'll use this to confirm your download only — no charges apply";
+                    payPrimaryBtn.innerHTML = '<span class="btn-text">🎁 Get Free Downloads</span>';
                 } else {
                     checkoutTotal.textContent = 'KES ' + total;
                     checkoutTotal.className = 'summary-value price';
+                    if (document.getElementById('checkoutHeaderTitle')) document.getElementById('checkoutHeaderTitle').textContent = 'Complete Purchase';
+                    if (document.getElementById('checkoutSubText')) document.getElementById('checkoutSubText').textContent = 'Secure M-PESA via MegaPay';
+                    if (document.getElementById('checkoutTrustBadge')) document.getElementById('checkoutTrustBadge').innerHTML = '✅ KICD Curriculum Aligned — Instant download after verification';
+                    if (document.getElementById('phoneHint')) document.getElementById('phoneHint').textContent = "You'll receive an M-PESA STK Push prompt";
+                    payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Pay with M-PESA</span>';
                     verifyOrderBtn.style.display = 'block';
                     verifyOrderBtn.textContent = '🔓 Verify Payment';
                     verifyOrderBtn.onclick = function() { checkOrderPaymentStatus(); };
@@ -5096,13 +5129,22 @@ async function verifyMpesaPaymentManually() {
 
         // ─── INIT ──────────────────────────────────────────────────
         function renderLoading() {
-            productsGrid.innerHTML = '<div class="loading-spinner" style="grid-column:1/-1;"><span class="spin-icon">⏳</span>Loading resources...<div style="margin-top:4px;font-size:0.7rem;color:#9CA3AF;">Connecting to Supabase...</div></div>';
+            var skeletons = '';
+            for (var i = 0; i < 8; i++) {
+                skeletons += '<div class="skeleton-card">' +
+                    '<div class="skeleton-cover skeleton-shimmer"></div>' +
+                    '<div class="skeleton-line skeleton-shimmer w-60"></div>' +
+                    '<div class="skeleton-line skeleton-shimmer w-80"></div>' +
+                    '<div class="skeleton-line skeleton-shimmer w-40"></div>' +
+                    '</div>';
+            }
+            productsGrid.innerHTML = skeletons;
         }
 
         function renderError(err) {
             productsGrid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><span class="empty-icon">⚠️</span><h3>Unable to load resources</h3><p class="empty-detail">' +
                 (err ? err.message || 'Please try again later.' : 'Please try again later.') +
-                '</p><button onclick="window.init()" style="margin-top:8px;padding:6px 16px;background:var(--kv-gold);color:var(--kv-primary);border:none;border-radius:6px;cursor:pointer;font-weight:700;">🔄 Retry</button></div>';
+                '</p><button onclick="window.init()" style="margin-top:8px;padding:6px 16px;background:var(--kv-green);color:var(--kv-primary);border:none;border-radius:6px;cursor:pointer;font-weight:700;">🔄 Retry</button></div>';
         }
 
         async function init() {
@@ -5125,10 +5167,11 @@ async function verifyMpesaPaymentManually() {
                 console.log('[Resources] Loaded: ' + allResources.length + ' resources');
                 console.log('[Categories] ' + CATEGORY_DEFS.length + ' categories');
                 console.log('[Levels] ' + LEVEL_ORDER.length + ' education levels');
-                console.log('[Payment] Direct STK Push mode enabled');
+                console.log('[Payment] Direct STK Push mode enabled with timeout handling');
                 console.log('[Backend] Using: ' + BACKEND_URL);
                 console.log('[Payment] Multiple confirmation methods: status, payment_status, payment_confirmed, payment_verified, mpesa_code, amount_paid');
                 console.log('[Manual Verification] Available when payment fails to auto-confirm');
+                console.log('[Network] STK Push timeout set to ' + STK_PUSH_TIMEOUT + 'ms');
             } catch (e) {
                 renderError(e);
             }
@@ -5246,9 +5289,8 @@ async function verifyMpesaPaymentManually() {
         window.hideManualVerificationSection = hideManualVerificationSection;
 
         document.addEventListener('DOMContentLoaded', init);
-        console.log('✅ KenyaVault Marketplace — Category-Driven Design');
-        console.log('✅ Direct STK Push mode enabled');
-        console.log('✅ Multiple payment confirmation methods');
+        console.log('✅ KenyaVault Marketplace — Green Theme with Improved STK Push');
+        console.log('✅ STK Push timeout: ' + STK_PUSH_TIMEOUT + 'ms');
         console.log('✅ Manual M-PESA verification available as fallback');
         console.log('✅ Backend URL: ' + BACKEND_URL);
 
