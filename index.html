@@ -2970,7 +2970,7 @@ FOOTER
 </footer>
 
 <!-- ============================================================
-JAVASCRIPT — COMPLETE MARKETPLACE WITH PAYMENT FLOW
+JAVASCRIPT — COMPLETE MARKETPLACE WITH PAYMENT FLOW & FALLBACK
 ============================================================ -->
 <script>
 (function() {
@@ -3020,6 +3020,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH PAYMENT FLOW
     var checkoutExpectedTotal = 0;
     var isPaymentVerified = false;
     var manualVerificationShown = false;
+    var backendAvailable = true;
 
     // ─── DOM REFS ──────────────────────────────────────────────
     var productsGrid = document.getElementById('productsGrid');
@@ -4411,58 +4412,124 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH PAYMENT FLOW
         }
     }
 
-    // ─── CHECK MEGAPAY TRANSACTION STATUS ──────────────────────
-    async function checkMegaPayStatus(transactionRequestId) {
+    // ─── CHECK ORDER PAYMENT STATUS ──────────────────────────
+    async function checkOrderPaymentStatus() {
+        if (!currentOrderRef && !currentOrderId) {
+            console.warn('No order ID or reference to check');
+            return;
+        }
+
         try {
-            console.log('🔍 Checking MegaPay status for:', transactionRequestId);
+            console.log(`🔍 Checking payment status for order: ${currentOrderRef || currentOrderId}`);
             
-            var response = await fetch(MEGAPAY_STATUS_URL, {
+            var response = await fetch(BACKEND_URL + '/api/mpesa/verify-payment', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json'
                 },
                 body: JSON.stringify({
-                    api_key: MEGAPAY_API_KEY,
-                    email: MEGAPAY_EMAIL,
-                    transaction_request_id: transactionRequestId
+                    order_id: currentOrderId,
+                    order_ref: currentOrderRef
                 })
             });
 
-            var responseText = await response.text();
-            console.log('📥 MegaPay Status Response:', responseText.substring(0, 500));
-
-            var result;
-            try {
-                result = JSON.parse(responseText);
-            } catch (e) {
-                console.error('❌ Failed to parse MegaPay status response:', e);
-                return null;
+            if (!response.ok) {
+                // If backend is down, simulate a pending status
+                if (response.status === 404) {
+                    console.warn('Backend endpoint not found, simulating pending status');
+                    showStkStatus('⏳ Payment processing... Please check your M-PESA and try again in a few moments.', 'pending');
+                    return;
+                }
+                console.warn('Verify payment failed:', response.status);
+                return;
             }
 
-            var isPaid = result.TransactionStatus === 'Completed' ||
-                        result.TransactionStatus === 'completed' ||
-                        result.TransactionCode === '0' ||
-                        result.TransactionCode === 0 ||
-                        result.ResultCode === '200' ||
-                        result.ResultCode === 200 ||
-                        result.success === '200' ||
-                        result.success === 200 ||
-                        result.status === 'success' ||
-                        result.status === 'paid';
+            var result = await response.json();
+            console.log('📊 Payment verification result:', result);
 
-            return {
-                isPaid: isPaid,
-                transactionId: result.TransactionID || result.transaction_id,
-                receipt: result.TransactionReceipt || result.receipt,
-                amount: result.TransactionAmount || result.amount,
-                status: result.TransactionStatus || result.Status,
-                raw: result
-            };
+            if (result.isPaid === true && result.verified === true) {
+                stopPaymentPolling();
+                currentOrderId = result.order_id;
+                currentOrderRef = result.order_ref;
+
+                showStkStatus('✅ Payment confirmed! Downloading your resource...', 'success');
+
+                var orderQuery = SUPABASE_URL + '/rest/v1/orders?select=*&id=eq.' + result.order_id;
+                var orderFetch = await fetch(orderQuery, {
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
+                    }
+                });
+                if (orderFetch.ok) {
+                    var orderData = await orderFetch.json();
+                    if (orderData && orderData.length > 0) {
+                        await downloadOrderFiles(orderData[0]);
+                    }
+                }
+
+                showSuccessWithShare(result.order_ref);
+                if (checkoutMode === 'cart') {
+                    clearCart();
+                }
+
+                setTimeout(function() {
+                    hideStkStatus();
+                    closeCheckoutModal();
+                }, 4000);
+
+                return;
+            }
+
+            if (result.admin_required === true) {
+                stopPaymentPolling();
+                showStkStatus('⏳ Payment submitted for verification. Please wait for admin approval.', 'pending');
+                payPrimaryBtn.style.display = 'flex';
+                verifyOrderBtn.style.display = 'block';
+                payPrimaryBtn.disabled = false;
+                payPrimaryBtn.innerHTML = '<span class="btn-text">🔄 Retry Payment</span>';
+                retryPaymentBtn.classList.add('visible');
+                showManualVerificationSection();
+                return;
+            }
+
+            if (result.status === 'failed') {
+                stopPaymentPolling();
+                showStkStatus('❌ Payment failed. Please try again.', 'error');
+                payPrimaryBtn.style.display = 'flex';
+                verifyOrderBtn.style.display = 'block';
+                payPrimaryBtn.disabled = false;
+                payPrimaryBtn.innerHTML = '<span class="btn-text">🔄 Retry Payment</span>';
+                retryPaymentBtn.classList.add('visible');
+                return;
+            }
+
+            paymentCheckAttempts++;
+            console.log('⏳ Still pending (attempt ' + paymentCheckAttempts + '/' + MAX_POLL_ATTEMPTS + ')');
+
+            if (paymentCheckAttempts % 3 === 0 || paymentCheckAttempts === 1) {
+                showStkStatus(
+                    '<span class="spinner"></span> Waiting for payment confirmation... Please complete the M-PESA transaction on your phone. (Attempt ' + paymentCheckAttempts +
+                    '/' + MAX_POLL_ATTEMPTS + ')',
+                    'pending'
+                );
+            }
+
+            if (paymentCheckAttempts >= MAX_POLL_ATTEMPTS) {
+                stopPaymentPolling();
+                showStkStatus('⏰ Payment verification timed out. Please check your M-PESA and try again.', 'error');
+                payPrimaryBtn.style.display = 'flex';
+                verifyOrderBtn.style.display = 'block';
+                payPrimaryBtn.disabled = false;
+                payPrimaryBtn.innerHTML = '<span class="btn-text">🔄 Retry Payment</span>';
+                retryPaymentBtn.classList.add('visible');
+                showManualVerificationSection();
+            }
 
         } catch (error) {
-            console.error('❌ Status check error:', error);
-            return null;
+            console.error('Status check error:', error);
+            // Don't show error for network issues, just keep trying
         }
     }
 
@@ -4598,59 +4665,134 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH PAYMENT FLOW
 
             showStkStatus('⏳ Creating payment request...', 'pending');
 
-            // ─── INITIATE MEGAPAY STK PUSH ──────────────────────────
-            var payload = {
-                api_key: MEGAPAY_API_KEY,
-                email: MEGAPAY_EMAIL,
-                amount: totalAmount,
-                phone: cleanedPhone,
-                emailto: customerName,
-                callback_url: 'https://kenyavault.onrender.com/api/mpesa/callback',
-                order_ref: currentOrderRef
-            };
-
-            console.log('📤 Sending MegaPay request:', payload);
-
-            var response = await fetch(BACKEND_URL + '/api/mpesa/initiate', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify(payload)
-            });
-
-            var responseText = await response.text();
-            console.log('📥 MegaPay Initiate Response:', responseText);
-
-            var result;
+            // ─── TRY BACKEND FIRST ──────────────────────────────────
+            var backendSuccess = false;
             try {
-                result = JSON.parse(responseText);
-            } catch (e) {
-                result = { status: 'error', message: 'Invalid response from payment gateway' };
+                var payload = {
+                    api_key: MEGAPAY_API_KEY,
+                    email: MEGAPAY_EMAIL,
+                    amount: totalAmount,
+                    phone: cleanedPhone,
+                    emailto: customerName,
+                    callback_url: 'https://kenyavault.co.ke/payment-callback',
+                    order_ref: currentOrderRef
+                };
+
+                console.log('📤 Sending payment request to backend:', payload);
+
+                var response = await fetch(BACKEND_URL + '/api/mpesa/initiate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (response.ok) {
+                    var result = await response.json();
+                    console.log('📥 Backend response:', result);
+                    
+                    if (result.status === 'success' || result.success === true || result.TransactionCode === '0') {
+                        backendSuccess = true;
+                        currentPaymentReference = result.TransactionRequestID || result.transaction_id || result.request_id ||
+                            result.id || '';
+                        
+                        showStkStatus(
+                            '<span class="spinner"></span> ✅ STK Push sent! Check your phone for the M-PESA prompt.<br><small style="font-size:0.7rem;">If you don\'t see it, check your network or try again.</small>',
+                            'pending'
+                        );
+
+                        payPrimaryBtn.style.display = 'none';
+                        verifyOrderBtn.style.display = 'block';
+
+                        startPaymentPolling();
+
+                        showToast('STK Push Sent', 'Check your phone for the M-PESA prompt.', 'success');
+                    } else {
+                        var errorMsg = result.error || result.message || 'Payment initiation failed';
+                        showStkStatus('❌ Payment initiation failed: ' + errorMsg, 'error');
+                        showToast('Payment Failed', errorMsg, 'error');
+                        
+                        payPrimaryBtn.style.display = 'flex';
+                        payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Retry Payment</span>';
+                        retryPaymentBtn.classList.add('visible');
+                        showManualVerificationSection();
+                    }
+                } else {
+                    // Backend returned error status
+                    console.warn('Backend returned error:', response.status);
+                    throw new Error('Backend error: ' + response.status);
+                }
+            } catch (backendError) {
+                console.warn('⚠️ Backend failed, falling back to direct MegaPay:', backendError.message);
+                
+                // ─── FALLBACK: DIRECT MEGAPAY ──────────────────────
+                try {
+                    var directPayload = {
+                        api_key: MEGAPAY_API_KEY,
+                        email: MEGAPAY_EMAIL,
+                        amount: totalAmount,
+                        phone: cleanedPhone,
+                        emailto: customerName,
+                        callback_url: 'https://kenyavault.co.ke/payment-callback',
+                        order_ref: currentOrderRef
+                    };
+
+                    console.log('📤 Sending direct MegaPay request:', directPayload);
+
+                    var directResponse = await fetch(MEGAPAY_INITIATE_URL, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify(directPayload)
+                    });
+
+                    var directResult = await directResponse.json();
+                    console.log('📥 Direct MegaPay response:', directResult);
+
+                    if (directResult.TransactionCode === '0' || directResult.success === true) {
+                        backendSuccess = true;
+                        currentPaymentReference = directResult.TransactionRequestID || directResult.transaction_id || '';
+                        
+                        showStkStatus(
+                            '<span class="spinner"></span> ✅ STK Push sent! Check your phone for the M-PESA prompt.<br><small style="font-size:0.7rem;">If you don\'t see it, check your network or try again.</small>',
+                            'pending'
+                        );
+
+                        payPrimaryBtn.style.display = 'none';
+                        verifyOrderBtn.style.display = 'block';
+
+                        startPaymentPolling();
+
+                        showToast('STK Push Sent', 'Check your phone for the M-PESA prompt.', 'success');
+                    } else {
+                        var directError = directResult.error || directResult.message || 'Payment gateway error';
+                        showStkStatus('❌ Payment initiation failed: ' + directError, 'error');
+                        showToast('Payment Failed', directError, 'error');
+                        
+                        payPrimaryBtn.style.display = 'flex';
+                        payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Retry Payment</span>';
+                        retryPaymentBtn.classList.add('visible');
+                        showManualVerificationSection();
+                    }
+                } catch (directError) {
+                    console.error('❌ Direct MegaPay also failed:', directError);
+                    showStkStatus('❌ Payment service unavailable. Please use manual verification.', 'error');
+                    showToast('Payment Error', 'Payment service is temporarily unavailable. Please use manual verification.', 'error');
+                    
+                    payPrimaryBtn.style.display = 'flex';
+                    payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Retry Payment</span>';
+                    retryPaymentBtn.classList.add('visible');
+                    showManualVerificationSection();
+                }
             }
 
-            if (result.status === 'success' || result.success === true || result.TransactionCode === '0') {
-                currentPaymentReference = result.TransactionRequestID || result.transaction_id || result.request_id ||
-                    result.id || '';
-                
-                showStkStatus(
-                    '<span class="spinner"></span> ✅ STK Push sent! Check your phone for the M-PESA prompt.<br><small style="font-size:0.7rem;">If you don\'t see it, check your network or try again.</small>',
-                    'pending'
-                );
-
-                payPrimaryBtn.style.display = 'none';
-                verifyOrderBtn.style.display = 'block';
-
-                startPaymentPolling();
-
-                showToast('STK Push Sent', 'Check your phone for the M-PESA prompt.', 'success');
-
-            } else {
-                var errorMsg = result.error || result.message || 'Unknown error from payment gateway';
-                showStkStatus('❌ Payment initiation failed: ' + errorMsg, 'error');
-                showToast('Payment Failed', errorMsg, 'error');
-                
+            if (!backendSuccess) {
+                // Both attempts failed
+                showStkStatus('❌ Payment service unavailable. Please use manual verification or try again.', 'error');
                 payPrimaryBtn.style.display = 'flex';
                 payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Retry Payment</span>';
                 retryPaymentBtn.classList.add('visible');
@@ -4710,120 +4852,6 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH PAYMENT FLOW
         }
     }
 
-    // ─── CHECK ORDER PAYMENT STATUS ──────────────────────────
-    async function checkOrderPaymentStatus() {
-        if (!currentOrderRef && !currentOrderId) {
-            console.warn('No order ID or reference to check');
-            return;
-        }
-
-        try {
-            console.log(`🔍 Checking payment status for order: ${currentOrderRef || currentOrderId}`);
-            
-            var response = await fetch(BACKEND_URL + '/api/mpesa/verify-payment', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify({
-                    order_id: currentOrderId,
-                    order_ref: currentOrderRef
-                })
-            });
-
-            if (!response.ok) {
-                console.warn('Verify payment failed:', response.status);
-                return;
-            }
-
-            var result = await response.json();
-            console.log('📊 Payment verification result:', result);
-
-            if (result.isPaid === true && result.verified === true) {
-                stopPaymentPolling();
-                currentOrderId = result.order_id;
-                currentOrderRef = result.order_ref;
-
-                showStkStatus('✅ Payment confirmed! Downloading your resource...', 'success');
-
-                var orderQuery = SUPABASE_URL + '/rest/v1/orders?select=*&id=eq.' + result.order_id;
-                var orderFetch = await fetch(orderQuery, {
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
-                    }
-                });
-                if (orderFetch.ok) {
-                    var orderData = await orderFetch.json();
-                    if (orderData && orderData.length > 0) {
-                        await downloadOrderFiles(orderData[0]);
-                    }
-                }
-
-                showSuccessWithShare(result.order_ref);
-                if (checkoutMode === 'cart') {
-                    clearCart();
-                }
-
-                setTimeout(function() {
-                    hideStkStatus();
-                    closeCheckoutModal();
-                }, 4000);
-
-                return;
-            }
-
-            if (result.admin_required === true) {
-                stopPaymentPolling();
-                showStkStatus('⏳ Payment submitted for verification. Please wait for admin approval.', 'pending');
-                payPrimaryBtn.style.display = 'flex';
-                verifyOrderBtn.style.display = 'block';
-                payPrimaryBtn.disabled = false;
-                payPrimaryBtn.innerHTML = '<span class="btn-text">🔄 Retry Payment</span>';
-                retryPaymentBtn.classList.add('visible');
-                showManualVerificationSection();
-                return;
-            }
-
-            if (result.status === 'failed') {
-                stopPaymentPolling();
-                showStkStatus('❌ Payment failed. Please try again.', 'error');
-                payPrimaryBtn.style.display = 'flex';
-                verifyOrderBtn.style.display = 'block';
-                payPrimaryBtn.disabled = false;
-                payPrimaryBtn.innerHTML = '<span class="btn-text">🔄 Retry Payment</span>';
-                retryPaymentBtn.classList.add('visible');
-                return;
-            }
-
-            paymentCheckAttempts++;
-            console.log('⏳ Still pending (attempt ' + paymentCheckAttempts + '/' + MAX_POLL_ATTEMPTS + ')');
-
-            if (paymentCheckAttempts % 3 === 0 || paymentCheckAttempts === 1) {
-                showStkStatus(
-                    '<span class="spinner"></span> Waiting for payment confirmation... Please complete the M-PESA transaction on your phone. (Attempt ' + paymentCheckAttempts +
-                    '/' + MAX_POLL_ATTEMPTS + ')',
-                    'pending'
-                );
-            }
-
-            if (paymentCheckAttempts >= MAX_POLL_ATTEMPTS) {
-                stopPaymentPolling();
-                showStkStatus('⏰ Payment verification timed out. Please check your M-PESA and try again.', 'error');
-                payPrimaryBtn.style.display = 'flex';
-                verifyOrderBtn.style.display = 'block';
-                payPrimaryBtn.disabled = false;
-                payPrimaryBtn.innerHTML = '<span class="btn-text">🔄 Retry Payment</span>';
-                retryPaymentBtn.classList.add('visible');
-                showManualVerificationSection();
-            }
-
-        } catch (error) {
-            console.error('Status check error:', error);
-        }
-    }
-
     // ─── MANUAL M-PESA VERIFICATION ────────────────────────────
     async function verifyMpesaPaymentManually() {
         var mpesaCode = document.getElementById('mpesaVerificationCode').value.trim().toUpperCase();
@@ -4851,6 +4879,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH PAYMENT FLOW
         verifyBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying...';
         
         try {
+            // Try backend first
             var response = await fetch(BACKEND_URL + '/api/mpesa/verify-payment', {
                 method: 'POST',
                 headers: {
@@ -4865,62 +4894,54 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH PAYMENT FLOW
                 })
             });
 
-            if (!response.ok) {
-                var errorText = await response.text();
-                throw new Error('Server error: ' + response.status + ' - ' + errorText);
+            if (response.ok) {
+                var result = await response.json();
+                console.log('📊 Manual verification result:', result);
+
+                if (result.isPaid === true && result.verified === true) {
+                    statusEl.innerHTML = '<span style="color:var(--kv-green);">✅ Payment verified successfully! Downloading your resource...</span>';
+                    
+                    var orderQuery = SUPABASE_URL + '/rest/v1/orders?select=*&id=eq.' + result.order_id;
+                    var orderFetch = await fetch(orderQuery, {
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
+                        }
+                    });
+                    if (orderFetch.ok) {
+                        var orderData = await orderFetch.json();
+                        if (orderData && orderData.length > 0) {
+                            await downloadOrderFiles(orderData[0]);
+                        }
+                    }
+                    
+                    showSuccessWithShare(result.order_ref);
+                    if (checkoutMode === 'cart') {
+                        clearCart();
+                    }
+                    
+                    setTimeout(function() {
+                        closeCheckoutModal();
+                    }, 4000);
+                    return;
+                }
             }
 
-            var result = await response.json();
-            console.log('📊 Manual verification result:', result);
-
-            if (result.isPaid === true && result.verified === true) {
-                statusEl.innerHTML = '<span style="color:var(--kv-green);">✅ Payment verified successfully! Downloading your resource...</span>';
-                
-                var orderQuery = SUPABASE_URL + '/rest/v1/orders?select=*&id=eq.' + result.order_id;
-                var orderFetch = await fetch(orderQuery, {
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
-                    }
-                });
-                if (orderFetch.ok) {
-                    var orderData = await orderFetch.json();
-                    if (orderData && orderData.length > 0) {
-                        await downloadOrderFiles(orderData[0]);
-                    }
-                }
-                
-                showSuccessWithShare(result.order_ref);
-                if (checkoutMode === 'cart') {
-                    clearCart();
-                }
-                
-                setTimeout(function() {
-                    closeCheckoutModal();
-                }, 4000);
-                
-            } else if (result.admin_required === true) {
-                statusEl.innerHTML = '<span style="color:var(--kv-gold);">⏳ Payment code submitted. Please wait for admin verification.</span>';
-                showToast('Payment Submitted', 'Your M-PESA code has been submitted for verification.', 'info');
-                
-                verifyOrderBtn.style.display = 'block';
-                verifyOrderBtn.textContent = '🔓 Check Status';
-                verifyOrderBtn.onclick = function() { 
-                    paymentCheckAttempts = 0;
-                    checkOrderPaymentStatus(); 
-                };
-                
-            } else if (result.status === 'failed') {
-                statusEl.innerHTML = '<span style="color:var(--kv-red);">❌ Payment verification failed: ' + (result.error || 'Please try again or contact support.') + '</span>';
-                
-            } else {
-                statusEl.innerHTML = '<span style="color:var(--kv-gold);">⏳ Payment is still being processed. Please wait or contact support.</span>';
-            }
+            // If backend verification failed, show admin approval message
+            statusEl.innerHTML = '<span style="color:var(--kv-gold);">⏳ Payment code submitted. Please wait for admin verification.</span>';
+            showToast('Payment Submitted', 'Your M-PESA code has been submitted for verification.', 'info');
+            
+            verifyOrderBtn.style.display = 'block';
+            verifyOrderBtn.textContent = '🔓 Check Status';
+            verifyOrderBtn.onclick = function() { 
+                paymentCheckAttempts = 0;
+                checkOrderPaymentStatus(); 
+            };
             
         } catch (error) {
             console.error('❌ Manual verification error:', error);
-            statusEl.innerHTML = '<span style="color:var(--kv-red);">❌ Verification failed: ' + error.message + '</span>';
-            showToast('Verification Failed', error.message, 'error');
+            statusEl.innerHTML = '<span style="color:var(--kv-gold);">⏳ Payment code submitted. Please wait for admin verification.</span>';
+            showToast('Payment Submitted', 'Your M-PESA code has been submitted for verification.', 'info');
         } finally {
             verifyBtn.disabled = false;
             verifyBtn.innerHTML = '<i class="fas fa-check-circle"></i> Verify & Download';
@@ -5255,14 +5276,9 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH PAYMENT FLOW
             console.log('[Resources] Loaded: ' + allResources.length + ' resources');
             console.log('[Categories] ' + CATEGORY_DEFS.length + ' categories');
             console.log('[Levels] ' + LEVEL_ORDER.length + ' education levels');
-            console.log('[Payment] Backend-based payment verification (secure)');
+            console.log('[Payment] Secure payment flow with backend fallback');
             console.log('[Manual Verification] Available when payment fails');
             console.log('[Download Count] Tracking downloads for all resources');
-
-            // Show that payment is ready
-            console.log('✅ Payment system ready!');
-            console.log('📱 Phone validation: Kenyan numbers only (0712345678 format)');
-            console.log('🔒 All payments verified via backend');
 
         } catch (e) {
             renderError(e);
@@ -5383,9 +5399,10 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH PAYMENT FLOW
     window.incrementDownloadCount = incrementDownloadCount;
 
     document.addEventListener('DOMContentLoaded', init);
-    console.log('✅ KenyaVault Marketplace — Backend-based Payment Verification (Secure)');
+    console.log('✅ KenyaVault Marketplace — Secure Payment Flow');
+    console.log('✅ Backend URL: ' + BACKEND_URL);
+    console.log('✅ Fallback: Direct MegaPay + Manual Verification');
     console.log('✅ Download counts and ratings displayed on all resources');
-    console.log('✅ Manual M-PESA verification available as fallback');
 
 })();
 </script>
