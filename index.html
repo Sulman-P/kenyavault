@@ -4475,7 +4475,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH DOWNLOAD COUNT & REVIEWS
         }
     }
 
-// ─── CHECK ORDER PAYMENT STATUS (NO AUTO-VERIFICATION) ──────────
+// ─── CHECK ORDER PAYMENT STATUS ──────────────────────────
 async function checkOrderPaymentStatus() {
     if (!currentOrderRef && !currentOrderId) {
         console.warn('No order ID or reference to check');
@@ -4483,6 +4483,7 @@ async function checkOrderPaymentStatus() {
     }
 
     try {
+        // ─── CALL BACKEND TO CHECK PAYMENT STATUS ──────────────────
         var response = await fetch(BACKEND_URL + '/api/mpesa/verify-payment', {
             method: 'POST',
             headers: {
@@ -4503,13 +4504,13 @@ async function checkOrderPaymentStatus() {
         var result = await response.json();
         console.log('📊 Verification result:', result);
 
-        // ONLY mark as paid if explicitly verified
+        // ─── ONLY MARK AS PAID IF VERIFIED ──────────────────────────
         if (result.isPaid === true && result.verified === true) {
             stopPaymentPolling();
             currentOrderId = result.order_id;
             currentOrderRef = result.order_ref;
 
-            showStkStatus('✅ Payment confirmed!', 'success');
+            showStkStatus('✅ Payment confirmed! Downloading your resource...', 'success');
 
             // Get the order details to download
             var orderQuery = SUPABASE_URL + '/rest/v1/orders?select=*&id=eq.' + result.order_id;
@@ -4539,6 +4540,7 @@ async function checkOrderPaymentStatus() {
             return;
         }
 
+        // ─── ADMIN VERIFICATION REQUIRED ──────────────────────────────
         if (result.admin_required === true) {
             stopPaymentPolling();
             showStkStatus('⏳ Payment submitted for verification. Please wait for admin approval.', 'pending');
@@ -4551,6 +4553,7 @@ async function checkOrderPaymentStatus() {
             return;
         }
 
+        // ─── PAYMENT FAILED ──────────────────────────────────────────
         if (result.status === 'failed') {
             stopPaymentPolling();
             showStkStatus('❌ Payment failed. Please try again.', 'error');
@@ -4562,17 +4565,20 @@ async function checkOrderPaymentStatus() {
             return;
         }
 
+        // ─── STILL PENDING - KEEP CHECKING ──────────────────────────
         paymentCheckAttempts++;
         console.log('⏳ Still pending (attempt ' + paymentCheckAttempts + '/' + MAX_POLL_ATTEMPTS + ')');
 
+        // Show status message every few attempts
         if (paymentCheckAttempts % 3 === 0 || paymentCheckAttempts === 1) {
             showStkStatus(
-                '<span class="spinner"></span> Waiting for payment confirmation... Please complete the M-PESA transaction. (Attempt ' + paymentCheckAttempts +
+                '<span class="spinner"></span> Waiting for payment confirmation... Please complete the M-PESA transaction on your phone. (Attempt ' + paymentCheckAttempts +
                 '/' + MAX_POLL_ATTEMPTS + ')',
                 'pending'
             );
         }
 
+        // ─── TIMEOUT ──────────────────────────────────────────────────
         if (paymentCheckAttempts >= MAX_POLL_ATTEMPTS) {
             stopPaymentPolling();
             showStkStatus('⏰ Payment verification timed out. Please check your M-PESA and try again.', 'error');
@@ -4588,7 +4594,7 @@ async function checkOrderPaymentStatus() {
         console.error('Status check error:', error);
     }
 }
-
+    
 // ─── MANUAL M-PESA VERIFICATION (SECURE - USES BACKEND) ────────────
 async function verifyMpesaPaymentManually() {
     var mpesaCode = document.getElementById('mpesaVerificationCode').value.trim().toUpperCase();
