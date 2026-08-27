@@ -4597,7 +4597,7 @@ async function checkOrderPaymentStatus() {
     }
 }
     
-// ─── MANUAL M-PESA VERIFICATION (SECURE - USES BACKEND) ────────────
+// ─── MANUAL M-PESA VERIFICATION (SECURE - NO AUTO-APPROVAL) ────────────
 async function verifyMpesaPaymentManually() {
     var mpesaCode = document.getElementById('mpesaVerificationCode').value.trim().toUpperCase();
     var phone = document.getElementById('mpesaVerificationPhone').value.trim();
@@ -4646,7 +4646,7 @@ async function verifyMpesaPaymentManually() {
         var result = await response.json();
         console.log('📊 Manual verification result:', result);
 
-        if (result.isPaid === true) {
+        if (result.isPaid === true && result.verified === true) {
             statusEl.innerHTML = '<span style="color:var(--kv-green);">✅ Payment verified successfully! Downloading your resource...</span>';
             
             // Get the order details to download
@@ -4676,6 +4676,14 @@ async function verifyMpesaPaymentManually() {
         } else if (result.admin_required === true) {
             statusEl.innerHTML = '<span style="color:var(--kv-gold);">⏳ Payment code submitted. Please wait for admin verification. You will receive a confirmation email when approved.</span>';
             showToast('Payment Submitted', 'Your M-PESA code has been submitted for verification. You will be notified once confirmed.', 'info');
+            
+            // Show the verify button so user can check status later
+            verifyOrderBtn.style.display = 'block';
+            verifyOrderBtn.textContent = '🔓 Check Status';
+            verifyOrderBtn.onclick = function() { 
+                paymentCheckAttempts = 0;
+                checkOrderPaymentStatus(); 
+            };
             
         } else if (result.status === 'failed') {
             statusEl.innerHTML = '<span style="color:var(--kv-red);">❌ Payment verification failed: ' + (result.error || 'Please try again or contact support.') + '</span>';
