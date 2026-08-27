@@ -1538,7 +1538,7 @@
         }
 
         /* ============================================================
-           CHECKOUT MODAL
+           CHECKOUT MODAL — WITH DIRECT MEGAPAY INTEGRATION
            ============================================================ */
         .checkout-modal-overlay {
             display: none;
@@ -2715,7 +2715,7 @@ CART FAB + DRAWER
 </div>
 
 <!-- ============================================================
-CHECKOUT MODAL
+CHECKOUT MODAL — WITH DIRECT MEGAPAY INTEGRATION
 ============================================================ -->
 <div class="checkout-modal-overlay" id="checkoutModal">
     <div class="checkout-modal">
@@ -2937,21 +2937,28 @@ FOOTER
 </footer>
 
 <!-- ============================================================
-JAVASCRIPT — COMPLETE MARKETPLACE
+JAVASCRIPT — COMPLETE MARKETPLACE WITH DIRECT MEGAPAY INTEGRATION
 ============================================================ -->
 <script>
 (function() {
     'use strict';
 
-    // ─── CONFIG ──────────────────────────────────────────────
+    // ─── SUPABASE CONFIG ──────────────────────────────────────────
     var SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
     var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
     var BACKEND_URL = 'https://kenyavault.onrender.com';
+    
+    // ─── MEGAPAY DIRECT CONFIG ───────────────────────────────────
+    var MEGAPAY_API_KEY = 'MGPYDSg2lIYA';
+    var MEGAPAY_EMAIL = 'adminnexalearn@gmail.com';
+    var MEGAPAY_INITIATE_URL = 'https://megapay.co.ke/backend/v1/initiatestk';
+    var MEGAPAY_STATUS_URL = 'https://megapay.co.ke/backend/v1/transactionstatus';
+
     var ITEMS_PER_PAGE = 20;
     var POLL_INTERVAL = 3000;
     var MAX_POLL_ATTEMPTS = 30;
 
-    // ─── STATE ──────────────────────────────────────────────
+    // ─── STATE ──────────────────────────────────────────────────
     var allResources = [];
     var filteredResources = [];
     var currentPage = 1;
@@ -2980,7 +2987,6 @@ JAVASCRIPT — COMPLETE MARKETPLACE
     var checkoutExpectedTotal = 0;
     var isPaymentVerified = false;
     var manualVerificationShown = false;
-    var backendWarmed = false;
 
     // ─── DOM REFS ──────────────────────────────────────────────
     var productsGrid = document.getElementById('productsGrid');
@@ -3224,6 +3230,15 @@ JAVASCRIPT — COMPLETE MARKETPLACE
             'records of work': 'records-of-work'
         };
         return map[t] || t.replace(/\s+/g, '-');
+    }
+
+    function validatePhoneNumber(phone) {
+        var cleaned = phone.replace(/\D/g, '');
+        if (cleaned.startsWith('0') && cleaned.length === 10) return cleaned;
+        if (cleaned.startsWith('254') && cleaned.length === 12) return '0' + cleaned.substring(3);
+        if (phone && phone.startsWith('+254')) return '0' + phone.substring(4).replace(/\D/g, '');
+        if (cleaned.length === 9 && cleaned.startsWith('7')) return '0' + cleaned;
+        return null;
     }
 
     // ─── FETCH RESOURCES ──────────────────────────────────────
@@ -4286,7 +4301,62 @@ JAVASCRIPT — COMPLETE MARKETPLACE
         }
     }
 
-    // ─── MANUAL M-PESA VERIFICATION ────────────────────────────
+    // ─── CHECK MEGAPAY TRANSACTION STATUS ──────────────────────
+    async function checkMegaPayStatus(transactionRequestId) {
+        try {
+            console.log('🔍 Checking MegaPay status for:', transactionRequestId);
+            
+            var response = await fetch(MEGAPAY_STATUS_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    api_key: MEGAPAY_API_KEY,
+                    email: MEGAPAY_EMAIL,
+                    transaction_request_id: transactionRequestId
+                })
+            });
+
+            var responseText = await response.text();
+            console.log('📥 MegaPay Status Response:', responseText.substring(0, 500));
+
+            var result;
+            try {
+                result = JSON.parse(responseText);
+            } catch (e) {
+                console.error('❌ Failed to parse MegaPay status response:', e);
+                return null;
+            }
+
+            var isPaid = result.TransactionStatus === 'Completed' ||
+                        result.TransactionStatus === 'completed' ||
+                        result.TransactionCode === '0' ||
+                        result.TransactionCode === 0 ||
+                        result.ResultCode === '200' ||
+                        result.ResultCode === 200 ||
+                        result.success === '200' ||
+                        result.success === 200 ||
+                        result.status === 'success' ||
+                        result.status === 'paid';
+
+            return {
+                isPaid: isPaid,
+                transactionId: result.TransactionID || result.transaction_id,
+                receipt: result.TransactionReceipt || result.receipt,
+                amount: result.TransactionAmount || result.amount,
+                status: result.TransactionStatus || result.Status,
+                raw: result
+            };
+
+        } catch (error) {
+            console.error('❌ Status check error:', error);
+            return null;
+        }
+    }
+
+    // ─── VERIFY M-PESA PAYMENT MANUALLY ────────────────────────────
     async function verifyMpesaPaymentManually() {
         var mpesaCode = document.getElementById('mpesaVerificationCode').value.trim().toUpperCase();
         var phone = document.getElementById('mpesaVerificationPhone').value.trim();
@@ -4360,6 +4430,48 @@ JAVASCRIPT — COMPLETE MARKETPLACE
                 return;
             }
             
+            // Also check MegaPay status if we have a transaction ID
+            if (order.transaction_request_id) {
+                var megaPayStatus = await checkMegaPayStatus(order.transaction_request_id);
+                if (megaPayStatus && megaPayStatus.isPaid) {
+                    // Auto-verify through MegaPay
+                    var updateData = {
+                        status: 'paid',
+                        payment_status: 'paid',
+                        payment_confirmed: true,
+                        payment_verified: true,
+                        mpesa_code: megaPayStatus.receipt || mpesaCode,
+                        transaction_code: megaPayStatus.receipt || mpesaCode,
+                        amount_paid: megaPayStatus.amount || order.total_amount || 0,
+                        confirmed_at: new Date().toISOString(),
+                        paid_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                    };
+                    
+                    var updateResponse = await fetch(SUPABASE_URL + '/rest/v1/orders?id=eq.' + orderId, {
+                        method: 'PATCH',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                            'Content-Type': 'application/json',
+                            'Prefer': 'return=representation'
+                        },
+                        body: JSON.stringify(updateData)
+                    });
+                    
+                    if (updateResponse.ok) {
+                        statusEl.innerHTML = '<span style="color:var(--kv-green);">✅ Payment verified via MegaPay! Downloading your resource...</span>';
+                        await downloadOrderFiles(order);
+                        showSuccessWithShare(order.order_ref);
+                        setTimeout(function() { closeCheckoutModal(); }, 3000);
+                        verifyBtn.disabled = false;
+                        verifyBtn.innerHTML = '<i class="fas fa-check-circle"></i> Verify & Download';
+                        return;
+                    }
+                }
+            }
+            
+            // Manual verification fallback
             var updateData = {
                 status: 'paid',
                 payment_status: 'paid',
@@ -4374,7 +4486,6 @@ JAVASCRIPT — COMPLETE MARKETPLACE
             };
             
             console.log('📝 Manually verifying order with M-PESA code:', mpesaCode);
-            console.log('📝 Update data:', updateData);
             
             var updateResponse = await fetch(SUPABASE_URL + '/rest/v1/orders?id=eq.' + orderId, {
                 method: 'PATCH',
@@ -4396,19 +4507,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE
             statusEl.innerHTML = '<span style="color:var(--kv-green);">✅ Payment verified successfully! Downloading your resource...</span>';
             
             try {
-                var refreshQuery = SUPABASE_URL + '/rest/v1/orders?select=*&id=eq.' + orderId;
-                var refreshResponse = await fetch(refreshQuery, {
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
-                    }
-                });
-                var refreshedOrders = await refreshResponse.json();
-                if (refreshedOrders && refreshedOrders.length > 0) {
-                    await downloadOrderFiles(refreshedOrders[0]);
-                } else {
-                    await downloadOrderFiles(order);
-                }
+                await downloadOrderFiles(order);
             } catch (downloadError) {
                 console.warn('Download error:', downloadError);
                 statusEl.innerHTML = '<span style="color:var(--kv-gold);">✅ Payment verified! Your download should start shortly. If not, contact support.</span>';
@@ -4511,54 +4610,60 @@ JAVASCRIPT — COMPLETE MARKETPLACE
                 payment_confirmed: order.payment_confirmed,
                 payment_verified: order.payment_verified,
                 mpesa_code: order.mpesa_code,
+                transaction_request_id: order.transaction_request_id,
                 amount_paid: order.amount_paid,
                 total_amount: order.total_amount
             });
 
             var isPaid = false;
-            var paymentMethod = '';
 
-            if (order.payment_confirmed === true) {
-                isPaid = true;
-                paymentMethod = 'admin_confirmed';
-            }
-
-            if (order.payment_verified === true || order.payment_verified === 'true') {
-                isPaid = true;
-                paymentMethod = 'verified';
-            }
-
-            if (order.status === 'paid' || order.status === 'completed' || order.status === 'success') {
-                isPaid = true;
-                paymentMethod = 'status';
-            }
-
-            if (order.payment_status === 'paid' || order.payment_status === 'completed' || order.payment_status === 'success') {
-                isPaid = true;
-                paymentMethod = 'payment_status';
-            }
+            if (order.payment_confirmed === true) isPaid = true;
+            if (order.payment_verified === true || order.payment_verified === 'true') isPaid = true;
+            if (order.status === 'paid' || order.status === 'completed' || order.status === 'success') isPaid = true;
+            if (order.payment_status === 'paid' || order.payment_status === 'completed' || order.payment_status === 'success') isPaid = true;
 
             var mpesaCode = order.mpesa_code || order.mpesa_receipt || order.transaction_reference || order.payment_reference || '';
             var amountPaid = Number(order.amount_paid || 0);
             var totalAmount = Number(order.total_amount || 0);
 
-            if (mpesaCode.length > 0 && amountPaid >= totalAmount && totalAmount > 0) {
-                isPaid = true;
-                paymentMethod = 'mpesa_match';
-            }
+            if (mpesaCode.length > 0 && amountPaid >= totalAmount && totalAmount > 0) isPaid = true;
+            if (amountPaid >= totalAmount && totalAmount > 0 && !isPaid) isPaid = true;
 
-            if (amountPaid >= totalAmount && totalAmount > 0 && !isPaid) {
-                isPaid = true;
-                paymentMethod = 'amount_match';
+            // If we have transaction_request_id, check MegaPay status directly
+            if (!isPaid && order.transaction_request_id) {
+                var megaPayStatus = await checkMegaPayStatus(order.transaction_request_id);
+                if (megaPayStatus && megaPayStatus.isPaid) {
+                    isPaid = true;
+                    // Update order with MegaPay info
+                    await fetch(SUPABASE_URL + '/rest/v1/orders?id=eq.' + order.id, {
+                        method: 'PATCH',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            status: 'paid',
+                            payment_status: 'paid',
+                            payment_confirmed: true,
+                            payment_verified: true,
+                            mpesa_code: megaPayStatus.receipt || mpesaCode,
+                            transaction_code: megaPayStatus.receipt || mpesaCode,
+                            amount_paid: megaPayStatus.amount || totalAmount,
+                            confirmed_at: new Date().toISOString(),
+                            paid_at: new Date().toISOString(),
+                            updated_at: new Date().toISOString()
+                        })
+                    });
+                }
             }
 
             if (isPaid) {
                 stopPaymentPolling();
-                isPaymentVerified = true;
                 currentOrderId = order.id;
                 currentOrderRef = order.order_ref;
 
-                var mpesaDisplay = mpesaCode || '';
+                var mpesaDisplay = order.mpesa_code || mpesaCode || '';
                 showStkStatus('✅ Payment confirmed! ' + (mpesaDisplay ? 'M-PESA: ' + mpesaDisplay : ''), 'success');
 
                 try {
@@ -4590,22 +4695,6 @@ JAVASCRIPT — COMPLETE MARKETPLACE
                 payPrimaryBtn.disabled = false;
                 payPrimaryBtn.innerHTML = '<span class="btn-text">🔄 Retry Payment</span>';
                 retryPaymentBtn.classList.add('visible');
-                return;
-            }
-
-            var createdAt = new Date(order.created_at);
-            var now = new Date();
-            var elapsedMinutes = (now - createdAt) / (1000 * 60);
-
-            if (elapsedMinutes > 5 && !isPaid) {
-                stopPaymentPolling();
-                showStkStatus('⏰ Payment timeout. Please check your order status or try again.', 'error');
-                payPrimaryBtn.style.display = 'flex';
-                verifyOrderBtn.style.display = 'block';
-                payPrimaryBtn.disabled = false;
-                payPrimaryBtn.innerHTML = '<span class="btn-text">🔄 Retry Payment</span>';
-                retryPaymentBtn.classList.add('visible');
-                showManualVerificationSection();
                 return;
             }
 
@@ -4665,18 +4754,8 @@ JAVASCRIPT — COMPLETE MARKETPLACE
         }
         phoneInput.classList.remove('error');
 
-        var formattedPhone = phone;
-        if (phone.startsWith('254')) {
-            formattedPhone = '0' + phone.substring(3);
-        } else if (phone.startsWith('+254')) {
-            formattedPhone = '0' + phone.substring(4);
-        } else if (phone.startsWith('0') && phone.length === 10) {
-            formattedPhone = phone;
-        } else if (phone.length === 9 && phone.startsWith('7')) {
-            formattedPhone = '0' + phone;
-        }
-
-        if (!/^07[0-9]{8}$/.test(formattedPhone)) {
+        var formattedPhone = validatePhoneNumber(phone);
+        if (!formattedPhone) {
             phoneInput.classList.add('error');
             showToast('Error', 'Please enter a valid Safaricom phone number (e.g., 0712345678)', 'error');
             return;
@@ -4784,69 +4863,141 @@ JAVASCRIPT — COMPLETE MARKETPLACE
                 'pending'
             );
 
-            var response = await fetch(BACKEND_URL + '/api/mpesa/stk-push', {
+            // ─── DIRECT MEGAPAY INTEGRATION ──────────────────────
+            var kvReference = 'KV-' + Date.now().toString().slice(-8) + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
+            
+            var megaPayPayload = {
+                api_key: MEGAPAY_API_KEY,
+                email: MEGAPAY_EMAIL,
+                amount: totalAmount.toString(),
+                msisdn: formattedPhone,
+                reference: kvReference
+            };
+
+            console.log('📤 MegaPay Payload:', JSON.stringify(megaPayPayload, null, 2));
+
+            // Add timeout to the fetch
+            var controller = new AbortController();
+            var timeoutId = setTimeout(function() {
+                controller.abort();
+            }, 30000);
+
+            var megaPayResponse = await fetch(MEGAPAY_INITIATE_URL, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json'
                 },
-                mode: 'cors',
-                body: JSON.stringify({
-                    phone: formattedPhone,
-                    amount: totalAmount,
-                    order_id: orderId,
-                    order_ref: orderRef,
-                    customer_name: customerName,
-                    customer_email: customerEmail,
-                    resource_ids: checkoutMode === 'cart' ? checkoutCartItems.map(function(i) { return i.id; }) : [currentProduct.id]
-                })
+                signal: controller.signal,
+                body: JSON.stringify(megaPayPayload)
             });
 
-            if (!response.ok) {
-                var errorText = await response.text();
-                throw new Error('Server error: ' + response.status + ' - ' + errorText);
+            clearTimeout(timeoutId);
+
+            var responseText = await megaPayResponse.text();
+            console.log('📥 MegaPay Raw Response:', responseText.substring(0, 1000));
+
+            var megaPayResult;
+            try {
+                megaPayResult = JSON.parse(responseText);
+            } catch (parseError) {
+                console.error('❌ Failed to parse MegaPay response:', parseError);
+                throw new Error('Invalid response from MegaPay: ' + responseText.substring(0, 200));
             }
 
-            var result = await response.json();
+            console.log('📊 MegaPay Result:', JSON.stringify(megaPayResult, null, 2));
 
-            if (!result.success) {
-                throw new Error(result.error || 'Failed to send STK Push');
-            }
+            // ─── CHECK MEGAPAY RESPONSE ──────────────────────────
+            var successCode = megaPayResult.success;
+            var isSuccess = successCode === '200' || 
+                           successCode === 200 ||
+                           successCode === '0' ||
+                           successCode === 0 ||
+                           megaPayResult.ResultCode === '0' ||
+                           megaPayResult.ResultCode === 0 ||
+                           megaPayResult.Status === 'Success' ||
+                           megaPayResult.status === 'success' ||
+                           megaPayResult.success === true ||
+                           megaPayResult.success === 'true';
 
-            var megaPayReference = result.data.reference;
-            console.log('📝 MegaPay reference:', megaPayReference);
-            currentPaymentReference = megaPayReference;
+            if (isSuccess) {
+                var transactionRequestId = megaPayResult.transaction_request_id || 
+                                          megaPayResult.TransactionID || 
+                                          megaPayResult.TransactionId ||
+                                          megaPayResult.transactionId ||
+                                          megaPayResult.CheckoutRequestID ||
+                                          megaPayResult.reference ||
+                                          kvReference;
 
-            showStkStatus(
-                '📱 STK Push sent! Check your phone for the M-PESA PIN prompt.',
-                'pending'
-            );
+                console.log('✅ Transaction Request ID:', transactionRequestId);
 
-            payPrimaryBtn.style.display = 'none';
-            verifyOrderBtn.style.display = 'block';
-            verifyOrderBtn.textContent = '🔓 Verify Payment';
-            verifyOrderBtn.disabled = false;
-            verifyOrderBtn.onclick = function() { 
+                // ─── SAVE TRANSACTION REQUEST ID ──────────────────
+                await fetch(SUPABASE_URL + '/rest/v1/orders?id=eq.' + orderId, {
+                    method: 'PATCH',
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        transaction_request_id: transactionRequestId,
+                        checkout_request_id: transactionRequestId,
+                        payment_reference: kvReference,
+                        provider_reference: kvReference,
+                        updated_at: new Date().toISOString()
+                    })
+                });
+
+                showStkStatus(
+                    '📱 STK Push sent! Check your phone for the M-PESA PIN prompt.',
+                    'pending'
+                );
+
+                payPrimaryBtn.style.display = 'none';
+                verifyOrderBtn.style.display = 'block';
+                verifyOrderBtn.textContent = '🔓 Verify Payment';
+                verifyOrderBtn.disabled = false;
+                verifyOrderBtn.onclick = function() { 
+                    paymentCheckAttempts = 0;
+                    checkOrderPaymentStatus(); 
+                };
+
                 paymentCheckAttempts = 0;
-                checkOrderPaymentStatus(); 
-            };
+                startPaymentPolling();
 
-            paymentCheckAttempts = 0;
-            startPaymentPolling();
+            } else {
+                // ─── MEGAPAY ERROR ──────────────────────────────
+                var errorMessage = megaPayResult.massage || 
+                                  megaPayResult.message ||
+                                  megaPayResult.ResultDesc || 
+                                  megaPayResult.errorMessage || 
+                                  megaPayResult.error ||
+                                  'Unknown MegaPay error';
 
-            setTimeout(function() {
-                checkPaymentCallback();
-            }, 5000);
+                console.error('❌ MegaPay error:', errorMessage);
+                throw new Error(errorMessage);
+            }
 
         } catch (error) {
             console.error('Payment initiation failed:', error);
-            showStkStatus('❌ ' + (error.message || 'Payment initiation failed'), 'error');
-            showToast('Error', 'Payment initiation failed: ' + (error.message || 'Unknown error'), 'error');
+            
+            var errorMessage = error.message || 'Payment initiation failed';
+            
+            if (errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError') || errorMessage.includes('Network')) {
+                errorMessage = 'Network error: Unable to reach MegaPay. Please use manual verification below.';
+            }
+            
+            if (error.name === 'AbortError') {
+                errorMessage = 'Payment request timed out. Please try again or use manual verification.';
+            }
+            
+            showStkStatus('❌ ' + errorMessage, 'error');
+            showToast('Payment Error', errorMessage, 'error');
             
             payPrimaryBtn.style.display = 'flex';
             payPrimaryBtn.disabled = false;
             payPrimaryBtn.classList.remove('loading');
-            payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Pay with M-PESA</span>';
+            payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Retry Payment</span>';
             verifyOrderBtn.style.display = 'block';
             verifyOrderBtn.textContent = '🔓 Verify Payment';
             verifyOrderBtn.disabled = false;
@@ -4858,60 +5009,6 @@ JAVASCRIPT — COMPLETE MARKETPLACE
             showManualVerificationSection();
         } finally {
             isProcessing = false;
-        }
-    }
-
-    function checkPaymentCallback() {
-        var params = new URLSearchParams(window.location.search);
-        var status = params.get('status');
-        var orderRef = params.get('order_ref') || localStorage.getItem('pendingOrderRef');
-        var paymentRef = params.get('payment_reference') || params.get('reference');
-
-        if ((status === 'success' || status === 'completed' || status === 'paid') && (orderRef || paymentRef)) {
-            var query = SUPABASE_URL + '/rest/v1/orders?select=*';
-            if (orderRef) {
-                query += '&order_ref=eq.' + orderRef;
-            } else if (paymentRef) {
-                query += '&payment_reference=eq.' + paymentRef;
-            }
-
-            fetch(query, {
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
-                    'Content-Type': 'application/json'
-                }
-            })
-            .then(function(res) { return res.ok ? res.json() : null; })
-            .then(function(orders) {
-                if (orders && orders.length > 0) {
-                    var order = orders[0];
-                    var isPaid = order.payment_status === 'paid' || order.payment_status === 'completed' ||
-                        order.status === 'paid' || order.status === 'completed' ||
-                        order.status === 'success' ||
-                        order.payment_confirmed === true ||
-                        order.payment_verified === true;
-
-                    if (isPaid) {
-                        isPaymentVerified = true;
-                        currentOrderId = order.id;
-                        currentOrderRef = order.order_ref;
-                        stopPaymentPolling();
-                        showStkStatus('✅ Payment confirmed! Downloading your resource...', 'success');
-                        downloadOrderFiles(order);
-                        showSuccessWithShare(order.order_ref);
-                        if (checkoutMode === 'cart') clearCart();
-                        setTimeout(function() { closeCheckoutModal(); }, 3000);
-                    }
-                }
-                return null;
-            })
-            .catch(function(error) {
-                console.error('Callback processing failed:', error);
-            });
-
-            window.history.replaceState({}, document.title, window.location.pathname);
-            localStorage.removeItem('pendingOrderRef');
         }
     }
 
@@ -5181,17 +5278,13 @@ JAVASCRIPT — COMPLETE MARKETPLACE
             renderHomeSections();
             updateCounts();
             applyFilters();
-            checkPaymentCallback();
-            setInterval(checkPaymentCallback, 3000);
 
             console.log('[KenyaVault] Marketplace initialized successfully');
             console.log('[Resources] Loaded: ' + allResources.length + ' resources');
             console.log('[Categories] ' + CATEGORY_DEFS.length + ' categories');
             console.log('[Levels] ' + LEVEL_ORDER.length + ' education levels');
-            console.log('[Payment] Direct STK Push mode enabled');
-            console.log('[Backend] Using: ' + BACKEND_URL);
-            console.log('[Payment] Multiple confirmation methods: status, payment_status, payment_confirmed, payment_verified, mpesa_code, amount_paid');
-            console.log('[Manual Verification] Available when payment fails to auto-confirm');
+            console.log('[Payment] Direct MegaPay integration enabled');
+            console.log('[Manual Verification] Available when payment fails');
         } catch (e) {
             renderError(e);
         }
@@ -5310,11 +5403,9 @@ JAVASCRIPT — COMPLETE MARKETPLACE
     window.retryPayment = retryPayment;
 
     document.addEventListener('DOMContentLoaded', init);
-    console.log('✅ KenyaVault Marketplace — Green Theme');
-    console.log('✅ Direct STK Push mode enabled');
-    console.log('✅ Multiple payment confirmation methods');
+    console.log('✅ KenyaVault Marketplace — Direct MegaPay Integration');
     console.log('✅ Manual M-PESA verification available as fallback');
-    console.log('✅ Backend URL: ' + BACKEND_URL);
+    console.log('✅ No backend server required for STK Push');
 
 })();
 </script>
