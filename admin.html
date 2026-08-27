@@ -2897,8 +2897,8 @@
                 </div>
                 <div class="table-wrapper">
                     <table>
-                        <thead><tr><th>Order Ref</th><th>Customer</th><th>Phone</th><th>Resources</th><th class="numeric">Amount</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
-                        <tbody id="tableBody"><tr><td colspan="8" style="text-align:center;padding:30px;color:var(--muted);">Loading orders...</td></tr></tbody>
+                        <thead><tr><th>Order Ref</th><th>Customer</th><th>Phone</th><th>Resources</th><th class="numeric">Amount</th><th>Status</th><th>MPESA Code</th><th>Date</th><th>Actions</th></tr></thead>
+                        <tbody id="tableBody"><tr><td colspan="9" style="text-align:center;padding:30px;color:var(--muted);">Loading orders...</td></tr></tbody>
                     </table>
                 </div>
                 <div class="pagination">
@@ -2932,8 +2932,8 @@
                 <p class="text-muted" style="font-size:.8rem;margin-bottom:10px;" id="ordersCountLabel">Showing all orders</p>
                 <div class="table-wrapper">
                     <table>
-                        <thead><tr><th>Order Ref</th><th>Customer</th><th>Phone</th><th>Resources</th><th class="numeric">Amount</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
-                        <tbody id="ordersTableBody"><tr><td colspan="8" style="text-align:center;padding:30px;color:var(--muted);">Loading orders...</td></tr></tbody>
+                        <thead><tr><th>Order Ref</th><th>Customer</th><th>Phone</th><th>Resources</th><th class="numeric">Amount</th><th>Status</th><th>MPESA Code</th><th>Date</th><th>Actions</th></tr></thead>
+                        <tbody id="ordersTableBody"><tr><td colspan="9" style="text-align:center;padding:30px;color:var(--muted);">Loading orders...</td></tr></tbody>
                     </table>
                 </div>
             </div>
@@ -2992,7 +2992,6 @@
                             <span style="font-size:.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">Academic Classification</span>
                         </div>
                         <div class="form-grid-2">
-                            <!-- Education Level (Marketplace: Preprimary · Primary · JSS · Senior School · 8-4-4 · TVET · Colleges · University) -->
                             <div class="form-group">
                                 <label>Education Level <span class="required">*</span></label>
                                 <select id="resLevel" required>
@@ -3045,7 +3044,6 @@
                                     <option value="Other">Other</option>
                                 </select>
                             </div>
-                            <!-- Resource Type - Marketplace Categories -->
                             <div class="form-group">
                                 <label>Resource Type / Category <span class="required">*</span></label>
                                 <select id="resResourceType" required>
@@ -3254,7 +3252,6 @@
                             </span>
                         </div>
                         <div class="metadata-grid">
-                            <!-- Education Level - matches marketplace -->
                             <div>
                                 <span class="metadata-label">Education Level</span>
                                 <select id="bulkLevel">
@@ -3331,7 +3328,6 @@
                                     <option value="Music">Music</option>
                                 </select>
                             </div>
-                            <!-- Resource Type - matches marketplace categories -->
                             <div>
                                 <span class="metadata-label">Resource Type / Category</span>
                                 <select id="bulkResourceType">
@@ -3908,6 +3904,9 @@
             }
         });
 
+        // ============================================================
+        // 4a. LOGOUT - Redirect to Homepage
+        // ============================================================
         document.getElementById('logoutBtn').addEventListener('click', function(e) {
             e.preventDefault();
             if (confirm('Are you sure you want to logout?')) {
@@ -3915,7 +3914,9 @@
                 sessionStorage.removeItem('kv-user');
                 sessionStorage.removeItem('kv-role');
                 isAuthenticated = false;
-                location.reload();
+                // Redirect to homepage (KenyaVault marketplace)
+                window.location.href = 'https://kenyavault.co.ke/';
+                showToast('Logged Out', 'Redirecting to homepage...', 'info');
             }
         });
 
@@ -4079,11 +4080,13 @@
             var ref = o.order_ref || (o.id || '').slice(0, 8).toUpperCase();
             var date = o.created_at ? new Date(o.created_at).toLocaleString('en-KE') : '—';
 
+            // Get MPESA code - prioritize mpesa_code field
             var mpesaCode = o.mpesa_code || o.transaction_code || o.mpesa_receipt ||
                 o.transaction_reference || o.payment_reference || '';
-            var paymentInfo = '';
-            if (mpesaCode) {
-                paymentInfo = ' <span style="font-size:0.65rem;color:var(--blue);">📱 ' + mpesaCode + '</span>';
+            
+            // If payment is confirmed but no MPESA code, show a placeholder
+            if (status === 'paid' && !mpesaCode) {
+                mpesaCode = '📱 Recorded';
             }
 
             var note = '';
@@ -4101,17 +4104,19 @@
             var actions = '';
             if (status === 'pending') {
                 actions += '<i class="fas fa-check approve-btn" onclick="confirmOrder(\'' + o.id +
-                    '\')" title="Mark as Paid"></i>';
+                    '\')" title="Mark as Paid with MPESA"></i>';
                 actions += '<i class="fas fa-times reject-btn" onclick="rejectOrder(\'' + o.id +
                     '\')" title="Reject"></i>';
             }
 
-            if (hasPaymentData) {
-                actions += '<i class="fas fa-file-invoice" onclick="viewPaymentDetails(\'' + o.id +
-                    '\')" title="Payment Details" style="color:var(--gold);"></i>';
-            }
+            // Payment details view button with MPESA info
+            actions += '<i class="fas fa-file-invoice" onclick="viewPaymentDetails(\'' + o.id +
+                '\')" title="Payment Details" style="color:var(--gold);"></i>';
 
             var amount = getOrderAmount(o);
+
+            // MPESA code display
+            var mpesaDisplay = mpesaCode || '—';
 
             return '<tr>' +
                 '<td data-label="Order Ref">#' + ref + '</td>' +
@@ -4120,7 +4125,8 @@
                 '<td data-label="Resources">' + getOrderResources(o) + '</td>' +
                 '<td data-label="Amount" class="numeric">' + formatCurrency(amount) + '</td>' +
                 '<td data-label="Status"><span class="status ' + getStatusClass(status) + '">' + getStatusLabel(
-                    status) + note + paymentInfo + '</span></td>' +
+                    status) + note + '</span></td>' +
+                '<td data-label="MPESA Code" style="font-family:var(--font-mono);font-size:0.75rem;">' + mpesaDisplay + '</td>' +
                 '<td data-label="Date">' + date + '</td>' +
                 '<td data-label="Actions" class="action-icons">' +
                 '<i class="fas fa-eye" onclick="viewOrder(\'' + o.id + '\')" title="View Details"></i>' +
@@ -4142,7 +4148,7 @@
 
             tbody.innerHTML = paginated.length ?
                 paginated.map(buildOrderRowHTML).join('') :
-                '<tr><td colspan="8"><div class="empty-state"><div class="ico">📭</div>No orders found</div></td></tr>';
+                '<tr><td colspan="9"><div class="empty-state"><div class="ico">📭</div>No orders found</div></td></tr>';
 
             renderPaginationControls(totalPages);
         }
@@ -4159,7 +4165,7 @@
             }
             tbody.innerHTML = filtered.length ?
                 filtered.map(buildOrderRowHTML).join('') :
-                '<tr><td colspan="8"><div class="empty-state"><div class="ico">📭</div>No orders found</div></td></tr>';
+                '<tr><td colspan="9"><div class="empty-state"><div class="ico">📭</div>No orders found</div></td></tr>';
         }
 
         function renderPaginationControls(totalPages) {
@@ -4217,21 +4223,51 @@
         }
 
         // ============================================================
-        // 13. CONFIRM ORDER
+        // 13. CONFIRM ORDER - RECORD MPESA CODE
         // ============================================================
         window.confirmOrder = async function(id) {
             var order = ordersData.find(function(o) { return o.id === id; });
             if (!order) { showToast('Error', 'Order not found', 'error'); return; }
-            if (!confirm('Confirm this order as PAID?')) return;
+            
+            // Prompt for MPESA code if not already present
+            var mpesaCode = order.mpesa_code || order.transaction_code || order.mpesa_receipt || '';
+            if (!mpesaCode) {
+                mpesaCode = prompt('Enter MPESA Transaction Code for this payment:', '');
+                if (mpesaCode === null) return;
+                if (!mpesaCode.trim()) {
+                    showToast('Error', 'MPESA code is required', 'error');
+                    return;
+                }
+                mpesaCode = mpesaCode.trim();
+            }
+            
+            if (!confirm('Confirm this order as PAID with MPESA Code: ' + mpesaCode + '?')) return;
+            
             try {
+                // Update with MPESA code
                 await supabase.from('orders').update({
                     status: 'paid',
                     payment_status: 'paid',
                     payment_confirmed: true,
                     confirmed_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString()
+                    updated_at: new Date().toISOString(),
+                    mpesa_code: mpesaCode,      // Record MPESA code
+                    transaction_code: mpesaCode, // Also save in transaction_code
+                    mpesa_receipt: mpesaCode     // And in mpesa_receipt for redundancy
                 }).eq('id', id);
-                showToast('✅ Confirmed', 'Order marked as paid');
+                
+                // Also update the local data
+                var localOrder = ordersData.find(function(o) { return o.id === id; });
+                if (localOrder) {
+                    localOrder.mpesa_code = mpesaCode;
+                    localOrder.transaction_code = mpesaCode;
+                    localOrder.mpesa_receipt = mpesaCode;
+                    localOrder.payment_confirmed = true;
+                    localOrder.status = 'paid';
+                    localOrder.payment_status = 'paid';
+                }
+                
+                showToast('✅ Confirmed', 'Order marked as paid with MPESA: ' + mpesaCode);
                 await loadOrders();
             } catch (e) {
                 console.error('Confirm order error:', e);
@@ -4265,7 +4301,7 @@
         };
 
         // ============================================================
-        // 15. VIEW PAYMENT DETAILS
+        // 15. VIEW PAYMENT DETAILS - Enhanced with MPESA
         // ============================================================
         window.viewPaymentDetails = function(id) {
             var order = ordersData.find(function(o) { return o.id === id; });
@@ -4280,18 +4316,21 @@
             details += '📅 Date: ' + (order.created_at ? new Date(order.created_at).toLocaleString('en-KE') : '—') +
                 '\n\n';
             details += '🔍 Payment Info:\n';
-            details += '  M-PESA Code: ' + mpesaCode + '\n';
-            details += '  Amount Paid: ' + formatCurrency(order.amount_paid || 0) + '\n';
-            details += '  Status: ' + getStatusLabel(getPaymentStatus(order)) + '\n';
-            details += '  Confirmed: ' + (order.payment_confirmed === true ? '✅ Yes' : '❌ No') + '\n';
-            if (order.stk_push_verified === true) details += '  STK Push: ✅ Verified\n';
-            if (order.payment_method) details += '  Payment Method: ' + order.payment_method + '\n';
-            if (order.failure_reason) details += '  Failure Reason: ' + order.failure_reason + '\n';
+            details += '  📱 M-PESA Code: ' + mpesaCode + '\n';
+            details += '  💰 Amount Paid: ' + formatCurrency(order.amount_paid || 0) + '\n';
+            details += '  📊 Status: ' + getStatusLabel(getPaymentStatus(order)) + '\n';
+            details += '  ✅ Confirmed: ' + (order.payment_confirmed === true ? '✅ Yes' : '❌ No') + '\n';
+            if (order.stk_push_verified === true) details += '  📲 STK Push: ✅ Verified\n';
+            if (order.payment_method) details += '  💳 Payment Method: ' + order.payment_method + '\n';
+            if (order.failure_reason) details += '  ❌ Failure Reason: ' + order.failure_reason + '\n';
+            if (mpesaCode !== 'None') {
+                details += '\n📝 NOTE: MPESA code has been recorded for this transaction.';
+            }
             alert(details);
         };
 
         // ============================================================
-        // 16. VIEW ORDER
+        // 16. VIEW ORDER - Enhanced with MPESA
         // ============================================================
         window.viewOrder = function(id) {
             var order = ordersData.find(function(o) { return o.id === id; });
@@ -4305,7 +4344,7 @@
             details += '📧 Email: ' + (order.customer_email || '—') + '\n';
             details += '💳 Amount: ' + formatCurrency(amount) + '\n';
             details += '📊 Status: ' + getStatusLabel(status) + '\n';
-            details += '📱 M-PESA: ' + mpesaCode + '\n';
+            details += '📱 M-PESA Code: ' + mpesaCode + '\n';
             details += '📅 Date: ' + (order.created_at ? new Date(order.created_at).toLocaleString('en-KE') : '—') +
                 '\n';
             if (order.cart_items && order.cart_items.length > 0) {
@@ -4323,6 +4362,9 @@
             if (order.payment_confirmed) {
                 details += '\n✅ Payment confirmed at: ' + (order.confirmed_at ? new Date(order.confirmed_at)
                     .toLocaleString() : '—');
+            }
+            if (mpesaCode !== 'None') {
+                details += '\n📝 MPESA code is recorded.';
             }
             alert(details);
         };
@@ -4459,10 +4501,11 @@
         });
 
         // ============================================================
-        // 20. EXPORT
+        // 20. EXPORT - Enhanced with MPESA
         // ============================================================
         function exportRows() {
             return ordersData.map(function(o) {
+                var mpesa = o.mpesa_code || o.transaction_code || o.mpesa_receipt || '—';
                 return {
                     'Order Ref': o.order_ref || (o.id || '').slice(0, 8),
                     'Customer': o.customer_name || 'N/A',
@@ -4470,7 +4513,8 @@
                     'Resources': getOrderResources(o),
                     'Amount (KES)': getOrderAmount(o),
                     'Status': getPaymentStatus(o),
-                    'M-PESA': o.mpesa_code || o.transaction_code || o.mpesa_receipt || '—',
+                    'MPESA Code': mpesa,
+                    'Payment Confirmed': o.payment_confirmed === true ? 'Yes' : 'No',
                     'Date': o.created_at ? new Date(o.created_at).toLocaleString('en-KE') : '—'
                 };
             });
@@ -4496,7 +4540,7 @@
             a.download = 'kenyavault_orders.csv';
             a.click();
             window.URL.revokeObjectURL(url);
-            showToast('Export', 'Orders exported as CSV');
+            showToast('Export', 'Orders exported as CSV with MPESA codes');
         }
 
         function exportOrdersExcel() {
@@ -4506,7 +4550,7 @@
             var wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, 'Orders');
             XLSX.writeFile(wb, 'kenyavault_orders.xlsx');
-            showToast('Export', 'Orders exported as Excel');
+            showToast('Export', 'Orders exported as Excel with MPESA codes');
         }
 
         window.exportOrdersCSV = exportOrdersCSV;
@@ -4760,7 +4804,6 @@
                     cover_image_url: thumbnailUrl,
                     download_count: 0,
                     created_at: new Date().toISOString(),
-                    // Marketplace fields
                     category: resourceType,
                     education_level: level,
                     marketplace_category: resourceType
@@ -4889,7 +4932,6 @@
             'general': ['all levels']
         };
 
-        // Resource type detection - matches marketplace categories
         var resourceTypeKeywords = {
             'exam': 'Exams & Assessments',
             'assessment': 'Exams & Assessments',
@@ -5991,6 +6033,8 @@
             try {
                 var result = await supabase.from('learners').select('*').order('created_at', { ascending: false });
                 if (result.error) {
+                    // Check if learners table exists - try alternative
+                    console.warn('Learners table may not exist:', result.error);
                     learnersData = [];
                     renderLearners();
                     updateStatsUI();
@@ -6071,7 +6115,7 @@
         };
 
         // ============================================================
-        // 36. VISITORS
+        // 36. VISITORS - Safe fallback
         // ============================================================
         async function loadVisitors() {
             try {
@@ -6080,24 +6124,26 @@
                 document.getElementById('statVisitors').textContent = (result.count || 0).toLocaleString();
                 document.getElementById('statVisitorsSub').textContent = 'Total page views recorded';
             } catch (e) {
+                // Table may not exist - show informative message
                 document.getElementById('statVisitors').textContent = '—';
                 document.getElementById('statVisitorsSub').textContent = 'Add page_views table to enable';
             }
         }
 
         // ============================================================
-        // 37. WITHDRAWALS
+        // 37. WITHDRAWALS - Safe fallback
         // ============================================================
         async function loadWithdrawals() {
             var container = document.getElementById('withdrawalsList');
             try {
+                // Try tutor_payouts first
                 var result = await supabase.from('tutor_payouts').select('*').order('created_at', { ascending: false });
                 if (result.error) {
-                    var fallback = await supabase.from('withdrawals').select('*, tutors(name)').order('created_at', {
+                    // Fallback to withdrawals table
+                    var fallback = await supabase.from('withdrawals').select('*').order('created_at', {
                         ascending: false });
                     if (fallback.error) throw fallback.error;
-                    withdrawalsData = (fallback.data || []).map(function(w) { return { ...w, tutor_name: w.tutors
-                            ?.name || 'Unknown' }; });
+                    withdrawalsData = fallback.data || [];
                 } else {
                     withdrawalsData = result.data || [];
                 }
@@ -6326,10 +6372,12 @@
             console.log('[Super Admin] Initialized successfully with Marketplace-aligned categories');
             console.log('[Education Levels] Preprimary · Primary · JSS · Senior School · 8-4-4 · TVET · Colleges · University');
             console.log('[Categories] Exams & Assessments, Schemes of Work, Lesson Plans, Notes, Topical Questions & Revision, Holiday Assessments, Past Papers, Revision Materials, Records of Work, Curriculum Designs, Booklets, Free Resources');
+            console.log('[MPESA] MPESA codes are now recorded when payments are confirmed');
+            console.log('[Logout] Redirects to KenyaVault homepage');
         }
 
         checkAuth();
     </script>
 
 </body>
-</htm
+</html>
