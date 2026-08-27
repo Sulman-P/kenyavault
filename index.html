@@ -895,6 +895,33 @@
         }
         .pc-price.free { color: var(--kv-green); }
         .pc-price.unavailable { color: #92400E; font-size: 0.75rem; }
+        
+        /* Download count and rating display */
+        .pc-stats {
+            display: flex;
+            gap: 12px;
+            font-size: 0.6rem;
+            color: var(--kv-muted);
+            padding: 4px 0;
+            border-top: 1px solid var(--kv-border);
+            margin-top: 4px;
+        }
+        .pc-stats span {
+            display: flex;
+            align-items: center;
+            gap: 3px;
+        }
+        .pc-stats i {
+            font-size: 0.6rem;
+        }
+        .pc-stats .rating-stars {
+            color: var(--kv-gold);
+            letter-spacing: 1px;
+        }
+        .pc-stats .rating-stars .empty-star {
+            color: #ddd;
+        }
+        
         .pc-actions {
             display: flex;
             gap: 6px;
@@ -1538,7 +1565,7 @@
         }
 
         /* ============================================================
-           CHECKOUT MODAL — WITH DIRECT MEGAPAY INTEGRATION
+           CHECKOUT MODAL
            ============================================================ */
         .checkout-modal-overlay {
             display: none;
@@ -2499,6 +2526,8 @@ SHOP LAYOUT
                 <select class="sort-select" id="sortSelect" onchange="applyFilters()">
                     <option value="newest">Newest First</option>
                     <option value="popular">Most Popular</option>
+                    <option value="downloads">Most Downloaded</option>
+                    <option value="rating">Highest Rated</option>
                     <option value="grade-asc">Grade: Low to High</option>
                     <option value="grade-desc">Grade: High to Low</option>
                     <option value="price-asc">Price: Low to High</option>
@@ -2520,6 +2549,8 @@ SHOP LAYOUT
                 <select class="sort-select" id="mobileSortSelect" onchange="document.getElementById('sortSelect').value=this.value;applyFilters()">
                     <option value="newest">Newest First</option>
                     <option value="popular">Most Popular</option>
+                    <option value="downloads">Most Downloaded</option>
+                    <option value="rating">Highest Rated</option>
                     <option value="grade-asc">Grade: Low to High</option>
                     <option value="grade-desc">Grade: High to Low</option>
                     <option value="price-asc">Price: Low to High</option>
@@ -2674,6 +2705,8 @@ MOBILE FILTER
         <select class="sort-select" id="mobileSortSelect2" style="width:100%;padding:8px 12px;border:1px solid var(--kv-border);border-radius:var(--kv-radius-sm);font-size:0.8rem;" onchange="document.getElementById('sortSelect').value=this.value;applyFilters()">
             <option value="newest">Newest First</option>
             <option value="popular">Most Popular</option>
+            <option value="downloads">Most Downloaded</option>
+            <option value="rating">Highest Rated</option>
             <option value="grade-asc">Grade: Low to High</option>
             <option value="grade-desc">Grade: High to Low</option>
             <option value="price-asc">Price: Low to High</option>
@@ -2715,7 +2748,7 @@ CART FAB + DRAWER
 </div>
 
 <!-- ============================================================
-CHECKOUT MODAL — WITH DIRECT MEGAPAY INTEGRATION
+CHECKOUT MODAL
 ============================================================ -->
 <div class="checkout-modal-overlay" id="checkoutModal">
     <div class="checkout-modal">
@@ -2937,7 +2970,7 @@ FOOTER
 </footer>
 
 <!-- ============================================================
-JAVASCRIPT — COMPLETE MARKETPLACE WITH DIRECT MEGAPAY INTEGRATION
+JAVASCRIPT — COMPLETE MARKETPLACE WITH DOWNLOAD COUNT & REVIEWS
 ============================================================ -->
 <script>
 (function() {
@@ -3241,6 +3274,16 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH DIRECT MEGAPAY INTEGRATION
         return null;
     }
 
+    // ─── GENERATE RATING STARS ──────────────────────────────────
+    function getRatingStars(rating) {
+        var fullStars = Math.round(rating || 0);
+        var emptyStars = 5 - fullStars;
+        var stars = '';
+        for (var i = 0; i < fullStars; i++) stars += '★';
+        for (var i = 0; i < emptyStars; i++) stars += '<span class="empty-star">☆</span>';
+        return stars;
+    }
+
     // ─── FETCH RESOURCES ──────────────────────────────────────
     async function fetchResources() {
         try {
@@ -3264,12 +3307,69 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH DIRECT MEGAPAY INTEGRATION
                 if (r.level) {
                     r.level_normalized = r.level.toLowerCase().trim().replace(/\s+/g, '-');
                 }
+                // Ensure download_count exists
+                if (r.download_count === undefined || r.download_count === null) {
+                    r.download_count = 0;
+                }
+                // Ensure rating exists
+                if (r.rating === undefined || r.rating === null) {
+                    r.rating = 0;
+                }
+                // Ensure reviews_count exists
+                if (r.reviews_count === undefined || r.reviews_count === null) {
+                    r.reviews_count = 0;
+                }
             });
 
             return data || [];
         } catch (error) {
             console.error('[KenyaVault] Fetch error:', error);
             throw error;
+        }
+    }
+
+    // ─── UPDATE DOWNLOAD COUNT ──────────────────────────────────
+    async function incrementDownloadCount(resourceId) {
+        try {
+            // First get current count
+            var response = await fetch(SUPABASE_URL + '/rest/v1/resources?select=download_count&id=eq.' + resourceId, {
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                    'Content-Type': 'application/json'
+                }
+            });
+            if (!response.ok) throw new Error('Failed to fetch resource');
+            var data = await response.json();
+            var currentCount = (data[0] && data[0].download_count) || 0;
+            
+            // Update with new count
+            var updateResponse = await fetch(SUPABASE_URL + '/rest/v1/resources?id=eq.' + resourceId, {
+                method: 'PATCH',
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=representation'
+                },
+                body: JSON.stringify({
+                    download_count: currentCount + 1,
+                    updated_at: new Date().toISOString()
+                })
+            });
+            if (!updateResponse.ok) throw new Error('Failed to update download count');
+            
+            // Update local resource data
+            var resource = allResources.find(function(r) { return r.id === resourceId; });
+            if (resource) {
+                resource.download_count = currentCount + 1;
+            }
+            
+            console.log('[KenyaVault] Download count updated for resource:', resourceId, 'New count:', currentCount + 1);
+            return true;
+        } catch (error) {
+            console.error('[KenyaVault] Error updating download count:', error);
+            return false;
         }
     }
 
@@ -3491,6 +3591,10 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH DIRECT MEGAPAY INTEGRATION
             filtered.sort(function(a, b) { return new Date(b.created_at) - new Date(a.created_at); });
         } else if (currentSort === 'popular') {
             filtered.sort(function(a, b) { return (b.download_count || 0) - (a.download_count || 0); });
+        } else if (currentSort === 'downloads') {
+            filtered.sort(function(a, b) { return (b.download_count || 0) - (a.download_count || 0); });
+        } else if (currentSort === 'rating') {
+            filtered.sort(function(a, b) { return (b.rating || 0) - (a.rating || 0); });
         } else if (currentSort === 'grade-asc') {
             filtered.sort(function(a, b) { return (GRADE_ORDER[a.grade] || 999) - (GRADE_ORDER[b.grade] || 999); });
         } else if (currentSort === 'grade-desc') {
@@ -3636,7 +3740,9 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH DIRECT MEGAPAY INTEGRATION
         var status = pricing.status;
         var productId = r.id || 'unknown';
         var safeTitle = (r.title || '').replace(/"/g, '&quot;').replace(/'/g, "\\'");
-        var rating = r.rating || Math.floor(Math.random() * 2) + 3;
+        var rating = r.rating || 0;
+        var reviewsCount = r.reviews_count || 0;
+        var downloadCount = r.download_count || 0;
         var levelDisplay = LEVEL_DISPLAY[r.level_normalized] || r.level || 'N/A';
         var gradeDisplay = GRADE_DISPLAY[r.grade] || r.grade || '';
 
@@ -3665,7 +3771,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH DIRECT MEGAPAY INTEGRATION
         if (r.level_normalized === 'university') badges.push('<span class="badge badge-university">University</span>');
         if (r.level_normalized === 'early-years') badges.push('<span class="badge badge-pp">Preprimary</span>');
         if (r.featured) badges.push('<span class="badge badge-popular">⭐ Featured</span>');
-        if (r.download_count > 50) badges.push('<span class="badge badge-popular">🔥 Popular</span>');
+        if (downloadCount > 50) badges.push('<span class="badge badge-popular">🔥 Popular</span>');
 
         var creator = r.creator_name || r.tutor_name || 'KenyaVault';
         var inCart = cart.some(function(ci) { return ci.id === productId; });
@@ -3688,16 +3794,21 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH DIRECT MEGAPAY INTEGRATION
 
         var subjectDisplay = r.subject ? r.subject.charAt(0).toUpperCase() + r.subject.slice(1) : 'General';
 
+        // Rating stars display
+        var starsHtml = getRatingStars(rating);
+
         return '<div class="product-card" data-id="' + productId + '">' + coverHTML +
             '<div class="pc-body">' +
             '<div class="pc-subject" style="color:' + getSubjectColor(r.subject) + '">' + getSubjectEmoji(r.subject) +
             ' ' + subjectDisplay + '</div>' +
             '<h4>' + safeTitle + '</h4>' +
             '<div class="pc-creator"><i class="fas fa-user-graduate"></i> ' + creator + '</div>' +
-            '<div class="pc-rating">' + '★'.repeat(Math.round(rating)) + '☆'.repeat(5 - Math.round(rating)) +
-            ' <span>(' + (r.download_count || 0) + ')</span></div>' +
-            '<div class="pc-meta"><span>📄 ' + (r.pages || 0) + ' pages</span><span>📥 ' + (r.download_count || 0) +
-            '</span>' + (r.term ? '<span>📅 ' + r.term + '</span>' : '') + (r.year ? '<span>📆 ' + r.year + '</span>' :
+            '<div class="pc-stats">' +
+            '<span><i class="fas fa-download"></i> ' + downloadCount + '</span>' +
+            '<span><span class="rating-stars">' + starsHtml + '</span> (' + reviewsCount + ')</span>' +
+            '</div>' +
+            '<div class="pc-meta"><span>📄 ' + (r.pages || 0) + ' pages</span>' +
+            (r.term ? '<span>📅 ' + r.term + '</span>' : '') + (r.year ? '<span>📆 ' + r.year + '</span>' :
                 '') + '</div>' +
             '<div class="pc-badges">' + badges.join('') + '</div>' +
             '</div>' +
@@ -4056,6 +4167,10 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH DIRECT MEGAPAY INTEGRATION
                 if (url) {
                     showToast('Opening', 'Opening ' + fileName + '...', 'info');
                     openFileInNewTab(url, fileName);
+                    // Increment download count
+                    if (product) {
+                        await incrementDownloadCount(product.id);
+                    }
                     return true;
                 }
                 showToast('Error', 'File not found. Please contact support.', 'error');
@@ -4081,6 +4196,10 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH DIRECT MEGAPAY INTEGRATION
                         openFileInNewTab(url, fileName);
                     }, i * 1000, url, fileName, i);
                     successCount++;
+                    // Increment download count for each item
+                    if (product) {
+                        await incrementDownloadCount(product.id);
+                    }
                 }
             }
 
@@ -5226,7 +5345,8 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH DIRECT MEGAPAY INTEGRATION
             '<div class="info-item"><div class="label">Resource Type</div><div class="value">' + ((product
                 .resource_type || 'General').replace(/-/g, ' ')) + '</div></div>' +
             '<div class="info-item"><div class="label">Downloads</div><div class="value">' + (product
-                .download_count || 0) + '</div></div>';
+                .download_count || 0) + '</div></div>' +
+            '<div class="info-item"><div class="label">Rating</div><div class="value">' + (product.rating || 0) + ' ★ (' + (product.reviews_count || 0) + ' reviews)</div></div>';
 
         previewModal.classList.add('open');
         document.body.style.overflow = 'hidden';
@@ -5285,6 +5405,8 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH DIRECT MEGAPAY INTEGRATION
             console.log('[Levels] ' + LEVEL_ORDER.length + ' education levels');
             console.log('[Payment] Direct MegaPay integration enabled');
             console.log('[Manual Verification] Available when payment fails');
+            console.log('[Download Count] Tracking downloads for all resources');
+            console.log('[Ratings] Displaying ratings and review counts');
         } catch (e) {
             renderError(e);
         }
@@ -5401,11 +5523,12 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH DIRECT MEGAPAY INTEGRATION
     window.showManualVerificationSection = showManualVerificationSection;
     window.hideManualVerificationSection = hideManualVerificationSection;
     window.retryPayment = retryPayment;
+    window.incrementDownloadCount = incrementDownloadCount;
 
     document.addEventListener('DOMContentLoaded', init);
     console.log('✅ KenyaVault Marketplace — Direct MegaPay Integration');
+    console.log('✅ Download counts and ratings displayed on all resources');
     console.log('✅ Manual M-PESA verification available as fallback');
-    console.log('✅ No backend server required for STK Push');
 
 })();
 </script>
