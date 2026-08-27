@@ -4475,7 +4475,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH DOWNLOAD COUNT & REVIEWS
         }
     }
 
-   // ─── CHECK ORDER PAYMENT STATUS (USES BACKEND, NO DIRECT MEGAPAY CALLS) ──────────
+// ─── CHECK ORDER PAYMENT STATUS (NO AUTO-VERIFICATION) ──────────
 async function checkOrderPaymentStatus() {
     if (!currentOrderRef && !currentOrderId) {
         console.warn('No order ID or reference to check');
@@ -4483,7 +4483,6 @@ async function checkOrderPaymentStatus() {
     }
 
     try {
-        // ─── CALL BACKEND TO VERIFY PAYMENT ──────────────────────
         var response = await fetch(BACKEND_URL + '/api/mpesa/verify-payment', {
             method: 'POST',
             headers: {
@@ -4504,7 +4503,8 @@ async function checkOrderPaymentStatus() {
         var result = await response.json();
         console.log('📊 Verification result:', result);
 
-        if (result.isPaid === true) {
+        // ONLY mark as paid if explicitly verified
+        if (result.isPaid === true && result.verified === true) {
             stopPaymentPolling();
             currentOrderId = result.order_id;
             currentOrderRef = result.order_ref;
@@ -4567,7 +4567,7 @@ async function checkOrderPaymentStatus() {
 
         if (paymentCheckAttempts % 3 === 0 || paymentCheckAttempts === 1) {
             showStkStatus(
-                '<span class="spinner"></span> Waiting for payment confirmation... (Attempt ' + paymentCheckAttempts +
+                '<span class="spinner"></span> Waiting for payment confirmation... Please complete the M-PESA transaction. (Attempt ' + paymentCheckAttempts +
                 '/' + MAX_POLL_ATTEMPTS + ')',
                 'pending'
             );
