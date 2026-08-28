@@ -2970,7 +2970,7 @@ FOOTER
 </footer>
 
 <!-- ============================================================
-JAVASCRIPT — COMPLETE MARKETPLACE WITH PAYMENT FLOW & FALLBACK
+JAVASCRIPT — COMPLETE MARKETPLACE WITH DIRECT MEGAPAY INTEGRATION
 ============================================================ -->
 <script>
 (function() {
@@ -2979,7 +2979,6 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH PAYMENT FLOW & FALLBACK
     // ─── SUPABASE CONFIG ──────────────────────────────────────────
     var SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
     var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
-    var BACKEND_URL = 'https://kenyavault.onrender.com';
     
     // ─── MEGAPAY DIRECT CONFIG ───────────────────────────────────
     var MEGAPAY_API_KEY = 'MGPYDSg2lIYA';
@@ -2988,8 +2987,8 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH PAYMENT FLOW & FALLBACK
     var MEGAPAY_STATUS_URL = 'https://megapay.co.ke/backend/v1/transactionstatus';
 
     var ITEMS_PER_PAGE = 20;
-    var POLL_INTERVAL = 3000;
-    var MAX_POLL_ATTEMPTS = 30;
+    var POLL_INTERVAL = 5000;
+    var MAX_POLL_ATTEMPTS = 20;
 
     // ─── STATE ──────────────────────────────────────────────────
     var allResources = [];
@@ -3017,10 +3016,10 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH PAYMENT FLOW & FALLBACK
     var cart = [];
     var checkoutMode = 'single';
     var checkoutCartItems = [];
+    var checkoutOrderIds = [];
     var checkoutExpectedTotal = 0;
     var isPaymentVerified = false;
     var manualVerificationShown = false;
-    var backendAvailable = true;
 
     // ─── DOM REFS ──────────────────────────────────────────────
     var productsGrid = document.getElementById('productsGrid');
@@ -4422,114 +4421,47 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH PAYMENT FLOW & FALLBACK
         try {
             console.log(`🔍 Checking payment status for order: ${currentOrderRef || currentOrderId}`);
             
-            var response = await fetch(BACKEND_URL + '/api/mpesa/verify-payment', {
-                method: 'POST',
+            var response = await fetch(SUPABASE_URL + '/rest/v1/orders?select=id,order_ref,payment_status,resource_file_path,delivery_token,mpesa_transaction_id,file_delivered,total_amount,amount_paid,resource_id&' + (currentOrderId ? 'id=eq.' + currentOrderId : 'order_ref=eq.' + currentOrderRef), {
                 headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify({
-                    order_id: currentOrderId,
-                    order_ref: currentOrderRef
-                })
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
+                }
             });
 
-            if (!response.ok) {
-                // If backend is down, simulate a pending status
-                if (response.status === 404) {
-                    console.warn('Backend endpoint not found, simulating pending status');
-                    showStkStatus('⏳ Payment processing... Please check your M-PESA and try again in a few moments.', 'pending');
-                    return;
-                }
-                console.warn('Verify payment failed:', response.status);
-                return;
-            }
+            if (!response.ok) return;
+            var orders = await response.json();
+            if (orders.length === 0) return;
 
-            var result = await response.json();
-            console.log('📊 Payment verification result:', result);
+            var allPaid = orders.every(function(o) {
+                return o.payment_status === 'paid' || o.payment_status === 'completed';
+            });
 
-            if (result.isPaid === true && result.verified === true) {
+            if (allPaid) {
                 stopPaymentPolling();
-                currentOrderId = result.order_id;
-                currentOrderRef = result.order_ref;
+                var orderRefFound = orders[0].order_ref;
+                var orderIdsFound = orders.map(function(o) { return o.id; });
+                currentOrderId = orderIdsFound[0];
+                currentOrderRef = orderRefFound;
+                checkoutOrderIds = orderIdsFound;
 
-                showStkStatus('✅ Payment confirmed! Downloading your resource...', 'success');
-
-                var orderQuery = SUPABASE_URL + '/rest/v1/orders?select=*&id=eq.' + result.order_id;
-                var orderFetch = await fetch(orderQuery, {
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
-                    }
-                });
-                if (orderFetch.ok) {
-                    var orderData = await orderFetch.json();
-                    if (orderData && orderData.length > 0) {
-                        await downloadOrderFiles(orderData[0]);
-                    }
+                if (verificationStatus) {
+                    verificationStatus.style.display = 'block';
+                    verificationStatus.innerHTML = '✅ Payment verified successfully!';
+                    verificationStatus.style.color = '#16A34A';
                 }
 
-                showSuccessWithShare(result.order_ref);
-                if (checkoutMode === 'cart') {
-                    clearCart();
-                }
+                showToast('Payment confirmed! Preparing your downloads...', 'success');
 
+                await showPaymentSuccess(orderRefFound, orderIdsFound);
+
+                if (checkoutMode === 'cart') clearCart();
                 setTimeout(function() {
-                    hideStkStatus();
+                    if (mpesaVerificationBox) mpesaVerificationBox.classList.remove('visible');
                     closeCheckoutModal();
-                }, 4000);
-
-                return;
+                }, 3000);
             }
-
-            if (result.admin_required === true) {
-                stopPaymentPolling();
-                showStkStatus('⏳ Payment submitted for verification. Please wait for admin approval.', 'pending');
-                payPrimaryBtn.style.display = 'flex';
-                verifyOrderBtn.style.display = 'block';
-                payPrimaryBtn.disabled = false;
-                payPrimaryBtn.innerHTML = '<span class="btn-text">🔄 Retry Payment</span>';
-                retryPaymentBtn.classList.add('visible');
-                showManualVerificationSection();
-                return;
-            }
-
-            if (result.status === 'failed') {
-                stopPaymentPolling();
-                showStkStatus('❌ Payment failed. Please try again.', 'error');
-                payPrimaryBtn.style.display = 'flex';
-                verifyOrderBtn.style.display = 'block';
-                payPrimaryBtn.disabled = false;
-                payPrimaryBtn.innerHTML = '<span class="btn-text">🔄 Retry Payment</span>';
-                retryPaymentBtn.classList.add('visible');
-                return;
-            }
-
-            paymentCheckAttempts++;
-            console.log('⏳ Still pending (attempt ' + paymentCheckAttempts + '/' + MAX_POLL_ATTEMPTS + ')');
-
-            if (paymentCheckAttempts % 3 === 0 || paymentCheckAttempts === 1) {
-                showStkStatus(
-                    '<span class="spinner"></span> Waiting for payment confirmation... Please complete the M-PESA transaction on your phone. (Attempt ' + paymentCheckAttempts +
-                    '/' + MAX_POLL_ATTEMPTS + ')',
-                    'pending'
-                );
-            }
-
-            if (paymentCheckAttempts >= MAX_POLL_ATTEMPTS) {
-                stopPaymentPolling();
-                showStkStatus('⏰ Payment verification timed out. Please check your M-PESA and try again.', 'error');
-                payPrimaryBtn.style.display = 'flex';
-                verifyOrderBtn.style.display = 'block';
-                payPrimaryBtn.disabled = false;
-                payPrimaryBtn.innerHTML = '<span class="btn-text">🔄 Retry Payment</span>';
-                retryPaymentBtn.classList.add('visible');
-                showManualVerificationSection();
-            }
-
         } catch (error) {
-            console.error('Status check error:', error);
-            // Don't show error for network issues, just keep trying
+            console.error('❌ Payment status check error:', error);
         }
     }
 
@@ -4591,55 +4523,26 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH PAYMENT FLOW & FALLBACK
             }];
         }
 
+        // Handle free items
         if (isFree) {
-            payPrimaryBtn.disabled = true;
-            payPrimaryBtn.classList.add('loading');
-            payPrimaryBtn.innerHTML = '<span class="spinner"></span><span class="btn-loading-text">Processing...</span>';
-
+            if (verifyOrderBtn) { verifyOrderBtn.disabled = true; verifyOrderBtn.classList.add('loading'); }
             try {
+                showToast('Preparing your free downloads...', 'info', '⏳ Processing');
                 var orderResult;
                 if (checkoutMode === 'cart') {
                     orderResult = await createCartOrder(items, customerName, cleanedPhone);
                 } else {
                     orderResult = await createSingleOrder(currentProduct, customerName, cleanedPhone);
                 }
-
-                currentOrderId = orderResult.orderId;
                 currentOrderRef = orderResult.orderRef;
-
-                showStkStatus('✅ Free resource! Downloading...', 'success');
-
-                var orderQuery = SUPABASE_URL + '/rest/v1/orders?select=*&id=eq.' + orderResult.orderId;
-                var orderFetch = await fetch(orderQuery, {
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
-                    }
-                });
-                if (orderFetch.ok) {
-                    var orderData = await orderFetch.json();
-                    if (orderData && orderData.length > 0) {
-                        await downloadOrderFiles(orderData[0]);
-                    }
-                }
-
-                showSuccessWithShare(orderResult.orderRef);
+                checkoutOrderIds = [orderResult.orderId];
+                await showPaymentSuccess(orderResult.orderRef, [orderResult.orderId]);
                 if (checkoutMode === 'cart') clearCart();
-
-                setTimeout(function() {
-                    hideStkStatus();
-                    closeCheckoutModal();
-                }, 4000);
-
+                setTimeout(function() { closeCheckoutModal(); }, 2000);
             } catch (error) {
-                console.error('[Free Download] Error:', error);
-                showStkStatus('❌ Error: ' + (error.message || 'Could not process free download'), 'error');
-                showToast('Error', 'Could not process free download: ' + error.message, 'error');
-            } finally {
-                payPrimaryBtn.disabled = false;
-                payPrimaryBtn.classList.remove('loading');
-                payPrimaryBtn.innerHTML = '<span class="btn-text">🎁 Get Free Download</span>';
+                showToast('Failed to download: ' + error.message, 'error');
             }
+            if (verifyOrderBtn) { verifyOrderBtn.disabled = false; verifyOrderBtn.classList.remove('loading'); }
             return;
         }
 
@@ -4647,9 +4550,11 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH PAYMENT FLOW & FALLBACK
         if (isProcessing) return;
         isProcessing = true;
 
-        payPrimaryBtn.disabled = true;
-        payPrimaryBtn.classList.add('loading');
-        payPrimaryBtn.innerHTML = '<span class="spinner"></span><span class="btn-loading-text">Processing...</span>';
+        if (payPrimaryBtn) {
+            payPrimaryBtn.disabled = true;
+            payPrimaryBtn.classList.add('loading');
+            payPrimaryBtn.innerHTML = '<span class="spinner"></span><span class="btn-loading-text">Processing...</span>';
+        }
         hideStkStatus();
 
         try {
@@ -4660,160 +4565,102 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH PAYMENT FLOW & FALLBACK
                 orderResult = await createSingleOrder(currentProduct, customerName, cleanedPhone);
             }
 
-            currentOrderId = orderResult.orderId;
             currentOrderRef = orderResult.orderRef;
+            currentOrderId = orderResult.orderId;
+            checkoutOrderIds = [orderResult.orderId];
+            checkoutExpectedTotal = totalAmount;
 
-            showStkStatus('⏳ Creating payment request...', 'pending');
+            localStorage.setItem('pendingOrderRef', orderResult.orderRef);
+            localStorage.setItem('pendingOrderId', orderResult.orderId);
+            localStorage.setItem('pendingCustomerPhone', cleanedPhone);
 
-            // ─── TRY BACKEND FIRST ──────────────────────────────────
-            var backendSuccess = false;
+            showStkStatus('⏳ Creating STK Push...', 'pending');
+
+            // ─── DIRECT MEGAPAY STK PUSH ──────────────────────────
+            var payload = {
+                api_key: MEGAPAY_API_KEY,
+                email: MEGAPAY_EMAIL,
+                amount: totalAmount,
+                phone: cleanedPhone,
+                emailto: customerName,
+                callback_url: 'https://kenyavault.co.ke/payment-callback',
+                order_ref: currentOrderRef,
+                description: currentProduct ? currentProduct.title || 'Educational Resource' : 'KenyaVault Order'
+            };
+
+            console.log('📤 Sending MegaPay STK Push:', payload);
+
+            var response = await fetch(MEGAPAY_INITIATE_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+
+            var responseText = await response.text();
+            console.log('📥 MegaPay Response:', responseText);
+
+            var result;
             try {
-                var payload = {
-                    api_key: MEGAPAY_API_KEY,
-                    email: MEGAPAY_EMAIL,
-                    amount: totalAmount,
-                    phone: cleanedPhone,
-                    emailto: customerName,
-                    callback_url: 'https://kenyavault.co.ke/payment-callback',
-                    order_ref: currentOrderRef
-                };
-
-                console.log('📤 Sending payment request to backend:', payload);
-
-                var response = await fetch(BACKEND_URL + '/api/mpesa/initiate', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                    },
-                    body: JSON.stringify(payload)
-                });
-
-                if (response.ok) {
-                    var result = await response.json();
-                    console.log('📥 Backend response:', result);
-                    
-                    if (result.status === 'success' || result.success === true || result.TransactionCode === '0') {
-                        backendSuccess = true;
-                        currentPaymentReference = result.TransactionRequestID || result.transaction_id || result.request_id ||
-                            result.id || '';
-                        
-                        showStkStatus(
-                            '<span class="spinner"></span> ✅ STK Push sent! Check your phone for the M-PESA prompt.<br><small style="font-size:0.7rem;">If you don\'t see it, check your network or try again.</small>',
-                            'pending'
-                        );
-
-                        payPrimaryBtn.style.display = 'none';
-                        verifyOrderBtn.style.display = 'block';
-
-                        startPaymentPolling();
-
-                        showToast('STK Push Sent', 'Check your phone for the M-PESA prompt.', 'success');
-                    } else {
-                        var errorMsg = result.error || result.message || 'Payment initiation failed';
-                        showStkStatus('❌ Payment initiation failed: ' + errorMsg, 'error');
-                        showToast('Payment Failed', errorMsg, 'error');
-                        
-                        payPrimaryBtn.style.display = 'flex';
-                        payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Retry Payment</span>';
-                        retryPaymentBtn.classList.add('visible');
-                        showManualVerificationSection();
-                    }
-                } else {
-                    // Backend returned error status
-                    console.warn('Backend returned error:', response.status);
-                    throw new Error('Backend error: ' + response.status);
-                }
-            } catch (backendError) {
-                console.warn('⚠️ Backend failed, falling back to direct MegaPay:', backendError.message);
-                
-                // ─── FALLBACK: DIRECT MEGAPAY ──────────────────────
-                try {
-                    var directPayload = {
-                        api_key: MEGAPAY_API_KEY,
-                        email: MEGAPAY_EMAIL,
-                        amount: totalAmount,
-                        phone: cleanedPhone,
-                        emailto: customerName,
-                        callback_url: 'https://kenyavault.co.ke/payment-callback',
-                        order_ref: currentOrderRef
-                    };
-
-                    console.log('📤 Sending direct MegaPay request:', directPayload);
-
-                    var directResponse = await fetch(MEGAPAY_INITIATE_URL, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Accept': 'application/json'
-                        },
-                        body: JSON.stringify(directPayload)
-                    });
-
-                    var directResult = await directResponse.json();
-                    console.log('📥 Direct MegaPay response:', directResult);
-
-                    if (directResult.TransactionCode === '0' || directResult.success === true) {
-                        backendSuccess = true;
-                        currentPaymentReference = directResult.TransactionRequestID || directResult.transaction_id || '';
-                        
-                        showStkStatus(
-                            '<span class="spinner"></span> ✅ STK Push sent! Check your phone for the M-PESA prompt.<br><small style="font-size:0.7rem;">If you don\'t see it, check your network or try again.</small>',
-                            'pending'
-                        );
-
-                        payPrimaryBtn.style.display = 'none';
-                        verifyOrderBtn.style.display = 'block';
-
-                        startPaymentPolling();
-
-                        showToast('STK Push Sent', 'Check your phone for the M-PESA prompt.', 'success');
-                    } else {
-                        var directError = directResult.error || directResult.message || 'Payment gateway error';
-                        showStkStatus('❌ Payment initiation failed: ' + directError, 'error');
-                        showToast('Payment Failed', directError, 'error');
-                        
-                        payPrimaryBtn.style.display = 'flex';
-                        payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Retry Payment</span>';
-                        retryPaymentBtn.classList.add('visible');
-                        showManualVerificationSection();
-                    }
-                } catch (directError) {
-                    console.error('❌ Direct MegaPay also failed:', directError);
-                    showStkStatus('❌ Payment service unavailable. Please use manual verification.', 'error');
-                    showToast('Payment Error', 'Payment service is temporarily unavailable. Please use manual verification.', 'error');
-                    
-                    payPrimaryBtn.style.display = 'flex';
-                    payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Retry Payment</span>';
-                    retryPaymentBtn.classList.add('visible');
-                    showManualVerificationSection();
-                }
+                result = JSON.parse(responseText);
+            } catch (e) {
+                result = { status: 'error', message: 'Invalid response from payment gateway' };
             }
 
-            if (!backendSuccess) {
-                // Both attempts failed
-                showStkStatus('❌ Payment service unavailable. Please use manual verification or try again.', 'error');
-                payPrimaryBtn.style.display = 'flex';
-                payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Retry Payment</span>';
-                retryPaymentBtn.classList.add('visible');
+            if (result.TransactionCode === '0' || result.success === true || result.status === 'success') {
+                currentPaymentReference = result.TransactionRequestID || result.transaction_id || '';
+                
+                showStkStatus(
+                    '<span class="spinner"></span> ✅ STK Push sent! Check your phone for the M-PESA prompt.<br><small style="font-size:0.7rem;">If you don\'t see it, check your network or try again.</small>',
+                    'pending'
+                );
+
+                if (payPrimaryBtn) payPrimaryBtn.style.display = 'none';
+                if (verifyOrderBtn) verifyOrderBtn.style.display = 'block';
+                if (mpesaVerificationBox) mpesaVerificationBox.classList.add('visible');
+
+                if (verificationStatus) {
+                    verificationStatus.style.display = 'block';
+                    verificationStatus.innerHTML = '⏳ Waiting for STK Push confirmation...';
+                    verificationStatus.style.color = '#667085';
+                }
+
+                startPaymentPolling();
+                setTimeout(function() { checkOrderPaymentStatus(); }, 3000);
+                showToast('STK Push Sent', 'Check your phone for the M-PESA prompt.', 'success');
+            } else {
+                var errorMsg = result.error || result.message || 'Payment initiation failed';
+                showStkStatus('❌ Payment initiation failed: ' + errorMsg, 'error');
+                showToast('Payment Failed', errorMsg, 'error');
+                
+                if (payPrimaryBtn) {
+                    payPrimaryBtn.style.display = 'flex';
+                    payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Retry Payment</span>';
+                }
+                if (retryPaymentBtn) retryPaymentBtn.classList.add('visible');
                 showManualVerificationSection();
             }
 
         } catch (error) {
-            console.error('[Payment] Error:', error);
-            var errorMessage = error.message || 'Payment service unavailable. Please try again.';
-            showStkStatus('❌ Error: ' + errorMessage, 'error');
-            showToast('Payment Error', errorMessage, 'error');
+            console.error('❌ Payment initiation failed:', error);
+            showStkStatus('❌ Error: ' + (error.message || 'Payment service unavailable. Please try again.'), 'error');
+            showToast('Payment Error', error.message || 'Payment service unavailable', 'error');
             
-            payPrimaryBtn.style.display = 'flex';
-            payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Retry Payment</span>';
-            retryPaymentBtn.classList.add('visible');
+            if (payPrimaryBtn) {
+                payPrimaryBtn.style.display = 'flex';
+                payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Retry Payment</span>';
+            }
+            if (retryPaymentBtn) retryPaymentBtn.classList.add('visible');
             showManualVerificationSection();
 
         } finally {
             isProcessing = false;
-            payPrimaryBtn.disabled = false;
-            payPrimaryBtn.classList.remove('loading');
+            if (payPrimaryBtn) {
+                payPrimaryBtn.disabled = false;
+                payPrimaryBtn.classList.remove('loading');
+            }
         }
     }
 
@@ -4827,7 +4674,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH PAYMENT FLOW & FALLBACK
             'pending'
         );
 
-        setTimeout(function() { checkOrderPaymentStatus(); }, 2000);
+        setTimeout(function() { checkOrderPaymentStatus(); }, 3000);
         
         paymentPollingInterval = setInterval(function() {
             paymentCheckAttempts++;
@@ -4835,11 +4682,12 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH PAYMENT FLOW & FALLBACK
             if (paymentCheckAttempts >= MAX_POLL_ATTEMPTS) {
                 stopPaymentPolling();
                 showStkStatus('⏰ Payment verification timed out. Please check your M-PESA and try again.', 'error');
-                payPrimaryBtn.style.display = 'flex';
-                verifyOrderBtn.style.display = 'block';
-                payPrimaryBtn.disabled = false;
-                payPrimaryBtn.innerHTML = '<span class="btn-text">🔄 Retry Payment</span>';
-                retryPaymentBtn.classList.add('visible');
+                if (payPrimaryBtn) {
+                    payPrimaryBtn.style.display = 'flex';
+                    payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Retry Payment</span>';
+                }
+                if (verifyOrderBtn) verifyOrderBtn.style.display = 'block';
+                if (retryPaymentBtn) retryPaymentBtn.classList.add('visible');
                 showManualVerificationSection();
             }
         }, POLL_INTERVAL);
@@ -4879,64 +4727,39 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH PAYMENT FLOW & FALLBACK
         verifyBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying...';
         
         try {
-            // Try backend first
-            var response = await fetch(BACKEND_URL + '/api/mpesa/verify-payment', {
-                method: 'POST',
+            // Check if the order is now paid with the M-PESA code
+            var orderQuery = SUPABASE_URL + '/rest/v1/orders?select=id,order_ref,payment_status,resource_file_path,resource_id&' + (currentOrderId ? 'id=eq.' + currentOrderId : 'order_ref=eq.' + currentOrderRef);
+            var orderRes = await fetch(orderQuery, {
                 headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify({
-                    order_id: currentOrderId,
-                    order_ref: currentOrderRef,
-                    mpesa_code: mpesaCode,
-                    phone: phone
-                })
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
+                }
             });
-
-            if (response.ok) {
-                var result = await response.json();
-                console.log('📊 Manual verification result:', result);
-
-                if (result.isPaid === true && result.verified === true) {
+            
+            if (orderRes.ok) {
+                var orders = await orderRes.json();
+                if (orders.length > 0 && (orders[0].payment_status === 'paid' || orders[0].payment_status === 'completed')) {
                     statusEl.innerHTML = '<span style="color:var(--kv-green);">✅ Payment verified successfully! Downloading your resource...</span>';
-                    
-                    var orderQuery = SUPABASE_URL + '/rest/v1/orders?select=*&id=eq.' + result.order_id;
-                    var orderFetch = await fetch(orderQuery, {
-                        headers: {
-                            'apikey': SUPABASE_ANON_KEY,
-                            'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
-                        }
-                    });
-                    if (orderFetch.ok) {
-                        var orderData = await orderFetch.json();
-                        if (orderData && orderData.length > 0) {
-                            await downloadOrderFiles(orderData[0]);
-                        }
-                    }
-                    
-                    showSuccessWithShare(result.order_ref);
-                    if (checkoutMode === 'cart') {
-                        clearCart();
-                    }
-                    
-                    setTimeout(function() {
-                        closeCheckoutModal();
-                    }, 4000);
+                    await downloadOrderFiles(orders[0]);
+                    showSuccessWithShare(orders[0].order_ref);
+                    if (checkoutMode === 'cart') clearCart();
+                    setTimeout(function() { closeCheckoutModal(); }, 3000);
                     return;
                 }
             }
 
-            // If backend verification failed, show admin approval message
+            // If not found, show admin approval message
             statusEl.innerHTML = '<span style="color:var(--kv-gold);">⏳ Payment code submitted. Please wait for admin verification.</span>';
             showToast('Payment Submitted', 'Your M-PESA code has been submitted for verification.', 'info');
             
-            verifyOrderBtn.style.display = 'block';
-            verifyOrderBtn.textContent = '🔓 Check Status';
-            verifyOrderBtn.onclick = function() { 
-                paymentCheckAttempts = 0;
-                checkOrderPaymentStatus(); 
-            };
+            if (verifyOrderBtn) {
+                verifyOrderBtn.style.display = 'block';
+                verifyOrderBtn.textContent = '🔓 Check Status';
+                verifyOrderBtn.onclick = function() { 
+                    paymentCheckAttempts = 0;
+                    checkOrderPaymentStatus(); 
+                };
+            }
             
         } catch (error) {
             console.error('❌ Manual verification error:', error);
@@ -4955,60 +4778,79 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH PAYMENT FLOW & FALLBACK
         var orderRef = params.get('order_ref') || localStorage.getItem('pendingOrderRef');
 
         if ((status === 'success' || status === 'completed' || status === 'paid') && orderRef) {
-            fetch(BACKEND_URL + '/api/mpesa/verify-payment', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify({
-                    order_ref: orderRef
-                })
-            })
-            .then(function(res) { return res.json(); })
-            .then(function(result) {
-                if (result.isPaid === true) {
-                    isPaymentVerified = true;
-                    currentOrderId = result.order_id;
-                    currentOrderRef = result.order_ref;
-                    stopPaymentPolling();
-                    showStkStatus('✅ Payment confirmed! Downloading your resource...', 'success');
-                    
-                    fetch(SUPABASE_URL + '/rest/v1/orders?select=*&id=eq.' + result.order_id, {
+            (async function() {
+                try {
+                    var orderRes = await fetch(SUPABASE_URL + '/rest/v1/orders?order_ref=eq.' + orderRef + '&select=id,payment_status', {
                         headers: {
                             'apikey': SUPABASE_ANON_KEY,
                             'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
                         }
-                    })
-                    .then(function(res) { return res.json(); })
-                    .then(function(orderData) {
-                        if (orderData && orderData.length > 0) {
-                            downloadOrderFiles(orderData[0]);
-                        }
                     });
-                    
-                    showSuccessWithShare(result.order_ref);
-                    if (checkoutMode === 'cart') clearCart();
-                    setTimeout(function() { closeCheckoutModal(); }, 3000);
+                    if (orderRes.ok) {
+                        var orders = await orderRes.json();
+                        if (orders.length > 0 && (orders[0].payment_status === 'paid' || orders[0].payment_status === 'completed')) {
+                            currentOrderId = orders[0].id;
+                            currentOrderRef = orderRef;
+                            var orderIds = orders.map(function(o) { return o.id; });
+                            await showPaymentSuccess(orderRef, orderIds);
+                            if (checkoutMode === 'cart') clearCart();
+                            setTimeout(function() {
+                                if (mpesaVerificationBox) mpesaVerificationBox.classList.remove('visible');
+                                closeCheckoutModal();
+                            }, 2000);
+                        }
+                    }
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                } catch (error) {
+                    console.error('❌ Callback processing failed:', error);
                 }
-            })
-            .catch(function(error) {
-                console.error('Callback processing failed:', error);
-            });
-
+            })();
+        } else if (status === 'failed') {
+            showToast('Payment failed. Please try again.', 'error');
             window.history.replaceState({}, document.title, window.location.pathname);
-            localStorage.removeItem('pendingOrderRef');
         }
+    }
+
+    // ─── SHOW PAYMENT SUCCESS ──────────────────────────────────
+    async function showPaymentSuccess(orderRef, orderIds) {
+        currentOrderRef = orderRef;
+        checkoutOrderIds = orderIds || [];
+
+        try {
+            var query = SUPABASE_URL + '/rest/v1/orders?select=id,order_ref,resource_id,item_title,resource_file_path,resource_file_name&' + (orderIds && orderIds.length > 0 ? 'id=in.(' + orderIds.join(',') + ')' : 'order_ref=eq.' + orderRef);
+            var response = await fetch(query, {
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
+                }
+            });
+            
+            if (response.ok) {
+                var orders = await response.json();
+                if (orders && orders.length > 0) {
+                    await downloadOrderFiles(orders[0]);
+                }
+            }
+        } catch (error) {
+            console.error('Error downloading after payment:', error);
+            showToast('Download error', 'Please contact support to get your download.', 'error');
+        }
+
+        if (successOrderRef) successOrderRef.textContent = orderRef;
+        if (successModal) successModal.classList.add('open');
+        if (verificationStatus) verificationStatus.style.display = 'none';
+        localStorage.removeItem('pendingOrderRef');
+        localStorage.removeItem('pendingOrderId');
     }
 
     // ─── SHOW SUCCESS WITH SHARE ──────────────────────────────────
     function showSuccessWithShare(orderRef) {
-        successOrderRef.textContent = orderRef;
-        successModal.classList.add('open');
+        if (successOrderRef) successOrderRef.textContent = orderRef;
+        if (successModal) successModal.classList.add('open');
     }
 
     function closeSuccessModal() {
-        successModal.classList.remove('open');
+        if (successModal) successModal.classList.remove('open');
         currentOrderRef = null;
         currentProduct = null;
         currentPaymentReference = null;
@@ -5016,23 +4858,23 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH PAYMENT FLOW & FALLBACK
     }
 
     function closeCheckoutModal() {
-        checkoutModal.classList.remove('open');
+        if (checkoutModal) checkoutModal.classList.remove('open');
         document.body.style.overflow = '';
-        hideStkStatus();
-        hideManualVerificationSection();
-        payPrimaryBtn.style.display = 'flex';
-        payPrimaryBtn.disabled = false;
-        payPrimaryBtn.classList.remove('loading');
-        payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Pay with M-PESA</span>';
-        verifyOrderBtn.style.display = 'none';
-        verifyOrderBtn.disabled = false;
-        retryPaymentBtn.classList.remove('visible');
+        if (mpesaVerificationBox) mpesaVerificationBox.classList.remove('visible');
+        if (underpaymentBox) underpaymentBox.classList.remove('visible');
+        if (payPrimaryBtn) {
+            payPrimaryBtn.style.display = 'flex';
+            payPrimaryBtn.classList.remove('loading');
+            payPrimaryBtn.disabled = false;
+            payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Pay with M-PESA</span>';
+        }
+        if (verificationStatus) verificationStatus.style.display = 'none';
         stopPaymentPolling();
         setTimeout(function() {
             currentOrderId = null;
-            currentPaymentReference = null;
             checkoutMode = 'single';
             checkoutCartItems = [];
+            checkoutOrderIds = [];
             checkoutExpectedTotal = 0;
             isPaymentVerified = false;
         }, 500);
@@ -5041,7 +4883,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH PAYMENT FLOW & FALLBACK
     // ─── CHECKOUT FUNCTIONS ──────────────────────────────────
     function openCheckout(productId) {
         var product = allResources.find(function(r) { return r.id === productId; });
-        if (!product) return;
+        if (!product) { showToast('Product not found', 'error'); return; }
 
         var pricing = getResourcePricing(product);
         var isFree = pricing.isFree;
@@ -5056,176 +4898,183 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH PAYMENT FLOW & FALLBACK
         currentPaymentReference = null;
         isPaymentVerified = false;
         hideManualVerificationSection();
-        retryPaymentBtn.classList.remove('visible');
+        if (retryPaymentBtn) retryPaymentBtn.classList.remove('visible');
 
-        customerNameInput.value = '';
-        customerNameInput.classList.remove('error');
-        phoneInput.value = '';
-        phoneInput.classList.remove('error');
+        if (customerNameInput) {
+            customerNameInput.value = '';
+            customerNameInput.classList.remove('error');
+        }
+        if (phoneInput) {
+            phoneInput.value = '';
+            phoneInput.classList.remove('error');
+        }
         hideStkStatus();
-        payPrimaryBtn.style.display = 'flex';
-        payPrimaryBtn.disabled = false;
-        payPrimaryBtn.classList.remove('loading');
-        verifyOrderBtn.style.display = 'none';
+        if (payPrimaryBtn) {
+            payPrimaryBtn.style.display = 'flex';
+            payPrimaryBtn.disabled = false;
+            payPrimaryBtn.classList.remove('loading');
+            payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Pay with M-PESA</span>';
+        }
+        if (verifyOrderBtn) verifyOrderBtn.style.display = 'none';
 
-        checkoutItemTitle.textContent = product.title || 'Resource';
+        if (checkoutItemTitle) checkoutItemTitle.textContent = product.title || 'Resource';
 
         if (isFree) {
-            checkoutTotal.textContent = 'FREE';
-            checkoutTotal.className = 'summary-value free';
-            checkoutHeaderTitle.textContent = 'Get Your Free Resource';
-            checkoutSubText.textContent = 'No payment required';
-            checkoutTrustBadge.innerHTML = '✅ KICD Curriculum Aligned — Instant free download';
-            phoneHint.textContent = "We'll use this to confirm your download only — no charges apply";
-            payPrimaryBtn.innerHTML = '<span class="btn-text">🎁 Get Free Download</span>';
+            if (checkoutTotal) {
+                checkoutTotal.textContent = 'FREE';
+                checkoutTotal.className = 'summary-value free';
+            }
+            if (checkoutHeaderTitle) checkoutHeaderTitle.textContent = 'Get Your Free Resource';
+            if (checkoutSubText) checkoutSubText.textContent = 'No payment required';
+            if (checkoutTrustBadge) checkoutTrustBadge.innerHTML = '✅ KICD Curriculum Aligned — Instant free download';
+            if (phoneHint) phoneHint.textContent = "We'll use this to confirm your download only — no charges apply";
+            if (payPrimaryBtn) payPrimaryBtn.innerHTML = '<span class="btn-text">🎁 Get Free Download</span>';
         } else if (status === 'unavailable') {
-            checkoutTotal.textContent = 'Price unavailable';
-            checkoutTotal.className = 'summary-value';
-            checkoutHeaderTitle.textContent = 'Complete Purchase';
-            checkoutSubText.textContent = 'Secure M-PESA via MegaPay';
-            checkoutTrustBadge.innerHTML = '✅ KICD Curriculum Aligned — Instant download after verification';
-            phoneHint.textContent = "You'll receive an M-PESA STK Push prompt";
-            payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Pay with M-PESA</span>';
+            if (checkoutTotal) {
+                checkoutTotal.textContent = 'Price unavailable';
+                checkoutTotal.className = 'summary-value';
+            }
+            if (checkoutHeaderTitle) checkoutHeaderTitle.textContent = 'Complete Purchase';
+            if (checkoutSubText) checkoutSubText.textContent = 'Secure M-PESA via MegaPay';
+            if (checkoutTrustBadge) checkoutTrustBadge.innerHTML = '✅ KICD Curriculum Aligned — Instant download after verification';
+            if (phoneHint) phoneHint.textContent = "You'll receive an M-PESA STK Push prompt";
+            if (payPrimaryBtn) payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Pay with M-PESA</span>';
         } else {
-            checkoutTotal.textContent = 'KES ' + (product.price || 0);
-            checkoutTotal.className = 'summary-value price';
-            checkoutHeaderTitle.textContent = 'Complete Purchase';
-            checkoutSubText.textContent = 'Secure M-PESA via MegaPay';
-            checkoutTrustBadge.innerHTML = '✅ KICD Curriculum Aligned — Instant download after verification';
-            phoneHint.textContent = "You'll receive an M-PESA STK Push prompt";
-            payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Pay with M-PESA</span>';
+            if (checkoutTotal) {
+                checkoutTotal.textContent = 'KES ' + (product.price || 0);
+                checkoutTotal.className = 'summary-value price';
+            }
+            if (checkoutHeaderTitle) checkoutHeaderTitle.textContent = 'Complete Purchase';
+            if (checkoutSubText) checkoutSubText.textContent = 'Secure M-PESA via MegaPay';
+            if (checkoutTrustBadge) checkoutTrustBadge.innerHTML = '✅ KICD Curriculum Aligned — Instant download after verification';
+            if (phoneHint) phoneHint.textContent = "You'll receive an M-PESA STK Push prompt";
+            if (payPrimaryBtn) payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Pay with M-PESA</span>';
         }
         document.getElementById('checkoutLineItems').innerHTML = '';
 
         if (!isFree && status !== 'unavailable') {
-            verifyOrderBtn.style.display = 'block';
-            verifyOrderBtn.textContent = '🔓 Verify Payment';
-            verifyOrderBtn.onclick = function() { checkOrderPaymentStatus(); };
-        }
-
-        checkoutModal.classList.add('open');
-        document.body.style.overflow = 'hidden';
-        setTimeout(function() { customerNameInput.focus(); }, 300);
-    }
-
-    function openCartCheckout() {
-        if (cart.length === 0) {
-            showToast('Cart Empty', 'Your cart is empty. Add some resources first!', 'error');
-            return;
-        }
-
-        closeCartDrawer();
-
-        setTimeout(function() {
-            checkoutMode = 'cart';
-            checkoutCartItems = JSON.parse(JSON.stringify(cart));
-            currentProduct = null;
-            currentOrderRef = null;
-            currentOrderId = null;
-            currentPaymentReference = null;
-            isPaymentVerified = false;
-            hideManualVerificationSection();
-            retryPaymentBtn.classList.remove('visible');
-
-            var total = checkoutCartItems.reduce(function(sum, ci) { return sum + (ci.price || 0) * ci.qty; }, 0);
-            checkoutExpectedTotal = total;
-            var allFree = total === 0;
-
-            customerNameInput.value = '';
-            customerNameInput.classList.remove('error');
-            phoneInput.value = '';
-            phoneInput.classList.remove('error');
-            hideStkStatus();
-            payPrimaryBtn.style.display = 'flex';
-            payPrimaryBtn.disabled = false;
-            payPrimaryBtn.classList.remove('loading');
-            verifyOrderBtn.style.display = 'none';
-
-            var lineItemsHtml = '';
-            for (var i = 0; i < checkoutCartItems.length; i++) {
-                var ci = checkoutCartItems[i];
-                var lineTotal = (ci.price || 0) * ci.qty;
-                var isFree = ci.price === 0;
-                lineItemsHtml += '<div class="cart-line-item">';
-                lineItemsHtml += '  <span>' + ci.title + ' (x' + ci.qty + ')</span>';
-                lineItemsHtml += '  <span style="font-weight:700;color:' + (isFree ? 'var(--kv-green)' :
-                    'var(--kv-gold)') + ';">' + (lineTotal === 0 ? 'FREE' : 'KES ' + lineTotal) +
-                    '</span>';
-                lineItemsHtml += '</div>';
-            }
-            document.getElementById('checkoutLineItems').innerHTML = lineItemsHtml;
-
-            if (allFree) {
-                checkoutTotal.textContent = 'FREE';
-                checkoutTotal.className = 'summary-value free';
-                checkoutHeaderTitle.textContent = 'Get Your Free Resources';
-                checkoutSubText.textContent = 'No payment required';
-                checkoutTrustBadge.innerHTML = '✅ KICD Curriculum Aligned — Instant free download';
-                phoneHint.textContent = "We'll use this to confirm your download only — no charges apply";
-                payPrimaryBtn.innerHTML = '<span class="btn-text">🎁 Get Free Downloads</span>';
-            } else {
-                checkoutTotal.textContent = 'KES ' + total;
-                checkoutTotal.className = 'summary-value price';
-                checkoutHeaderTitle.textContent = 'Complete Purchase';
-                checkoutSubText.textContent = 'Secure M-PESA via MegaPay';
-                checkoutTrustBadge.innerHTML = '✅ KICD Curriculum Aligned — Instant download after verification';
-                phoneHint.textContent = "You'll receive an M-PESA STK Push prompt";
-                payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Pay with M-PESA</span>';
+            if (verifyOrderBtn) {
                 verifyOrderBtn.style.display = 'block';
                 verifyOrderBtn.textContent = '🔓 Verify Payment';
                 verifyOrderBtn.onclick = function() { checkOrderPaymentStatus(); };
             }
+        }
 
+        if (checkoutModal) {
             checkoutModal.classList.add('open');
             document.body.style.overflow = 'hidden';
-            setTimeout(function() { customerNameInput.focus(); }, 300);
-        }, 400);
+            setTimeout(function() { if (customerNameInput) customerNameInput.focus(); }, 300);
+        }
+    }
+
+    function openCartCheckout() {
+        if (cart.length === 0) {
+            showToast('Your cart is empty', 'error');
+            return;
+        }
+
+        checkoutMode = 'cart';
+        checkoutCartItems = JSON.parse(JSON.stringify(cart));
+        currentProduct = null;
+        currentOrderRef = null;
+        currentOrderId = null;
+        checkoutOrderIds = [];
+
+        var total = checkoutCartItems.reduce(function(sum, ci) { return sum + (ci.price || 0) * ci.qty; }, 0);
+        checkoutExpectedTotal = total;
+        var allFree = total === 0;
+
+        if (customerNameInput) {
+            customerNameInput.value = '';
+            customerNameInput.classList.remove('error');
+        }
+        if (phoneInput) {
+            phoneInput.value = '';
+            phoneInput.classList.remove('error');
+        }
+        hideStkStatus();
+        if (payPrimaryBtn) {
+            payPrimaryBtn.classList.remove('loading');
+            payPrimaryBtn.disabled = false;
+            payPrimaryBtn.style.display = 'flex';
+            payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Pay with M-PESA</span>';
+        }
+        if (mpesaVerificationBox) mpesaVerificationBox.classList.remove('visible');
+        if (verificationStatus) verificationStatus.style.display = 'none';
+
+        var lineItemsContainer = document.getElementById('checkoutLineItems');
+        if (lineItemsContainer) {
+            var html = '';
+            checkoutCartItems.forEach(function(ci) {
+                var lineTotal = (ci.price || 0) * ci.qty;
+                html += '<div class="cart-line-item">';
+                html += '  <span class="cli-title">' + ci.title + '</span>';
+                html += '  <span class="cli-qty">x' + ci.qty + '</span>';
+                html += '  <span class="cli-price">' + (lineTotal === 0 ? 'FREE' : 'KES ' + lineTotal) + '</span>';
+                html += '</div>';
+            });
+            lineItemsContainer.innerHTML = html;
+        }
+
+        if (checkoutItemTitle) checkoutItemTitle.textContent = checkoutCartItems.length + ' items';
+        if (checkoutTotal) checkoutTotal.textContent = allFree ? 'FREE' : 'KES ' + total;
+        if (checkoutGrandTotal) checkoutGrandTotal.textContent = allFree ? 'FREE' : 'KES ' + total;
+
+        closeCartDrawer();
+        if (checkoutModal) {
+            checkoutModal.classList.add('open');
+            document.body.style.overflow = 'hidden';
+            setTimeout(function() { if (customerNameInput) customerNameInput.focus(); }, 300);
+        }
     }
 
     // ─── PREVIEW FUNCTIONS ──────────────────────────────────
     function openPreview(productId) {
         var product = allResources.find(function(r) { return r.id === productId; });
-        if (!product) return;
+        if (!product) { showToast('Product not found', 'error'); return; }
 
         var pricing = getResourcePricing(product);
         previewProductId = productId;
 
-        previewPrice.textContent = pricing.priceDisplay;
-        previewPrice.style.color = pricing.isFree ? 'var(--kv-green)' : pricing.status === 'unavailable' ?
-            '#92400E' : 'var(--kv-gold)';
-
-        if (pricing.isFree) {
-            previewBuyBtn.textContent = 'Download Free';
-            previewBuyBtn.className = 'btn-buy-preview free';
-            previewBuyBtn.disabled = false;
-        } else if (pricing.status === 'unavailable') {
-            previewBuyBtn.textContent = 'Unavailable';
-            previewBuyBtn.className = 'btn-buy-preview';
-            previewBuyBtn.disabled = true;
-        } else {
-            previewBuyBtn.textContent = 'Buy Now →';
-            previewBuyBtn.className = 'btn-buy-preview';
-            previewBuyBtn.disabled = false;
+        if (previewPrice) {
+            previewPrice.textContent = pricing.priceDisplay;
+            previewPrice.style.color = pricing.isFree ? '#16a34a' : 'var(--kv-gold)';
+        }
+        if (previewBuyBtn) {
+            previewBuyBtn.textContent = pricing.isFree ? '📥 Download Free' : '📱 Buy Now';
+            previewBuyBtn.className = 'btn-buy-preview' + (pricing.isFree ? ' free' : '');
+            previewBuyBtn.disabled = pricing.status === 'unavailable';
         }
 
-        previewInfo.innerHTML =
-            '<div class="info-item"><div class="label">Grade Level</div><div class="value">' + (LEVEL_DISPLAY[
-                product.level_normalized] || product.level || 'N/A') + '</div></div>' +
-            '<div class="info-item"><div class="label">Subject</div><div class="value">' + (product.subject ||
-                'General') + '</div></div>' +
-            '<div class="info-item"><div class="label">Resource Type</div><div class="value">' + ((product
-                .resource_type || 'General').replace(/-/g, ' ')) + '</div></div>' +
-            '<div class="info-item"><div class="label">Downloads</div><div class="value">' + (product
-                .download_count || 0) + '</div></div>' +
-            '<div class="info-item"><div class="label">Rating</div><div class="value">' + (product.rating || 0) + ' ★ (' + (product.reviews_count || 0) + ' reviews)</div></div>';
+        if (previewInfo) {
+            var infoItems = [
+                '<div class="info-item"><div class="label">Grade Level</div><div class="value">' + (LEVEL_DISPLAY[
+                    product.level_normalized] || product.level || 'N/A') + '</div></div>',
+                '<div class="info-item"><div class="label">Subject</div><div class="value">' + (product.subject ||
+                    'General') + '</div></div>',
+                '<div class="info-item"><div class="label">Resource Type</div><div class="value">' + ((product
+                    .resource_type || 'General').replace(/-/g, ' ')) + '</div></div>'
+            ];
+            if (product.pages) infoItems.push('<div class="info-item"><div class="label">Pages</div><div class="value">' +
+                product.pages + '</div></div>');
+            infoItems.push('<div class="info-item"><div class="label">Downloads</div><div class="value">' + (product
+                .download_count || 0) + '</div></div>');
+            if (product.rating) infoItems.push('<div class="info-item"><div class="label">Rating</div><div class="value">' +
+                '⭐'.repeat(Math.round(product.rating)) + '</div></div>');
+            previewInfo.innerHTML = infoItems.join('');
+        }
 
-        previewModal.classList.add('open');
-        document.body.style.overflow = 'hidden';
+        if (previewModal) {
+            previewModal.classList.add('open');
+            document.body.style.overflow = 'hidden';
+        }
     }
 
     function closePreview() {
-        previewModal.classList.remove('open');
-        document.body.style.overflow = '';
+        if (previewModal) {
+            previewModal.classList.remove('open');
+            document.body.style.overflow = '';
+        }
         previewProductId = null;
     }
 
@@ -5247,13 +5096,15 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH PAYMENT FLOW & FALLBACK
                 '<div class="skeleton-line skeleton-shimmer w-40"></div>' +
                 '</div>';
         }
-        productsGrid.innerHTML = skeletons;
+        if (productsGrid) productsGrid.innerHTML = skeletons;
     }
 
     function renderError(err) {
-        productsGrid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><span class="empty-icon">⚠️</span><h3>Unable to load resources</h3><p class="empty-detail">' +
-            (err ? err.message || 'Please try again later.' : 'Please try again later.') +
-            '</p><button onclick="window.init()" style="margin-top:8px;padding:6px 16px;background:var(--kv-green);color:var(--kv-primary);border:none;border-radius:6px;cursor:pointer;font-weight:700;">🔄 Retry</button></div>';
+        if (productsGrid) {
+            productsGrid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><span class="empty-icon">⚠️</span><h3>Unable to load resources</h3><p class="empty-detail">' +
+                (err ? err.message || 'Please try again later.' : 'Please try again later.') +
+                '</p><button onclick="window.init()" style="margin-top:8px;padding:6px 16px;background:var(--kv-green);color:var(--kv-primary);border:none;border-radius:6px;cursor:pointer;font-weight:700;">🔄 Retry</button></div>';
+        }
     }
 
     async function init() {
@@ -5276,7 +5127,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH PAYMENT FLOW & FALLBACK
             console.log('[Resources] Loaded: ' + allResources.length + ' resources');
             console.log('[Categories] ' + CATEGORY_DEFS.length + ' categories');
             console.log('[Levels] ' + LEVEL_ORDER.length + ' education levels');
-            console.log('[Payment] Secure payment flow with backend fallback');
+            console.log('[Payment] Direct MegaPay STK Push integration');
             console.log('[Manual Verification] Available when payment fails');
             console.log('[Download Count] Tracking downloads for all resources');
 
@@ -5290,38 +5141,50 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH PAYMENT FLOW & FALLBACK
         document.getElementById('navLinks').classList.toggle('open');
     });
 
-    phoneInput.addEventListener('input', function() {
-        var val = this.value.replace(/\D/g, '');
-        if (val.length > 12) val = val.substring(0, 12);
-        this.value = val;
-        this.classList.remove('error');
-    });
+    if (phoneInput) {
+        phoneInput.addEventListener('input', function() {
+            var val = this.value.replace(/\D/g, '');
+            if (val.length > 12) val = val.substring(0, 12);
+            this.value = val;
+            this.classList.remove('error');
+        });
+    }
 
-    customerNameInput.addEventListener('input', function() {
-        this.classList.remove('error');
-    });
+    if (customerNameInput) {
+        customerNameInput.addEventListener('input', function() {
+            this.classList.remove('error');
+        });
+    }
 
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {
-            if (checkoutModal.classList.contains('open')) closeCheckoutModal();
-            if (successModal.classList.contains('open')) closeSuccessModal();
-            if (previewModal.classList.contains('open')) closePreview();
-            if (document.getElementById('filterBottomSheet').classList.contains('open')) toggleMobileFilter();
-            if (document.getElementById('cartDrawer').classList.contains('open')) closeCartDrawer();
+            if (checkoutModal && checkoutModal.classList.contains('open')) closeCheckoutModal();
+            if (successModal && successModal.classList.contains('open')) closeSuccessModal();
+            if (previewModal && previewModal.classList.contains('open')) closePreview();
+            var sheet = document.getElementById('filterBottomSheet');
+            if (sheet && sheet.classList.contains('open')) toggleMobileFilter();
+            var drawer = document.getElementById('cartDrawer');
+            if (drawer && drawer.classList.contains('open')) closeCartDrawer();
         }
     });
 
-    checkoutModal.addEventListener('click', function(e) {
-        if (e.target === checkoutModal) closeCheckoutModal();
-    });
+    if (checkoutModal) {
+        checkoutModal.addEventListener('click', function(e) {
+            if (e.target === checkoutModal) closeCheckoutModal();
+        });
+    }
 
-    successModal.addEventListener('click', function(e) {
-        if (e.target === successModal) closeSuccessModal();
-    });
+    if (successModal) {
+        successModal.addEventListener('click', function(e) {
+            if (e.target === successModal) closeSuccessModal();
+        });
+    }
 
-    previewModal.addEventListener('click', function(e) {
-        if (e.target === previewModal) closePreview();
-    });
+    if (previewModal) {
+        previewModal.addEventListener('click', function(e) {
+            if (e.target === previewModal) closePreview();
+        });
+    }
 
     // ─── CONSENT BANNER ───────────────────────────────────────
     (function() {
@@ -5399,9 +5262,8 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH PAYMENT FLOW & FALLBACK
     window.incrementDownloadCount = incrementDownloadCount;
 
     document.addEventListener('DOMContentLoaded', init);
-    console.log('✅ KenyaVault Marketplace — Secure Payment Flow');
-    console.log('✅ Backend URL: ' + BACKEND_URL);
-    console.log('✅ Fallback: Direct MegaPay + Manual Verification');
+    console.log('✅ KenyaVault Marketplace — Direct MegaPay Integration');
+    console.log('✅ STK Push sent directly to MegaPay');
     console.log('✅ Download counts and ratings displayed on all resources');
 
 })();
