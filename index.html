@@ -3222,9 +3222,39 @@ async function generatePublicUrl(filePath, fileName) {
     var cleanPath = filePath;
     try { cleanPath = decodeURIComponent(filePath); } catch (e) {}
 
+    // All available buckets - NOW INCLUDING kenyavault-resources
     var AVAILABLE_BUCKETS = ['kenyavault-pdfs', 'kenyavault-resources', 'academic-resources'];
 
-    // Clean the path
+    // Check if it's already a full URL
+    if (cleanPath.startsWith('http://') || cleanPath.startsWith('https://')) {
+        console.log('📄 Already a URL, checking if accessible...');
+        try {
+            var testResponse = await fetch(cleanPath, { 
+                method: 'HEAD',
+                headers: { 'Accept': '*/*' }
+            });
+            if (testResponse.ok) {
+                console.log('✅ URL is accessible:', cleanPath);
+                return cleanPath;
+            }
+        } catch (e) {
+            console.log('⚠️ URL not directly accessible, trying to extract path...');
+        }
+        
+        // Try to extract the path from the URL
+        for (var b = 0; b < AVAILABLE_BUCKETS.length; b++) {
+            var bucket = AVAILABLE_BUCKETS[b];
+            var pattern = new RegExp('/storage/v1/object/public/' + bucket + '/(.+)');
+            var match = cleanPath.match(pattern);
+            if (match) {
+                cleanPath = match[1];
+                console.log('📄 Extracted path from URL:', cleanPath);
+                break;
+            }
+        }
+    }
+
+    // Clean the path - remove bucket names if present
     for (var b = 0; b < AVAILABLE_BUCKETS.length; b++) {
         var bucket = AVAILABLE_BUCKETS[b];
         if (cleanPath.startsWith(bucket + '/')) {
@@ -3232,77 +3262,101 @@ async function generatePublicUrl(filePath, fileName) {
             break;
         }
     }
-    cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
     cleanPath = cleanPath.replace(/^\/+/, '');
 
-    // Try multiple variations of the path
+    // Extract filename and extension
+    var pathParts = cleanPath.split('/');
+    var filename = pathParts[pathParts.length - 1];
+    var filenameWithoutExt = filename.replace(/\.[^.]+$/, '');
+    var ext = filename.includes('.') ? filename.split('.').pop().toLowerCase() : '';
+
+    console.log('📄 Extracted filename:', filename);
+    console.log('📄 Extension:', ext);
+
+    // Build ALL possible variations
     var variations = [];
 
-    // 1. Clean path as-is
+    // 1. Original clean path
     if (cleanPath) variations.push(cleanPath);
 
-    // 2. Remove 'resources/' prefix
-    if (cleanPath.startsWith('resources/')) {
+    // 2. With 'resources/' prefix (if not already)
+    if (!cleanPath.startsWith('resources/')) {
+        variations.push('resources/' + cleanPath);
+    } else {
         variations.push(cleanPath.replace('resources/', ''));
     }
 
-    // 3. Add 'resources/' prefix
-    if (!cleanPath.startsWith('resources/')) {
-        variations.push('resources/' + cleanPath);
+    // 3. Just the filename
+    variations.push(filename);
+
+    // 4. With 'resources/' + filename
+    variations.push('resources/' + filename);
+
+    // 5. Try different folder structures
+    var folders = ['', 'resources/', 'documents/', 'files/', 'uploads/', 'pdfs/'];
+    for (var f = 0; f < folders.length; f++) {
+        variations.push(folders[f] + filename);
     }
 
-    // 4. URL encoded version
-    variations.push(encodeURIComponent(cleanPath).replace(/%2F/g, '/'));
-
-    // 5. Try with the original filename if provided
-    if (fileName) {
-        var nameParts = fileName.split('.');
-        if (nameParts.length > 1) {
-            var fileExt = nameParts.pop().toLowerCase();
-            var nameBase = nameParts.join('.');
-            // Try with the file extension from fileName
-            var baseClean = cleanPath.replace(/\.[^.]+$/, '');
-            if (baseClean !== cleanPath) {
-                variations.push(baseClean + '.' + fileExt);
-                variations.push('resources/' + baseClean + '.' + fileExt);
-            }
+    // 6. Try with the file_name if provided and different from filename
+    if (fileName && fileName !== filename) {
+        variations.push(fileName);
+        variations.push('resources/' + fileName);
+        // Try without extension variations
+        var fileNameWithoutExt = fileName.replace(/\.[^.]+$/, '');
+        if (fileNameWithoutExt !== fileName) {
+            variations.push(fileNameWithoutExt);
+            variations.push('resources/' + fileNameWithoutExt);
         }
     }
 
-    // 6. Try common document extensions if none present
-    var hasExtension = cleanPath.split('.').pop().toLowerCase();
-    var knownExtensions = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'jpg', 'jpeg', 'png', 'gif', 'webp'];
-    if (!knownExtensions.includes(hasExtension) || cleanPath.indexOf('.') === -1) {
-        var basePath = cleanPath.replace(/\.[^.]+$/, '');
-        if (basePath === cleanPath) basePath = cleanPath;
+    // 7. Try common document extensions if none present or wrong
+    var knownExtensions = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'zip', 'rar'];
+    if (!knownExtensions.includes(ext) || !ext) {
         var docExtensions = ['.docx', '.doc', '.pdf'];
+        var baseName = filenameWithoutExt || filename;
         for (var e = 0; e < docExtensions.length; e++) {
-            variations.push(basePath + docExtensions[e]);
-            variations.push('resources/' + basePath + docExtensions[e]);
+            for (var f2 = 0; f2 < folders.length; f2++) {
+                variations.push(folders[f2] + baseName + docExtensions[e]);
+            }
+            variations.push(baseName + docExtensions[e]);
+            variations.push('resources/' + baseName + docExtensions[e]);
         }
     }
 
-    // Remove duplicates
+    // 8. Try URL encoded versions
+    var encodedVariations = [];
+    for (var v = 0; v < variations.length; v++) {
+        if (variations[v]) {
+            var encoded = variations[v].split('/').map(function(s) { 
+                return encodeURIComponent(s); 
+            }).join('/');
+            encodedVariations.push(encoded);
+        }
+    }
+    variations = variations.concat(encodedVariations);
+
+    // Remove duplicates and empty entries
     variations = variations.filter(function(v, i, self) {
         return v && self.indexOf(v) === i;
     });
 
-    console.log('📁 Trying variations:', variations);
+    console.log('📁 Trying ' + variations.length + ' variations...');
 
     // Try each bucket and variation
     for (var b = 0; b < AVAILABLE_BUCKETS.length; b++) {
         var bucket = AVAILABLE_BUCKETS[b];
+        console.log(`📦 Checking bucket: ${bucket}`);
+        
         for (var v = 0; v < variations.length; v++) {
             var path = variations[v];
             if (!path) continue;
             path = path.replace(/\/+/g, '/').replace(/^\/+/, '');
 
-            // Try without encoding first
             var downloadUrl = SUPABASE_URL + '/storage/v1/object/public/' + bucket + '/' + path +
-                '?download=' + encodeURIComponent(fileName || 'document.pdf');
+                '?download=' + encodeURIComponent(fileName || filename || 'document.pdf');
 
             try {
-                console.log('🔍 Checking:', downloadUrl);
                 var response = await fetch(downloadUrl, {
                     method: 'HEAD',
                     headers: { 'Accept': '*/*' }
@@ -3315,37 +3369,17 @@ async function generatePublicUrl(filePath, fileName) {
             } catch (e) {
                 // Continue trying
             }
-
-            // Try with encoded path
-            try {
-                var encodedPath = path.split('/').map(function(s) { return encodeURIComponent(s); }).join('/');
-                var encodedUrl = SUPABASE_URL + '/storage/v1/object/public/' + bucket + '/' + encodedPath +
-                    '?download=' + encodeURIComponent(fileName || 'document.pdf');
-
-                console.log('🔍 Checking encoded:', encodedUrl);
-                var response2 = await fetch(encodedUrl, {
-                    method: 'HEAD',
-                    headers: { 'Accept': '*/*' }
-                });
-
-                if (response2.ok) {
-                    console.log('✅ Found file at:', encodedUrl);
-                    return encodedUrl;
-                }
-            } catch (e) {
-                // Continue trying
-            }
         }
     }
 
     console.warn('⚠️ Could not find file for path:', filePath);
-    console.warn('📁 Tried variations:', variations);
+    console.warn('📁 Tried ' + variations.length + ' variations across ' + AVAILABLE_BUCKETS.length + ' buckets');
     
-    // If file not found, try to show a helpful message
-    showToast('File Not Found', 'The resource file could not be located. Please contact support.', 'error');
+    // Show user-friendly message
+    showToast('File Not Found', 'The resource file could not be located. Please contact support with your order reference.', 'error');
     
     return null;
-  }
+}
 
     function openFileInNewTab(url, fileName) {
         try {
