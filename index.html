@@ -2917,7 +2917,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
     var BACKEND_URL = 'https://kenyavault.onrender.com';
     var ITEMS_PER_PAGE = 20;
     var POLL_INTERVAL = 5000;
-    var MAX_POLL_ATTEMPTS = 20;
+    var MAX_POLL_ATTEMPTS = 30;
 
     // ─── STATE ──────────────────────────────────────────────
     var allResources = [];
@@ -2948,6 +2948,8 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
     var checkoutExpectedTotal = 0;
     var isPaymentVerified = false;
     var manualVerificationShown = false;
+    var stkSentTime = 0;
+    var isPaymentConfirmed = false;
 
     // ─── SAFE DOM REFS ──────────────────────────────────────
     function safeGetElement(id) {
@@ -3211,175 +3213,153 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
     }
 
     // ─── GENERATE PUBLIC URL ──────────────────────────────────
-async function generatePublicUrl(filePath, fileName) {
-    if (!filePath) {
-        console.warn('⚠️ No file path provided');
-        return null;
-    }
-
-    console.log('🔍 Searching for file:', filePath);
-
-    var cleanPath = filePath;
-    try { cleanPath = decodeURIComponent(filePath); } catch (e) {}
-
-    // All available buckets - NOW INCLUDING kenyavault-resources
-    var AVAILABLE_BUCKETS = ['kenyavault-pdfs', 'kenyavault-resources', 'academic-resources'];
-
-    // Check if it's already a full URL
-    if (cleanPath.startsWith('http://') || cleanPath.startsWith('https://')) {
-        console.log('📄 Already a URL, checking if accessible...');
-        try {
-            var testResponse = await fetch(cleanPath, { 
-                method: 'HEAD',
-                headers: { 'Accept': '*/*' }
-            });
-            if (testResponse.ok) {
-                console.log('✅ URL is accessible:', cleanPath);
-                return cleanPath;
-            }
-        } catch (e) {
-            console.log('⚠️ URL not directly accessible, trying to extract path...');
+    async function generatePublicUrl(filePath, fileName) {
+        if (!filePath) {
+            console.warn('⚠️ No file path provided');
+            return null;
         }
-        
-        // Try to extract the path from the URL
-        for (var b = 0; b < AVAILABLE_BUCKETS.length; b++) {
-            var bucket = AVAILABLE_BUCKETS[b];
-            var pattern = new RegExp('/storage/v1/object/public/' + bucket + '/(.+)');
-            var match = cleanPath.match(pattern);
-            if (match) {
-                cleanPath = match[1];
-                console.log('📄 Extracted path from URL:', cleanPath);
-                break;
-            }
-        }
-    }
 
-    // Clean the path - remove bucket names if present
-    for (var b = 0; b < AVAILABLE_BUCKETS.length; b++) {
-        var bucket = AVAILABLE_BUCKETS[b];
-        if (cleanPath.startsWith(bucket + '/')) {
-            cleanPath = cleanPath.replace(bucket + '/', '');
-            break;
-        }
-    }
-    cleanPath = cleanPath.replace(/^\/+/, '');
+        console.log('🔍 Searching for file:', filePath);
 
-    // Extract filename and extension
-    var pathParts = cleanPath.split('/');
-    var filename = pathParts[pathParts.length - 1];
-    var filenameWithoutExt = filename.replace(/\.[^.]+$/, '');
-    var ext = filename.includes('.') ? filename.split('.').pop().toLowerCase() : '';
+        var cleanPath = filePath;
+        try { cleanPath = decodeURIComponent(filePath); } catch (e) {}
 
-    console.log('📄 Extracted filename:', filename);
-    console.log('📄 Extension:', ext);
+        var AVAILABLE_BUCKETS = ['kenyavault-pdfs', 'kenyavault-resources', 'academic-resources'];
 
-    // Build ALL possible variations
-    var variations = [];
-
-    // 1. Original clean path
-    if (cleanPath) variations.push(cleanPath);
-
-    // 2. With 'resources/' prefix (if not already)
-    if (!cleanPath.startsWith('resources/')) {
-        variations.push('resources/' + cleanPath);
-    } else {
-        variations.push(cleanPath.replace('resources/', ''));
-    }
-
-    // 3. Just the filename
-    variations.push(filename);
-
-    // 4. With 'resources/' + filename
-    variations.push('resources/' + filename);
-
-    // 5. Try different folder structures
-    var folders = ['', 'resources/', 'documents/', 'files/', 'uploads/', 'pdfs/'];
-    for (var f = 0; f < folders.length; f++) {
-        variations.push(folders[f] + filename);
-    }
-
-    // 6. Try with the file_name if provided and different from filename
-    if (fileName && fileName !== filename) {
-        variations.push(fileName);
-        variations.push('resources/' + fileName);
-        // Try without extension variations
-        var fileNameWithoutExt = fileName.replace(/\.[^.]+$/, '');
-        if (fileNameWithoutExt !== fileName) {
-            variations.push(fileNameWithoutExt);
-            variations.push('resources/' + fileNameWithoutExt);
-        }
-    }
-
-    // 7. Try common document extensions if none present or wrong
-    var knownExtensions = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'zip', 'rar'];
-    if (!knownExtensions.includes(ext) || !ext) {
-        var docExtensions = ['.docx', '.doc', '.pdf'];
-        var baseName = filenameWithoutExt || filename;
-        for (var e = 0; e < docExtensions.length; e++) {
-            for (var f2 = 0; f2 < folders.length; f2++) {
-                variations.push(folders[f2] + baseName + docExtensions[e]);
-            }
-            variations.push(baseName + docExtensions[e]);
-            variations.push('resources/' + baseName + docExtensions[e]);
-        }
-    }
-
-    // 8. Try URL encoded versions
-    var encodedVariations = [];
-    for (var v = 0; v < variations.length; v++) {
-        if (variations[v]) {
-            var encoded = variations[v].split('/').map(function(s) { 
-                return encodeURIComponent(s); 
-            }).join('/');
-            encodedVariations.push(encoded);
-        }
-    }
-    variations = variations.concat(encodedVariations);
-
-    // Remove duplicates and empty entries
-    variations = variations.filter(function(v, i, self) {
-        return v && self.indexOf(v) === i;
-    });
-
-    console.log('📁 Trying ' + variations.length + ' variations...');
-
-    // Try each bucket and variation
-    for (var b = 0; b < AVAILABLE_BUCKETS.length; b++) {
-        var bucket = AVAILABLE_BUCKETS[b];
-        console.log(`📦 Checking bucket: ${bucket}`);
-        
-        for (var v = 0; v < variations.length; v++) {
-            var path = variations[v];
-            if (!path) continue;
-            path = path.replace(/\/+/g, '/').replace(/^\/+/, '');
-
-            var downloadUrl = SUPABASE_URL + '/storage/v1/object/public/' + bucket + '/' + path +
-                '?download=' + encodeURIComponent(fileName || filename || 'document.pdf');
-
+        // Check if it's already a full URL
+        if (cleanPath.startsWith('http://') || cleanPath.startsWith('https://')) {
+            console.log('📄 Already a URL, checking if accessible...');
             try {
-                var response = await fetch(downloadUrl, {
+                var testResponse = await fetch(cleanPath, { 
                     method: 'HEAD',
                     headers: { 'Accept': '*/*' }
                 });
-
-                if (response.ok) {
-                    console.log('✅ Found file at:', downloadUrl);
-                    return downloadUrl;
+                if (testResponse.ok) {
+                    console.log('✅ URL is accessible:', cleanPath);
+                    return cleanPath;
                 }
             } catch (e) {
-                // Continue trying
+                console.log('⚠️ URL not directly accessible, trying to extract path...');
+            }
+            
+            for (var b = 0; b < AVAILABLE_BUCKETS.length; b++) {
+                var bucket = AVAILABLE_BUCKETS[b];
+                var pattern = new RegExp('/storage/v1/object/public/' + bucket + '/(.+)');
+                var match = cleanPath.match(pattern);
+                if (match) {
+                    cleanPath = match[1];
+                    console.log('📄 Extracted path from URL:', cleanPath);
+                    break;
+                }
             }
         }
-    }
 
-    console.warn('⚠️ Could not find file for path:', filePath);
-    console.warn('📁 Tried ' + variations.length + ' variations across ' + AVAILABLE_BUCKETS.length + ' buckets');
-    
-    // Show user-friendly message
-    showToast('File Not Found', 'The resource file could not be located. Please contact support with your order reference.', 'error');
-    
-    return null;
-}
+        // Clean the path
+        for (var b = 0; b < AVAILABLE_BUCKETS.length; b++) {
+            var bucket = AVAILABLE_BUCKETS[b];
+            if (cleanPath.startsWith(bucket + '/')) {
+                cleanPath = cleanPath.replace(bucket + '/', '');
+                break;
+            }
+        }
+        cleanPath = cleanPath.replace(/^\/+/, '');
+
+        var pathParts = cleanPath.split('/');
+        var filename = pathParts[pathParts.length - 1];
+        var filenameWithoutExt = filename.replace(/\.[^.]+$/, '');
+        var ext = filename.includes('.') ? filename.split('.').pop().toLowerCase() : '';
+
+        console.log('📄 Extracted filename:', filename);
+
+        var variations = [];
+
+        // Original clean path
+        if (cleanPath) variations.push(cleanPath);
+
+        // With 'resources/' prefix
+        if (!cleanPath.startsWith('resources/')) {
+            variations.push('resources/' + cleanPath);
+        } else {
+            variations.push(cleanPath.replace('resources/', ''));
+        }
+
+        // Just the filename
+        variations.push(filename);
+        variations.push('resources/' + filename);
+
+        // Try different folder structures
+        var folders = ['', 'resources/', 'documents/', 'files/', 'uploads/', 'pdfs/'];
+        for (var f = 0; f < folders.length; f++) {
+            variations.push(folders[f] + filename);
+        }
+
+        // Try with file_name if provided
+        if (fileName && fileName !== filename) {
+            variations.push(fileName);
+            variations.push('resources/' + fileName);
+        }
+
+        // Try common document extensions
+        var knownExtensions = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
+        if (!knownExtensions.includes(ext) || !ext) {
+            var docExtensions = ['.docx', '.doc', '.pdf'];
+            var baseName = filenameWithoutExt || filename;
+            for (var e = 0; e < docExtensions.length; e++) {
+                for (var f2 = 0; f2 < folders.length; f2++) {
+                    variations.push(folders[f2] + baseName + docExtensions[e]);
+                }
+                variations.push(baseName + docExtensions[e]);
+                variations.push('resources/' + baseName + docExtensions[e]);
+            }
+        }
+
+        // URL encoded versions
+        var encodedVariations = [];
+        for (var v = 0; v < variations.length; v++) {
+            if (variations[v]) {
+                var encoded = variations[v].split('/').map(function(s) { 
+                    return encodeURIComponent(s); 
+                }).join('/');
+                encodedVariations.push(encoded);
+            }
+        }
+        variations = variations.concat(encodedVariations);
+
+        // Remove duplicates
+        variations = variations.filter(function(v, i, self) {
+            return v && self.indexOf(v) === i;
+        });
+
+        console.log('📁 Trying ' + variations.length + ' variations...');
+
+        // Try each bucket and variation
+        for (var b = 0; b < AVAILABLE_BUCKETS.length; b++) {
+            var bucket = AVAILABLE_BUCKETS[b];
+            for (var v = 0; v < variations.length; v++) {
+                var path = variations[v];
+                if (!path) continue;
+                path = path.replace(/\/+/g, '/').replace(/^\/+/, '');
+
+                var downloadUrl = SUPABASE_URL + '/storage/v1/object/public/' + bucket + '/' + path +
+                    '?download=' + encodeURIComponent(fileName || filename || 'document.pdf');
+
+                try {
+                    var response = await fetch(downloadUrl, {
+                        method: 'HEAD',
+                        headers: { 'Accept': '*/*' }
+                    });
+
+                    if (response.ok) {
+                        console.log('✅ Found file at:', downloadUrl);
+                        return downloadUrl;
+                    }
+                } catch (e) {}
+            }
+        }
+
+        console.warn('⚠️ Could not find file for path:', filePath);
+        return null;
+    }
 
     function openFileInNewTab(url, fileName) {
         try {
@@ -3411,31 +3391,39 @@ async function generatePublicUrl(filePath, fileName) {
     // ─── DOWNLOAD ORDER FILES ──────────────────────────────────
     async function downloadOrderFiles(order) {
         try {
+            console.log('📦 Processing order for download:', order.order_ref);
+            
             var items = order.cart_items;
             if (typeof items === 'string') {
                 try { items = JSON.parse(items); } catch (e) { items = []; }
             }
 
             if (!items || items.length === 0) {
-                var filePath = order.resource_file_path || order.file_path || order.file_url || '';
-                var fileName = order.resource_file_name || order.file_name || 'resource.pdf';
+                var resourceId = order.resource_id || order.item_id || null;
+                var filePath = order.file_path || order.file_url || order.resource_file_path || '';
+                var fileName = order.file_name || order.resource_file_name || 'resource.pdf';
                 
-                var product = allResources.find(function(r) { 
-                    return r.id === order.resource_id || (items[0] && r.id === items[0].id);
-                });
-                
-                if (product) {
-                    filePath = product.file_path || product.file_url || filePath;
-                    fileName = product.file_name || fileName;
+                if (resourceId) {
+                    var product = allResources.find(function(r) { 
+                        return r.id === resourceId; 
+                    });
+                    if (product) {
+                        filePath = product.file_path || product.file_url || filePath;
+                        fileName = product.file_name || fileName;
+                        console.log('📄 Found product:', product.title);
+                    }
                 }
                 
-                var url = await generatePublicUrl(filePath, fileName);
-                if (url) {
-                    showToast('Opening', 'Opening ' + fileName + '...', 'info');
-                    openFileInNewTab(url, fileName);
-                    return true;
+                if (filePath) {
+                    var url = await generatePublicUrl(filePath, fileName);
+                    if (url) {
+                        showToast('Opening', 'Opening ' + fileName + '...', 'info');
+                        openFileInNewTab(url, fileName);
+                        return true;
+                    }
                 }
-                showToast('Error', 'File not found. Please contact support.', 'error');
+                
+                showToast('File Not Found', 'Please contact support with order: ' + order.order_ref, 'error');
                 return false;
             }
 
@@ -3462,7 +3450,7 @@ async function generatePublicUrl(filePath, fileName) {
             }
 
             if (successCount === 0) {
-                showToast('Error', 'No files found. Please contact support.', 'error');
+                showToast('File Not Found', 'No files found. Contact support with order: ' + order.order_ref, 'error');
                 return false;
             }
 
@@ -3667,25 +3655,36 @@ async function generatePublicUrl(filePath, fileName) {
         manualVerificationShown = false;
     }
 
-    // ─── CHECK ORDER PAYMENT STATUS ──────────────────────────
+    // ─── CHECK ORDER PAYMENT STATUS (FIXED - ONLY AFTER STK) ──────────
     async function checkOrderPaymentStatus() {
+        // ─── CRITICAL FIX: Only check if STK was sent AND enough time passed ───
+        if (!stkSentTime || stkSentTime === 0) {
+            console.warn('⏳ STK Push not sent yet, cannot verify');
+            showStkStatus('⏳ Please wait for STK Push to be sent...', 'pending');
+            return;
+        }
+
+        var timeSinceSTK = Date.now() - stkSentTime;
+        
+        // ─── FIX: Minimum 20 seconds wait before checking ──────────────
+        if (timeSinceSTK < 20000) {
+            var remaining = Math.ceil((20000 - timeSinceSTK) / 1000);
+            showStkStatus(
+                '⏳ Please wait ' + remaining + 's for M-PESA to process... (Attempt ' + (paymentCheckAttempts + 1) + '/' + MAX_POLL_ATTEMPTS + ')',
+                'pending'
+            );
+            console.log('⏳ Too early to verify (only ' + Math.floor(timeSinceSTK/1000) + 's elapsed, need 20s)');
+            return;
+        }
+
         if (!currentOrderRef && !currentOrderId) {
             console.warn('No order ID or reference to check');
             return;
         }
 
-        var timeSinceSTK = Date.now() - (window._stkSentTime || 0);
-        if (timeSinceSTK < 15000 && paymentCheckAttempts < 3) {
-            var remaining = Math.ceil((15000 - timeSinceSTK) / 1000);
-            showStkStatus(
-                '⏳ Please wait ' + remaining + 's for M-PESA to process... (Attempt ' + (paymentCheckAttempts + 1) + '/' + MAX_POLL_ATTEMPTS + ')',
-                'pending'
-            );
-            console.log('⏳ Too early to verify (only ' + Math.floor(timeSinceSTK/1000) + 's elapsed, need 15s)');
-            return;
-        }
-
         try {
+            console.log('🔍 Checking payment status for order:', currentOrderRef || currentOrderId);
+            
             var response = await fetch(BACKEND_URL + '/api/mpesa/verify-payment', {
                 method: 'POST',
                 headers: {
@@ -3706,13 +3705,9 @@ async function generatePublicUrl(filePath, fileName) {
             var result = await response.json();
             console.log('📊 Verification result:', result);
 
+            // ─── CRITICAL FIX: Only process if payment is actually confirmed ───
             if (result.isPaid === true) {
-                stopPaymentPolling();
-                currentOrderId = result.order_id;
-                currentOrderRef = result.order_ref;
-
-                showStkStatus('✅ Payment confirmed!', 'success');
-
+                // Double-check with the order status from Supabase
                 var orderQuery = SUPABASE_URL + '/rest/v1/orders?select=*&id=eq.' + result.order_id;
                 var orderFetch = await fetch(orderQuery, {
                     headers: {
@@ -3720,23 +3715,39 @@ async function generatePublicUrl(filePath, fileName) {
                         'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
                     }
                 });
+                
                 if (orderFetch.ok) {
                     var orderData = await orderFetch.json();
                     if (orderData && orderData.length > 0) {
-                        await downloadOrderFiles(orderData[0]);
+                        var order = orderData[0];
+                        // Only confirm if payment_status is actually 'paid'
+                        if (order.payment_status === 'paid' || order.status === 'paid') {
+                            stopPaymentPolling();
+                            currentOrderId = result.order_id;
+                            currentOrderRef = result.order_ref;
+                            isPaymentConfirmed = true;
+
+                            showStkStatus('✅ Payment confirmed!', 'success');
+
+                            await downloadOrderFiles(order);
+                            showSuccessWithShare(result.order_ref);
+                            if (checkoutMode === 'cart') {
+                                clearCart();
+                            }
+
+                            setTimeout(function() {
+                                hideStkStatus();
+                                closeCheckoutModal();
+                            }, 4000);
+                            return;
+                        } else {
+                            console.log('⏳ Order not yet marked as paid in database');
+                        }
                     }
                 }
-
-                showSuccessWithShare(result.order_ref);
-                if (checkoutMode === 'cart') {
-                    clearCart();
-                }
-
-                setTimeout(function() {
-                    hideStkStatus();
-                    closeCheckoutModal();
-                }, 4000);
-
+                
+                // If we got here, something is wrong - don't proceed
+                console.warn('⚠️ Payment verification returned true but order not confirmed in database');
                 return;
             }
 
@@ -3770,28 +3781,15 @@ async function generatePublicUrl(filePath, fileName) {
                 return;
             }
 
-            if (result.status === 'pending' || result.status === 'processing') {
-                paymentCheckAttempts++;
-                console.log('⏳ Still pending (attempt ' + paymentCheckAttempts + '/' + MAX_POLL_ATTEMPTS + ')');
-                
-                var attemptsLeft = MAX_POLL_ATTEMPTS - paymentCheckAttempts;
-                showStkStatus(
-                    '<span class="spinner"></span> Waiting for M-PESA confirmation... (' + attemptsLeft + ' attempts remaining)',
-                    'pending'
-                );
-                return;
-            }
-
+            // ─── Still pending - continue polling ──────────────
             paymentCheckAttempts++;
             console.log('⏳ Still pending (attempt ' + paymentCheckAttempts + '/' + MAX_POLL_ATTEMPTS + ')');
 
-            if (paymentCheckAttempts % 3 === 0 || paymentCheckAttempts === 1) {
-                showStkStatus(
-                    '<span class="spinner"></span> Waiting for payment confirmation... (Attempt ' + paymentCheckAttempts +
-                    '/' + MAX_POLL_ATTEMPTS + ')',
-                    'pending'
-                );
-            }
+            var attemptsLeft = MAX_POLL_ATTEMPTS - paymentCheckAttempts;
+            showStkStatus(
+                '<span class="spinner"></span> Waiting for M-PESA confirmation... (' + attemptsLeft + ' attempts remaining)',
+                'pending'
+            );
 
             if (paymentCheckAttempts >= MAX_POLL_ATTEMPTS) {
                 stopPaymentPolling();
@@ -3813,21 +3811,24 @@ async function generatePublicUrl(filePath, fileName) {
         }
     }
 
-    // ─── START PAYMENT POLLING ──────────────────────────────────
+    // ─── START PAYMENT POLLING (FIXED - STARTS AFTER STK) ──────────────
     function startPaymentPolling() {
         stopPaymentPolling();
         paymentCheckAttempts = 0;
         
+        // ─── FIX: First check after 25 seconds ──────────────
         showStkStatus(
-            '<span class="spinner"></span> Waiting for M-PESA confirmation... (Checking in 5s)',
+            '<span class="spinner"></span> M-PESA STK sent! Waiting for your PIN... (First check in 25s)',
             'pending'
         );
 
+        // First check after 25 seconds (allows user to enter PIN)
         setTimeout(function() { 
             paymentCheckAttempts++;
             checkOrderPaymentStatus(); 
-        }, 5000);
+        }, 25000);
         
+        // Then check every 5 seconds
         paymentPollingInterval = setInterval(function() {
             paymentCheckAttempts++;
             checkOrderPaymentStatus();
@@ -3964,12 +3965,15 @@ async function generatePublicUrl(filePath, fileName) {
         }
     }
 
-    // ─── INITIATE PAYMENT ──────────────────────────────────────
+    // ─── INITIATE PAYMENT (FIXED - PROPER ORDER) ──────────────────────
     async function initiatePayment() {
+        // Reset state
         currentOrderId = null;
         currentOrderRef = null;
         currentPaymentReference = null;
         isPaymentVerified = false;
+        isPaymentConfirmed = false;
+        stkSentTime = 0;
         hideManualVerificationSection();
         
         if (isProcessing) return;
@@ -4012,6 +4016,7 @@ async function generatePublicUrl(filePath, fileName) {
             isFreeCheckout = checkoutExpectedTotal === 0;
         }
 
+        // ─── FREE RESOURCE ──────────────────────────────────────────
         if (isFreeCheckout) {
             try {
                 var freeResult;
@@ -4024,6 +4029,7 @@ async function generatePublicUrl(filePath, fileName) {
                 currentOrderRef = freeResult.orderRef;
                 currentOrderId = freeResult.orderId;
                 isPaymentVerified = true;
+                isPaymentConfirmed = true;
 
                 await fetch(SUPABASE_URL + '/rest/v1/orders?id=eq.' + freeResult.orderId, {
                     method: 'PATCH',
@@ -4071,6 +4077,7 @@ async function generatePublicUrl(filePath, fileName) {
             }
         }
 
+        // ─── PAID RESOURCE ──────────────────────────────────────────
         if (checkoutMode === 'single' && !currentProduct) return;
         if (checkoutMode === 'cart' && checkoutCartItems.length === 0) return;
 
@@ -4085,6 +4092,7 @@ async function generatePublicUrl(filePath, fileName) {
         try {
             var orderRef, orderId, totalAmount;
 
+            // ─── STEP 1: Create the order ──────────────────────
             if (checkoutMode === 'cart') {
                 var cartResult = await createCartOrder(checkoutCartItems, customerName, formattedPhone);
                 orderRef = cartResult.orderRef;
@@ -4103,6 +4111,7 @@ async function generatePublicUrl(filePath, fileName) {
 
             console.log('📝 Order created:', { orderRef, orderId, totalAmount });
 
+            // ─── STEP 2: Send STK Push ──────────────────────────
             showStkStatus(
                 '<span class="spinner"></span> Sending STK Push to your phone...',
                 'pending'
@@ -4141,13 +4150,17 @@ async function generatePublicUrl(filePath, fileName) {
             console.log('📝 MegaPay reference:', megaPayReference);
             currentPaymentReference = megaPayReference;
 
-            window._stkSentTime = Date.now();
+            // ─── STEP 3: Record STK sent time ──────────────────────
+            stkSentTime = Date.now();
+            console.log('⏱️ STK sent at:', new Date(stkSentTime).toLocaleTimeString());
 
+            // ─── STEP 4: Show waiting message ──────────────────────
             showStkStatus(
-                '📱 STK Push sent! Check your phone for the M-PESA PIN prompt.',
+                '📱 STK Push sent! Check your phone for the M-PESA PIN prompt.\n⏳ Please enter your PIN to complete payment.',
                 'pending'
             );
 
+            // ─── STEP 5: Hide pay button, show verify button (disabled initially) ──
             if (payPrimaryBtn) payPrimaryBtn.style.display = 'none';
             if (verifyOrderBtn) {
                 verifyOrderBtn.style.display = 'none';
@@ -4155,6 +4168,7 @@ async function generatePublicUrl(filePath, fileName) {
                 verifyOrderBtn.disabled = true;
             }
 
+            // ─── STEP 6: Enable verify after 30 seconds ────────────
             setTimeout(function() {
                 if (verifyOrderBtn) {
                     verifyOrderBtn.style.display = 'block';
@@ -4165,8 +4179,13 @@ async function generatePublicUrl(filePath, fileName) {
                         checkOrderPaymentStatus(); 
                     };
                 }
+                showStkStatus(
+                    '📱 STK Push sent! Check your phone for the M-PESA PIN prompt.\n⏳ Click "Verify Payment" after entering your PIN.',
+                    'pending'
+                );
             }, 30000);
 
+            // ─── STEP 7: Start polling (first check after 25s) ────
             paymentCheckAttempts = 0;
             startPaymentPolling();
 
@@ -4213,9 +4232,8 @@ async function generatePublicUrl(filePath, fileName) {
         var status = params.get('status');
         var orderRef = params.get('order_ref') || localStorage.getItem('pendingOrderRef');
         var paymentRef = params.get('payment_reference') || params.get('reference');
-        var transactionId = params.get('transaction_id') || params.get('transactionId');
 
-        console.log('🔍 Checking callback params:', { status, orderRef, paymentRef, transactionId });
+        console.log('🔍 Checking callback params:', { status, orderRef, paymentRef });
 
         if ((status === 'success' || status === 'completed' || status === 'paid') && (orderRef || paymentRef)) {
             fetch(BACKEND_URL + '/api/mpesa/verify-payment', {
@@ -4235,6 +4253,7 @@ async function generatePublicUrl(filePath, fileName) {
                 
                 if (result.isPaid === true) {
                     isPaymentVerified = true;
+                    isPaymentConfirmed = true;
                     currentOrderId = result.order_id;
                     currentOrderRef = result.order_ref;
                     stopPaymentPolling();
@@ -4278,6 +4297,7 @@ async function generatePublicUrl(filePath, fileName) {
         currentProduct = null;
         currentPaymentReference = null;
         isPaymentVerified = false;
+        isPaymentConfirmed = false;
     }
 
     function closeCheckoutModal() {
@@ -4296,6 +4316,8 @@ async function generatePublicUrl(filePath, fileName) {
             verifyOrderBtn.disabled = false;
         }
         stopPaymentPolling();
+        stkSentTime = 0;
+        isPaymentConfirmed = false;
         setTimeout(function() {
             currentOrderId = null;
             currentPaymentReference = null;
@@ -4326,6 +4348,8 @@ async function generatePublicUrl(filePath, fileName) {
         currentOrderId = null;
         currentPaymentReference = null;
         isPaymentVerified = false;
+        isPaymentConfirmed = false;
+        stkSentTime = 0;
         hideManualVerificationSection();
 
         if (customerNameInput) {
@@ -4412,6 +4436,8 @@ async function generatePublicUrl(filePath, fileName) {
             currentOrderId = null;
             currentPaymentReference = null;
             isPaymentVerified = false;
+            isPaymentConfirmed = false;
+            stkSentTime = 0;
             hideManualVerificationSection();
 
             var total = checkoutCartItems.reduce(function(sum, ci) { return sum + (ci.price || 0) * ci.qty; }, 0);
@@ -5326,7 +5352,7 @@ async function generatePublicUrl(filePath, fileName) {
             console.log('[Resources] Loaded: ' + allResources.length + ' resources');
             console.log('[Categories] ' + CATEGORY_DEFS.length + ' categories');
             console.log('[Levels] ' + LEVEL_ORDER.length + ' education levels');
-            console.log('[Payment] Direct STK Push mode enabled');
+            console.log('[Payment] STK Push - First check after 25s, then every 5s');
             console.log('[Backend] Using: ' + BACKEND_URL);
         } catch (e) {
             renderError(e);
@@ -5461,7 +5487,8 @@ async function generatePublicUrl(filePath, fileName) {
     window.hideManualVerificationSection = hideManualVerificationSection;
 
     document.addEventListener('DOMContentLoaded', init);
-    console.log('✅ KenyaVault Marketplace — Direct STK Push mode enabled');
+    console.log('✅ KenyaVault Marketplace — Fixed Payment Flow');
+    console.log('✅ STK Push sent → Wait 25s → Check status');
     console.log('✅ Backend URL: ' + BACKEND_URL);
     console.log('✅ Manual M-PESA verification available as fallback');
 
