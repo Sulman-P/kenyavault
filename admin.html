@@ -4701,131 +4701,307 @@
         }
         window.resetUploadForm = resetUploadForm;
 
-        // ============================================================
-        // 24. UPLOAD HANDLER (Single)
-        // ============================================================
-        document.getElementById('uploadForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
+        // ─── UPLOAD HANDLER (Single) - HARMONIZED WITH FRONTEND ──────────
+document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
 
-            var title = document.getElementById('resTitle').value.trim();
-            var level = document.getElementById('resLevel').value;
-            var grade = document.getElementById('resGrade').value;
-            var subject = document.getElementById('resSubject').value;
-            var resourceType = document.getElementById('resResourceType').value;
-            var term = document.getElementById('resTerm').value;
-            var year = document.getElementById('resYear').value;
-            var curriculum = document.getElementById('resCurriculum').value;
-            var isFree = document.querySelector('input[name="resIsFree"]:checked').value === 'free';
-            var price = parseFloat(document.getElementById('resPrice').value) || 0;
-            var featured = document.getElementById('resFeatured').value === 'true';
-            var status = document.getElementById('resStatus').value;
-            var description = document.getElementById('resDescription').value.trim();
-            var keywords = document.getElementById('resKeywords').value.trim();
-            var file = fileInput.files[0];
-            var validationError = document.getElementById('priceValidationError');
+    var title = document.getElementById('resTitle').value.trim();
+    var level = document.getElementById('resLevel').value;
+    var grade = document.getElementById('resGrade').value;
+    var subject = document.getElementById('resSubject').value;
+    var resourceType = document.getElementById('resResourceType').value;
+    var term = document.getElementById('resTerm').value;
+    var year = document.getElementById('resYear').value;
+    var curriculum = document.getElementById('resCurriculum').value;
+    var isFree = document.querySelector('input[name="resIsFree"]:checked').value === 'free';
+    var price = parseFloat(document.getElementById('resPrice').value) || 0;
+    var featured = document.getElementById('resFeatured').value === 'true';
+    var status = document.getElementById('resStatus').value;
+    var description = document.getElementById('resDescription').value.trim();
+    var keywords = document.getElementById('resKeywords').value.trim();
+    var file = fileInput.files[0];
+    var validationError = document.getElementById('priceValidationError');
 
-            if (!title) { showToast('Error', 'Please enter a resource title', 'error'); return; }
-            if (!level) { showToast('Error', 'Please select an education level', 'error'); return; }
-            if (!grade) { showToast('Error', 'Please select a grade/form', 'error'); return; }
-            if (!subject) { showToast('Error', 'Please select a subject', 'error'); return; }
-            if (!resourceType) { showToast('Error', 'Please select a resource type/category', 'error'); return; }
-            if (!file) { showToast('Error', 'Please select a file to upload', 'error'); return; }
+    if (!title) { showToast('Error', 'Please enter a resource title', 'error'); return; }
+    if (!level) { showToast('Error', 'Please select an education level', 'error'); return; }
+    if (!grade) { showToast('Error', 'Please select a grade/form', 'error'); return; }
+    if (!subject) { showToast('Error', 'Please select a subject', 'error'); return; }
+    if (!resourceType) { showToast('Error', 'Please select a resource type/category', 'error'); return; }
+    if (!file) { showToast('Error', 'Please select a file to upload', 'error'); return; }
 
-            if (!isFree && price <= 0) {
-                validationError.classList.add('visible');
-                showToast('Validation Error', 'Paid resources must have a price greater than 0.', 'error');
-                return;
+    if (!isFree && price <= 0) {
+        validationError.classList.add('visible');
+        showToast('Validation Error', 'Paid resources must have a price greater than 0.', 'error');
+        return;
+    }
+    validationError.classList.remove('visible');
+
+    var submitBtn = document.getElementById('uploadSubmitBtn');
+    submitBtn.classList.add('loading');
+    submitBtn.disabled = true;
+
+    try {
+        // ─── FIX: Use consistent file path format ──────────────
+        var fileExt = file.name.split('.').pop();
+        var fileName = Date.now() + '-' + title.replace(/\s/g, '_') + '.' + fileExt;
+        var filePath = 'resources/' + fileName;  // ← Consistent with frontend
+
+        // Upload to kenyavault-resources bucket
+        var uploadResult = await retryOperation(function() {
+            return supabase.storage.from('kenyavault-resources').upload(filePath, file);
+        }, 3, 1500);
+        if (uploadResult.error) throw uploadResult.error;
+
+        var urlData = supabase.storage.from('kenyavault-resources').getPublicUrl(filePath);
+
+        var thumbnailUrl = null;
+        var thumbnailInput = document.getElementById('thumbnailInput');
+        if (thumbnailInput.files && thumbnailInput.files[0]) {
+            var thumbFile = thumbnailInput.files[0];
+            var thumbExt = thumbFile.name.split('.').pop();
+            var thumbName = 'thumbnails/' + Date.now() + '-' + title.replace(/\s/g, '_') + '.' + thumbExt;
+            var thumbResult = await retryOperation(function() {
+                return supabase.storage.from('kenyavault-resources').upload(thumbName, thumbFile);
+            }, 3, 1500);
+            if (!thumbResult.error) {
+                var thumbUrlData = supabase.storage.from('kenyavault-resources').getPublicUrl(thumbName);
+                thumbnailUrl = thumbUrlData.publicUrl;
             }
-            validationError.classList.remove('visible');
+        }
 
-            var submitBtn = document.getElementById('uploadSubmitBtn');
-            submitBtn.classList.add('loading');
-            submitBtn.disabled = true;
+        // ─── FIX: Map education level to frontend format ────────
+        var levelNormalized = level.toLowerCase().trim().replace(/\s+/g, '-');
+        
+        // ─── FIX: Map resource type to frontend category ────────
+        var resourceTypeNormalized = resourceType.toLowerCase().replace(/\s+/g, '-');
+        
+        // ─── FIX: Normalize subject to lowercase ────────────────
+        var subjectNormalized = subject.toLowerCase().trim();
 
-            try {
-                var fileExt = file.name.split('.').pop();
-                var fileName = Date.now() + '-' + title.replace(/\s/g, '_') + '.' + fileExt;
-                var filePath = 'resources/' + fileName;
+        var resourceData = {
+            title: title,
+            level: level,
+            level_normalized: levelNormalized,
+            grade: grade,
+            subject: subjectNormalized,
+            resource_type: resourceType,
+            resource_type_normalized: resourceTypeNormalized,
+            term: term,
+            year: year,
+            curriculum: curriculum,
+            is_free: isFree,
+            price: isFree ? 0 : price,
+            featured: featured,
+            status: status,
+            description: description,
+            keywords: keywords,
+            file_url: urlData.publicUrl,
+            file_path: filePath,
+            file_name: file.name,
+            thumbnail_url: thumbnailUrl,
+            cover_image_url: thumbnailUrl,
+            download_count: 0,
+            storage_bucket: 'kenyavault-resources',  // ← IMPORTANT: Set bucket
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            category: resourceType,
+            education_level: level,
+            marketplace_category: resourceType,
+            // CBC compliance flags
+            cbc_compliant: curriculum === 'CBC' || curriculum === '8-4-4' ? true : false,
+            kicd_aligned: true,
+            teacher_reviewed: true,
+            is_published: status === 'published',
+            is_active: status === 'published' || status === 'draft'
+        };
 
-                var uploadResult = await retryOperation(function() {
-                    return supabase.storage.from('kenyavault-resources').upload(filePath, file);
-                }, 3, 1500);
-                if (uploadResult.error) throw uploadResult.error;
+        var insertResult = await retryOperation(function() {
+            return supabase.from('resources').insert(resourceData);
+        }, 3, 1500);
+        if (insertResult.error) throw insertResult.error;
 
-                var urlData = supabase.storage.from('kenyavault-resources').getPublicUrl(filePath);
+        await loadResources();
+        updateStatsUI();
 
-                var thumbnailUrl = null;
-                var thumbnailInput = document.getElementById('thumbnailInput');
-                if (thumbnailInput.files && thumbnailInput.files[0]) {
-                    var thumbFile = thumbnailInput.files[0];
-                    var thumbExt = thumbFile.name.split('.').pop();
-                    var thumbName = 'thumbnails/' + Date.now() + '-' + title.replace(/\s/g, '_') + '.' + thumbExt;
-                    var thumbResult = await retryOperation(function() {
-                        return supabase.storage.from('kenyavault-resources').upload(thumbName, thumbFile);
-                    }, 3, 1500);
-                    if (!thumbResult.error) {
-                        var thumbUrlData = supabase.storage.from('kenyavault-resources').getPublicUrl(thumbName);
-                        thumbnailUrl = thumbUrlData.publicUrl;
-                    }
-                }
+        showToast('Success', '✅ "' + title + '" uploaded! Access: ' + (isFree ? 'FREE' : 'PAID at KES ' + price));
+        resetUploadForm();
 
-                var resourceData = {
-                    title: title,
-                    level: level,
-                    grade: grade,
-                    subject: subject,
-                    resource_type: resourceType,
-                    term: term,
-                    year: year,
-                    curriculum: curriculum,
-                    is_free: isFree,
-                    price: isFree ? 0 : price,
-                    featured: featured,
-                    status: status,
-                    description: description,
-                    keywords: keywords,
-                    file_url: urlData.publicUrl,
-                    file_path: filePath,
-                    file_name: file.name,
-                    thumbnail_url: thumbnailUrl,
-                    cover_image_url: thumbnailUrl,
-                    download_count: 0,
-                    created_at: new Date().toISOString(),
-                    category: resourceType,
-                    education_level: level,
-                    marketplace_category: resourceType
-                };
+    } catch (e) {
+        console.error('[Upload] Error:', e);
+        var msg = e.message || 'Unknown error';
+        if (msg.includes('column')) {
+            var match = msg.match(/column "([^"]+)"/);
+            showToast('Schema Error', 'Field "' + (match ? match[1] : 'unknown') +
+                '" does not exist in your resources table.', 'error');
+        } else if (e.code === '23505') {
+            showToast('Error', 'A resource with this title already exists.', 'error');
+        } else {
+            showToast('Error', 'Upload failed: ' + msg, 'error');
+        }
+        await loadResources();
+    } finally {
+        submitBtn.classList.remove('loading');
+        submitBtn.disabled = false;
+    }
+});
+        // ─── START BULK UPLOAD - HARMONIZED ──────────────────────────────
+window.startBulkUpload = async function() {
+    if (bulkProcessing) return;
+    if (!bulkFiles.length) {
+        showToast('Error', 'No files to upload', 'error');
+        return;
+    }
 
-                var insertResult = await retryOperation(function() {
-                    return supabase.from('resources').insert(resourceData);
-                }, 3, 1500);
-                if (insertResult.error) throw insertResult.error;
+    // Filter out skipped files
+    var toUpload = bulkFiles.filter(function(f) { return !f.skipped; });
+    if (!toUpload.length) {
+        showToast('Info', 'No files selected for upload', 'info');
+        return;
+    }
 
-                await loadResources();
-                updateStatsUI();
+    bulkProcessing = true;
+    var btn = document.getElementById('bulkStartBtn');
+    btn.classList.add('loading');
+    btn.disabled = true;
 
-                showToast('Success', '✅ "' + title + '" uploaded! Access: ' + (isFree ? 'FREE' : 'PAID at KES ' +
-                    price));
-                resetUploadForm();
+    var progressContainer = document.getElementById('bulkProgressContainer');
+    progressContainer.classList.add('show');
 
-            } catch (e) {
-                console.error('[Upload] Error:', e);
-                var msg = e.message || 'Unknown error';
-                if (msg.includes('column')) {
-                    var match = msg.match(/column "([^"]+)"/);
-                    showToast('Schema Error', 'Field "' + (match ? match[1] : 'unknown') +
-                        '" does not exist in your resources table.', 'error');
-                } else if (e.code === '23505') {
-                    showToast('Error', 'A resource with this title already exists.', 'error');
-                } else {
-                    showToast('Error', 'Upload failed: ' + msg, 'error');
-                }
-                await loadResources();
-            } finally {
-                submitBtn.classList.remove('loading');
-                submitBtn.disabled = false;
-            }
-        });
+    var total = toUpload.length;
+    var successCount = 0;
+    var failCount = 0;
+    var skippedCount = bulkFiles.length - toUpload.length;
+    var processed = 0;
+
+    bulkResults = [];
+
+    document.getElementById('bulkTotalCount').textContent = total;
+    document.getElementById('bulkSuccessCount').textContent = '0';
+    document.getElementById('bulkPendingCount').textContent = total;
+    document.getElementById('bulkFailCount').textContent = '0';
+    document.getElementById('bulkSkippedCount').textContent = skippedCount;
+    document.getElementById('bulkProgressTitle').textContent = 'Uploading...';
+    document.getElementById('bulkProgressPercent').textContent = '0%';
+    document.getElementById('bulkProgressFill').style.width = '0%';
+    document.getElementById('bulkProgressFiles').innerHTML = '';
+
+    for (var i = 0; i < toUpload.length; i++) {
+        var fileData = toUpload[i];
+        processed++;
+
+        var progressItem = document.createElement('div');
+        progressItem.className = 'file-progress-item';
+        progressItem.innerHTML = '<span class="file-name">' + fileData.file.name + '</span>' +
+            '<span class="file-status-icon pending"><i class="fas fa-spinner fa-spin"></i></span>' +
+            '<div class="file-progress-bar"><div class="fill" style="width:0%;"></div></div>';
+        document.getElementById('bulkProgressFiles').appendChild(progressItem);
+
+        try {
+            var ext = fileData.file.name.split('.').pop();
+            var fileName = Date.now() + '-' + (fileData.title || 'resource').replace(/\s/g, '_') + '.' + ext;
+            var filePath = 'resources/' + fileName;  // ← Consistent with frontend
+
+            var uploadResult = await retryOperation(function() {
+                return supabase.storage.from('kenyavault-resources').upload(filePath, fileData.file);
+            }, 3, 1500);
+
+            if (uploadResult.error) throw uploadResult.error;
+
+            var urlData = supabase.storage.from('kenyavault-resources').getPublicUrl(filePath);
+
+            // ─── Map education level to frontend format ────────
+            var levelNormalized = (fileData.level || '').toLowerCase().trim().replace(/\s+/g, '-');
+            var resourceTypeNormalized = (fileData.resourceType || '').toLowerCase().replace(/\s+/g, '-');
+            var subjectNormalized = (fileData.subject || '').toLowerCase().trim();
+
+            var isFree = fileData.isFree === 'free' || fileData.isFree === true;
+            var price = parseFloat(fileData.price) || 0;
+
+            var resourceData = {
+                title: fileData.title || fileData.file.name.replace(/\.[^.]+$/, ''),
+                level: fileData.level || '',
+                level_normalized: levelNormalized,
+                grade: fileData.grade || '',
+                subject: subjectNormalized || '',
+                resource_type: fileData.resourceType || '',
+                resource_type_normalized: resourceTypeNormalized,
+                term: fileData.term || '',
+                year: fileData.year || '2026',
+                curriculum: fileData.curriculum || 'CBC',
+                is_free: isFree,
+                price: isFree ? 0 : price,
+                featured: false,
+                status: 'published',
+                description: '',
+                keywords: '',
+                file_url: urlData.publicUrl,
+                file_path: filePath,
+                file_name: fileData.file.name,
+                download_count: 0,
+                storage_bucket: 'kenyavault-resources',  // ← IMPORTANT: Set bucket
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                category: fileData.resourceType || '',
+                education_level: fileData.level || '',
+                marketplace_category: fileData.resourceType || '',
+                cbc_compliant: true,
+                kicd_aligned: true,
+                teacher_reviewed: true,
+                is_published: true,
+                is_active: true
+            };
+
+            var insertResult = await retryOperation(function() {
+                return supabase.from('resources').insert(resourceData);
+            }, 3, 1500);
+
+            if (insertResult.error) throw insertResult.error;
+
+            successCount++;
+            bulkResults.push({ file: fileData.file.name, status: 'success' });
+            progressItem.querySelector('.file-status-icon').className = 'file-status-icon success';
+            progressItem.querySelector('.file-status-icon').innerHTML = '<i class="fas fa-check-circle"></i>';
+            progressItem.querySelector('.fill').style.width = '100%';
+            progressItem.querySelector('.fill').className = 'fill success';
+
+        } catch (e) {
+            console.error('Bulk upload error for', fileData.file.name, e);
+            failCount++;
+            bulkResults.push({ file: fileData.file.name, status: 'failed', error: e.message });
+            progressItem.querySelector('.file-status-icon').className = 'file-status-icon failed';
+            progressItem.querySelector('.file-status-icon').innerHTML = '<i class="fas fa-times-circle"></i>';
+            progressItem.querySelector('.fill').style.width = '100%';
+            progressItem.querySelector('.fill').className = 'fill failed';
+        }
+
+        // Update progress
+        var pct = Math.round((processed / total) * 100);
+        document.getElementById('bulkProgressPercent').textContent = pct + '%';
+        document.getElementById('bulkProgressFill').style.width = pct + '%';
+        document.getElementById('bulkSuccessCount').textContent = successCount;
+        document.getElementById('bulkPendingCount').textContent = total - processed;
+        document.getElementById('bulkFailCount').textContent = failCount;
+        document.getElementById('bulkProgressTitle').textContent = 'Uploading... ' + processed + '/' + total;
+    }
+
+    bulkProcessing = false;
+    btn.classList.remove('loading');
+    btn.disabled = true;
+    document.getElementById('bulkProgressTitle').textContent = '✅ Complete!';
+
+    if (failCount > 0) {
+        document.getElementById('bulkRetryBtn').style.display = 'inline-block';
+    }
+    if (successCount > 0) {
+        document.getElementById('bulkViewBtn').style.display = 'inline-block';
+    }
+
+    showToast('Bulk Upload Complete', successCount + ' uploaded, ' + failCount + ' failed', successCount > 0 ? 'success' :
+        'error');
+    await loadResources();
+    updateStatsUI();
+    document.getElementById('bulkStatusBadge').textContent = '✅ Complete: ' + successCount + '/' + total;
+};
 
         // ============================================================
         // 25-42. [REST OF CODE - Same as previous with retry added]
