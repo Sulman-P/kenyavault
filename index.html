@@ -3211,62 +3211,141 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
     }
 
     // ─── GENERATE PUBLIC URL ──────────────────────────────────
-    async function generatePublicUrl(filePath, fileName) {
-        if (!filePath) return null;
-
-        var cleanPath = filePath;
-        try { cleanPath = decodeURIComponent(filePath); } catch (e) {}
-
-        var AVAILABLE_BUCKETS = ['kenyavault-pdfs', 'kenyavault-resources', 'academic-resources'];
-
-        for (var b = 0; b < AVAILABLE_BUCKETS.length; b++) {
-            var bucket = AVAILABLE_BUCKETS[b];
-            if (cleanPath.startsWith(bucket + '/')) {
-                cleanPath = cleanPath.replace(bucket + '/', '');
-                break;
-            }
-        }
-        cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
-        cleanPath = cleanPath.replace(/^\/+/, '');
-
-        var ext = cleanPath.split('.').pop().toLowerCase();
-        if (!['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'mp3', 'wav', 'zip', 'epub'].includes(ext)) {
-            if (cleanPath.indexOf('.') === -1) {
-                cleanPath = cleanPath + '.pdf';
-            }
-        }
-
-        var variations = [
-            cleanPath,
-            'resources/' + cleanPath,
-            cleanPath.replace(/^resources\//, ''),
-            encodeURIComponent(cleanPath).replace(/%2F/g, '/')
-        ];
-
-        for (var b = 0; b < AVAILABLE_BUCKETS.length; b++) {
-            var bucket = AVAILABLE_BUCKETS[b];
-            for (var v = 0; v < variations.length; v++) {
-                var path = variations[v];
-                path = path.replace(/\/+/g, '/').replace(/^\/+/, '');
-
-                var encodedPath = path.split('/').map(function(s) { return encodeURIComponent(s); }).join('/');
-                var downloadUrl = SUPABASE_URL + '/storage/v1/object/public/' + bucket + '/' + encodedPath +
-                    '?download=' + encodeURIComponent(fileName || 'document.pdf');
-
-                try {
-                    var response = await fetch(downloadUrl, {
-                        method: 'HEAD',
-                        headers: { 'Accept': 'application/pdf,application/octet-stream,*/*' }
-                    });
-
-                    if (response.ok) {
-                        return downloadUrl;
-                    }
-                } catch (e) {}
-            }
-        }
+async function generatePublicUrl(filePath, fileName) {
+    if (!filePath) {
+        console.warn('⚠️ No file path provided');
         return null;
     }
+
+    console.log('🔍 Searching for file:', filePath);
+
+    var cleanPath = filePath;
+    try { cleanPath = decodeURIComponent(filePath); } catch (e) {}
+
+    var AVAILABLE_BUCKETS = ['kenyavault-pdfs', 'kenyavault-resources', 'academic-resources'];
+
+    // Clean the path
+    for (var b = 0; b < AVAILABLE_BUCKETS.length; b++) {
+        var bucket = AVAILABLE_BUCKETS[b];
+        if (cleanPath.startsWith(bucket + '/')) {
+            cleanPath = cleanPath.replace(bucket + '/', '');
+            break;
+        }
+    }
+    cleanPath = cleanPath.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/[^\/]+\//, '');
+    cleanPath = cleanPath.replace(/^\/+/, '');
+
+    // Try multiple variations of the path
+    var variations = [];
+
+    // 1. Clean path as-is
+    if (cleanPath) variations.push(cleanPath);
+
+    // 2. Remove 'resources/' prefix
+    if (cleanPath.startsWith('resources/')) {
+        variations.push(cleanPath.replace('resources/', ''));
+    }
+
+    // 3. Add 'resources/' prefix
+    if (!cleanPath.startsWith('resources/')) {
+        variations.push('resources/' + cleanPath);
+    }
+
+    // 4. URL encoded version
+    variations.push(encodeURIComponent(cleanPath).replace(/%2F/g, '/'));
+
+    // 5. Try with the original filename if provided
+    if (fileName) {
+        var nameParts = fileName.split('.');
+        if (nameParts.length > 1) {
+            var fileExt = nameParts.pop().toLowerCase();
+            var nameBase = nameParts.join('.');
+            // Try with the file extension from fileName
+            var baseClean = cleanPath.replace(/\.[^.]+$/, '');
+            if (baseClean !== cleanPath) {
+                variations.push(baseClean + '.' + fileExt);
+                variations.push('resources/' + baseClean + '.' + fileExt);
+            }
+        }
+    }
+
+    // 6. Try common document extensions if none present
+    var hasExtension = cleanPath.split('.').pop().toLowerCase();
+    var knownExtensions = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'jpg', 'jpeg', 'png', 'gif', 'webp'];
+    if (!knownExtensions.includes(hasExtension) || cleanPath.indexOf('.') === -1) {
+        var basePath = cleanPath.replace(/\.[^.]+$/, '');
+        if (basePath === cleanPath) basePath = cleanPath;
+        var docExtensions = ['.docx', '.doc', '.pdf'];
+        for (var e = 0; e < docExtensions.length; e++) {
+            variations.push(basePath + docExtensions[e]);
+            variations.push('resources/' + basePath + docExtensions[e]);
+        }
+    }
+
+    // Remove duplicates
+    variations = variations.filter(function(v, i, self) {
+        return v && self.indexOf(v) === i;
+    });
+
+    console.log('📁 Trying variations:', variations);
+
+    // Try each bucket and variation
+    for (var b = 0; b < AVAILABLE_BUCKETS.length; b++) {
+        var bucket = AVAILABLE_BUCKETS[b];
+        for (var v = 0; v < variations.length; v++) {
+            var path = variations[v];
+            if (!path) continue;
+            path = path.replace(/\/+/g, '/').replace(/^\/+/, '');
+
+            // Try without encoding first
+            var downloadUrl = SUPABASE_URL + '/storage/v1/object/public/' + bucket + '/' + path +
+                '?download=' + encodeURIComponent(fileName || 'document.pdf');
+
+            try {
+                console.log('🔍 Checking:', downloadUrl);
+                var response = await fetch(downloadUrl, {
+                    method: 'HEAD',
+                    headers: { 'Accept': '*/*' }
+                });
+
+                if (response.ok) {
+                    console.log('✅ Found file at:', downloadUrl);
+                    return downloadUrl;
+                }
+            } catch (e) {
+                // Continue trying
+            }
+
+            // Try with encoded path
+            try {
+                var encodedPath = path.split('/').map(function(s) { return encodeURIComponent(s); }).join('/');
+                var encodedUrl = SUPABASE_URL + '/storage/v1/object/public/' + bucket + '/' + encodedPath +
+                    '?download=' + encodeURIComponent(fileName || 'document.pdf');
+
+                console.log('🔍 Checking encoded:', encodedUrl);
+                var response2 = await fetch(encodedUrl, {
+                    method: 'HEAD',
+                    headers: { 'Accept': '*/*' }
+                });
+
+                if (response2.ok) {
+                    console.log('✅ Found file at:', encodedUrl);
+                    return encodedUrl;
+                }
+            } catch (e) {
+                // Continue trying
+            }
+        }
+    }
+
+    console.warn('⚠️ Could not find file for path:', filePath);
+    console.warn('📁 Tried variations:', variations);
+    
+    // If file not found, try to show a helpful message
+    showToast('File Not Found', 'The resource file could not be located. Please contact support.', 'error');
+    
+    return null;
+  }
 
     function openFileInNewTab(url, fileName) {
         try {
