@@ -2903,10 +2903,11 @@ FOOTER
     </div>
 </footer>
 
-<!-- ============================================================
-JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
-============================================================ -->
 <script>
+// ============================================================
+// KENYAVAULT — COMPLETE MARKETPLACE ENGINE (SINGLE BUCKET)
+// All files in kenyavault-resources bucket
+// ============================================================
 
 (function() {
     'use strict';
@@ -2915,6 +2916,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
     var SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
     var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
     var BACKEND_URL = 'https://kenyavault.onrender.com';
+    var MAIN_BUCKET = 'kenyavault-resources';
     var ITEMS_PER_PAGE = 20;
     var POLL_INTERVAL = 5000;
     var MAX_POLL_ATTEMPTS = 30;
@@ -3212,7 +3214,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
         return map[t] || t.replace(/\s+/g, '-');
     }
 
-    // ─── GENERATE PUBLIC URL ──────────────────────────────────
+    // ─── GENERATE PUBLIC URL (SINGLE BUCKET - kenyavault-resources) ──────────────────
     async function generatePublicUrl(filePath, fileName) {
         if (!filePath) {
             console.warn('⚠️ No file path provided');
@@ -3224,137 +3226,127 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
         var cleanPath = filePath;
         try { cleanPath = decodeURIComponent(filePath); } catch (e) {}
 
-        var AVAILABLE_BUCKETS = ['kenyavault-pdfs', 'kenyavault-resources', 'academic-resources'];
+        // ─── SINGLE BUCKET ──────────────────────────────────────────
+        var MAIN_BUCKET = 'kenyavault-resources';
 
         // Check if it's already a full URL
         if (cleanPath.startsWith('http://') || cleanPath.startsWith('https://')) {
-            console.log('📄 Already a URL, checking if accessible...');
-            try {
-                var testResponse = await fetch(cleanPath, { 
-                    method: 'HEAD',
-                    headers: { 'Accept': '*/*' }
-                });
-                if (testResponse.ok) {
-                    console.log('✅ URL is accessible:', cleanPath);
-                    return cleanPath;
-                }
-            } catch (e) {
-                console.log('⚠️ URL not directly accessible, trying to extract path...');
+            // Check if it's already the correct bucket
+            if (cleanPath.includes('/kenyavault-resources/')) {
+                try {
+                    var testResponse = await fetch(cleanPath, { 
+                        method: 'HEAD',
+                        headers: { 'Accept': '*/*' }
+                    });
+                    if (testResponse.ok) {
+                        console.log('✅ URL is accessible:', cleanPath);
+                        return cleanPath;
+                    }
+                } catch (e) {}
             }
             
-            for (var b = 0; b < AVAILABLE_BUCKETS.length; b++) {
-                var bucket = AVAILABLE_BUCKETS[b];
-                var pattern = new RegExp('/storage/v1/object/public/' + bucket + '/(.+)');
-                var match = cleanPath.match(pattern);
-                if (match) {
-                    cleanPath = match[1];
-                    console.log('📄 Extracted path from URL:', cleanPath);
-                    break;
+            // Extract path from URL
+            var pattern = new RegExp('/storage/v1/object/public/(kenyavault-pdfs|kenyavault-resources|academic-resources)/(.+)');
+            var match = cleanPath.match(pattern);
+            if (match) {
+                cleanPath = match[2];
+                console.log('📄 Extracted path from URL:', cleanPath);
+            } else {
+                // If we can't extract, try to use as-is
+                try {
+                    var testResponse2 = await fetch(cleanPath, { 
+                        method: 'HEAD',
+                        headers: { 'Accept': '*/*' }
+                    });
+                    if (testResponse2.ok) {
+                        console.log('✅ URL is accessible:', cleanPath);
+                        return cleanPath;
+                    }
+                } catch (e) {}
+                // Try one more - check if it's a public URL we can use
+                if (cleanPath.includes('/storage/v1/object/public/')) {
+                    try {
+                        var testResponse3 = await fetch(cleanPath, { 
+                            method: 'HEAD',
+                            headers: { 'Accept': '*/*' }
+                        });
+                        if (testResponse3.ok) {
+                            console.log('✅ URL is accessible:', cleanPath);
+                            return cleanPath;
+                        }
+                    } catch (e) {}
                 }
+                return null;
             }
         }
 
-        // Clean the path
-        for (var b = 0; b < AVAILABLE_BUCKETS.length; b++) {
-            var bucket = AVAILABLE_BUCKETS[b];
-            if (cleanPath.startsWith(bucket + '/')) {
-                cleanPath = cleanPath.replace(bucket + '/', '');
+        // Remove any bucket prefix
+        var buckets = ['kenyavault-pdfs', 'kenyavault-resources', 'academic-resources'];
+        for (var b = 0; b < buckets.length; b++) {
+            if (cleanPath.startsWith(buckets[b] + '/')) {
+                cleanPath = cleanPath.replace(buckets[b] + '/', '');
                 break;
             }
         }
         cleanPath = cleanPath.replace(/^\/+/, '');
 
-        var pathParts = cleanPath.split('/');
-        var filename = pathParts[pathParts.length - 1];
-        var filenameWithoutExt = filename.replace(/\.[^.]+$/, '');
-        var ext = filename.includes('.') ? filename.split('.').pop().toLowerCase() : '';
-
-        console.log('📄 Extracted filename:', filename);
-
-        var variations = [];
-
-        // Original clean path
-        if (cleanPath) variations.push(cleanPath);
-
-        // With 'resources/' prefix
+        // Ensure 'resources/' prefix
         if (!cleanPath.startsWith('resources/')) {
-            variations.push('resources/' + cleanPath);
-        } else {
-            variations.push(cleanPath.replace('resources/', ''));
+            cleanPath = 'resources/' + cleanPath;
         }
 
-        // Just the filename
-        variations.push(filename);
-        variations.push('resources/' + filename);
+        // Fix any double 'resources/resources/'
+        cleanPath = cleanPath.replace('resources/resources/', 'resources/');
 
-        // Try different folder structures
-        var folders = ['', 'resources/', 'documents/', 'files/', 'uploads/', 'pdfs/'];
-        for (var f = 0; f < folders.length; f++) {
-            variations.push(folders[f] + filename);
-        }
+        // Build variations
+        var variations = [
+            cleanPath,
+            cleanPath.replace('resources/', ''),
+            cleanPath.split('/').pop(), // Just the filename
+            'resources/' + cleanPath.split('/').pop()
+        ];
 
-        // Try with file_name if provided
-        if (fileName && fileName !== filename) {
+        // Try with file_name if provided and different
+        if (fileName && fileName !== cleanPath.split('/').pop()) {
             variations.push(fileName);
             variations.push('resources/' + fileName);
-        }
-
-        // Try common document extensions
-        var knownExtensions = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
-        if (!knownExtensions.includes(ext) || !ext) {
-            var docExtensions = ['.docx', '.doc', '.pdf'];
-            var baseName = filenameWithoutExt || filename;
-            for (var e = 0; e < docExtensions.length; e++) {
-                for (var f2 = 0; f2 < folders.length; f2++) {
-                    variations.push(folders[f2] + baseName + docExtensions[e]);
+            // Try without extension
+            var nameWithoutExt = fileName.replace(/\.[^.]+$/, '');
+            if (nameWithoutExt !== fileName) {
+                var ext = fileName.includes('.') ? fileName.split('.').pop() : '';
+                if (ext) {
+                    variations.push('resources/' + nameWithoutExt + '.' + ext);
                 }
-                variations.push(baseName + docExtensions[e]);
-                variations.push('resources/' + baseName + docExtensions[e]);
             }
         }
-
-        // URL encoded versions
-        var encodedVariations = [];
-        for (var v = 0; v < variations.length; v++) {
-            if (variations[v]) {
-                var encoded = variations[v].split('/').map(function(s) { 
-                    return encodeURIComponent(s); 
-                }).join('/');
-                encodedVariations.push(encoded);
-            }
-        }
-        variations = variations.concat(encodedVariations);
 
         // Remove duplicates
         variations = variations.filter(function(v, i, self) {
             return v && self.indexOf(v) === i;
         });
 
-        console.log('📁 Trying ' + variations.length + ' variations...');
+        console.log('📁 Trying ' + variations.length + ' variations in bucket: ' + MAIN_BUCKET);
 
-        // Try each bucket and variation
-        for (var b = 0; b < AVAILABLE_BUCKETS.length; b++) {
-            var bucket = AVAILABLE_BUCKETS[b];
-            for (var v = 0; v < variations.length; v++) {
-                var path = variations[v];
-                if (!path) continue;
-                path = path.replace(/\/+/g, '/').replace(/^\/+/, '');
+        // Try each variation
+        for (var v = 0; v < variations.length; v++) {
+            var path = variations[v];
+            if (!path) continue;
+            path = path.replace(/\/+/g, '/').replace(/^\/+/, '');
 
-                var downloadUrl = SUPABASE_URL + '/storage/v1/object/public/' + bucket + '/' + path +
-                    '?download=' + encodeURIComponent(fileName || filename || 'document.pdf');
+            var downloadUrl = SUPABASE_URL + '/storage/v1/object/public/' + MAIN_BUCKET + '/' + path +
+                '?download=' + encodeURIComponent(fileName || 'document.pdf');
 
-                try {
-                    var response = await fetch(downloadUrl, {
-                        method: 'HEAD',
-                        headers: { 'Accept': '*/*' }
-                    });
+            try {
+                var response = await fetch(downloadUrl, {
+                    method: 'HEAD',
+                    headers: { 'Accept': '*/*' }
+                });
 
-                    if (response.ok) {
-                        console.log('✅ Found file at:', downloadUrl);
-                        return downloadUrl;
-                    }
-                } catch (e) {}
-            }
+                if (response.ok) {
+                    console.log('✅ Found file at:', downloadUrl);
+                    return downloadUrl;
+                }
+            } catch (e) {}
         }
 
         console.warn('⚠️ Could not find file for path:', filePath);
@@ -3474,9 +3466,9 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
         var productId = product.id || null;
 
         var cleanFilePath = filePath;
-        var AVAILABLE_BUCKETS = ['kenyavault-pdfs', 'kenyavault-resources', 'academic-resources'];
-        for (var b = 0; b < AVAILABLE_BUCKETS.length; b++) {
-            var bucket = AVAILABLE_BUCKETS[b];
+        var buckets = ['kenyavault-pdfs', 'kenyavault-resources', 'academic-resources'];
+        for (var b = 0; b < buckets.length; b++) {
+            var bucket = buckets[b];
             if (cleanFilePath.startsWith(bucket + '/')) {
                 cleanFilePath = cleanFilePath.replace(bucket + '/', '');
                 break;
@@ -3655,9 +3647,8 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
         manualVerificationShown = false;
     }
 
-    // ─── CHECK ORDER PAYMENT STATUS (FIXED - ONLY AFTER STK) ──────────
+    // ─── CHECK ORDER PAYMENT STATUS ──────────────────────────
     async function checkOrderPaymentStatus() {
-        // ─── CRITICAL FIX: Only check if STK was sent AND enough time passed ───
         if (!stkSentTime || stkSentTime === 0) {
             console.warn('⏳ STK Push not sent yet, cannot verify');
             showStkStatus('⏳ Please wait for STK Push to be sent...', 'pending');
@@ -3666,7 +3657,6 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
 
         var timeSinceSTK = Date.now() - stkSentTime;
         
-        // ─── FIX: Minimum 20 seconds wait before checking ──────────────
         if (timeSinceSTK < 20000) {
             var remaining = Math.ceil((20000 - timeSinceSTK) / 1000);
             showStkStatus(
@@ -3705,9 +3695,8 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
             var result = await response.json();
             console.log('📊 Verification result:', result);
 
-            // ─── CRITICAL FIX: Only process if payment is actually confirmed ───
             if (result.isPaid === true) {
-                // Double-check with the order status from Supabase
+                // Double-check with Supabase
                 var orderQuery = SUPABASE_URL + '/rest/v1/orders?select=*&id=eq.' + result.order_id;
                 var orderFetch = await fetch(orderQuery, {
                     headers: {
@@ -3720,7 +3709,6 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
                     var orderData = await orderFetch.json();
                     if (orderData && orderData.length > 0) {
                         var order = orderData[0];
-                        // Only confirm if payment_status is actually 'paid'
                         if (order.payment_status === 'paid' || order.status === 'paid') {
                             stopPaymentPolling();
                             currentOrderId = result.order_id;
@@ -3745,9 +3733,6 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
                         }
                     }
                 }
-                
-                // If we got here, something is wrong - don't proceed
-                console.warn('⚠️ Payment verification returned true but order not confirmed in database');
                 return;
             }
 
@@ -3781,7 +3766,6 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
                 return;
             }
 
-            // ─── Still pending - continue polling ──────────────
             paymentCheckAttempts++;
             console.log('⏳ Still pending (attempt ' + paymentCheckAttempts + '/' + MAX_POLL_ATTEMPTS + ')');
 
@@ -3811,24 +3795,21 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
         }
     }
 
-    // ─── START PAYMENT POLLING (FIXED - STARTS AFTER STK) ──────────────
+    // ─── START PAYMENT POLLING ──────────────────────────────────
     function startPaymentPolling() {
         stopPaymentPolling();
         paymentCheckAttempts = 0;
         
-        // ─── FIX: First check after 25 seconds ──────────────
         showStkStatus(
             '<span class="spinner"></span> M-PESA STK sent! Waiting for your PIN... (First check in 25s)',
             'pending'
         );
 
-        // First check after 25 seconds (allows user to enter PIN)
         setTimeout(function() { 
             paymentCheckAttempts++;
             checkOrderPaymentStatus(); 
         }, 25000);
         
-        // Then check every 5 seconds
         paymentPollingInterval = setInterval(function() {
             paymentCheckAttempts++;
             checkOrderPaymentStatus();
@@ -3965,9 +3946,8 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
         }
     }
 
-    // ─── INITIATE PAYMENT (FIXED - PROPER ORDER) ──────────────────────
+    // ─── INITIATE PAYMENT ──────────────────────────────────────
     async function initiatePayment() {
-        // Reset state
         currentOrderId = null;
         currentOrderRef = null;
         currentPaymentReference = null;
@@ -4016,7 +3996,6 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
             isFreeCheckout = checkoutExpectedTotal === 0;
         }
 
-        // ─── FREE RESOURCE ──────────────────────────────────────────
         if (isFreeCheckout) {
             try {
                 var freeResult;
@@ -4077,7 +4056,6 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
             }
         }
 
-        // ─── PAID RESOURCE ──────────────────────────────────────────
         if (checkoutMode === 'single' && !currentProduct) return;
         if (checkoutMode === 'cart' && checkoutCartItems.length === 0) return;
 
@@ -4092,7 +4070,6 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
         try {
             var orderRef, orderId, totalAmount;
 
-            // ─── STEP 1: Create the order ──────────────────────
             if (checkoutMode === 'cart') {
                 var cartResult = await createCartOrder(checkoutCartItems, customerName, formattedPhone);
                 orderRef = cartResult.orderRef;
@@ -4111,7 +4088,6 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
 
             console.log('📝 Order created:', { orderRef, orderId, totalAmount });
 
-            // ─── STEP 2: Send STK Push ──────────────────────────
             showStkStatus(
                 '<span class="spinner"></span> Sending STK Push to your phone...',
                 'pending'
@@ -4150,17 +4126,14 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
             console.log('📝 MegaPay reference:', megaPayReference);
             currentPaymentReference = megaPayReference;
 
-            // ─── STEP 3: Record STK sent time ──────────────────────
             stkSentTime = Date.now();
             console.log('⏱️ STK sent at:', new Date(stkSentTime).toLocaleTimeString());
 
-            // ─── STEP 4: Show waiting message ──────────────────────
             showStkStatus(
                 '📱 STK Push sent! Check your phone for the M-PESA PIN prompt.\n⏳ Please enter your PIN to complete payment.',
                 'pending'
             );
 
-            // ─── STEP 5: Hide pay button, show verify button (disabled initially) ──
             if (payPrimaryBtn) payPrimaryBtn.style.display = 'none';
             if (verifyOrderBtn) {
                 verifyOrderBtn.style.display = 'none';
@@ -4168,7 +4141,6 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
                 verifyOrderBtn.disabled = true;
             }
 
-            // ─── STEP 6: Enable verify after 30 seconds ────────────
             setTimeout(function() {
                 if (verifyOrderBtn) {
                     verifyOrderBtn.style.display = 'block';
@@ -4185,7 +4157,6 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
                 );
             }, 30000);
 
-            // ─── STEP 7: Start polling (first check after 25s) ────
             paymentCheckAttempts = 0;
             startPaymentPolling();
 
@@ -4370,36 +4341,40 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
 
         if (checkoutItemTitle) checkoutItemTitle.textContent = product.title || 'Resource';
 
-        if (isFree) {
-            if (checkoutTotal) {
-                checkoutTotal.textContent = 'FREE';
-                checkoutTotal.className = 'summary-value free';
+        try {
+            if (isFree) {
+                if (checkoutTotal) {
+                    checkoutTotal.textContent = 'FREE';
+                    checkoutTotal.className = 'summary-value free';
+                }
+                if (checkoutHeaderTitle) checkoutHeaderTitle.textContent = 'Get Your Free Resource';
+                if (checkoutSubText) checkoutSubText.textContent = 'No payment required';
+                if (checkoutTrustBadge) checkoutTrustBadge.innerHTML = '✅ KICD Curriculum Aligned — Instant free download';
+                if (phoneHint) phoneHint.textContent = "We'll use this to confirm your download only — no charges apply";
+                if (payPrimaryBtn) payPrimaryBtn.innerHTML = '<span class="btn-text">🎁 Get Free Download</span>';
+            } else if (status === 'unavailable') {
+                if (checkoutTotal) {
+                    checkoutTotal.textContent = 'Price unavailable';
+                    checkoutTotal.className = 'summary-value';
+                }
+                if (checkoutHeaderTitle) checkoutHeaderTitle.textContent = 'Complete Purchase';
+                if (checkoutSubText) checkoutSubText.textContent = 'Secure M-PESA via MegaPay';
+                if (checkoutTrustBadge) checkoutTrustBadge.innerHTML = '✅ KICD Curriculum Aligned — Instant download after verification';
+                if (phoneHint) phoneHint.textContent = "You'll receive an M-PESA STK Push prompt";
+                if (payPrimaryBtn) payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Pay with M-PESA</span>';
+            } else {
+                if (checkoutTotal) {
+                    checkoutTotal.textContent = 'KES ' + (product.price || 0);
+                    checkoutTotal.className = 'summary-value price';
+                }
+                if (checkoutHeaderTitle) checkoutHeaderTitle.textContent = 'Complete Purchase';
+                if (checkoutSubText) checkoutSubText.textContent = 'Secure M-PESA via MegaPay';
+                if (checkoutTrustBadge) checkoutTrustBadge.innerHTML = '✅ KICD Curriculum Aligned — Instant download after verification';
+                if (phoneHint) phoneHint.textContent = "You'll receive an M-PESA STK Push prompt";
+                if (payPrimaryBtn) payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Pay with M-PESA</span>';
             }
-            if (checkoutHeaderTitle) checkoutHeaderTitle.textContent = 'Get Your Free Resource';
-            if (checkoutSubText) checkoutSubText.textContent = 'No payment required';
-            if (checkoutTrustBadge) checkoutTrustBadge.innerHTML = '✅ KICD Curriculum Aligned — Instant free download';
-            if (phoneHint) phoneHint.textContent = "We'll use this to confirm your download only — no charges apply";
-            if (payPrimaryBtn) payPrimaryBtn.innerHTML = '<span class="btn-text">🎁 Get Free Download</span>';
-        } else if (status === 'unavailable') {
-            if (checkoutTotal) {
-                checkoutTotal.textContent = 'Price unavailable';
-                checkoutTotal.className = 'summary-value';
-            }
-            if (checkoutHeaderTitle) checkoutHeaderTitle.textContent = 'Complete Purchase';
-            if (checkoutSubText) checkoutSubText.textContent = 'Secure M-PESA via MegaPay';
-            if (checkoutTrustBadge) checkoutTrustBadge.innerHTML = '✅ KICD Curriculum Aligned — Instant download after verification';
-            if (phoneHint) phoneHint.textContent = "You'll receive an M-PESA STK Push prompt";
-            if (payPrimaryBtn) payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Pay with M-PESA</span>';
-        } else {
-            if (checkoutTotal) {
-                checkoutTotal.textContent = 'KES ' + (product.price || 0);
-                checkoutTotal.className = 'summary-value price';
-            }
-            if (checkoutHeaderTitle) checkoutHeaderTitle.textContent = 'Complete Purchase';
-            if (checkoutSubText) checkoutSubText.textContent = 'Secure M-PESA via MegaPay';
-            if (checkoutTrustBadge) checkoutTrustBadge.innerHTML = '✅ KICD Curriculum Aligned — Instant download after verification';
-            if (phoneHint) phoneHint.textContent = "You'll receive an M-PESA STK Push prompt";
-            if (payPrimaryBtn) payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Pay with M-PESA</span>';
+        } catch (e) {
+            console.log('ℹ️ Some checkout elements are missing, using defaults');
         }
         
         var lineItemsContainer = document.getElementById('checkoutLineItems');
@@ -4475,31 +4450,35 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
             var lineItemsContainer = document.getElementById('checkoutLineItems');
             if (lineItemsContainer) lineItemsContainer.innerHTML = lineItemsHtml;
 
-            if (allFree) {
-                if (checkoutTotal) {
-                    checkoutTotal.textContent = 'FREE';
-                    checkoutTotal.className = 'summary-value free';
+            try {
+                if (allFree) {
+                    if (checkoutTotal) {
+                        checkoutTotal.textContent = 'FREE';
+                        checkoutTotal.className = 'summary-value free';
+                    }
+                    if (checkoutHeaderTitle) checkoutHeaderTitle.textContent = 'Get Your Free Resources';
+                    if (checkoutSubText) checkoutSubText.textContent = 'No payment required';
+                    if (checkoutTrustBadge) checkoutTrustBadge.innerHTML = '✅ KICD Curriculum Aligned — Instant free download';
+                    if (phoneHint) phoneHint.textContent = "We'll use this to confirm your download only — no charges apply";
+                    if (payPrimaryBtn) payPrimaryBtn.innerHTML = '<span class="btn-text">🎁 Get Free Downloads</span>';
+                } else {
+                    if (checkoutTotal) {
+                        checkoutTotal.textContent = 'KES ' + total;
+                        checkoutTotal.className = 'summary-value price';
+                    }
+                    if (checkoutHeaderTitle) checkoutHeaderTitle.textContent = 'Complete Purchase';
+                    if (checkoutSubText) checkoutSubText.textContent = 'Secure M-PESA via MegaPay';
+                    if (checkoutTrustBadge) checkoutTrustBadge.innerHTML = '✅ KICD Curriculum Aligned — Instant download after verification';
+                    if (phoneHint) phoneHint.textContent = "You'll receive an M-PESA STK Push prompt";
+                    if (payPrimaryBtn) payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Pay with M-PESA</span>';
+                    if (verifyOrderBtn) {
+                        verifyOrderBtn.style.display = 'block';
+                        verifyOrderBtn.textContent = '🔓 Verify Payment';
+                        verifyOrderBtn.onclick = function() { checkOrderPaymentStatus(); };
+                    }
                 }
-                if (checkoutHeaderTitle) checkoutHeaderTitle.textContent = 'Get Your Free Resources';
-                if (checkoutSubText) checkoutSubText.textContent = 'No payment required';
-                if (checkoutTrustBadge) checkoutTrustBadge.innerHTML = '✅ KICD Curriculum Aligned — Instant free download';
-                if (phoneHint) phoneHint.textContent = "We'll use this to confirm your download only — no charges apply";
-                if (payPrimaryBtn) payPrimaryBtn.innerHTML = '<span class="btn-text">🎁 Get Free Downloads</span>';
-            } else {
-                if (checkoutTotal) {
-                    checkoutTotal.textContent = 'KES ' + total;
-                    checkoutTotal.className = 'summary-value price';
-                }
-                if (checkoutHeaderTitle) checkoutHeaderTitle.textContent = 'Complete Purchase';
-                if (checkoutSubText) checkoutSubText.textContent = 'Secure M-PESA via MegaPay';
-                if (checkoutTrustBadge) checkoutTrustBadge.innerHTML = '✅ KICD Curriculum Aligned — Instant download after verification';
-                if (phoneHint) phoneHint.textContent = "You'll receive an M-PESA STK Push prompt";
-                if (payPrimaryBtn) payPrimaryBtn.innerHTML = '<span class="btn-text">💳 Pay with M-PESA</span>';
-                if (verifyOrderBtn) {
-                    verifyOrderBtn.style.display = 'block';
-                    verifyOrderBtn.textContent = '🔓 Verify Payment';
-                    verifyOrderBtn.onclick = function() { checkOrderPaymentStatus(); };
-                }
+            } catch (e) {
+                console.log('ℹ️ Some checkout elements are missing, using defaults');
             }
 
             if (checkoutModal) {
@@ -4604,6 +4583,10 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
                 }
                 if (r.reviews_count === undefined || r.reviews_count === null) {
                     r.reviews_count = 0;
+                }
+                // Ensure bucket is set
+                if (r.storage_bucket === null || r.storage_bucket === undefined) {
+                    r.storage_bucket = MAIN_BUCKET;
                 }
             });
 
@@ -5352,6 +5335,7 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
             console.log('[Resources] Loaded: ' + allResources.length + ' resources');
             console.log('[Categories] ' + CATEGORY_DEFS.length + ' categories');
             console.log('[Levels] ' + LEVEL_ORDER.length + ' education levels');
+            console.log('[Bucket] Single bucket: ' + MAIN_BUCKET);
             console.log('[Payment] STK Push - First check after 25s, then every 5s');
             console.log('[Backend] Using: ' + BACKEND_URL);
         } catch (e) {
@@ -5487,10 +5471,11 @@ JAVASCRIPT — COMPLETE MARKETPLACE WITH MANUAL VERIFICATION
     window.hideManualVerificationSection = hideManualVerificationSection;
 
     document.addEventListener('DOMContentLoaded', init);
-    console.log('✅ KenyaVault Marketplace — Fixed Payment Flow');
+    console.log('✅ KenyaVault Marketplace — Single Bucket (' + MAIN_BUCKET + ')');
     console.log('✅ STK Push sent → Wait 25s → Check status');
     console.log('✅ Backend URL: ' + BACKEND_URL);
     console.log('✅ Manual M-PESA verification available as fallback');
+    console.log('✅ All ' + allResources.length + ' resources using single bucket');
 
 })();
 </script>
