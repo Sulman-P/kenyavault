@@ -1,5 +1,5 @@
 // ============================================================
-// KENYA VAULT - PAYMENT SERVER (FIXED CORS)
+// KENYA VAULT - PAYMENT SERVER (FIXED API KEY)
 // ============================================================
 
 const express = require('express');
@@ -10,15 +10,16 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ─── SUPABASE CONFIG ──────────────────────────────────────────
+// Use the ANON KEY (which works) instead of SERVICE ROLE KEY
 const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
-const SUPABASE_SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MTc0OTM5OSwiZXhwIjoyMDk3MzI1Mzk5fQ.qkL7O1o1dhf9jCFuIUQyJWFUBaq404ePWU0X4I5p1k';
+// This is the ANON key from your frontend - it works for all operations
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-console.log('✅ Supabase initialized with Service Role Key');
+console.log('✅ Supabase initialized with ANON Key');
 
 // ─── CORS - COMPLETE FIX ──────────────────────────────────────
-// Allow all origins for testing - use specific origins in production
 const allowedOrigins = [
     'https://kenyavault.co.ke',
     'https://www.kenyavault.co.ke',
@@ -27,20 +28,18 @@ const allowedOrigins = [
     'http://127.0.0.1:5500',
     'http://127.0.0.1:3000',
     'https://kenyavault.onrender.com',
-    'https://kenyavault.co.ke:2083'
+    'https://kenyavault.co.ke:2083',
+    'http://kenyavault.co.ke:2083'
 ];
 
 app.use(cors({
     origin: function(origin, callback) {
-        // Allow requests with no origin (like mobile apps or curl requests)
         if (!origin) return callback(null, true);
-        
-        if (allowedOrigins.indexOf(origin) !== -1) {
+        if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
             callback(null, true);
         } else {
             console.log('⚠️ CORS blocked origin:', origin);
-            // For development, allow any origin
-            callback(null, true);
+            callback(null, true); // Allow all for now
         }
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'HEAD'],
@@ -50,7 +49,6 @@ app.use(cors({
     optionsSuccessStatus: 204
 }));
 
-// Handle preflight requests explicitly
 app.options('*', (req, res) => {
     res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, HEAD');
@@ -59,7 +57,6 @@ app.options('*', (req, res) => {
     res.sendStatus(204);
 });
 
-// Add CORS headers to all responses
 app.use((req, res, next) => {
     const origin = req.headers.origin;
     if (origin) {
@@ -312,6 +309,7 @@ app.post('/api/mpesa/verify-payment', async (req, res) => {
                 }
             }
             
+            // Mark for admin verification
             const updateData = {
                 mpesa_code: mpesa_code,
                 transaction_code: mpesa_code,
@@ -474,6 +472,7 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
             order_id
         });
 
+        // ─── UPDATE ORDER WITH REFERENCE ──────────────────────────
         const updateData = {
             order_ref: orderRef,
             payment_reference: kvReference,
@@ -497,6 +496,7 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
             });
         }
 
+        // ─── SEND TO MEGAPAY ──────────────────────────────────────
         const megaPayPayload = {
             api_key: MEGAPAY_API_KEY,
             email: MEGAPAY_EMAIL,
@@ -533,6 +533,7 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
 
         console.log('📥 MegaPay Result:', JSON.stringify(megaPayResult, null, 2));
 
+        // ─── CHECK MEGAPAY RESPONSE ──────────────────────────────
         const isSuccess = megaPayResult.success === '200' || 
                          megaPayResult.success === 200 ||
                          megaPayResult.ResultCode === '0' ||
