@@ -1,5 +1,5 @@
 // ============================================================
-// KENYA VAULT - PAYMENT SERVER (WITH DIAGNOSTICS)
+// KENYA VAULT - PAYMENT SERVER (COMPLETE ARCHITECTURE)
 // ============================================================
 
 const express = require('express');
@@ -399,7 +399,6 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
 
         if (isSuccess) {
             // ─── SAVE TRANSACTION REQUEST ID ──────────────────────
-            // Try ALL possible field names
             const transactionRequestId = megaPayResult.transaction_request_id || 
                                         megaPayResult.TransactionID || 
                                         megaPayResult.TransactionId ||
@@ -723,7 +722,7 @@ app.post('/api/mpesa/callback', async (req, res) => {
     }
 });
 
-// ─── MANUAL VERIFICATION ENDPOINT ──────────────────────────────────
+// ─── MANUAL PAYMENT VERIFICATION - SECURE FALLBACK ──────────────
 app.post('/api/mpesa/manual-verify', async (req, res) => {
     console.log('📝 Manual verification request received!');
     console.log('📥 Body:', req.body);
@@ -738,6 +737,7 @@ app.post('/api/mpesa/manual-verify', async (req, res) => {
             });
         }
         
+        // ─── FIND THE ORDER ──────────────────────────────────────
         const { data: order, error: findError } = await supabase
             .from('orders')
             .select('*')
@@ -751,6 +751,7 @@ app.post('/api/mpesa/manual-verify', async (req, res) => {
             });
         }
         
+        // ─── CHECK IF ALREADY PAID ──────────────────────────────
         if (order.payment_status === 'paid' || order.payment_confirmed === true) {
             return res.status(200).json({
                 success: true,
@@ -760,37 +761,302 @@ app.post('/api/mpesa/manual-verify', async (req, res) => {
             });
         }
         
-        await supabase
+        // ─── CHECK FOR DUPLICATE TRANSACTION ────────────────────
+        const { data: existingOrder, error: duplicateError } = await supabase
             .from('orders')
-            .update({
-                status: 'paid',
-                payment_status: 'paid',
-                payment_confirmed: true,
-                payment_verified: true,
+            .select('*')
+            .eq('mpesa_code', mpesa_code)
+            .neq('id', order.id)
+            .maybeSingle();
+        
+        if (existingOrder) {
+            logPaymentEvent('DUPLICATE_TRANSACTION_ATTEMPTED', {
+                order_id: order.id,
+                order_ref: order.order_ref,
                 mpesa_code: mpesa_code,
-                transaction_code: mpesa_code,
-                mpesa_receipt: mpesa_code,
-                amount_paid: order.total_amount || 0,
-                confirmed_at: new Date().toISOString(),
-                paid_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
-            })
+                existing_order: existingOrder.order_ref
+            });
+            
+            return res.status(400).json({
+                success: false,
+                error: 'This M-PESA transaction has already been used',
+                code: 'DUPLICATE_TRANSACTION'
+            });
+        }
+        
+        // ─── CHECK IF TRANSACTION AMOUNT MATCHES ────────────────
+        // Note: We can't verify amount without MegaPay API access
+        // So we mark as VERIFYING and let admin confirm
+        // If MegaPay status API is available, we verify automatically
+        
+        let verificationStatus = 'verifying';
+        let verificationMethod = 'manual_submission';
+        let adminRequired = true;
+        
+        // ─── TRY TO VERIFY WITH MEGAPAY STATUS API ──────────────
+        let megaPayStatus = null;
+        if (order.transaction_request_id) {
+            console.log(`🔍 Attempting to verify with MegaPay status API for: ${order.transaction_request_id}`);
+            megaPayStatus = await checkMegaPayStatus(order.transaction_request_id);
+            
+            if (megaPayStatus && megaPayStatus.isPaid) {
+                // MegaPay confirms payment - auto-approve
+                verificationStatus = 'paid';
+                adminRequired = false;
+                console.log(`✅ MegaPay status API confirmed payment for order ${order.order_ref}`);
+            }
+        }
+        
+        // ─── UPDATE ORDER ──────────────────────────────────────────
+        const updateData = {
+            status: verificationStatus === 'paid' ? 'paid' : 'verifying',
+            payment_status: verificationStatus === 'paid' ? 'paid' : 'verifying',
+            mpesa_code: mpesa_code,
+            transaction_code: mpesa_code,
+            mpesa_receipt: mpesa_code,
+            verification_method: verificationMethod,
+            verification_phone: phone || order.phone,
+            verification_submitted_at: new Date().toISOString(),
+            admin_required: adminRequired,
+            updated_at: new Date().toISOString()
+        };
+        
+        // If auto-verified, add payment details
+        if (verificationStatus === 'paid') {
+            updateData.payment_confirmed = true;
+            updateData.payment_verified = true;
+            updateData.confirmed_at = new Date().toISOString();
+            updateData.paid_at = new Date().toISOString();
+            updateData.amount_paid = megaPayStatus?.amount || order.total_amount || 0;
+            updateData.provider_transaction_id = megaPayStatus?.transactionId || mpesa_code;
+        }
+        
+        const { error: updateError } = await supabase
+            .from('orders')
+            .update(updateData)
             .eq('id', order.id);
         
-        await fulfillPurchase(order.id);
+        if (updateError) {
+            console.error('❌ Error updating order:', updateError);
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to update order'
+            });
+        }
         
-        console.log(`✅ Order ${order_ref} manually verified with M-PESA: ${mpesa_code}`);
+        logPaymentEvent('MANUAL_PAYMENT_SUBMITTED', {
+            order_id: order.id,
+            order_ref: order.order_ref,
+            mpesa_code: mpesa_code,
+            status: verificationStatus,
+            admin_required: adminRequired
+        });
+        
+        // ─── IF AUTO-VERIFIED, FULFILL PURCHASE ──────────────────
+        if (verificationStatus === 'paid') {
+            await fulfillPurchase(order.id);
+            console.log(`✅ Order ${order.order_ref} auto-verified and fulfilled`);
+        } else {
+            console.log(`⏳ Order ${order.order_ref} submitted for admin verification`);
+        }
         
         return res.status(200).json({
             success: true,
-            message: 'Payment verified successfully',
+            message: verificationStatus === 'paid' 
+                ? 'Payment verified successfully! Your resources are ready.' 
+                : 'Payment submitted for verification. You will be notified once confirmed.',
             order_id: order.id,
             order_ref: order.order_ref,
-            status: 'paid'
+            status: verificationStatus,
+            admin_required: adminRequired
         });
         
     } catch (error) {
         console.error('❌ Manual verification error:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Internal server error: ' + error.message
+        });
+    }
+});
+
+// ─── ADMIN VERIFY PAYMENT ──────────────────────────────────────────
+app.post('/api/admin/verify-payment', async (req, res) => {
+    console.log('🔐 Admin payment verification request');
+    console.log('📥 Body:', req.body);
+    
+    try {
+        const { order_id, action, admin_id, notes } = req.body;
+        
+        if (!order_id || !action) {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing order_id or action'
+            });
+        }
+        
+        if (!['verify', 'reject'].includes(action)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid action. Must be "verify" or "reject"'
+            });
+        }
+        
+        // ─── FIND THE ORDER ──────────────────────────────────────
+        const { data: order, error: findError } = await supabase
+            .from('orders')
+            .select('*')
+            .eq('id', order_id)
+            .single();
+        
+        if (findError || !order) {
+            return res.status(404).json({
+                success: false,
+                error: 'Order not found'
+            });
+        }
+        
+        // ─── CHECK CURRENT STATUS ──────────────────────────────
+        if (order.payment_status === 'paid' || order.payment_confirmed === true) {
+            return res.status(400).json({
+                success: false,
+                error: 'Order already paid'
+            });
+        }
+        
+        if (order.status !== 'verifying' && order.status !== 'pending') {
+            return res.status(400).json({
+                success: false,
+                error: 'Order is not in a verifiable state'
+            });
+        }
+        
+        // ─── PROCESS ACTION ──────────────────────────────────────
+        if (action === 'verify') {
+            const updateData = {
+                status: 'paid',
+                payment_status: 'paid',
+                payment_confirmed: true,
+                payment_verified: true,
+                confirmed_at: new Date().toISOString(),
+                paid_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                admin_verified_by: admin_id || 'admin',
+                admin_verified_at: new Date().toISOString(),
+                admin_notes: notes || null,
+                admin_required: false
+            };
+            
+            const { error: updateError } = await supabase
+                .from('orders')
+                .update(updateData)
+                .eq('id', order.id);
+            
+            if (updateError) {
+                console.error('❌ Error updating order:', updateError);
+                return res.status(500).json({
+                    success: false,
+                    error: 'Failed to update order'
+                });
+            }
+            
+            logPaymentEvent('ADMIN_VERIFIED_PAYMENT', {
+                order_id: order.id,
+                order_ref: order.order_ref,
+                admin_id: admin_id || 'admin',
+                mpesa_code: order.mpesa_code
+            });
+            
+            // ─── FULFILL PURCHASE ──────────────────────────────
+            await fulfillPurchase(order.id);
+            
+            console.log(`✅ Order ${order.order_ref} admin verified and fulfilled`);
+            
+            return res.status(200).json({
+                success: true,
+                message: 'Payment verified successfully',
+                order_id: order.id,
+                order_ref: order.order_ref,
+                status: 'paid'
+            });
+            
+        } else if (action === 'reject') {
+            const updateData = {
+                status: 'rejected',
+                payment_status: 'rejected',
+                admin_verified_by: admin_id || 'admin',
+                admin_verified_at: new Date().toISOString(),
+                admin_notes: notes || 'Payment verification failed',
+                rejection_reason: notes || 'Payment verification failed',
+                updated_at: new Date().toISOString(),
+                admin_required: false
+            };
+            
+            const { error: updateError } = await supabase
+                .from('orders')
+                .update(updateData)
+                .eq('id', order.id);
+            
+            if (updateError) {
+                console.error('❌ Error updating order:', updateError);
+                return res.status(500).json({
+                    success: false,
+                    error: 'Failed to update order'
+                });
+            }
+            
+            logPaymentEvent('ADMIN_REJECTED_PAYMENT', {
+                order_id: order.id,
+                order_ref: order.order_ref,
+                admin_id: admin_id || 'admin',
+                reason: notes || 'Payment verification failed'
+            });
+            
+            console.log(`❌ Order ${order.order_ref} rejected by admin`);
+            
+            return res.status(200).json({
+                success: true,
+                message: 'Payment rejected',
+                order_id: order.id,
+                order_ref: order.order_ref,
+                status: 'rejected'
+            });
+        }
+        
+    } catch (error) {
+        console.error('❌ Admin verification error:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Internal server error: ' + error.message
+        });
+    }
+});
+
+// ─── GET PENDING VERIFICATIONS (FOR ADMIN) ──────────────────────────
+app.get('/api/admin/pending-verifications', async (req, res) => {
+    try {
+        const { data: orders, error } = await supabase
+            .from('orders')
+            .select('*')
+            .eq('status', 'verifying')
+            .order('verification_submitted_at', { ascending: true });
+        
+        if (error) {
+            console.error('❌ Error fetching pending verifications:', error);
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to fetch pending verifications'
+            });
+        }
+        
+        return res.status(200).json({
+            success: true,
+            data: orders,
+            count: orders.length
+        });
+        
+    } catch (error) {
+        console.error('❌ Error:', error);
         return res.status(500).json({
             success: false,
             error: 'Internal server error: ' + error.message
@@ -848,7 +1114,8 @@ app.get('/api/mpesa/verify/:reference', async (req, res) => {
                 provider_reference: order.provider_reference,
                 isPaid: isPaid,
                 order_ref: order.order_ref,
-                mpesa_code: order.mpesa_code
+                mpesa_code: order.mpesa_code,
+                admin_required: order.admin_required || false
             }
         });
 
@@ -897,7 +1164,8 @@ app.get('/api/mpesa/status/:orderId', async (req, res) => {
                 isPaid: isPaid,
                 order_ref: order.order_ref,
                 mpesa_code: order.mpesa_code,
-                transaction_request_id: order.transaction_request_id
+                transaction_request_id: order.transaction_request_id,
+                admin_required: order.admin_required || false
             }
         });
         
@@ -1016,7 +1284,8 @@ app.get('/api/diagnose/order/:orderRef', async (req, res) => {
                 mpesa_transaction_id: order.mpesa_transaction_id,
                 mpesa_code: order.mpesa_code,
                 created_at: order.created_at,
-                updated_at: order.updated_at
+                updated_at: order.updated_at,
+                admin_required: order.admin_required
             },
             hasTransactionId: hasTransactionId,
             megaPayStatus: statusResult
@@ -1051,7 +1320,8 @@ app.get('/', (req, res) => {
             status: 'GET /api/mpesa/status/:orderId',
             verify: 'GET /api/mpesa/verify/:reference',
             manual_verify: 'POST /api/mpesa/manual-verify',
-            fix_orders: 'POST /api/mpesa/fix-orders',
+            admin_verify: 'POST /api/admin/verify-payment',
+            pending_verifications: 'GET /api/admin/pending-verifications',
             diagnose_stk: 'POST /api/diagnose/stk-test',
             diagnose_order: 'GET /api/diagnose/order/:orderRef'
         },
@@ -1073,6 +1343,9 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`🧪 Diagnostic endpoints available:`);
     console.log(`   POST /api/diagnose/stk-test`);
     console.log(`   GET  /api/diagnose/order/:orderRef`);
+    console.log(`🔐 Admin endpoints:`);
+    console.log(`   POST /api/admin/verify-payment`);
+    console.log(`   GET  /api/admin/pending-verifications`);
 });
 
 module.exports = app;
