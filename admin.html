@@ -869,7 +869,7 @@
         
         <div class="admin-sidebar-footer">
             <div class="admin-user">
-                <div class="avatar">A</div>
+                <div class="avatar" id="adminAvatar">A</div>
                 <div class="info">
                     <div class="name" id="adminName">Admin User</div>
                     <div class="role">Administrator</div>
@@ -1159,7 +1159,25 @@ const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
 
 // ── STATE ──────────────────────────────────────────────────
-let stats = {};
+let stats = {
+    totalUsers: 0,
+    totalDocuments: 0,
+    totalViews: 0,
+    totalRevenue: 0,
+    paidDownloads: 0,
+    pendingCount: 0,
+    activeSubscribers: 0,
+    unreadMessages: 0,
+    monthTransactions: 0,
+    monthRevenue: 0,
+    monthNewUsers: 0,
+    revDelta: 0,
+    revUp: true,
+    topDoc: null,
+    recentTxs: [],
+    recentDocs: []
+};
+
 let transactions = [];
 let documents = [];
 let messages = [];
@@ -1183,6 +1201,7 @@ const txnCount = document.getElementById('txnCount');
 const dateDisplay = document.getElementById('dateDisplay');
 const welcomeMessage = document.getElementById('welcomeMessage');
 const adminName = document.getElementById('adminName');
+const adminAvatar = document.getElementById('adminAvatar');
 const docCount = document.getElementById('docCount');
 const userCount = document.getElementById('userCount');
 const subscriberCount = document.getElementById('subscriberCount');
@@ -1195,6 +1214,7 @@ function formatCurrency(amount) {
 }
 
 function formatDate(dateStr) {
+    if (!dateStr) return '—';
     return new Date(dateStr).toLocaleDateString('en-US', { 
         month: 'short', 
         day: 'numeric', 
@@ -1203,6 +1223,7 @@ function formatDate(dateStr) {
 }
 
 function formatTime(dateStr) {
+    if (!dateStr) return '—';
     return new Date(dateStr).toLocaleTimeString('en-US', { 
         hour: '2-digit', 
         minute: '2-digit' 
@@ -1210,6 +1231,7 @@ function formatTime(dateStr) {
 }
 
 function timeAgo(dateStr) {
+    if (!dateStr) return '—';
     const now = new Date();
     const past = new Date(dateStr);
     const diff = Math.floor((now - past) / 1000);
@@ -1246,6 +1268,11 @@ function getStatusBadge(status) {
         'read': 'status-read'
     };
     return 'status-badge ' + (statusMap[status] || 'status-pending');
+}
+
+function getInitials(name) {
+    if (!name) return 'A';
+    return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 }
 
 // ── FETCH FUNCTIONS ──────────────────────────────────────
@@ -1292,30 +1319,30 @@ async function loadDashboardData() {
         statPending.textContent = '...';
         statMessages.textContent = '...';
 
-        // Fetch all data in parallel
+        // Fetch all data in parallel from Supabase
         const [users, docs, txs, subscribers, msgs] = await Promise.all([
-            fetchSupabase('users', { select: 'id,role,created_at' }),
-            fetchSupabase('documents', { select: 'id,title,hits,price,filename,category_title,level_title,grade_title,created_at,updated_at' }),
+            fetchSupabase('users', { select: 'id,role,created_at,full_name,email' }),
+            fetchSupabase('documents', { select: 'id,title,hits,price,filename,category_title,level_title,grade_title,created_at,updated_at,download_count' }),
             fetchSupabase('transactions', { 
-                select: 'id,user_id,amount,status,phone,email,created_at,user_name,guest_email,guest_name,document_id,reference' 
+                select: 'id,user_id,amount,status,phone,email,created_at,user_name,guest_email,guest_name,document_id,reference,full_name,transaction_id' 
             }),
             fetchSupabase('newsletter_subscribers', { select: 'id,email,status,created_at' }),
             fetchSupabase('contact_messages', { select: 'id,name,email,message,status,created_at' })
         ]);
 
-        // Calculate stats
+        // Calculate stats from real data
         const totalUsers = users ? users.length : 0;
         const totalDocuments = docs ? docs.length : 0;
-        const totalViews = docs ? docs.reduce((sum, d) => sum + (d.hits || 0), 0) : 0;
+        const totalViews = docs ? docs.reduce((sum, d) => sum + (d.hits || d.download_count || 0), 0) : 0;
         
-        const completedTxs = txs ? txs.filter(t => t.status === 'completed' || t.status === 'paid') : [];
-        const pendingTxs = txs ? txs.filter(t => t.status === 'pending') : [];
-        const totalRevenue = completedTxs.reduce((sum, t) => sum + (t.amount || 0), 0);
+        const completedTxs = txs ? txs.filter(t => t.status === 'completed' || t.status === 'paid' || t.status === 'success') : [];
+        const pendingTxs = txs ? txs.filter(t => t.status === 'pending' || t.status === 'processing') : [];
+        const totalRevenue = completedTxs.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
         const paidDownloads = completedTxs.length;
         const pendingCountVal = pendingTxs.length;
         
-        const activeSubscribers = subscribers ? subscribers.filter(s => s.status === 'active' || s.status === 'subscribed').length : 0;
-        const unreadMessages = msgs ? msgs.filter(m => m.status === 'unread').length : 0;
+        const activeSubscribers = subscribers ? subscribers.filter(s => s.status === 'active' || s.status === 'subscribed' || s.status === 'confirmed').length : 0;
+        const unreadMessages = msgs ? msgs.filter(m => m.status === 'unread' || m.status === 'new').length : 0;
 
         // Month stats
         const now = new Date();
@@ -1324,9 +1351,9 @@ async function loadDashboardData() {
         
         const monthTxs = txs ? txs.filter(t => {
             const d = new Date(t.created_at);
-            return d.getMonth() === currentMonth && d.getFullYear() === currentYear && (t.status === 'completed' || t.status === 'paid');
+            return d.getMonth() === currentMonth && d.getFullYear() === currentYear && (t.status === 'completed' || t.status === 'paid' || t.status === 'success');
         }) : [];
-        const monthRevenueTotal = monthTxs.reduce((sum, t) => sum + (t.amount || 0), 0);
+        const monthRevenueTotal = monthTxs.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
         const monthNewUsers = users ? users.filter(u => {
             const d = new Date(u.created_at);
             return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
@@ -1338,21 +1365,25 @@ async function loadDashboardData() {
         const lastMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear;
         const lastMonthTxs = txs ? txs.filter(t => {
             const d = new Date(t.created_at);
-            return d.getMonth() === lastMonth && d.getFullYear() === lastMonthYear && (t.status === 'completed' || t.status === 'paid');
+            return d.getMonth() === lastMonth && d.getFullYear() === lastMonthYear && (t.status === 'completed' || t.status === 'paid' || t.status === 'success');
         }) : [];
-        const lastMonthRevenue = lastMonthTxs.reduce((sum, t) => sum + (t.amount || 0), 0);
+        const lastMonthRevenue = lastMonthTxs.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
         
         const revDelta = lastMonthRevenue > 0 ? ((monthRevenueTotal - lastMonthRevenue) / lastMonthRevenue) * 100 : (monthRevenueTotal > 0 ? 100 : 0);
         const revUp = revDelta >= 0;
 
-        // Top document
-        const topDoc = docs ? docs.sort((a, b) => (b.hits || 0) - (a.hits || 0))[0] : null;
+        // Top document by views/downloads
+        const topDoc = docs && docs.length > 0 ? docs.sort((a, b) => {
+            const aCount = a.hits || a.download_count || 0;
+            const bCount = b.hits || b.download_count || 0;
+            return bCount - aCount;
+        })[0] : null;
 
         // Recent transactions
-        const recentTxs = txs ? txs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 5) : [];
+        const recentTxs = txs && txs.length > 0 ? txs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 5) : [];
 
         // Recent documents
-        const recentDocs = docs ? docs.sort((a, b) => {
+        const recentDocs = docs && docs.length > 0 ? docs.sort((a, b) => {
             const aDate = a.updated_at || a.created_at;
             const bDate = b.updated_at || b.created_at;
             return new Date(bDate) - new Date(aDate);
@@ -1501,17 +1532,18 @@ function renderTransactions() {
     `;
 
     stats.recentTxs.forEach(tx => {
-        const customerName = tx.user_name || tx.guest_name || tx.name || 'Guest User';
-        const customerEmail = tx.user_email || tx.guest_email || tx.email || '';
+        const customerName = tx.full_name || tx.user_name || tx.guest_name || tx.name || 'Guest User';
+        const customerEmail = tx.email || tx.user_email || tx.guest_email || '';
         const phone = tx.phone || '';
         const docTitle = tx.document_title || '—';
         const docFile = tx.filename || '';
-        const amount = tx.amount || 0;
+        const amount = Number(tx.amount) || 0;
         const status = tx.status || 'pending';
         const createdAt = tx.created_at;
+        const transactionId = tx.transaction_id || tx.reference || tx.id;
         
         // Clean phone for WhatsApp
-        let pRaw = phone.replace(/[^0-9]/g, '');
+        let pRaw = phone ? phone.replace(/[^0-9]/g, '') : '';
         let pWa = pRaw.startsWith('0') ? '254' + pRaw.substring(1) : (pRaw.startsWith('7') || pRaw.startsWith('1')) ? '254' + pRaw : pRaw;
         let pTel = pRaw ? (pRaw.startsWith('0') ? '+254' + pRaw.substring(1) : (pRaw.startsWith('254') ? '+' + pRaw : pRaw)) : '';
 
@@ -1585,6 +1617,8 @@ function renderTopDocument() {
         return;
     }
 
+    const viewCount = stats.topDoc.hits || stats.topDoc.download_count || 0;
+
     container.innerHTML = `
         <p class="dash-insight-doc-title">${stats.topDoc.title || 'Untitled'}</p>
         <div class="dash-insight-row">
@@ -1592,7 +1626,7 @@ function renderTopDocument() {
                 <i class="bi bi-eye"></i> Total Views
             </span>
             <span class="dash-insight-value">
-                ${(stats.topDoc.hits || 0).toLocaleString()}
+                ${viewCount.toLocaleString()}
             </span>
         </div>
     `;
@@ -1671,6 +1705,8 @@ function showErrorState() {
 // ── COPY TO CLIPBOARD ─────────────────────────────────────
 
 function copyToClipboard(text, button) {
+    if (!text) return;
+    
     if (navigator.clipboard) {
         navigator.clipboard.writeText(text).then(() => {
             const originalHtml = button.innerHTML;
@@ -1715,6 +1751,7 @@ function toggleSidebar() {
 function logout() {
     if (confirm('Are you sure you want to logout?')) {
         localStorage.removeItem('kv_admin_session');
+        localStorage.removeItem('admin_auth_token');
         window.location.href = '/admin/login.html';
     }
 }
@@ -1734,8 +1771,14 @@ document.addEventListener('DOMContentLoaded', function() {
         const sessionData = JSON.parse(session);
         if (sessionData.name) {
             adminName.textContent = sessionData.name;
+            if (adminAvatar) adminAvatar.textContent = getInitials(sessionData.name);
         }
-    } catch (e) {}
+        if (sessionData.email) {
+            // Could show email in sidebar if needed
+        }
+    } catch (e) {
+        console.warn('Invalid session data');
+    }
 
     loadDashboardData();
 
@@ -1754,6 +1797,12 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 });
+
+// Expose functions globally for inline onclick
+window.toggleSidebar = toggleSidebar;
+window.logout = logout;
+window.copyToClipboard = copyToClipboard;
+window.loadDashboardData = loadDashboardData;
 </script>
 
 </body>
