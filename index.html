@@ -664,9 +664,6 @@
             font-weight: 700;
             color: var(--kv-gold);
         }
-        .recent-card-price-text:contains("FREE") {
-            color: var(--kv-green);
-        }
         .recent-card-meta-row {
             display: flex;
             gap: 12px;
@@ -892,6 +889,138 @@
             animation: spin 1s linear infinite;
         }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        
+        /* ============================================================
+           PAYMENT MODAL
+           ============================================================ */
+        .payment-modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 10000;
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(6px);
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+        .payment-modal-overlay.open { display: flex; }
+        .payment-modal {
+            background: var(--kv-white);
+            border-radius: 20px;
+            max-width: 440px;
+            width: 100%;
+            padding: 28px 24px;
+            box-shadow: 0 24px 80px rgba(0,0,0,0.35);
+            animation: modalSlide 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        @keyframes modalSlide {
+            from { opacity: 0; transform: scale(0.92) translateY(20px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .payment-modal .modal-title {
+            font-family: 'Sora', sans-serif;
+            font-weight: 700;
+            font-size: 1.1rem;
+            color: var(--kv-primary);
+            margin-bottom: 4px;
+        }
+        .payment-modal .modal-sub {
+            font-size: 0.8rem;
+            color: var(--kv-muted);
+            margin-bottom: 16px;
+        }
+        .payment-modal .form-group { margin-bottom: 12px; }
+        .payment-modal .form-group label {
+            font-weight: 600;
+            font-size: 0.78rem;
+            color: var(--kv-primary);
+            display: block;
+            margin-bottom: 4px;
+        }
+        .payment-modal .form-group input {
+            width: 100%;
+            padding: 10px 14px;
+            border: 2px solid var(--kv-border);
+            border-radius: var(--kv-radius-sm);
+            font-size: 0.9rem;
+            background: var(--kv-white);
+            outline: none;
+            transition: var(--kv-transition);
+            color: var(--kv-text);
+        }
+        .payment-modal .form-group input:focus {
+            border-color: var(--kv-gold);
+            box-shadow: 0 0 0 3px rgba(201, 151, 31, 0.08);
+        }
+        .payment-modal .btn-pay {
+            width: 100%;
+            padding: 12px;
+            background: var(--kv-gold);
+            color: var(--kv-primary);
+            border: none;
+            border-radius: var(--kv-radius-sm);
+            font-family: 'Sora', sans-serif;
+            font-weight: 700;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: var(--kv-transition);
+            margin-top: 8px;
+        }
+        .payment-modal .btn-pay:hover {
+            background: var(--kv-gold-light);
+            transform: translateY(-2px);
+        }
+        .payment-modal .btn-pay:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .payment-modal .btn-close {
+            float: right;
+            background: none;
+            border: none;
+            font-size: 1.2rem;
+            color: var(--kv-muted);
+            cursor: pointer;
+        }
+        .payment-modal .btn-close:hover { color: var(--kv-red); }
+        .payment-modal .stk-status {
+            display: none;
+            padding: 10px 14px;
+            border-radius: var(--kv-radius-sm);
+            margin: 12px 0;
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-align: center;
+        }
+        .payment-modal .stk-status.visible { display: block; }
+        .payment-modal .stk-status.pending {
+            background: #FEF3C7;
+            border: 2px solid #FCD34D;
+            color: #92400E;
+        }
+        .payment-modal .stk-status.success {
+            background: #D1FAE5;
+            border: 2px solid #6EE7B7;
+            color: #065F46;
+        }
+        .payment-modal .stk-status.error {
+            background: #FEE2E2;
+            border: 2px solid #FCA5A5;
+            color: #991B1B;
+        }
+        .payment-modal .stk-status .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(0,0,0,0.1);
+            border-top-color: var(--kv-gold);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
     </style>
 </head>
 <body>
@@ -911,7 +1040,7 @@ NAVBAR
 ============================================================ -->
 <nav class="navbar">
     <div class="nav-container">
-        <a class="nav-logo" href="/">
+        <a class="nav-logo" href="/index.html">
             <div class="logo-icon">KV</div>
             <div class="logo-text">
                 Kenya<span>Vault</span>
@@ -919,14 +1048,13 @@ NAVBAR
             </div>
         </a>
         <ul class="nav-links" id="navLinks">
-            <li><a href="/browse">Browse</a></li>
-            <li><a href="/schemes-of-work">Schemes</a></li>
-            <li><a href="/lesson-plans">Lesson Plans</a></li>
-            <li><a href="/notes">Notes</a></li>
-            <li><a href="/exams">Exams</a></li>
-            <li><a href="/tutors">Tutors</a></li>
-            <li><a href="/register" class="btn-nav-learner"><i class="fas fa-user-graduate"></i> <span>Login</span></a></li>
-            <li><a href="/register" class="btn-nav-cta"><i class="fas fa-chalkboard-teacher"></i> <span>Register</span></a></li>
+            <li><a href="/index.html" class="active">Home</a></li>
+            <li><a href="/browse.html">Browse</a></li>
+            <li><a href="/bundle.html">Bundles</a></li>
+            <li><a href="/about.html">About</a></li>
+            <li><a href="/contact.html">Contact</a></li>
+            <li><a href="/admin.html" class="btn-nav-learner"><i class="fas fa-user-graduate"></i> <span>Login</span></a></li>
+            <li><a href="/admin.html" class="btn-nav-cta"><i class="fas fa-chalkboard-teacher"></i> <span>Register</span></a></li>
         </ul>
         <div class="nav-actions">
             <button class="hamburger" id="hamburger"><span></span><span></span><span></span></button>
@@ -998,10 +1126,10 @@ HERO V2
             </div>
 
             <div class="hero-v2__cta hero-fade-in hero-fade-in--delay-5">
-                <a href="/register" class="hero-v2__btn hero-v2__btn--primary" id="heroCtaPrimary">
+                <a href="/admin.html" class="hero-v2__btn hero-v2__btn--primary" id="heroCtaPrimary">
                     Get Free Access
                 </a>
-                <a href="/browse" class="hero-v2__btn hero-v2__btn--outline" id="heroCtaSecondary">
+                <a href="/browse.html" class="hero-v2__btn hero-v2__btn--outline" id="heroCtaSecondary">
                     Browse Resources
                 </a>
             </div>
@@ -1118,7 +1246,7 @@ FOOTER
     </div>
     <div class="footer-top">
         <div class="footer-brand">
-            <a class="nav-logo" href="/">
+            <a class="nav-logo" href="/index.html">
                 <div class="logo-icon" style="width:32px;height:32px;font-size:0.9rem;">KV</div>
                 <div class="logo-text" style="font-size:1rem;">
                     Kenya<span>Vault</span>
@@ -1136,20 +1264,21 @@ FOOTER
         <div class="footer-col">
             <h4>Quick Links</h4>
             <ul>
-                <li><a href="/about">About Us</a></li>
-                <li><a href="/contact">Contact</a></li>
-                <li><a href="/terms">Terms &amp; Conditions</a></li>
-                <li><a href="/privacy">Privacy Policy</a></li>
+                <li><a href="/about.html">About Us</a></li>
+                <li><a href="/contact.html">Contact</a></li>
+                <li><a href="/terms.html">Terms &amp; Conditions</a></li>
+                <li><a href="/privacy.html">Privacy Policy</a></li>
             </ul>
         </div>
         <div class="footer-col">
             <h4>Resources</h4>
             <ul>
+                <li><a href="/browse.html">Browse All</a></li>
+                <li><a href="/bundle.html">Bundles</a></li>
                 <li><a href="/schemes-of-work">Schemes of Work</a></li>
                 <li><a href="/lesson-plans">Lesson Plans</a></li>
                 <li><a href="/notes">Notes</a></li>
                 <li><a href="/exams">Exams</a></li>
-                <li><a href="/past-papers">Past Papers</a></li>
             </ul>
         </div>
         <div class="footer-col">
@@ -1165,6 +1294,35 @@ FOOTER
         <span><span class="flag-dot"></span> Made in Kenya</span>
     </div>
 </footer>
+
+<!-- ============================================================
+PAYMENT MODAL
+============================================================ -->
+<div class="payment-modal-overlay" id="paymentModal">
+    <div class="payment-modal">
+        <button class="btn-close" onclick="closePaymentModal()">✕</button>
+        <h2 class="modal-title">💳 Complete Purchase</h2>
+        <p class="modal-sub">Pay securely with M-PESA via MegaPay</p>
+        <div id="paymentProductInfo" style="background:var(--kv-surface);padding:10px 14px;border-radius:8px;margin-bottom:16px;font-size:0.85rem;border:1px solid var(--kv-border);">
+            <strong id="paymentProductTitle">Loading...</strong>
+            <span id="paymentProductPrice" style="float:right;color:var(--kv-gold);font-weight:700;">KES 0</span>
+        </div>
+        <div class="form-group">
+            <label>Full Name <span style="color:var(--kv-red);">*</span></label>
+            <input type="text" id="customerName" placeholder="e.g., John Mwangi" />
+        </div>
+        <div class="form-group">
+            <label>Phone Number <span style="color:var(--kv-red);">*</span></label>
+            <input type="tel" id="phoneInput" placeholder="0712 345 678" />
+            <div style="font-size:0.65rem;color:var(--kv-muted);margin-top:4px;">You'll receive an M-PESA STK Push prompt</div>
+        </div>
+        <div class="stk-status" id="stkStatus"></div>
+        <button class="btn-pay" id="payBtn" onclick="initiatePayment()">
+            <span id="payBtnText">💳 Pay with M-PESA</span>
+            <span class="spinner" id="paySpinner" style="display:none;width:18px;height:18px;border:2px solid rgba(255,255,255,0.3);border-top-color:var(--kv-primary);border-radius:50%;animation:spin 0.8s linear infinite;vertical-align:middle;margin-left:8px;"></span>
+        </button>
+    </div>
+</div>
 
 <!-- ============================================================
 TOAST CONTAINER
@@ -1185,10 +1343,13 @@ SCRIPT
     // ─── CONFIG ──────────────────────────────────────────────
     var SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
     var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
+    var MEGAPAY_API_KEY = 'MGPYDSg2lIYA';
+    var MEGAPAY_BASE_URL = 'https://api.megapay.co.ke/v1';
 
     // ─── STATE ──────────────────────────────────────────────
     var allResources = [];
     var cart = [];
+    var currentProduct = null;
 
     // ─── DOM REFS ──────────────────────────────────────────────
     var categoryGrid = document.getElementById('categoryGrid');
@@ -1302,21 +1463,37 @@ SCRIPT
         }, 5000);
     }
 
+    // ─── SUPABASE FETCH ──────────────────────────────────────
+    async function fetchFromSupabase(table, options) {
+        var select = options && options.select ? options.select : '*';
+        var order = options && options.order ? '&order=' + options.order : '';
+        var limit = options && options.limit ? '&limit=' + options.limit : '';
+        var filter = options && options.filter ? '&' + options.filter : '';
+
+        var url = SUPABASE_URL + '/rest/v1/' + table + '?select=' + select + order + limit + filter;
+        
+        var response = await fetch(url, {
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+        }
+        return response.json();
+    }
+
     // ─── FETCH RESOURCES ──────────────────────────────────────
     async function fetchResources() {
         try {
-            var response = await fetch(SUPABASE_URL + '/rest/v1/resources?select=*&order=created_at.desc', {
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
-                    'Content-Type': 'application/json'
-                }
+            var data = await fetchFromSupabase('resources', {
+                select: '*',
+                order: 'created_at.desc'
             });
-            if (!response.ok) {
-                throw new Error('HTTP ' + response.status + ': ' + response.statusText);
-            }
-            var data = await response.json();
-            console.log('[KenyaVault] Loaded ' + data.length + ' resources');
+            console.log('[KenyaVault] Loaded ' + data.length + ' resources from Supabase');
 
             data.forEach(function(r) {
                 if (r.resource_type) {
@@ -1414,7 +1591,7 @@ SCRIPT
                 return cat.type.indexOf(rt) !== -1;
             }).length;
 
-            html += '<a href="/' + cat.id + '" class="catv2-card" style="--card-hue: ' + cat.hue + '; --anim-order: ' + i + '">';
+            html += '<a href="/browse.html?category=' + cat.id + '" class="catv2-card" style="--card-hue: ' + cat.hue + '; --anim-order: ' + i + '">';
             html += '  <span class="catv2-accent" aria-hidden="true"></span>';
             html += '  <div class="catv2-header">';
             html += '    <div class="catv2-icon"><i class="bi ' + cat.icon + '"></i></div>';
@@ -1482,11 +1659,11 @@ SCRIPT
 
         var buyHtml = '';
         if (isFree) {
-            buyHtml = '<span class="recent-card-btn-download-free"><i class="bi bi-download"></i> Download Free</span>';
+            buyHtml = '<span class="recent-card-btn-download-free" onclick="event.preventDefault();downloadFree(\'' + productId + '\')"><i class="bi bi-download"></i> Download Free</span>';
         } else if (status === 'unavailable') {
             buyHtml = '<span class="recent-card-btn-buy-now" style="background:#92400E;opacity:0.7;">Unavailable</span>';
         } else {
-            buyHtml = '<span class="recent-card-btn-buy-now">Buy Now</span>';
+            buyHtml = '<span class="recent-card-btn-buy-now" onclick="event.preventDefault();openPayment(\'' + productId + '\')">Buy Now</span>';
         }
 
         var cartBtnHtml = '';
@@ -1495,7 +1672,7 @@ SCRIPT
             cartBtnHtml = '<button class="add-to-cart-btn" data-add-to-cart data-doc-id="' + productId + '" data-doc-title="' + safeTitle + '" data-doc-price="' + (r.price || 0) + '" data-doc-ext="' + (r.filename ? r.filename.split('.').pop() : '') + '" data-doc-cat="' + (r.category_title || 'Generic') + '"><i class="bi bi-cart-plus"></i> ' + (inCart ? 'In Cart' : 'Add to cart') + '</button>';
         }
 
-        return '<a href="/item/' + productId + '" class="recent-card">' +
+        return '<a href="/item.html?id=' + productId + '" class="recent-card">' +
             '<div class="recent-card-content">' +
             '<h3 class="recent-card-title">' + getFileIcon(r.filename) + ' <span>' + safeTitle + '</span></h3>' +
             '<div class="recent-card-category-price-row">' +
@@ -1512,6 +1689,222 @@ SCRIPT
             '</div>' +
             '</div>' +
             '</a>';
+    }
+
+    // ─── DOWNLOAD FREE ──────────────────────────────────────
+    function downloadFree(productId) {
+        var resource = allResources.find(function(r) { return r.id === productId; });
+        if (resource && resource.file_url) {
+            window.open(resource.file_url, '_blank');
+            showToast('Download Started', 'Your free resource is downloading.', 'success');
+        } else {
+            showToast('Error', 'File not available. Please contact support.', 'error');
+        }
+    }
+
+    // ─── OPEN PAYMENT ──────────────────────────────────────
+    function openPayment(productId) {
+        var resource = allResources.find(function(r) { return r.id === productId; });
+        if (!resource) {
+            showToast('Error', 'Resource not found.', 'error');
+            return;
+        }
+        currentProduct = resource;
+        document.getElementById('paymentProductTitle').textContent = resource.title || 'Resource';
+        document.getElementById('paymentProductPrice').textContent = 'KES ' + (resource.price || 0);
+        document.getElementById('paymentModal').classList.add('open');
+        document.getElementById('stkStatus').className = 'stk-status';
+        document.getElementById('stkStatus').textContent = '';
+        document.getElementById('payBtn').disabled = false;
+        document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
+        document.getElementById('paySpinner').style.display = 'none';
+        document.getElementById('customerName').value = '';
+        document.getElementById('phoneInput').value = '';
+    }
+
+    function closePaymentModal() {
+        document.getElementById('paymentModal').classList.remove('open');
+    }
+
+    // ─── INITIATE PAYMENT ──────────────────────────────────
+    async function initiatePayment() {
+        if (!currentProduct) {
+            showToast('Error', 'No product selected.', 'error');
+            return;
+        }
+
+        var name = document.getElementById('customerName').value.trim();
+        var phone = document.getElementById('phoneInput').value.trim();
+
+        if (!name || name.length < 2) {
+            showToast('Error', 'Please enter your full name.', 'error');
+            return;
+        }
+
+        var phoneClean = phone.replace(/\s/g, '').replace(/^0/, '254');
+        if (phoneClean.length < 10 || !phoneClean.startsWith('254')) {
+            showToast('Error', 'Please enter a valid Safaricom phone number (e.g., 0712345678)', 'error');
+            return;
+        }
+
+        var payBtn = document.getElementById('payBtn');
+        var statusEl = document.getElementById('stkStatus');
+
+        payBtn.disabled = true;
+        document.getElementById('payBtnText').textContent = 'Processing...';
+        document.getElementById('paySpinner').style.display = 'inline-block';
+
+        statusEl.className = 'stk-status visible pending';
+        statusEl.innerHTML = '<span class="spinner"></span> Sending STK Push to ' + phoneClean + '...';
+
+        var orderRef = 'KV-' + Date.now().toString().slice(-8) + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
+
+        try {
+            var payload = {
+                api_key: MEGAPAY_API_KEY,
+                amount: currentProduct.price || 0,
+                currency: 'KES',
+                customer_phone: phoneClean,
+                customer_name: name,
+                customer_email: name.toLowerCase().replace(/\s/g, '.') + '@customer.com',
+                reference: orderRef,
+                description: 'KenyaVault: ' + currentProduct.title,
+                callback_url: window.location.origin + '/payment-callback.html'
+            };
+
+            var response = await fetch(MEGAPAY_BASE_URL + '/mpesa/stk-push', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-API-Key': MEGAPAY_API_KEY
+                },
+                body: JSON.stringify(payload)
+            });
+
+            var result = await response.json();
+
+            if (result.status === 'success' || result.status === 'pending') {
+                statusEl.className = 'stk-status visible pending';
+                statusEl.innerHTML = '<span class="spinner"></span> STK Push sent to ' + phoneClean + '. Please check your phone and enter your M-PESA PIN.';
+
+                // Poll for status
+                var transactionId = result.transaction_id || result.reference;
+                pollPaymentStatus(transactionId, orderRef);
+
+            } else {
+                statusEl.className = 'stk-status visible error';
+                statusEl.innerHTML = '❌ ' + (result.message || 'Payment initiation failed. Please try again.');
+                payBtn.disabled = false;
+                document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
+                document.getElementById('paySpinner').style.display = 'none';
+                showToast('Payment Failed', result.message || 'Please try again.', 'error');
+            }
+
+        } catch (error) {
+            console.error('[KenyaVault] Payment error:', error);
+            statusEl.className = 'stk-status visible error';
+            statusEl.innerHTML = '❌ Network error. Please check your connection and try again.';
+            payBtn.disabled = false;
+            document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
+            document.getElementById('paySpinner').style.display = 'none';
+            showToast('Payment Error', 'Network error. Please try again.', 'error');
+        }
+    }
+
+    function pollPaymentStatus(transactionId, orderRef) {
+        var pollCount = 0;
+        var maxPolls = 30;
+        var statusEl = document.getElementById('stkStatus');
+        var payBtn = document.getElementById('payBtn');
+
+        var pollInterval = setInterval(async function() {
+            pollCount++;
+
+            try {
+                var response = await fetch(MEGAPAY_BASE_URL + '/mpesa/status/' + transactionId, {
+                    headers: {
+                        'X-API-Key': MEGAPAY_API_KEY
+                    }
+                });
+
+                var result = await response.json();
+
+                if (result.status === 'completed' || result.status === 'success') {
+                    clearInterval(pollInterval);
+                    statusEl.className = 'stk-status visible success';
+                    statusEl.innerHTML = '✅ Payment successful! Your download will begin shortly.';
+
+                    // Download the resource
+                    if (currentProduct && currentProduct.file_url) {
+                        window.open(currentProduct.file_url, '_blank');
+                    }
+
+                    // Record transaction
+                    await recordTransaction(currentProduct, orderRef);
+
+                    showToast('Payment Successful', 'Your payment was confirmed!', 'success');
+                    payBtn.disabled = false;
+                    document.getElementById('payBtnText').textContent = '✅ Done';
+                    document.getElementById('paySpinner').style.display = 'none';
+
+                    setTimeout(function() {
+                        closePaymentModal();
+                    }, 3000);
+
+                } else if (result.status === 'failed' || result.status === 'cancelled') {
+                    clearInterval(pollInterval);
+                    statusEl.className = 'stk-status visible error';
+                    statusEl.innerHTML = '❌ Payment ' + result.status + '. Please try again.';
+                    payBtn.disabled = false;
+                    document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
+                    document.getElementById('paySpinner').style.display = 'none';
+
+                } else if (pollCount >= maxPolls) {
+                    clearInterval(pollInterval);
+                    statusEl.className = 'stk-status visible pending';
+                    statusEl.innerHTML = '⏳ Payment is still being processed. Please check your M-PESA messages.';
+                    payBtn.disabled = false;
+                    document.getElementById('payBtnText').textContent = '🔄 Check Status';
+                    document.getElementById('paySpinner').style.display = 'none';
+                    
+                    // Add retry option
+                    payBtn.onclick = function() {
+                        document.getElementById('stkStatus').className = 'stk-status';
+                        document.getElementById('stkStatus').textContent = '';
+                        payBtn.onclick = initiatePayment;
+                        initiatePayment();
+                    };
+                }
+
+            } catch (error) {
+                console.error('[KenyaVault] Polling error:', error);
+            }
+        }, 5000);
+    }
+
+    async function recordTransaction(product, reference) {
+        try {
+            var data = {
+                document_id: product.id,
+                amount: product.price || 0,
+                status: 'completed',
+                reference: reference,
+                created_at: new Date().toISOString()
+            };
+
+            await fetch(SUPABASE_URL + '/rest/v1/transactions', {
+                method: 'POST',
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            });
+            console.log('[KenyaVault] Transaction recorded:', reference);
+        } catch (error) {
+            console.error('[KenyaVault] Error recording transaction:', error);
+        }
     }
 
     // ─── HERO COUNTER ANIMATION ──────────────────────────────
@@ -1580,7 +1973,6 @@ SCRIPT
                 showToast('Added to Cart', title + ' added to your cart.', 'success');
             }
 
-            // Update all buttons with same product ID
             document.querySelectorAll('[data-add-to-cart][data-doc-id="' + id + '"]').forEach(function(b) {
                 var inCart = cart.some(function(item) { return item.id === id; });
                 b.innerHTML = inCart ? '<i class="bi bi-cart-plus"></i> In Cart' : '<i class="bi bi-cart-plus"></i> Add to cart';
@@ -1591,7 +1983,6 @@ SCRIPT
     // ─── INIT ──────────────────────────────────────────────────
     async function init() {
         try {
-            // Show loading states
             if (categoryGrid) categoryGrid.innerHTML = '<div class="loading-spinner"><span class="spin-icon">⏳</span>Loading categories...</div>';
             if (popularGrid) popularGrid.innerHTML = '<div class="loading-spinner"><span class="spin-icon">⏳</span>Loading resources...</div>';
             if (recentGrid) recentGrid.innerHTML = '<div class="loading-spinner"><span class="spin-icon">⏳</span>Loading resources...</div>';
@@ -1599,15 +1990,13 @@ SCRIPT
             allResources = await fetchResources();
 
             if (allResources.length === 0) {
-                allResources = generateMockResources();
+                showToast('Info', 'No resources found. Please check back later.', 'info');
             }
 
-            // Render everything
             renderCategories();
             renderCards('popularGrid', allResources.sort(function(a, b) { return (b.download_count || 0) - (a.download_count || 0); }), 6);
             renderCards('recentGrid', allResources, 6);
 
-            // Setup UI
             animateCounter();
             setupHamburger();
             setupAddToCart();
@@ -1617,55 +2006,8 @@ SCRIPT
             if (categoryGrid) categoryGrid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:30px;color:#BB0000;">Error loading resources. Please refresh.</div>';
             if (popularGrid) popularGrid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:30px;color:#BB0000;">Error loading resources. Please refresh.</div>';
             if (recentGrid) recentGrid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:30px;color:#BB0000;">Error loading resources. Please refresh.</div>';
+            showToast('Error', 'Failed to load resources. Please refresh the page.', 'error');
         }
-    }
-
-    // ─── MOCK DATA (FALLBACK) ──────────────────────────────────
-    function generateMockResources() {
-        var subjects = ['Mathematics', 'English', 'Kiswahili', 'Science', 'Social Studies', 'CRE', 'IRE', 'Agriculture', 'Business Studies', 'Computer Science', 'History', 'Geography', 'Physics', 'Chemistry', 'Biology'];
-        var categories = ['Schemes of Work', 'Lesson Plans', 'Notes', 'Exams', 'Past Papers'];
-        var levels = ['primary', 'jss', 'senior-school', 'secondary-844'];
-        var grades = ['grade-1', 'grade-2', 'grade-3', 'grade-4', 'grade-5', 'grade-6', 'grade-7', 'grade-8', 'grade-9', 'grade-10', 'grade-11', 'grade-12', 'form-1', 'form-2', 'form-3', 'form-4'];
-        var types = ['schemes-of-work', 'lesson-plans', 'exams', 'notes', 'revision-notes', 'past-papers'];
-        var mockData = [];
-
-        for (var i = 0; i < 20; i++) {
-            var subject = subjects[Math.floor(Math.random() * subjects.length)];
-            var category = categories[Math.floor(Math.random() * categories.length)];
-            var level = levels[Math.floor(Math.random() * levels.length)];
-            var grade = grades[Math.floor(Math.random() * grades.length)];
-            var type = types[Math.floor(Math.random() * types.length)];
-            var isFree = Math.random() < 0.3;
-
-            mockData.push({
-                id: 'mock-' + i,
-                title: subject + ' ' + category + ' - ' + grade,
-                filename: 'document_' + i + '.pdf',
-                subject: subject.toLowerCase(),
-                category_title: category,
-                level: level,
-                level_normalized: level,
-                grade: grade,
-                resource_type: type,
-                resource_type_normalized: type,
-                price: isFree ? 0 : Math.round(Math.random() * 500 + 50),
-                is_free: isFree,
-                download_count: Math.floor(Math.random() * 500),
-                rating: Math.round(Math.random() * 4 + 1),
-                reviews_count: Math.floor(Math.random() * 50),
-                pages: Math.floor(Math.random() * 50 + 5),
-                term: ['Term 1', 'Term 2', 'Term 3'][Math.floor(Math.random() * 3)],
-                year: 2024,
-                featured: Math.random() < 0.1,
-                kicd_aligned: true,
-                cbc_compliant: true,
-                teacher_reviewed: true,
-                creator_name: 'KenyaVault',
-                created_at: new Date(Date.now() - Math.random() * 90 * 24 * 60 * 60 * 1000).toISOString()
-            });
-        }
-
-        return mockData;
     }
 
     // ─── START ──────────────────────────────────────────────────
@@ -1674,6 +2016,12 @@ SCRIPT
     } else {
         init();
     }
+
+    // Expose functions globally
+    window.openPayment = openPayment;
+    window.closePaymentModal = closePaymentModal;
+    window.initiatePayment = initiatePayment;
+    window.downloadFree = downloadFree;
 
 })();
 </script>
