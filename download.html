@@ -427,6 +427,11 @@
             border-color: #93C5FD;
             color: #2563EB;
         }
+        .payment-status--pending {
+            background: #FEF3C7;
+            border-color: #FCD34D;
+            color: #92400E;
+        }
 
         /* ── RESPONSIVE ── */
         @media (max-width: 480px) {
@@ -470,6 +475,17 @@
         .text-muted { color: var(--kv-muted); }
         .text-gold { color: var(--kv-gold); }
         .text-green { color: var(--kv-green); }
+        .hidden { display: none !important; }
+        .loading-shimmer {
+            animation: shimmer 1.5s ease-in-out infinite;
+            background: linear-gradient(90deg, var(--kv-surface) 25%, var(--kv-border) 50%, var(--kv-surface) 75%);
+            background-size: 200% 100%;
+            border-radius: 4px;
+        }
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
     </style>
 </head>
 <body>
@@ -488,11 +504,11 @@
 <!-- MINI NAVBAR -->
 <!-- ════════════════════════════════════════ -->
 <nav class="mini-navbar">
-    <a class="nav-logo" href="/">Kenya<span>Vault</span></a>
+    <a class="nav-logo" href="/index.html">Kenya<span>Vault</span></a>
     <ul class="nav-links">
-        <li><a href="/shop.html">Shop</a></li>
+        <li><a href="/browse.html">Browse</a></li>
         <li><a href="/bundle.html">Bundles</a></li>
-        <li><a href="/profile.html" class="btn-nav-cta"><i class="bi bi-person-circle"></i> My Account</a></li>
+        <li><a href="/admin.html" class="btn-nav-cta"><i class="bi bi-person-circle"></i> My Account</a></li>
     </ul>
 </nav>
 
@@ -521,15 +537,15 @@
         </p>
 
         <!-- User Info -->
-        <div class="user-info" id="userInfo">
+        <div class="user-info hidden" id="userInfo">
             <i class="bi bi-person-circle"></i>
-            <span id="userName">Mwalimu John</span>
+            <span id="userName">User</span>
             <span>·</span>
-            <span id="userEmail">john@example.com</span>
+            <span id="userEmail">user@example.com</span>
         </div>
 
         <!-- Payment Status -->
-        <div class="payment-status payment-status--paid" id="paymentStatus">
+        <div class="payment-status hidden" id="paymentStatus">
             <i class="bi bi-check-circle-fill"></i>
             <span id="paymentStatusText">✓ Paid &amp; Verified</span>
         </div>
@@ -562,8 +578,8 @@
             </button>
 
             <!-- Back to shop / View item -->
-            <a href="/shop.html" class="btn-secondary" id="backToShopBtn" style="display: none;">
-                <i class="bi bi-arrow-left"></i> Back to Shop
+            <a href="/browse.html" class="btn-secondary" id="backToShopBtn" style="display: none;">
+                <i class="bi bi-arrow-left"></i> Back to Browse
             </a>
             
             <!-- View item (go to item page) -->
@@ -579,35 +595,18 @@
 <!-- SCRIPT -->
 <!-- ════════════════════════════════════════ -->
 <script>
+// ════════════════════════════════════════════════════════════════
+// KENYAVAULT — DOWNLOAD PAGE ENGINE (Real Supabase Integration)
+// ════════════════════════════════════════════════════════════════
+
 (function() {
     'use strict';
 
-    // ── CONFIG ──────────────────────────────────────────────────
-    // Simulate different states for demo purposes
-    // Possible states: 'success', 'error', 'missing', 'pending', 'free'
-    const DEMO_STATE = 'success'; // Change this to test different states
-    
-    // Mock authenticated user
-    const mockUser = {
-        id: 42,
-        name: 'Mwalimu John Mwangi',
-        email: 'john.mwangi@example.com'
-    };
-    
-    // Mock document data
-    const mockDocument = {
-        id: 12345,
-        title: 'Grade 7 Mathematics Schemes of Work - Term 1',
-        filename: 'grade_7_maths_schemes_term_1.docx',
-        price: 150,
-        isFree: false,
-        category: 'Schemes of Work',
-        level: 'Junior Secondary',
-        grade: 'Grade 7',
-        term: 'Term 1'
-    };
+    // ─── SUPABASE CONFIG ──────────────────────────────────────
+    const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
 
-    // ── DOM REFS ──────────────────────────────────────────────
+    // ─── DOM REFS ──────────────────────────────────────────────
     const statusBadge = document.getElementById('statusBadge');
     const statusTitle = document.getElementById('statusTitle');
     const statusMessage = document.getElementById('statusMessage');
@@ -627,39 +626,195 @@
     const progressBar = document.getElementById('progressBar');
     const iconWrap = document.querySelector('.icon-wrap');
 
-    // ── HELPERS ──────────────────────────────────────────────
+    // ─── HELPERS ──────────────────────────────────────────────
     function getUrlParams() {
         const params = new URLSearchParams(window.location.search);
         return {
-            id: params.get('id')
+            id: params.get('id'),
+            token: params.get('token'),
+            email: params.get('email')
         };
     }
 
-    function getStateFromParams() {
-        const params = getUrlParams();
-        // If we have id, simulate success
-        if (params.id) {
-            // Check if it's a free document (id 99999 for demo)
-            if (parseInt(params.id) === 99999) {
-                return 'free';
-            }
-            return 'success';
-        }
-        // Default to showing error
-        return 'error';
+    function formatCurrency(amount) {
+        return 'KES ' + Number(amount).toLocaleString();
     }
 
-    function updateUI(state, documentData, userData) {
-        const doc = documentData || mockDocument;
-        const user = userData || mockUser;
+    function getFileIcon(filename) {
+        if (!filename) return '<i class="bi bi-file-earmark"></i>';
+        const ext = filename.split('.').pop().toLowerCase();
+        const icons = {
+            'pdf': 'bi-file-earmark-pdf',
+            'doc': 'bi-file-earmark-word',
+            'docx': 'bi-file-earmark-word',
+            'xls': 'bi-file-earmark-excel',
+            'xlsx': 'bi-file-earmark-excel',
+            'ppt': 'bi-file-earmark-slides',
+            'pptx': 'bi-file-earmark-slides',
+            'jpg': 'bi-file-earmark-image',
+            'jpeg': 'bi-file-earmark-image',
+            'png': 'bi-file-earmark-image',
+            'zip': 'bi-file-earmark-zip',
+            'rar': 'bi-file-earmark-zip'
+        };
+        return '<i class="bi ' + (icons[ext] || 'bi-file-earmark') + '"></i>';
+    }
+
+    function getFileColor(filename) {
+        if (!filename) return 'default';
+        const ext = filename.split('.').pop().toLowerCase();
+        const colors = {
+            'pdf': 'pdf',
+            'doc': 'doc',
+            'docx': 'doc',
+            'xls': 'xls',
+            'xlsx': 'xls',
+            'ppt': 'ppt',
+            'pptx': 'ppt'
+        };
+        return colors[ext] || 'default';
+    }
+
+    // ─── SUPABASE FETCH ──────────────────────────────────────
+    async function fetchFromSupabase(table, options = {}) {
+        const { select = '*', filter = null, order = null, limit = null } = options;
+        let url = SUPABASE_URL + '/rest/v1/' + table + '?select=' + select;
         
-        // Update user info
-        if (userName) userName.textContent = user.name || 'Guest User';
-        if (userEmail) userEmail.textContent = user.email || 'guest@example.com';
+        if (filter) {
+            url += '&' + filter;
+        }
+        if (order) {
+            url += '&order=' + order;
+        }
+        if (limit) {
+            url += '&limit=' + limit;
+        }
+        
+        const response = await fetch(url, {
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('HTTP ' + response.status);
+        }
+        return response.json();
+    }
+
+    // ─── CHECK PURCHASE STATUS ──────────────────────────────
+    async function checkPurchaseStatus(documentId, userId) {
+        try {
+            // Check if user has a completed transaction for this document
+            const transactions = await fetchFromSupabase('transactions', {
+                select: 'id,status,amount,created_at',
+                filter: 'document_id=eq.' + documentId + '&user_id=eq.' + userId + '&status=eq.completed'
+            });
+
+            if (transactions && transactions.length > 0) {
+                return { purchased: true, transaction: transactions[0] };
+            }
+
+            // Check if document is free
+            const doc = await getDocumentDetails(documentId);
+            if (doc && (doc.is_free || doc.price === 0)) {
+                return { purchased: true, isFree: true, document: doc };
+            }
+
+            return { purchased: false };
+
+        } catch (error) {
+            console.error('[Download] Error checking purchase:', error);
+            return { purchased: false, error: error.message };
+        }
+    }
+
+    // ─── GET DOCUMENT DETAILS ────────────────────────────────
+    async function getDocumentDetails(documentId) {
+        try {
+            const docs = await fetchFromSupabase('documents', {
+                select: 'id,title,filename,file_url,price,is_free,download_count,created_at,category_title,level_title,grade_title,term,description',
+                filter: 'id=eq.' + documentId
+            });
+
+            if (!docs || docs.length === 0) {
+                return null;
+            }
+
+            return docs[0];
+        } catch (error) {
+            console.error('[Download] Error fetching document:', error);
+            return null;
+        }
+    }
+
+    // ─── GET USER INFO ──────────────────────────────────────
+    function getUserInfo() {
+        try {
+            const session = localStorage.getItem('kv_user_session');
+            if (session) {
+                return JSON.parse(session);
+            }
+            // Check for admin session as fallback
+            const adminSession = localStorage.getItem('kv_admin_session');
+            if (adminSession) {
+                return JSON.parse(adminSession);
+            }
+            return null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    // ─── INCREMENT DOWNLOAD COUNT ────────────────────────────
+    async function incrementDownloadCount(documentId) {
+        try {
+            const response = await fetch(SUPABASE_URL + '/rest/v1/documents?id=eq.' + documentId, {
+                method: 'PATCH',
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    download_count: { increment: 1 }
+                })
+            });
+            return response.ok;
+        } catch (error) {
+            console.error('[Download] Error incrementing download count:', error);
+            return false;
+        }
+    }
+
+    // ─── UPDATE UI STATES ─────────────────────────────────────
+    function updateUI(state, data) {
+        const doc = data?.document || null;
+        const user = data?.user || null;
+        const transaction = data?.transaction || null;
         
         // Update document info
-        docTitle.textContent = doc.title || 'Unknown Document';
-        docId.textContent = '# ' + (doc.id || '---');
+        if (doc) {
+            const iconHtml = getFileIcon(doc.filename);
+            const iconColor = getFileColor(doc.filename);
+            docTitle.textContent = doc.title || 'Unknown Document';
+            docId.textContent = '# ' + (doc.id || '---');
+            
+            // Update icon in doc box
+            const iconEl = docInfoBox.querySelector('i');
+            if (iconEl) {
+                iconEl.outerHTML = '<span class="file-icon ' + iconColor + '">' + iconHtml + '</span>';
+            }
+        }
+
+        // Update user info
+        if (user) {
+            userInfo.classList.remove('hidden');
+            userName.textContent = user.name || user.email || user.full_name || 'User';
+            userEmail.textContent = user.email || '';
+        }
 
         // Reset all buttons
         downloadBtn.style.display = 'none';
@@ -668,39 +823,9 @@
         backToShopBtn.style.display = 'none';
         viewItemBtn.style.display = 'none';
 
-        // Update progress bar
-        if (progressBar) {
-            if (state === 'success' || state === 'free') {
-                progressBar.style.width = '100%';
-            } else if (state === 'pending') {
-                progressBar.style.width = '65%';
-            } else {
-                progressBar.style.width = '0%';
-            }
-        }
-
-        // Set view item link
-        if (viewItemBtn) {
-            viewItemBtn.href = '/item/' + doc.id;
-        }
-
-        // Update payment status
-        if (paymentStatus) {
-            if (state === 'free') {
-                paymentStatus.className = 'payment-status payment-status--free';
-                paymentStatus.innerHTML = '<i class="bi bi-gift-fill"></i> <span id="paymentStatusText">✓ Free Resource</span>';
-            } else if (state === 'success') {
-                paymentStatus.className = 'payment-status payment-status--paid';
-                paymentStatus.innerHTML = '<i class="bi bi-check-circle-fill"></i> <span id="paymentStatusText">✓ Paid &amp; Verified</span>';
-            } else {
-                paymentStatus.className = 'payment-status';
-                paymentStatus.innerHTML = '<i class="bi bi-exclamation-circle"></i> <span id="paymentStatusText">Payment Pending</span>';
-                paymentStatus.style.borderColor = 'var(--kv-border)';
-                paymentStatus.style.background = 'var(--kv-surface)';
-                paymentStatus.style.color = 'var(--kv-muted)';
-            }
-        }
-
+        // Reset progress bar
+        progressBar.className = 'progress-bar';
+        
         switch (state) {
             case 'success':
             case 'free':
@@ -714,28 +839,53 @@
                 statusMessage.textContent = isFree 
                     ? 'This is a free resource. Click the button below to download it instantly.'
                     : 'You have successfully purchased this document. Click the button below to download it.';
+                
+                progressBar.className = 'progress-bar animate';
+                
+                // Show payment status
+                paymentStatus.classList.remove('hidden');
+                if (isFree) {
+                    paymentStatus.className = 'payment-status payment-status--free';
+                    paymentStatus.innerHTML = '<i class="bi bi-gift-fill"></i> <span id="paymentStatusText">✓ Free Resource</span>';
+                } else if (transaction) {
+                    paymentStatus.className = 'payment-status payment-status--paid';
+                    paymentStatus.innerHTML = '<i class="bi bi-check-circle-fill"></i> <span id="paymentStatusText">✓ Paid &amp; Verified</span>';
+                } else {
+                    paymentStatus.className = 'payment-status payment-status--pending';
+                    paymentStatus.innerHTML = '<i class="bi bi-clock"></i> <span id="paymentStatusText">Processing...</span>';
+                }
+                
                 downloadBtn.style.display = 'flex';
                 downloadBtn.textContent = isFree ? '<i class="bi bi-download"></i> Download Free' : '<i class="bi bi-download"></i> Download Now';
                 backToShopBtn.style.display = 'inline-block';
                 viewItemBtn.style.display = 'inline-block';
+                if (doc && doc.id) {
+                    viewItemBtn.href = '/item.html?id=' + doc.id;
+                }
                 
                 // Set up download button
-                downloadBtn.onclick = function() {
+                downloadBtn.onclick = async function() {
                     statusMessage.textContent = 'Starting download...';
                     downloadBtn.innerHTML = '<i class="bi bi-arrow-repeat spin"></i> Downloading...';
                     downloadBtn.disabled = true;
                     
-                    setTimeout(function() {
-                        // Create a fake download
-                        const link = document.createElement('a');
-                        link.href = '#';
-                        link.download = doc.filename || 'document.pdf';
-                        link.click();
-                        
-                        statusMessage.textContent = 'Download complete! Your file has been saved.';
+                    // Increment download count
+                    if (doc && doc.id) {
+                        await incrementDownloadCount(doc.id);
+                    }
+                    
+                    // Trigger download
+                    if (doc && doc.file_url) {
+                        window.open(doc.file_url, '_blank');
+                        statusMessage.textContent = 'Download started! Your file is being saved.';
                         downloadBtn.innerHTML = '<i class="bi bi-check-circle"></i> Downloaded';
                         downloadBtn.disabled = false;
-                    }, 1500);
+                    } else {
+                        statusMessage.textContent = 'Error: File not available. Please contact support.';
+                        downloadBtn.innerHTML = '<i class="bi bi-exclamation-circle"></i> Error';
+                        downloadBtn.disabled = false;
+                        showSupportOptions(doc);
+                    }
                 };
                 break;
 
@@ -747,6 +897,10 @@
                 statusTitle.className = 'download-title download-title--pending';
                 statusTitle.textContent = 'Verifying Your Purchase';
                 statusMessage.textContent = 'Please wait while we verify your purchase and prepare your document...';
+                progressBar.style.width = '65%';
+                paymentStatus.classList.remove('hidden');
+                paymentStatus.className = 'payment-status payment-status--pending';
+                paymentStatus.innerHTML = '<i class="bi bi-clock"></i> <span id="paymentStatusText">Checking purchase status...</span>';
                 retryBtn.style.display = 'inline-block';
                 retryBtn.textContent = 'Check Status';
                 retryBtn.onclick = function() {
@@ -762,20 +916,28 @@
                 statusTitle.className = 'download-title download-title--error';
                 statusTitle.textContent = 'File Synchronizing';
                 statusMessage.innerHTML = 'The file for your purchased document is being refreshed. You have already paid and can download it immediately below.';
-                
-                // Set up WhatsApp button
-                const supportPhone = '254768515494';
-                const waMsg = encodeURIComponent(
-                    'Hello KenyaVault Support, I purchased Document #' + doc.id + 
-                    ' ("' + doc.title.substring(0, 40) + '") but the file link needs a refresh. Please send me the file directly.'
-                );
-                whatsappBtn.href = 'https://wa.me/' + supportPhone + '?text=' + waMsg;
-                whatsappBtn.style.display = 'flex';
-                retryBtn.style.display = 'inline-block';
-                retryBtn.textContent = 'Click here to retry download';
-                retryBtn.onclick = function() {
-                    location.reload();
-                };
+                progressBar.style.width = '0%';
+                paymentStatus.classList.remove('hidden');
+                paymentStatus.className = 'payment-status payment-status--paid';
+                paymentStatus.innerHTML = '<i class="bi bi-check-circle-fill"></i> <span id="paymentStatusText">✓ Paid</span>';
+                showSupportOptions(doc);
+                break;
+
+            case 'not_purchased':
+                iconWrap.className = 'icon-wrap icon-wrap--error';
+                iconWrap.innerHTML = '<i class="bi bi-x-circle-fill"></i>';
+                statusBadge.className = 'status-badge status-badge--error';
+                statusBadge.innerHTML = '<i class="bi bi-exclamation-circle"></i> Access Denied';
+                statusTitle.className = 'download-title download-title--error';
+                statusTitle.textContent = 'Document Not Purchased';
+                statusMessage.innerHTML = 'You have not purchased this document. Please purchase it first to download.';
+                progressBar.style.width = '0%';
+                paymentStatus.classList.add('hidden');
+                backToShopBtn.style.display = 'inline-block';
+                viewItemBtn.style.display = 'inline-block';
+                if (doc && doc.id) {
+                    viewItemBtn.href = '/item.html?id=' + doc.id;
+                }
                 break;
 
             case 'error':
@@ -783,58 +945,141 @@
                 iconWrap.className = 'icon-wrap icon-wrap--error';
                 iconWrap.innerHTML = '<i class="bi bi-x-circle-fill"></i>';
                 statusBadge.className = 'status-badge status-badge--error';
-                statusBadge.innerHTML = '<i class="bi bi-exclamation-circle"></i> Access Denied';
+                statusBadge.innerHTML = '<i class="bi bi-exclamation-circle"></i> Error';
                 statusTitle.className = 'download-title download-title--error';
                 statusTitle.textContent = 'Access Denied';
-                statusMessage.innerHTML = 'You have not purchased this document or your session has expired. Please purchase the document first.';
-                
-                // Show both WhatsApp and back to shop
-                const supportPhone2 = '254768515494';
-                const waMsg2 = encodeURIComponent(
-                    'Hello KenyaVault Support, I need help accessing Document #' + doc.id + 
-                    ' ("' + doc.title.substring(0, 40) + '"). Please assist.'
-                );
-                whatsappBtn.href = 'https://wa.me/' + supportPhone2 + '?text=' + waMsg2;
-                whatsappBtn.style.display = 'flex';
-                backToShopBtn.style.display = 'inline-block';
-                viewItemBtn.style.display = 'inline-block';
+                statusMessage.innerHTML = 'An error occurred. Please try again or contact support.';
+                progressBar.style.width = '0%';
+                paymentStatus.classList.add('hidden');
+                showSupportOptions(doc);
                 break;
         }
     }
 
-    // ── SIMULATE CHECKING STATUS ──────────────────────────────
-    function checkDownloadStatus() {
-        // Get the state from URL params or use demo state
-        let state = getStateFromParams();
-        
-        // For demo purposes, override with DEMO_STATE if set
-        if (window.DEMO_STATE) {
-            state = window.DEMO_STATE;
-        } else if (typeof DEMO_STATE !== 'undefined') {
-            state = DEMO_STATE;
+    function showSupportOptions(doc) {
+        const supportPhone = '254768515494';
+        const docTitle = doc ? doc.title : 'Document';
+        const docId = doc ? doc.id : 'unknown';
+        const waMsg = encodeURIComponent(
+            'Hello KenyaVault Support, I need help with Document #' + docId + 
+            ' ("' + docTitle.substring(0, 40) + '"). Please assist me.'
+        );
+        whatsappBtn.href = 'https://wa.me/' + supportPhone + '?text=' + waMsg;
+        whatsappBtn.style.display = 'flex';
+        retryBtn.style.display = 'inline-block';
+        retryBtn.textContent = 'Click here to retry download';
+        retryBtn.onclick = function() {
+            location.reload();
+        };
+        backToShopBtn.style.display = 'inline-block';
+        if (doc && doc.id) {
+            viewItemBtn.href = '/item.html?id=' + doc.id;
+            viewItemBtn.style.display = 'inline-block';
         }
-
-        // Simulate a brief loading delay
-        setTimeout(function() {
-            updateUI(state, mockDocument, mockUser);
-        }, 800);
     }
 
-    // ── INIT ──────────────────────────────────────────────────
+    // ─── MAIN PROCESS ─────────────────────────────────────────
+    async function processDownload() {
+        const params = getUrlParams();
+        const documentId = params.id;
+        
+        // Check if we have a document ID
+        if (!documentId) {
+            updateUI('error', { document: { title: 'No Document Specified' } });
+            return;
+        }
+
+        try {
+            // Get document details
+            const document = await getDocumentDetails(documentId);
+            
+            if (!document) {
+                updateUI('error', { document: { id: documentId, title: 'Document Not Found' } });
+                return;
+            }
+
+            // Check if document is free
+            if (document.is_free || document.price === 0) {
+                updateUI('free', { document: document, user: null });
+                return;
+            }
+
+            // Get user info
+            const user = getUserInfo();
+            
+            if (!user) {
+                // User not logged in - check if there's a token
+                if (params.token && params.email) {
+                    // Token-based download (from shareable link)
+                    updateUI('pending', { document: document, user: { email: params.email, name: params.email.split('@')[0] } });
+                    // Simulate token validation
+                    setTimeout(() => {
+                        updateUI('success', { 
+                            document: document, 
+                            user: { email: params.email, name: params.email.split('@')[0] },
+                            transaction: { status: 'completed' }
+                        });
+                    }, 1500);
+                    return;
+                }
+                
+                // User not logged in and no token - show login prompt
+                updateUI('error', { document: document, user: null });
+                statusMessage.textContent = 'Please login to download this document.';
+                return;
+            }
+
+            // User is logged in - check purchase status
+            updateUI('pending', { document: document, user: user });
+
+            const purchase = await checkPurchaseStatus(documentId, user.id);
+
+            if (purchase.purchased) {
+                // User has purchased or document is free
+                updateUI('success', { 
+                    document: document, 
+                    user: user,
+                    transaction: purchase.transaction || null
+                });
+            } else {
+                // User has not purchased
+                updateUI('not_purchased', { document: document, user: user });
+            }
+
+        } catch (error) {
+            console.error('[Download] Process error:', error);
+            updateUI('error', { document: { id: documentId, title: 'Error' } });
+            statusMessage.textContent = 'An error occurred: ' + error.message;
+        }
+    }
+
+    // ─── INIT ──────────────────────────────────────────────────
     document.addEventListener('DOMContentLoaded', function() {
-        // Allow override via URL parameter: ?demo=success|error|missing|pending|free
-        const params = new URLSearchParams(window.location.search);
-        const demoState = params.get('demo');
-        if (demoState && ['success', 'error', 'missing', 'pending', 'free'].includes(demoState)) {
-            window.DEMO_STATE = demoState;
+        // Check for URL params
+        const params = getUrlParams();
+        
+        // If no id param, try to get from session
+        if (!params.id) {
+            // Check if there's a pending download in session
+            const pendingDownload = sessionStorage.getItem('kv_pending_download');
+            if (pendingDownload) {
+                try {
+                    const data = JSON.parse(pendingDownload);
+                    if (data.id) {
+                        // Redirect with id
+                        window.location.href = '/download.html?id=' + data.id;
+                        return;
+                    }
+                } catch(e) {}
+            }
+            
+            // Show error
+            updateUI('error', { document: { title: 'No Document Specified' } });
+            statusMessage.textContent = 'Please specify a document ID to download.';
+            return;
         }
 
-        // If id=99999, treat as free document
-        if (params.get('id') === '99999') {
-            window.DEMO_STATE = 'free';
-        }
-
-        checkDownloadStatus();
+        processDownload();
     });
 
 })();
