@@ -1,5 +1,5 @@
 // ============================================================
-// KENYA VAULT - PAYMENT SERVER (FIXED API KEY)
+// KENYA VAULT - PAYMENT SERVER (FIXED API KEY & CORS)
 // ============================================================
 
 const express = require('express');
@@ -10,9 +10,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ─── SUPABASE CONFIG ──────────────────────────────────────────
-// Use the ANON KEY (which works) instead of SERVICE ROLE KEY
 const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
-// This is the ANON key from your frontend - it works for all operations
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -29,9 +27,11 @@ const allowedOrigins = [
     'http://127.0.0.1:3000',
     'https://kenyavault.onrender.com',
     'https://kenyavault.co.ke:2083',
-    'http://kenyavault.co.ke:2083'
+    'http://kenyavault.co.ke:2083',
+    'http://localhost:8080'
 ];
 
+// ─── CORS MIDDLEWARE ──────────────────────────────────────────
 app.use(cors({
     origin: function(origin, callback) {
         if (!origin) return callback(null, true);
@@ -39,7 +39,8 @@ app.use(cors({
             callback(null, true);
         } else {
             console.log('⚠️ CORS blocked origin:', origin);
-            callback(null, true); // Allow all for now
+            // Allow all for now to ensure it works
+            callback(null, true);
         }
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'HEAD'],
@@ -49,14 +50,17 @@ app.use(cors({
     optionsSuccessStatus: 204
 }));
 
+// ─── HANDLE PREFLIGHT REQUESTS ──────────────────────────────
 app.options('*', (req, res) => {
-    res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+    const origin = req.headers.origin || '*';
+    res.header('Access-Control-Allow-Origin', origin);
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, HEAD');
     res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, X-Requested-With, Origin');
     res.header('Access-Control-Allow-Credentials', 'true');
     res.sendStatus(204);
 });
 
+// ─── CORS HEADERS MIDDLEWARE ──────────────────────────────────
 app.use((req, res, next) => {
     const origin = req.headers.origin;
     if (origin) {
@@ -298,6 +302,9 @@ app.post('/api/mpesa/verify-payment', async (req, res) => {
                         .eq('id', order.id);
                     
                     if (!updateError) {
+                        // Fulfill the purchase
+                        await fulfillPurchase(order.id);
+                        
                         return res.status(200).json({
                             isPaid: true,
                             order_id: order.id,
@@ -370,6 +377,9 @@ app.post('/api/mpesa/verify-payment', async (req, res) => {
                     .eq('id', order.id);
                 
                 if (!updateError) {
+                    // Fulfill the purchase
+                    await fulfillPurchase(order.id);
+                    
                     return res.status(200).json({
                         isPaid: true,
                         order_id: order.id,
@@ -788,6 +798,9 @@ app.post('/api/mpesa/callback', async (req, res) => {
                 });
             }
 
+            // ─── FULFILL THE PURCHASE ──────────────────────────
+            await fulfillPurchase(order.id);
+
             logPaymentEvent('ORDER_MARKED_PAID', {
                 order_id: order.id,
                 order_ref: order.order_ref,
@@ -879,6 +892,7 @@ async function fulfillPurchase(orderId) {
             const resourceId = item.id || item.resource_id;
             if (!resourceId) continue;
             
+            // Update download count
             const { data: resource, error: resourceError } = await supabase
                 .from('resources')
                 .select('download_count')
