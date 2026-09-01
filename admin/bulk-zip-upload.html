@@ -4,15 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="robots" content="noindex, nofollow" />
-    <title>Bulk ZIP Upload — Admin | KenyaVault</title>
+    <title>Dashboard — Admin | KenyaVault</title>
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     
     <style>
-        /* ── ROOT VARIABLES ── */
         :root {
             --admin-primary: #0B2340;
             --admin-primary-light: #1a3a5a;
@@ -162,6 +162,8 @@
             background: #EF4444;
             color: white;
         }
+        .admin-sidebar-nav a .nav-badge.green { background: #10B981; }
+        .admin-sidebar-nav a .nav-badge.amber { background: #F59E0B; }
 
         .admin-sidebar-footer {
             padding: 16px 20px;
@@ -310,10 +312,6 @@
         .admin-btn-secondary:hover {
             background: var(--admin-neutral-300);
         }
-        .admin-btn-sm {
-            padding: 4px 12px;
-            font-size: 0.72rem;
-        }
         .admin-btn-success {
             background: #10B981;
             color: white;
@@ -328,199 +326,363 @@
         .admin-btn-danger:hover {
             background: #DC2626;
         }
+        .admin-btn-sm {
+            padding: 4px 12px;
+            font-size: 0.72rem;
+        }
 
-        /* ── BULK UPLOAD STYLES ── */
-        .bulk-dropzone {
-            border: 2px dashed var(--admin-gold);
-            background: var(--admin-gold-pale);
+        .admin-dashboard-content {
+            max-width: 1400px;
+        }
+
+        .admin-header-flex {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        .admin-header-flex .text-neutral-500 {
+            color: var(--admin-neutral-500);
+            font-size: 0.9rem;
+        }
+
+        .dash-stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+            gap: 16px;
+            margin-bottom: 28px;
+        }
+        .dash-card {
+            background: var(--admin-white);
             border-radius: var(--admin-radius);
-            padding: 3rem 1.5rem;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.2s ease;
+            border: 1px solid var(--admin-neutral-200);
+            padding: 20px 20px 16px;
             position: relative;
+            overflow: hidden;
+            transition: var(--admin-transition);
         }
-        .bulk-dropzone:hover {
-            background: #fef3c7;
-            border-color: var(--admin-gold-dark);
+        .dash-card:hover {
+            box-shadow: var(--admin-shadow-md);
+            transform: translateY(-2px);
         }
-        .bulk-dropzone.dragover {
-            background: #fef3c7;
-            border-color: var(--admin-gold-dark);
-            transform: scale(1.02);
+        .dash-card-body {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            position: relative;
+            z-index: 1;
         }
-
-        .staged-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.85rem;
-        }
-        .staged-table th {
-            background: var(--admin-neutral-50);
-            padding: 0.75rem;
-            border-bottom: 2px solid var(--admin-neutral-200);
-            text-align: left;
-            font-weight: 700;
-            font-size: 0.75rem;
+        .dash-card-info { flex: 1; }
+        .dash-card-label {
+            font-size: 0.72rem;
+            font-weight: 600;
             text-transform: uppercase;
+            letter-spacing: 0.5px;
             color: var(--admin-neutral-500);
         }
-        .staged-table td {
-            padding: 0.75rem;
+        .dash-card-number {
+            display: block;
+            font-size: 1.6rem;
+            font-weight: 800;
+            color: var(--admin-neutral-800);
+            margin: 2px 0 4px;
+            letter-spacing: -0.5px;
+        }
+        .dash-card-link {
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: var(--admin-gold);
+            transition: var(--admin-transition);
+        }
+        .dash-card-link:hover {
+            color: var(--admin-gold);
+            text-decoration: underline;
+        }
+        .dash-card-trend {
+            font-size: 0.7rem;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 2px;
+        }
+        .dash-card-trend.up { color: #10B981; }
+        .dash-card-trend.warning { color: #F59E0B; }
+        .dash-card-trend.down { color: #EF4444; }
+
+        .dash-card-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            flex-shrink: 0;
+        }
+        .dash-card-icon.blue { background: rgba(59,130,246,0.1); color: #3B82F6; }
+        .dash-card-icon.green { background: rgba(16,185,129,0.1); color: #10B981; }
+        .dash-card-icon.purple { background: rgba(139,92,246,0.1); color: #7C3AED; }
+        .dash-card-icon.yellow { background: rgba(245,158,11,0.1); color: #F59E0B; }
+        .dash-card-icon.pink { background: rgba(236,72,153,0.1); color: #EC4899; }
+        .dash-card-icon.red { background: rgba(239,68,68,0.1); color: #EF4444; }
+        .dash-card-icon.teal { background: rgba(20,184,166,0.1); color: #0D9488; }
+        .dash-card-icon.orange { background: rgba(249,115,22,0.1); color: #F97316; }
+
+        .dash-card-watermark {
+            position: absolute;
+            bottom: -12px;
+            right: -8px;
+            font-size: 4.5rem;
+            opacity: 0.5;
+            pointer-events: none;
+            color: rgba(0,0,0,0.03);
+        }
+
+        .admin-section-card {
+            background: var(--admin-white);
+            border-radius: var(--admin-radius);
+            border: 1px solid var(--admin-neutral-200);
+            overflow: hidden;
+            margin-bottom: 28px;
+        }
+        .table-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--admin-neutral-200);
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .table-card-title {
+            font-size: 1rem;
+            font-weight: 700;
+            color: var(--admin-neutral-800);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 0;
+        }
+        .table-card-title i {
+            color: var(--admin-gold);
+        }
+        .admin-badge {
+            font-size: 0.65rem;
+            font-weight: 600;
+            padding: 2px 10px;
+            border-radius: 99px;
+            background: var(--admin-neutral-100);
+            color: var(--admin-neutral-500);
+        }
+
+        .table-container {
+            overflow-x: auto;
+        }
+        .admin-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.82rem;
+        }
+        .admin-table th {
+            text-align: left;
+            padding: 10px 16px;
+            font-weight: 600;
+            color: var(--admin-neutral-500);
+            border-bottom: 1px solid var(--admin-neutral-200);
+            background: var(--admin-neutral-50);
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .admin-table td {
+            padding: 10px 16px;
             border-bottom: 1px solid var(--admin-neutral-100);
             vertical-align: middle;
         }
-        .staged-table tr:hover td {
-            background: var(--admin-neutral-50);
-        }
+        .admin-table tr:last-child td { border-bottom: none; }
+        .admin-table tr:hover td { background: var(--admin-neutral-50); }
 
-        .badge-pill {
+        .status-badge {
             display: inline-flex;
             align-items: center;
-            gap: 0.25rem;
-            font-size: 0.7rem;
+            gap: 4px;
+            font-size: 0.65rem;
             font-weight: 700;
-            padding: 0.15rem 0.5rem;
-            border-radius: 12px;
+            padding: 2px 10px;
+            border-radius: 99px;
+            text-transform: capitalize;
         }
-        .badge-info { background: #dbeafe; color: #1d4ed8; }
-        .badge-success { background: #dcfce7; color: #15803d; }
-        .badge-warning { background: #fef3c7; color: #92400e; }
-        .badge-danger { background: #fee2e2; color: #b91c1c; }
+        .status-badge.completed { background: #DCFCE7; color: #15803D; }
+        .status-badge.paid { background: #DCFCE7; color: #15803D; }
+        .status-badge.success { background: #DCFCE7; color: #15803D; }
+        .status-badge.pending { background: #FEF3C7; color: #92400E; }
+        .status-badge.processing { background: #FEF3C7; color: #92400E; }
+        .status-badge.failed { background: #FEE2E2; color: #991B1B; }
+        .status-badge.unread { background: #DBEAFE; color: #1D4ED8; }
+        .status-badge.read { background: var(--admin-neutral-100); color: var(--admin-neutral-500); }
+        .status-badge.free { background: #DCFCE7; color: #15803D; }
 
-        .admin-alert {
-            padding: 1rem 1.25rem;
-            border-radius: var(--admin-radius-sm);
-            margin-bottom: 1.5rem;
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
+        .admin-empty-state {
+            padding: 40px 20px;
+            text-align: center;
+            color: var(--admin-neutral-500);
         }
-        .admin-alert-success {
-            background: #dcfce7;
-            color: #15803d;
-            border: 1px solid #bbf7d0;
+        .admin-empty-state i {
+            font-size: 2.5rem;
+            display: block;
+            margin-bottom: 12px;
+            color: var(--admin-neutral-300);
         }
-        .admin-alert-danger {
-            background: #fee2e2;
-            color: #b91c1c;
-            border: 1px solid #fecaca;
-        }
-        .admin-alert-info {
-            background: #dbeafe;
-            color: #1d4ed8;
-            border: 1px solid #bfdbfe;
+        .admin-empty-state p {
+            font-size: 0.9rem;
+            margin: 0;
         }
 
-        .admin-card {
+        .dash-insights-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 16px;
+            margin-top: 8px;
+        }
+        .dash-insight-card {
             background: var(--admin-white);
             border-radius: var(--admin-radius);
-            box-shadow: var(--admin-shadow);
             border: 1px solid var(--admin-neutral-200);
-        }
-
-        .input-text {
-            width: 100%;
-            padding: 0.4rem 0.6rem;
-            border: 1px solid var(--admin-neutral-200);
-            border-radius: var(--admin-radius-sm);
-            font-size: 0.85rem;
-            background: var(--admin-white);
-            color: var(--admin-neutral-800);
-            outline: none;
+            padding: 16px 18px;
             transition: var(--admin-transition);
         }
-        .input-text:focus {
-            border-color: var(--admin-gold);
-            box-shadow: 0 0 0 3px rgba(201, 151, 31, 0.08);
+        .dash-insight-card:hover {
+            box-shadow: var(--admin-shadow-md);
         }
-        .input-select {
-            padding: 0.4rem 0.6rem;
-            border: 1px solid var(--admin-neutral-200);
-            border-radius: var(--admin-radius-sm);
-            font-size: 0.8rem;
-            background: var(--admin-white);
-            color: var(--admin-neutral-800);
-            outline: none;
-            cursor: pointer;
+        .dash-insight-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
         }
-        .input-select:focus {
-            border-color: var(--admin-gold);
-            box-shadow: 0 0 0 3px rgba(201, 151, 31, 0.08);
-        }
-        .input-number {
-            width: 80px;
-            padding: 0.4rem;
-            border: 1px solid var(--admin-neutral-200);
-            border-radius: var(--admin-radius-sm);
-            font-size: 0.85rem;
-            background: var(--admin-white);
-            color: var(--admin-neutral-800);
-            outline: none;
-        }
-        .input-number:focus {
-            border-color: var(--admin-gold);
-            box-shadow: 0 0 0 3px rgba(201, 151, 31, 0.08);
-        }
-
-        .upload-progress-container {
-            margin-top: 1.5rem;
-        }
-        .upload-progress-bar {
-            background: var(--admin-neutral-200);
+        .dash-insight-icon {
+            width: 32px;
+            height: 32px;
             border-radius: 8px;
-            height: 12px;
-            overflow: hidden;
-            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            flex-shrink: 0;
         }
-        .upload-progress-fill {
-            background: var(--admin-gold);
-            width: 0%;
-            height: 100%;
-            transition: width 0.3s ease;
+        .dash-insight-title {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: var(--admin-neutral-700);
+            margin: 0;
         }
-        .upload-status-text {
+        .dash-insight-body { flex: 1; }
+        .dash-insight-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 0;
+        }
+        .dash-insight-label {
+            font-size: 0.78rem;
+            color: var(--admin-neutral-500);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .dash-insight-value {
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: var(--admin-neutral-800);
+        }
+        .dash-insight-revenue { color: var(--admin-gold); }
+        .dash-insight-divider {
+            height: 1px;
+            background: var(--admin-neutral-100);
+            margin: 2px 0;
+        }
+        .dash-insight-doc-title {
+            font-weight: 600;
             font-size: 0.85rem;
+            color: var(--admin-neutral-800);
+            margin: 0 0 4px;
+        }
+        .dash-insight-sender {
+            font-weight: 600;
+            font-size: 0.85rem;
+            color: var(--admin-neutral-800);
+            margin: 0;
+        }
+        .dash-insight-message {
+            font-size: 0.78rem;
+            color: var(--admin-neutral-500);
+            margin: 2px 0 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .dash-insight-empty {
+            font-size: 0.82rem;
+            color: var(--admin-neutral-400);
+            margin: 4px 0;
+        }
+        .dash-insight-link {
+            font-size: 0.72rem;
             font-weight: 600;
             color: var(--admin-gold);
+            transition: var(--admin-transition);
+        }
+        .dash-insight-link:hover {
+            color: var(--admin-gold);
+            text-decoration: underline;
         }
 
+        .progress-bar-container {
+            width: 100%;
+            background: var(--admin-neutral-100);
+            border-radius: 99px;
+            height: 8px;
+            margin: 8px 0;
+            overflow: hidden;
+        }
+        .progress-bar {
+            height: 100%;
+            background: var(--admin-gold);
+            border-radius: 99px;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+
+        @media (max-width: 1024px) {
+            .dash-stats-grid { grid-template-columns: repeat(4, 1fr); }
+        }
         @media (max-width: 768px) {
             .admin-sidebar { transform: translateX(-100%); }
             .admin-sidebar.open { transform: translateX(0); }
             .admin-sidebar-overlay.open { display: block; }
             .admin-main-content { margin-left: 0; padding: 0 16px 40px; }
             .admin-topbar-left .menu-toggle { display: block; }
+            .dash-stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .dash-insights-grid { grid-template-columns: 1fr; }
+            .admin-header-flex { flex-direction: column; align-items: stretch; }
             .admin-topbar { flex-direction: column; align-items: stretch; gap: 8px; }
             .admin-topbar-right { justify-content: space-between; flex-wrap: wrap; }
-            .staged-table { font-size: 0.75rem; }
-            .staged-table th, .staged-table td { padding: 0.5rem; }
-            .input-number { width: 60px; }
         }
-
-        .footer {
-            background: var(--admin-primary-dark);
-            color: #c8d6e5;
-            padding: 20px 24px;
-            border-top: 1px solid rgba(255,255,255,0.06);
-            margin-top: 24px;
+        @media (max-width: 480px) {
+            .dash-stats-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+            .dash-card { padding: 14px; }
+            .dash-card-number { font-size: 1.2rem; }
+            .admin-table { font-size: 0.72rem; }
+            .admin-table th, .admin-table td { padding: 6px 10px; }
+            .table-card-header { flex-direction: column; align-items: stretch; }
+            .table-card-header .admin-actions { justify-content: flex-start; }
         }
-        .footer .footer-bottom {
-            max-width: 1400px;
-            margin: 0 auto;
-            display: flex;
-            justify-content: space-between;
-            font-size: 0.78rem;
-            color: #c8d6e5;
-        }
-        .footer .footer-bottom span { color: var(--admin-gold-light); }
     </style>
 </head>
 <body>
 
-<!-- ════════════════════════════════════════ -->
-<!-- FLAG STRIPE -->
-<!-- ════════════════════════════════════════ -->
 <div class="flag-stripe">
     <div class="stripe-black"></div>
     <div class="stripe-red"></div>
@@ -528,12 +690,8 @@
     <div class="stripe-white"></div>
 </div>
 
-<!-- ════════════════════════════════════════ -->
-<!-- ADMIN WRAPPER -->
-<!-- ════════════════════════════════════════ -->
 <div class="admin-wrapper">
 
-    <!-- ── SIDEBAR ── -->
     <aside class="admin-sidebar" id="adminSidebar">
         <div class="admin-sidebar-brand">
             <div class="logo">Kenya<span>Vault</span></div>
@@ -542,47 +700,47 @@
         
         <nav class="admin-sidebar-nav">
             <div class="nav-label">Main</div>
-            <a href="/admin.html">
+            <a href="#" onclick="showSection('dashboard')" class="active">
                 <i class="bi bi-grid-1x2-fill"></i> Dashboard
             </a>
-            <a href="/admin/documents.html">
+            <a href="#" onclick="showSection('documents')">
                 <i class="bi bi-file-earmark-text"></i> Resources
                 <span class="nav-badge" id="docCount">0</span>
             </a>
-            <a href="/admin/upload.html">
+            <a href="#" onclick="showSection('upload')">
                 <i class="bi bi-upload"></i> Upload
             </a>
-            <a href="/admin/bulk-zip-upload.html" class="active">
-                <i class="bi bi-file-earmark-zip-fill"></i> Bulk ZIP
-            </a>
-            <a href="/admin/analytics.html">
-                <i class="bi bi-bar-chart-fill"></i> Analytics
+            <a href="#" onclick="showSection('bulk-upload')">
+                <i class="bi bi-file-zip"></i> Bulk Upload ZIP
             </a>
             
             <div class="nav-label" style="margin-top:12px;">Commerce</div>
-            <a href="/admin/transactions.html">
+            <a href="#" onclick="showSection('transactions')">
                 <i class="bi bi-receipt"></i> Transactions
                 <span class="nav-badge amber" id="pendingCount">0</span>
             </a>
+            <a href="#" onclick="showSection('analytics')">
+                <i class="bi bi-bar-chart-fill"></i> Analytics
+            </a>
             
             <div class="nav-label" style="margin-top:12px;">Users</div>
-            <a href="/admin/users.html">
+            <a href="#" onclick="showSection('users')">
                 <i class="bi bi-people"></i> Users
                 <span class="nav-badge" id="userCount">0</span>
             </a>
-            <a href="/admin/subscribers.html">
+            <a href="#" onclick="showSection('subscribers')">
                 <i class="bi bi-envelope-heart"></i> Subscribers
                 <span class="nav-badge" id="subscriberCount">0</span>
             </a>
             
             <div class="nav-label" style="margin-top:12px;">Support</div>
-            <a href="/admin/messages.html">
+            <a href="#" onclick="showSection('messages')">
                 <i class="bi bi-chat-left-dots"></i> Messages
                 <span class="nav-badge" id="messageCount">0</span>
             </a>
             
             <div class="nav-label" style="margin-top:12px;">System</div>
-            <a href="/admin/settings.html">
+            <a href="#" onclick="showSection('settings')">
                 <i class="bi bi-gear"></i> Settings
             </a>
         </nav>
@@ -601,217 +759,116 @@
         </div>
     </aside>
 
-    <!-- Sidebar Overlay -->
     <div class="admin-sidebar-overlay" id="adminSidebarOverlay" onclick="toggleSidebar()"></div>
 
-    <!-- ── MAIN CONTENT ── -->
     <div class="admin-main-content">
 
-        <!-- Topbar -->
         <header class="admin-topbar">
             <div class="admin-topbar-left">
                 <button class="menu-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">
                     <i class="bi bi-list"></i>
                 </button>
-                <h1>Bulk ZIP Upload</h1>
-                <span class="page-badge">1-Click</span>
+                <h1 id="pageTitle">Dashboard</h1>
+                <span class="page-badge" id="pageBadge">Live</span>
             </div>
             <div class="admin-topbar-right">
                 <span class="date-display" id="dateDisplay">Loading...</span>
-                <div class="admin-actions">
-                    <a href="/admin/documents.html" class="admin-btn admin-btn-secondary">
-                        <i class="bi bi-arrow-left"></i> Back to Resources
+                <div class="admin-actions" id="topbarActions">
+                    <a href="#" onclick="showSection('upload')" class="admin-btn admin-btn-primary">
+                        <i class="bi bi-upload"></i> Upload
                     </a>
                 </div>
             </div>
         </header>
 
-        <div class="admin-content" style="padding: 0;">
-
-            <!-- Page Header -->
-            <div style="margin-bottom: 2rem;">
-                <h1 style="font-size: 1.5rem; color: var(--admin-neutral-900); display:flex; align-items:center; gap:0.5rem;">
-                    <i class="bi bi-file-earmark-zip-fill" style="color: var(--admin-gold);"></i> 1-Click ZIP Bulk Ingestion Engine
-                </h1>
-                <p style="color: var(--admin-neutral-600); margin-top: 0.25rem;">
-                    Upload a single ZIP archive of multiple document files. Our smart parser will auto-tag Grade, Term, Level, &amp; Category for instant publishing.
-                </p>
-            </div>
-
-            <!-- Alert Messages -->
-            <div id="alertContainer">
-                <!-- Dynamic alerts will be shown here -->
-            </div>
-
-            <!-- Step 1: Upload -->
-            <div id="stepUpload" class="admin-card" style="padding:2rem;border-radius:var(--admin-radius);">
-                <form id="zipUploadForm" enctype="multipart/form-data">
-                    <input type="hidden" name="action" value="extract_zip">
-
-                    <div class="bulk-dropzone" id="dropzoneBox">
-                        <i class="bi bi-file-earmark-zip" style="font-size:3.5rem;color:var(--admin-gold);display:block;margin-bottom:1rem;"></i>
-                        <h3 style="margin:0 0 0.5rem 0;color:var(--admin-neutral-900);" id="dropzoneTitle">Drag &amp; Drop ZIP File Here</h3>
-                        <p style="margin:0;color:var(--admin-neutral-500);font-size:0.9rem;" id="dropzoneSub">
-                            or click to browse from your computer (<strong>.zip</strong> format, supports up to 100MB)
-                        </p>
-                        <p style="margin:0.5rem 0 0 0;color:var(--admin-neutral-400);font-size:0.75rem;">
-                            Supported formats: PDF, DOC, DOCX, PPT, PPTX, XLS, XLSX
-                        </p>
-                        
-                        <div id="uploadProgressContainer" style="display:none; margin-top:1.5rem;">
-                            <div class="upload-progress-bar">
-                                <div class="upload-progress-fill" id="uploadProgressBar"></div>
-                            </div>
-                            <div class="upload-status-text" id="uploadStatusText">Preparing upload...</div>
-                        </div>
-
-                        <input type="file" id="zipFileInput" name="zip_file" accept=".zip" style="display:none;">
-                    </div>
-                </form>
-            </div>
-
-            <!-- Step 2: Review Staged Files -->
-            <div id="stepReview" style="display:none; margin-top: 1.5rem;">
-                <div class="admin-card" style="padding:1.5rem;border-radius:var(--admin-radius);">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;flex-wrap:wrap;gap:1rem;">
-                        <div>
-                            <h3 style="margin:0;" id="reviewTitle">Staged Document Review (<span id="fileCount">0</span> Files Detected)</h3>
-                            <p style="margin:0;font-size:0.85rem;color:var(--admin-neutral-500);">
-                                Review and edit auto-detected metadata before publishing.
-                            </p>
-                        </div>
-                        <div style="display:flex;gap:0.75rem;">
-                            <button onclick="cancelBulkUpload()" class="admin-btn admin-btn-secondary">Cancel</button>
-                            <button onclick="publishStaged()" class="admin-btn admin-btn-success" id="publishAllBtn">
-                                <i class="bi bi-rocket-takeoff-fill"></i> Publish All (<span id="publishCount">0</span> Documents)
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="table-container" style="overflow-x:auto;">
-                        <table class="staged-table">
-                            <thead>
-                                <tr>
-                                    <th style="width:40px;"><input type="checkbox" id="selectAll" checked onclick="toggleAll(this)"></th>
-                                    <th>Published Title</th>
-                                    <th>Category</th>
-                                    <th>Level / Grade / Term</th>
-                                    <th style="width:100px;">Price (KES)</th>
-                                    <th>Size</th>
-                                </tr>
-                            </thead>
-                            <tbody id="stagedFilesBody">
-                                <!-- Dynamically populated -->
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Step 3: Complete -->
-            <div id="stepComplete" style="display:none; margin-top: 1.5rem;">
-                <div class="admin-card" style="padding:3rem;border-radius:var(--admin-radius);text-align:center;">
-                    <i class="bi bi-check-circle-fill" style="font-size:4rem;color:#10b981;"></i>
-                    <h2 style="margin:1rem 0 0.5rem 0;">Bulk Ingestion Complete!</h2>
-                    <p style="color:var(--admin-neutral-500);max-width:500px;margin:0 auto 2rem auto;">
-                        All staged documents have been processed, registered in the database, and are now available for users to download.
-                    </p>
-                    <div style="display:flex;justify-content:center;gap:1rem;flex-wrap:wrap;">
-                        <a href="/admin/documents.html" class="admin-btn admin-btn-primary">View Resource Catalog</a>
-                        <button onclick="resetUpload()" class="admin-btn admin-btn-secondary">Upload Another ZIP</button>
-                    </div>
-                </div>
-            </div>
-
+        <div class="admin-dashboard-content" id="mainContent">
+            <!-- Dynamic content will be loaded here -->
         </div>
-
-        <!-- Footer -->
-        <div class="footer">
-            <div class="footer-bottom">
-                <span>© 2026 KenyaVault. All rights reserved.</span>
-                <span>Admin Panel</span>
-            </div>
-        </div>
-
     </div>
 </div>
 
-<!-- ════════════════════════════════════════ -->
-<!-- SCRIPT -->
-<!-- ════════════════════════════════════════ -->
 <script>
 // ── SUPABASE CONFIG ──────────────────────────────────────────
 const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
 
 // ── STATE ──────────────────────────────────────────────────
-let stagedFiles = [];
-let isProcessing = false;
+let allData = {
+    users: [],
+    resources: [],
+    transactions: [],
+    subscribers: [],
+    messages: []
+};
 
-// ── DOM REFS ──────────────────────────────────────────────
-const docCount = document.getElementById('docCount');
-const userCount = document.getElementById('userCount');
-const subscriberCount = document.getElementById('subscriberCount');
-const messageCount = document.getElementById('messageCount');
-const pendingCount = document.getElementById('pendingCount');
-const adminName = document.getElementById('adminName');
-const adminAvatar = document.getElementById('adminAvatar');
-const dateDisplay = document.getElementById('dateDisplay');
+let currentSection = 'dashboard';
 
 // ── HELPERS ──────────────────────────────────────────────
+function formatCurrency(amount) {
+    return 'KES ' + Number(amount).toLocaleString();
+}
+
+function formatDate(dateStr) {
+    if (!dateStr) return '—';
+    return new Date(dateStr).toLocaleDateString('en-US', { 
+        month: 'short', day: 'numeric', year: 'numeric' 
+    });
+}
+
+function formatTime(dateStr) {
+    if (!dateStr) return '—';
+    return new Date(dateStr).toLocaleTimeString('en-US', { 
+        hour: '2-digit', minute: '2-digit' 
+    });
+}
+
+function timeAgo(dateStr) {
+    if (!dateStr) return '—';
+    const diff = Math.floor((new Date() - new Date(dateStr)) / 1000);
+    if (diff < 60) return diff + 's ago';
+    if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+    if (diff < 604800) return Math.floor(diff / 86400) + 'd ago';
+    return formatDate(dateStr);
+}
+
 function getInitials(name) {
     if (!name) return 'A';
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 }
 
-function formatCurrency(amount) {
-    return 'KES ' + Number(amount).toLocaleString();
+function getStatusBadge(status) {
+    const statusMap = {
+        'completed': 'completed',
+        'paid': 'paid',
+        'success': 'success',
+        'pending': 'pending',
+        'processing': 'processing',
+        'failed': 'failed',
+        'unread': 'unread',
+        'read': 'read'
+    };
+    return 'status-badge ' + (statusMap[status] || 'pending');
 }
 
-function formatFileSize(bytes) {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / 1048576).toFixed(1) + ' MB';
-}
-
-function showAlert(message, type) {
-    const container = document.getElementById('alertContainer');
+function getFileIcon(filename) {
+    if (!filename) return '<i class="bi bi-file-earmark"></i>';
+    const ext = filename.split('.').pop().toLowerCase();
     const icons = {
-        success: 'bi-check-circle-fill',
-        danger: 'bi-exclamation-triangle-fill',
-        info: 'bi-info-circle-fill'
+        'pdf': 'bi-file-earmark-pdf',
+        'doc': 'bi-file-earmark-word',
+        'docx': 'bi-file-earmark-word',
+        'xls': 'bi-file-earmark-excel',
+        'xlsx': 'bi-file-earmark-excel',
+        'ppt': 'bi-file-earmark-slides',
+        'pptx': 'bi-file-earmark-slides',
+        'zip': 'bi-file-earmark-zip',
+        'rar': 'bi-file-earmark-zip'
     };
-    const colors = {
-        success: '#dcfce7',
-        danger: '#fee2e2',
-        info: '#dbeafe'
-    };
-    const textColors = {
-        success: '#15803d',
-        danger: '#b91c1c',
-        info: '#1d4ed8'
-    };
-    
-    container.innerHTML = `
-        <div class="admin-alert admin-alert-${type}" style="background:${colors[type]};color:${textColors[type]};border:1px solid ${type === 'success' ? '#bbf7d0' : type === 'danger' ? '#fecaca' : '#bfdbfe'};">
-            <i class="bi ${icons[type]}"></i> ${message}
-        </div>
-    `;
-    
-    // Auto-hide after 5 seconds for success
-    if (type === 'success') {
-        setTimeout(() => {
-            container.innerHTML = '';
-        }, 5000);
-    }
+    return '<i class="bi ' + (icons[ext] || 'bi-file-earmark') + '"></i>';
 }
 
-function clearAlerts() {
-    document.getElementById('alertContainer').innerHTML = '';
-}
-
-// ─── FETCH FUNCTIONS ──────────────────────────────────────
-
+// ─── SUPABASE FETCH ──────────────────────────────────────
 async function fetchSupabase(table, options = {}) {
     const { select = '*', order = null, limit = null, filter = null } = options;
     let url = SUPABASE_URL + '/rest/v1/' + table + '?select=' + select;
@@ -846,390 +903,1472 @@ async function fetchSupabase(table, options = {}) {
     }
 }
 
-// ─── PARSE FILENAME ──────────────────────────────────────
-
-function parseCurriculumFilename(filename) {
-    const rawName = filename.replace(/\.[^.]+$/, '');
-    const ext = filename.split('.').pop().toLowerCase();
-    
-    // Normalize string
-    let normalized = rawName.replace(/[_-]/g, ' ');
-    normalized = normalized.replace(/\s+/g, ' ');
-    
-    // Detect Category
-    let category = 'Schemes of Work';
-    if (/lesson\s*plan|lp\b/i.test(normalized)) {
-        category = 'Lesson Plans';
-    } else if (/notes|revision|summary|guide/i.test(normalized)) {
-        category = 'Notes & Revision';
-    } else if (/exam|assessment|test|eval|paper|mock|opener|mid\s*term/i.test(normalized)) {
-        category = 'Exams & Assessments';
-    } else if (/scheme|sow|term\s*\d+\s*scheme/i.test(normalized)) {
-        category = 'Schemes of Work';
-    }
-    
-    // Detect Grade
-    let grade = 'Grade 8';
-    let level = 'Junior Secondary';
-    let term = 'Term 1';
-    
-    // Grade detection
-    const gradeMatch = normalized.match(/\b(?:grade|grd|g)[-_\s]*(1[0-2]|[1-9])\b/i);
-    if (gradeMatch) {
-        const gNum = parseInt(gradeMatch[1]);
-        grade = 'Grade ' + gNum;
-        if (gNum <= 3) level = 'Lower Primary';
-        else if (gNum <= 6) level = 'Upper Primary';
-        else if (gNum <= 9) level = 'Junior Secondary';
-        else level = 'Senior School';
-    }
-    
-    // Form detection (8-4-4)
-    const formMatch = normalized.match(/\b(?:form|f)[-_\s]*([1-4])\b/i);
-    if (formMatch) {
-        grade = 'Form ' + formMatch[1];
-        level = 'Secondary (8-4-4)';
-    }
-    
-    // PP detection
-    if (/pp\s*[1-2]|pre\s*primary/i.test(normalized)) {
-        const ppMatch = normalized.match(/pp\s*([1-2])/i);
-        grade = 'PP' + (ppMatch ? ppMatch[1] : '1');
-        level = 'Preprimary';
-    }
-    
-    // Term detection
-    const termMatch = normalized.match(/\b(?:term|t)[-_\s]*([1-3]|i{1,3})\b/i);
-    if (termMatch) {
-        const t = termMatch[1].toLowerCase();
-        if (t === 'i' || t === '1') term = 'Term 1';
-        else if (t === 'ii' || t === '2') term = 'Term 2';
-        else if (t === 'iii' || t === '3') term = 'Term 3';
-    }
-    
-    // Clean title
-    let cleanTitle = normalized.replace(/\b(?:grade|grd|g)[-_\s]*\d+\b/i, '');
-    cleanTitle = cleanTitle.replace(/\b(?:form|f)[-_\s]*[1-4]\b/i, '');
-    cleanTitle = cleanTitle.replace(/\b(?:term|t)[-_\s]*[1-3i]+\b/i, '');
-    cleanTitle = cleanTitle.replace(/\s+/g, ' ').trim();
-    cleanTitle = cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1);
-    
-    if (!cleanTitle) {
-        cleanTitle = rawName.replace(/[_-]/g, ' ').replace(/\s+/g, ' ').trim();
-    }
-    
-    // Add year if not present
-    if (!/\b202[4-9]\b/.test(cleanTitle)) {
-        cleanTitle += ' ' + new Date().getFullYear();
-    }
-    
-    // Map level to display name
-    const levelMap = {
-        'Preprimary': 'Preprimary',
-        'Lower Primary': 'Lower Primary',
-        'Upper Primary': 'Upper Primary',
-        'Junior Secondary': 'Junior Secondary',
-        'Senior School': 'Senior School',
-        'Secondary (8-4-4)': 'Secondary (8-4-4)'
-    };
-    
-    return {
-        original_filename: filename,
-        clean_title: cleanTitle,
-        category: category,
-        level: levelMap[level] || level,
-        grade: grade,
-        term: term,
-        extension: ext,
-        price: 50,
-        filesize: 0
-    };
-}
-
-// ─── HANDLE ZIP UPLOAD ───────────────────────────────────
-
-async function handleZipUpload(file) {
-    const progressContainer = document.getElementById('uploadProgressContainer');
-    const progressBar = document.getElementById('uploadProgressBar');
-    const statusText = document.getElementById('uploadStatusText');
-    
-    progressContainer.style.display = 'block';
-    progressBar.style.width = '0%';
-    statusText.textContent = 'Reading ZIP file...';
-    
+// ─── LOAD ALL DATA ──────────────────────────────────────
+async function loadAllData() {
     try {
-        // Read ZIP file
-        const arrayBuffer = await file.arrayBuffer();
-        const zipData = new Uint8Array(arrayBuffer);
+        const [users, resources, transactions, subscribers, messages] = await Promise.all([
+            fetchSupabase('users', { select: 'id,role,created_at,name,email' }),
+            fetchSupabase('resources', { 
+                select: 'id,title,price,is_free,file_name,category,level,education_level,grade,created_at,updated_at,download_count,downloads' 
+            }),
+            fetchSupabase('transactions', { 
+                select: 'id,user_id,amount,status,phone,email,created_at,user_name,guest_name,document_id,reference,name' 
+            }),
+            fetchSupabase('newsletter_subscribers', { 
+                select: 'id,email,status,created_at' 
+            }),
+            fetchSupabase('contact_messages', { 
+                select: 'id,name,email,message,status,created_at' 
+            })
+        ]);
+
+        allData = { users, resources, transactions, subscribers, messages };
         
-        // Parse ZIP using JSZip or manual parsing
-        // For simplicity, we'll use a basic ZIP reader
-        // In production, you'd use a library like JSZip
-        
-        // Simulate extraction with a delay
-        progressBar.style.width = '30%';
-        statusText.textContent = 'Extracting files...';
-        
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        progressBar.style.width = '60%';
-        statusText.textContent = 'Parsing filenames...';
-        
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // For demo, extract sample files from the ZIP
-        // In a real implementation, you'd use a ZIP library
-        const sampleFiles = [
-            { name: 'Grade_7_Mathematics_Schemes_Term_1.docx', size: 45000 },
-            { name: 'Grade_7_English_Lesson_Plans_Term_1.docx', size: 38000 },
-            { name: 'Grade_8_Science_Notes_Term_1.pdf', size: 52000 },
-            { name: 'Grade_9_Mathematics_Exam_Term_2.docx', size: 35000 },
-            { name: 'Form_1_English_Schemes_Term_1.docx', size: 42000 }
-        ];
-        
-        // In real implementation, you'd extract actual files from the ZIP
-        // For now, we'll simulate by using the filenames from the ZIP
-        // You would use a library like JSZip to actually extract
-        
-        progressBar.style.width = '90%';
-        statusText.textContent = 'Processing metadata...';
-        
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Parse each file
-        const parsedFiles = sampleFiles.map(f => {
-            const meta = parseCurriculumFilename(f.name);
-            meta.filesize = f.size;
-            return meta;
-        });
-        
-        // Store in state and session
-        stagedFiles = parsedFiles;
-        sessionStorage.setItem('staged_bulk_files', JSON.stringify(parsedFiles));
-        
-        progressBar.style.width = '100%';
-        statusText.textContent = '✅ Extraction complete!';
-        
-        setTimeout(() => {
-            progressContainer.style.display = 'none';
-            showReviewStep();
-        }, 500);
+        // Update sidebar badges
+        document.getElementById('docCount').textContent = resources.length;
+        document.getElementById('userCount').textContent = users.length;
+        document.getElementById('subscriberCount').textContent = subscribers.filter(s => s.status === 'active' || s.status === 'subscribed').length;
+        document.getElementById('messageCount').textContent = messages.filter(m => m.status === 'unread' || m.status === 'new').length;
+        document.getElementById('pendingCount').textContent = transactions.filter(t => t.status === 'pending' || t.status === 'processing').length;
+
+        renderCurrentSection();
         
     } catch (error) {
-        console.error('Error processing ZIP:', error);
-        statusText.textContent = '❌ Error: ' + error.message;
-        showAlert('Failed to process ZIP file: ' + error.message, 'danger');
-        progressContainer.style.display = 'none';
+        console.error('[Admin] Error loading data:', error);
+        showError('Failed to load data. Please refresh the page.');
     }
 }
 
-// ─── SHOW REVIEW STEP ────────────────────────────────────
+// ─── SECTION RENDERER ────────────────────────────────────
 
-function showReviewStep() {
-    document.getElementById('stepUpload').style.display = 'none';
-    document.getElementById('stepReview').style.display = 'block';
-    document.getElementById('stepComplete').style.display = 'none';
-    
-    renderStagedFiles();
+function renderCurrentSection() {
+    switch(currentSection) {
+        case 'dashboard': renderDashboard(); break;
+        case 'documents': renderDocuments(); break;
+        case 'upload': renderUpload(); break;
+        case 'bulk-upload': renderBulkUpload(); break;
+        case 'transactions': renderTransactions(); break;
+        case 'analytics': renderAnalytics(); break;
+        case 'users': renderUsers(); break;
+        case 'subscribers': renderSubscribers(); break;
+        case 'messages': renderMessages(); break;
+        case 'settings': renderSettings(); break;
+        default: renderDashboard();
+    }
 }
 
-function renderStagedFiles() {
-    const tbody = document.getElementById('stagedFilesBody');
-    const fileCount = document.getElementById('fileCount');
-    const publishCount = document.getElementById('publishCount');
+function showSection(section) {
+    currentSection = section;
     
-    fileCount.textContent = stagedFiles.length;
-    publishCount.textContent = stagedFiles.length;
-    
-    if (stagedFiles.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--admin-neutral-400);">No files to review.</td></tr>';
-        return;
+    // Update sidebar active state
+    document.querySelectorAll('.admin-sidebar-nav a').forEach(a => a.classList.remove('active'));
+    const links = document.querySelectorAll('.admin-sidebar-nav a');
+    const sectionMap = {
+        'dashboard': 0,
+        'documents': 1,
+        'upload': 2,
+        'bulk-upload': 3,
+        'transactions': 5,
+        'analytics': 6,
+        'users': 8,
+        'subscribers': 9,
+        'messages': 11,
+        'settings': 13
+    };
+    const idx = sectionMap[section];
+    if (idx !== undefined && links[idx]) {
+        links[idx].classList.add('active');
     }
     
-    let html = '';
-    stagedFiles.forEach((file, i) => {
-        const categories = ['Schemes of Work', 'Lesson Plans', 'Notes & Revision', 'Exams & Assessments', 'Past Papers', 'Revision Papers'];
-        
-        html += `
-            <tr>
-                <td>
-                    <input type="checkbox" class="file-cb" checked data-index="${i}">
-                </td>
-                <td>
-                    <input type="text" class="input-text" id="title_${i}" value="${file.clean_title}" style="max-width:280px;">
-                    <div style="font-size:0.72rem;color:var(--admin-neutral-400);margin-top:0.2rem;">
-                        File: <code>${file.original_filename}</code>
-                    </div>
-                </td>
-                <td>
-                    <select class="input-select" id="category_${i}">
-                        ${categories.map(c => `<option value="${c}" ${c === file.category ? 'selected' : ''}>${c}</option>`).join('')}
-                    </select>
-                </td>
-                <td>
-                    <span class="badge-pill badge-info">${file.level}</span>
-                    <span class="badge-pill badge-success">${file.grade}</span>
-                    <span class="badge-pill badge-warning">${file.term}</span>
-                </td>
-                <td>
-                    <input type="number" class="input-number" id="price_${i}" value="${file.price}" min="0" step="10">
-                </td>
-                <td style="color:var(--admin-neutral-500);font-size:0.8rem;white-space:nowrap;">
-                    ${formatFileSize(file.filesize)}
-                </td>
-            </tr>
+    // Update page title
+    const titles = {
+        'dashboard': 'Dashboard',
+        'documents': 'Resources',
+        'upload': 'Upload Resource',
+        'bulk-upload': 'Bulk Upload (ZIP)',
+        'transactions': 'Transactions',
+        'analytics': 'Analytics',
+        'users': 'Users',
+        'subscribers': 'Subscribers',
+        'messages': 'Messages',
+        'settings': 'Settings'
+    };
+    document.getElementById('pageTitle').textContent = titles[section] || 'Dashboard';
+    
+    // Update topbar actions
+    const actionsContainer = document.getElementById('topbarActions');
+    if (section === 'documents') {
+        actionsContainer.innerHTML = `
+            <a href="#" onclick="showSection('upload')" class="admin-btn admin-btn-primary admin-btn-sm">
+                <i class="bi bi-plus-lg"></i> New
+            </a>
+            <a href="#" onclick="showSection('bulk-upload')" class="admin-btn admin-btn-secondary admin-btn-sm">
+                <i class="bi bi-file-zip"></i> Bulk
+            </a>
         `;
-    });
-    
-    tbody.innerHTML = html;
-}
-
-// ─── TOGGLE ALL CHECKBOXES ─────────────────────────────────
-
-function toggleAll(master) {
-    document.querySelectorAll('.file-cb').forEach(cb => cb.checked = master.checked);
-}
-
-// ─── PUBLISH STAGED FILES ─────────────────────────────────
-
-async function publishStaged() {
-    if (isProcessing) return;
-    
-    const selectedCheckboxes = document.querySelectorAll('.file-cb:checked');
-    if (selectedCheckboxes.length === 0) {
-        showAlert('Please select at least one file to publish.', 'danger');
-        return;
+    } else if (section === 'transactions') {
+        actionsContainer.innerHTML = `
+            <button class="admin-btn admin-btn-secondary admin-btn-sm" onclick="refreshData()">
+                <i class="bi bi-arrow-clockwise"></i> Refresh
+            </button>
+        `;
+    } else if (section === 'users') {
+        actionsContainer.innerHTML = `
+            <button class="admin-btn admin-btn-secondary admin-btn-sm" onclick="refreshData()">
+                <i class="bi bi-arrow-clockwise"></i> Refresh
+            </button>
+        `;
+    } else {
+        actionsContainer.innerHTML = `
+            <a href="#" onclick="showSection('upload')" class="admin-btn admin-btn-primary">
+                <i class="bi bi-upload"></i> Upload
+            </a>
+        `;
     }
     
-    isProcessing = true;
-    const publishBtn = document.getElementById('publishAllBtn');
-    publishBtn.disabled = true;
-    publishBtn.innerHTML = '<i class="bi bi-arrow-repeat spin"></i> Publishing...';
+    renderCurrentSection();
+}
+
+// ─── DASHBOARD ──────────────────────────────────────────────
+
+function renderDashboard() {
+    const { users, resources, transactions, subscribers, messages } = allData;
+    
+    const completedTxs = transactions.filter(t => t.status === 'completed' || t.status === 'paid' || t.status === 'success');
+    const pendingTxs = transactions.filter(t => t.status === 'pending' || t.status === 'processing');
+    const totalRevenue = completedTxs.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    const paidDownloads = completedTxs.length;
+    const freeResources = resources.filter(r => r.is_free === true || r.price === 0).length;
+    const activeSubscribers = subscribers.filter(s => s.status === 'active' || s.status === 'subscribed' || s.status === 'confirmed').length;
+    const unreadMessages = messages.filter(m => m.status === 'unread' || m.status === 'new').length;
+
+    // Month stats
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    
+    const monthTxs = transactions.filter(t => {
+        const d = new Date(t.created_at);
+        return d.getMonth() === currentMonth && d.getFullYear() === currentYear && 
+               (t.status === 'completed' || t.status === 'paid' || t.status === 'success');
+    });
+    const monthRevenue = monthTxs.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    const monthNewUsers = users.filter(u => {
+        const d = new Date(u.created_at);
+        return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+    }).length;
+    const monthTxsCount = monthTxs.length;
+
+    // Last month revenue
+    const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+    const lastMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+    const lastMonthTxs = transactions.filter(t => {
+        const d = new Date(t.created_at);
+        return d.getMonth() === lastMonth && d.getFullYear() === lastMonthYear && 
+               (t.status === 'completed' || t.status === 'paid' || t.status === 'success');
+    });
+    const lastMonthRevenue = lastMonthTxs.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    const revDelta = lastMonthRevenue > 0 ? ((monthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100 : (monthRevenue > 0 ? 100 : 0);
+    const revUp = revDelta >= 0;
+
+    // Top resource
+    const topDoc = resources.length > 0 ? [...resources].sort((a, b) => {
+        const aCount = a.download_count || a.downloads || 0;
+        const bCount = b.download_count || b.downloads || 0;
+        return bCount - aCount;
+    })[0] : null;
+
+    // Recent transactions
+    const recentTxs = [...transactions].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 5);
+
+    // Recent documents
+    const recentDocs = [...resources].sort((a, b) => {
+        const aDate = a.updated_at || a.created_at;
+        const bDate = b.updated_at || b.created_at;
+        return new Date(bDate) - new Date(aDate);
+    }).slice(0, 5);
+
+    const html = `
+        <div class="admin-header-flex">
+            <p class="text-neutral-500">${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} · Welcome back, ${document.getElementById('adminName').textContent.split(' ')[0]}</p>
+        </div>
+
+        <div class="dash-stats-grid">
+            <div class="dash-card">
+                <div class="dash-card-body">
+                    <div class="dash-card-info">
+                        <span class="dash-card-label">Total Resources</span>
+                        <span class="dash-card-number">${resources.length.toLocaleString()}</span>
+                        <a href="#" onclick="showSection('documents')" class="dash-card-link">Manage resources →</a>
+                    </div>
+                    <div class="dash-card-icon blue"><i class="bi bi-file-earmark-text"></i></div>
+                </div>
+            </div>
+
+            <div class="dash-card">
+                <div class="dash-card-body">
+                    <div class="dash-card-info">
+                        <span class="dash-card-label">Total Revenue</span>
+                        <span class="dash-card-number">${formatCurrency(totalRevenue)}</span>
+                        <span class="dash-card-trend ${revUp ? 'up' : 'down'}">
+                            <i class="bi bi-${revUp ? 'arrow-up-short' : 'arrow-down-short'}"></i> ${Math.abs(Math.round(revDelta))}% vs last month
+                        </span>
+                    </div>
+                    <div class="dash-card-icon green"><i class="bi bi-bank"></i></div>
+                </div>
+            </div>
+
+            <div class="dash-card">
+                <div class="dash-card-body">
+                    <div class="dash-card-info">
+                        <span class="dash-card-label">Paid Downloads</span>
+                        <span class="dash-card-number">${paidDownloads.toLocaleString()}</span>
+                        <a href="#" onclick="showSection('transactions')" class="dash-card-link">View transactions →</a>
+                    </div>
+                    <div class="dash-card-icon teal"><i class="bi bi-cloud-arrow-down"></i></div>
+                </div>
+            </div>
+
+            <div class="dash-card">
+                <div class="dash-card-body">
+                    <div class="dash-card-info">
+                        <span class="dash-card-label">Total Users</span>
+                        <span class="dash-card-number">${users.length.toLocaleString()}</span>
+                        <span class="dash-card-trend up">
+                            <i class="bi bi-person-plus"></i> +${monthNewUsers} this month
+                        </span>
+                    </div>
+                    <div class="dash-card-icon purple"><i class="bi bi-people"></i></div>
+                </div>
+            </div>
+
+            <div class="dash-card">
+                <div class="dash-card-body">
+                    <div class="dash-card-info">
+                        <span class="dash-card-label">Free Resources</span>
+                        <span class="dash-card-number">${freeResources.toLocaleString()}</span>
+                        <a href="#" onclick="showSection('documents')" class="dash-card-link">View free →</a>
+                    </div>
+                    <div class="dash-card-icon yellow"><i class="bi bi-gift-fill"></i></div>
+                </div>
+            </div>
+
+            <div class="dash-card">
+                <div class="dash-card-body">
+                    <div class="dash-card-info">
+                        <span class="dash-card-label">Subscribers</span>
+                        <span class="dash-card-number">${activeSubscribers.toLocaleString()}</span>
+                        <a href="#" onclick="showSection('subscribers')" class="dash-card-link">View list →</a>
+                    </div>
+                    <div class="dash-card-icon pink"><i class="bi bi-envelope-heart"></i></div>
+                </div>
+            </div>
+
+            <div class="dash-card">
+                <div class="dash-card-body">
+                    <div class="dash-card-info">
+                        <span class="dash-card-label">Pending Transactions</span>
+                        <span class="dash-card-number">${pendingTxs.length.toLocaleString()}</span>
+                        <span class="dash-card-trend ${pendingTxs.length > 0 ? 'warning' : 'up'}">
+                            <i class="bi bi-${pendingTxs.length > 0 ? 'exclamation-circle' : 'check-circle'}"></i> 
+                            ${pendingTxs.length > 0 ? 'Requires attention' : 'All clear'}
+                        </span>
+                    </div>
+                    <div class="dash-card-icon orange"><i class="bi bi-hourglass-split"></i></div>
+                </div>
+            </div>
+
+            <div class="dash-card">
+                <div class="dash-card-body">
+                    <div class="dash-card-info">
+                        <span class="dash-card-label">Unread Messages</span>
+                        <span class="dash-card-number">${unreadMessages.toLocaleString()}</span>
+                        <a href="#" onclick="showSection('messages')" class="dash-card-link">View inbox →</a>
+                    </div>
+                    <div class="dash-card-icon red"><i class="bi bi-chat-left-dots"></i></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="admin-section-card">
+            <div class="table-card-header">
+                <h2 class="table-card-title">
+                    <i class="bi bi-receipt"></i> Recent Transactions
+                </h2>
+                <div class="admin-actions">
+                    <span class="admin-badge">${recentTxs.length} latest</span>
+                    <a href="#" onclick="showSection('transactions')" class="admin-btn admin-btn-secondary admin-btn-sm">
+                        View All <i class="bi bi-arrow-right"></i>
+                    </a>
+                </div>
+            </div>
+            <div id="transactionsContainer">
+                ${recentTxs.length === 0 ? `
+                    <div class="admin-empty-state">
+                        <i class="bi bi-receipt"></i>
+                        <p>No transactions yet.</p>
+                    </div>
+                ` : `
+                    <div class="table-container">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>Customer</th>
+                                    <th>Amount</th>
+                                    <th>Status</th>
+                                    <th>Date</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${recentTxs.map(tx => `
+                                    <tr>
+                                        <td>
+                                            <div style="font-weight:600;">${tx.user_name || tx.guest_name || tx.name || 'Guest User'}</div>
+                                            ${tx.email ? `<div style="font-size:0.78rem;color:var(--admin-neutral-500);">${tx.email}</div>` : ''}
+                                        </td>
+                                        <td><strong>${formatCurrency(tx.amount)}</strong></td>
+                                        <td><span class="${getStatusBadge(tx.status)}">${tx.status || 'pending'}</span></td>
+                                        <td>
+                                            <div style="font-weight:600;">${formatDate(tx.created_at)}</div>
+                                            <div style="font-size:.75rem;color:var(--admin-neutral-500);">${formatTime(tx.created_at)}</div>
+                                        </td>
+                                        <td>
+                                            <button class="admin-btn admin-btn-secondary admin-btn-sm" onclick="viewTransaction('${tx.id}')">
+                                                <i class="bi bi-eye"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `}
+            </div>
+        </div>
+
+        <div class="dash-insights-grid">
+            <div class="dash-insight-card">
+                <div class="dash-insight-header">
+                    <div class="dash-insight-icon" style="background:rgba(16,185,129,.1);color:#059669;">
+                        <i class="bi bi-calendar3"></i>
+                    </div>
+                    <h3 class="dash-insight-title">This Month</h3>
+                </div>
+                <div class="dash-insight-body">
+                    <div class="dash-insight-row">
+                        <span class="dash-insight-label"><i class="bi bi-arrow-left-right"></i> Transactions</span>
+                        <span class="dash-insight-value">${monthTxsCount.toLocaleString()}</span>
+                    </div>
+                    <div class="dash-insight-divider"></div>
+                    <div class="dash-insight-row">
+                        <span class="dash-insight-label"><i class="bi bi-cash-stack"></i> Revenue</span>
+                        <span class="dash-insight-value dash-insight-revenue">${formatCurrency(monthRevenue)}</span>
+                    </div>
+                    <div class="dash-insight-divider"></div>
+                    <div class="dash-insight-row">
+                        <span class="dash-insight-label"><i class="bi bi-person-plus"></i> New Users</span>
+                        <span class="dash-insight-value">${monthNewUsers.toLocaleString()}</span>
+                    </div>
+                </div>
+                <a href="#" onclick="showSection('analytics')" class="dash-insight-link" style="display:block;margin-top:.75rem;">
+                    Full analytics →
+                </a>
+            </div>
+
+            <div class="dash-insight-card">
+                <div class="dash-insight-header">
+                    <div class="dash-insight-icon" style="background:rgba(59,130,246,.1);color:#2563eb;">
+                        <i class="bi bi-trophy"></i>
+                    </div>
+                    <h3 class="dash-insight-title">Top Resource</h3>
+                </div>
+                <div class="dash-insight-body">
+                    ${topDoc ? `
+                        <p class="dash-insight-doc-title">${topDoc.title || 'Untitled'}</p>
+                        <div class="dash-insight-row">
+                            <span class="dash-insight-label"><i class="bi bi-download"></i> Total Downloads</span>
+                            <span class="dash-insight-value">${(topDoc.download_count || topDoc.downloads || 0).toLocaleString()}</span>
+                        </div>
+                        <div style="margin-top:4px;font-size:0.7rem;color:var(--admin-neutral-400);">
+                            ${topDoc.category || 'General'} · ${topDoc.education_level || topDoc.level || 'All Levels'}
+                        </div>
+                    ` : `
+                        <p class="dash-insight-empty">No resources yet.</p>
+                    `}
+                </div>
+                <a href="#" onclick="showSection('documents')" class="dash-insight-link" style="display:block;margin-top:.75rem;">
+                    All resources →
+                </a>
+            </div>
+
+            <div class="dash-insight-card">
+                <div class="dash-insight-header">
+                    <div class="dash-insight-icon" style="background:rgba(139,92,246,.1);color:#7c3aed;">
+                        <i class="bi bi-chat-square-text"></i>
+                    </div>
+                    <h3 class="dash-insight-title">Latest Message</h3>
+                </div>
+                <div class="dash-insight-body">
+                    ${messages.length > 0 ? (() => {
+                        const latest = [...messages].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+                        return `
+                            <p class="dash-insight-sender">${latest.name || 'Anonymous'}</p>
+                            <p class="dash-insight-message">${latest.message || ''}</p>
+                            <div class="dash-insight-row" style="margin-top:.25rem;">
+                                <span class="dash-insight-label"><i class="bi bi-clock"></i> ${formatDate(latest.created_at)} ${formatTime(latest.created_at)}</span>
+                                <span class="${getStatusBadge(latest.status)}">${(latest.status || 'unread').charAt(0).toUpperCase() + (latest.status || 'unread').slice(1)}</span>
+                            </div>
+                        `;
+                    })() : `
+                        <p class="dash-insight-empty">No messages yet.</p>
+                    `}
+                </div>
+                <a href="#" onclick="showSection('messages')" class="dash-insight-link" style="display:block;margin-top:.75rem;">
+                    View inbox →
+                </a>
+            </div>
+
+            <div class="dash-insight-card">
+                <div class="dash-insight-header">
+                    <div class="dash-insight-icon" style="background:rgba(6,182,212,.1);color:#0891b2;">
+                        <i class="bi bi-cloud-arrow-up"></i>
+                    </div>
+                    <h3 class="dash-insight-title">Recent Uploads</h3>
+                </div>
+                <div class="dash-insight-body">
+                    ${recentDocs.length > 0 ? recentDocs.slice(0, 3).map(doc => `
+                        <div style="margin-bottom: 0.65rem; padding-bottom: 0.5rem; border-bottom: 1px solid #f1f5f9;">
+                            <div style="font-size: 0.82rem; font-weight: 700; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                ${getFileIcon(doc.file_name)} ${doc.title || 'Untitled'}
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.2rem; font-size: 0.75rem;">
+                                <span style="color: #64748b;">${doc.category || 'General'}</span>
+                                <span style="color: #059669; font-weight: 600;">${timeAgo(doc.updated_at || doc.created_at)}</span>
+                            </div>
+                        </div>
+                    `).join('') : `
+                        <p class="dash-insight-empty">No resources yet.</p>
+                    `}
+                </div>
+                <a href="#" onclick="showSection('documents')" class="dash-insight-link" style="display:block;margin-top:.75rem;">
+                    Document catalog →
+                </a>
+            </div>
+        </div>
+    `;
+
+    document.getElementById('mainContent').innerHTML = html;
+}
+
+// ─── DOCUMENTS ──────────────────────────────────────────────
+
+function renderDocuments() {
+    const { resources } = allData;
+    
+    const html = `
+        <div class="admin-section-card">
+            <div class="table-card-header">
+                <h2 class="table-card-title">
+                    <i class="bi bi-file-earmark-text"></i> All Resources (${resources.length})
+                </h2>
+                <div class="admin-actions">
+                    <a href="#" onclick="showSection('upload')" class="admin-btn admin-btn-primary admin-btn-sm">
+                        <i class="bi bi-plus-lg"></i> Upload New
+                    </a>
+                    <a href="#" onclick="showSection('bulk-upload')" class="admin-btn admin-btn-secondary admin-btn-sm">
+                        <i class="bi bi-file-zip"></i> Bulk Upload
+                    </a>
+                </div>
+            </div>
+            ${resources.length === 0 ? `
+                <div class="admin-empty-state">
+                    <i class="bi bi-file-earmark-text"></i>
+                    <p>No resources uploaded yet. Click "Upload New" to get started.</p>
+                </div>
+            ` : `
+                <div class="table-container">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>Title</th>
+                                <th>Category</th>
+                                <th>Price</th>
+                                <th>Downloads</th>
+                                <th>Uploaded</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${resources.map(doc => `
+                                <tr>
+                                    <td>
+                                        <div style="display:flex;align-items:center;gap:8px;">
+                                            ${getFileIcon(doc.file_name)}
+                                            <span style="font-weight:600;">${doc.title || 'Untitled'}</span>
+                                        </div>
+                                    </td>
+                                    <td>${doc.category || 'General'}</td>
+                                    <td>${doc.is_free || doc.price === 0 ? 'Free' : formatCurrency(doc.price)}</td>
+                                    <td>${(doc.download_count || doc.downloads || 0).toLocaleString()}</td>
+                                    <td>${timeAgo(doc.created_at)}</td>
+                                    <td>
+                                        <button class="admin-btn admin-btn-secondary admin-btn-sm" onclick="deleteDocument('${doc.id}')">
+                                            <i class="bi bi-trash" style="color:#EF4444;"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `}
+        </div>
+    `;
+    
+    document.getElementById('mainContent').innerHTML = html;
+}
+
+// ─── UPLOAD ──────────────────────────────────────────────────
+
+function renderUpload() {
+    const html = `
+        <div class="admin-section-card">
+            <div class="table-card-header">
+                <h2 class="table-card-title">
+                    <i class="bi bi-upload"></i> Upload New Resource
+                </h2>
+            </div>
+            <div style="padding: 24px;">
+                <form id="uploadForm" enctype="multipart/form-data" style="max-width: 600px;">
+                    <div style="margin-bottom: 16px;">
+                        <label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.85rem;">Title *</label>
+                        <input type="text" id="docTitle" required style="width:100%;padding:10px 12px;border:1px solid var(--admin-neutral-200);border-radius:var(--admin-radius-sm);font-size:0.9rem;">
+                    </div>
+                    <div style="margin-bottom: 16px;">
+                        <label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.85rem;">Description</label>
+                        <textarea id="docDescription" rows="3" style="width:100%;padding:10px 12px;border:1px solid var(--admin-neutral-200);border-radius:var(--admin-radius-sm);font-size:0.9rem;font-family:inherit;"></textarea>
+                    </div>
+                    <div style="margin-bottom: 16px;">
+                        <label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.85rem;">Category *</label>
+                        <input type="text" id="docCategory" required style="width:100%;padding:10px 12px;border:1px solid var(--admin-neutral-200);border-radius:var(--admin-radius-sm);font-size:0.9rem;">
+                    </div>
+                    <div style="margin-bottom: 16px;">
+                        <label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.85rem;">Education Level</label>
+                        <input type="text" id="docLevel" style="width:100%;padding:10px 12px;border:1px solid var(--admin-neutral-200);border-radius:var(--admin-radius-sm);font-size:0.9rem;">
+                    </div>
+                    <div style="margin-bottom: 16px;">
+                        <label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.85rem;">Price (KES) *</label>
+                        <input type="number" id="docPrice" value="0" min="0" required style="width:100%;padding:10px 12px;border:1px solid var(--admin-neutral-200);border-radius:var(--admin-radius-sm);font-size:0.9rem;">
+                    </div>
+                    <div style="margin-bottom: 16px;">
+                        <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">
+                            <input type="checkbox" id="docIsFree" onchange="togglePrice()"> Free Resource
+                        </label>
+                    </div>
+                    <div style="margin-bottom: 16px;">
+                        <label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.85rem;">File *</label>
+                        <input type="file" id="docFile" required style="width:100%;padding:8px;border:1px solid var(--admin-neutral-200);border-radius:var(--admin-radius-sm);">
+                    </div>
+                    <button type="submit" class="admin-btn admin-btn-primary" style="width:100%;justify-content:center;padding:12px;">
+                        <i class="bi bi-cloud-arrow-up"></i> Upload Resource
+                    </button>
+                    <div id="uploadStatus" style="margin-top:12px;padding:12px;border-radius:var(--admin-radius-sm);display:none;"></div>
+                </form>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('mainContent').innerHTML = html;
+    document.getElementById('uploadForm').addEventListener('submit', handleUpload);
+}
+
+function togglePrice() {
+    const isFree = document.getElementById('docIsFree').checked;
+    const priceInput = document.getElementById('docPrice');
+    priceInput.disabled = isFree;
+    if (isFree) priceInput.value = 0;
+}
+
+async function handleUpload(e) {
+    e.preventDefault();
+    const statusDiv = document.getElementById('uploadStatus');
+    statusDiv.style.display = 'block';
+    statusDiv.textContent = 'Uploading...';
+    statusDiv.style.background = 'var(--admin-neutral-100)';
+    statusDiv.style.color = 'var(--admin-neutral-700)';
     
     try {
-        const selectedIndices = Array.from(selectedCheckboxes).map(cb => parseInt(cb.dataset.index));
-        const published = [];
+        const title = document.getElementById('docTitle').value;
+        const description = document.getElementById('docDescription').value;
+        const category = document.getElementById('docCategory').value;
+        const level = document.getElementById('docLevel').value;
+        const price = parseInt(document.getElementById('docPrice').value) || 0;
+        const isFree = document.getElementById('docIsFree').checked;
+        const fileInput = document.getElementById('docFile');
         
-        for (const idx of selectedIndices) {
-            const file = stagedFiles[idx];
-            const title = document.getElementById(`title_${idx}`).value.trim() || file.clean_title;
-            const category = document.getElementById(`category_${idx}`).value || file.category;
-            const price = parseInt(document.getElementById(`price_${idx}`).value) || file.price;
+        if (!fileInput.files || fileInput.files.length === 0) {
+            throw new Error('Please select a file to upload.');
+        }
+        
+        const file = fileInput.files[0];
+        
+        // Upload file to Supabase Storage
+        const filePath = 'resources/' + Date.now() + '_' + file.name;
+        const storageUrl = SUPABASE_URL + '/storage/v1/object/' + filePath;
+        
+        const uploadResponse = await fetch(storageUrl, {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                'Content-Type': file.type
+            },
+            body: file
+        });
+        
+        if (!uploadResponse.ok) {
+            throw new Error('Failed to upload file to storage.');
+        }
+        
+        const fileUrl = SUPABASE_URL + '/storage/v1/object/public/' + filePath;
+        
+        // Create resource record
+        const resourceData = {
+            title,
+            description,
+            category,
+            education_level: level || null,
+            level: level || null,
+            price: isFree ? 0 : price,
+            is_free: isFree,
+            file_name: file.name,
+            file_path: filePath,
+            file_url: fileUrl,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            download_count: 0
+        };
+        
+        const createResponse = await fetch(SUPABASE_URL + '/rest/v1/resources', {
+            method: 'POST',
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=representation'
+            },
+            body: JSON.stringify(resourceData)
+        });
+        
+        if (!createResponse.ok) {
+            throw new Error('Failed to create resource record.');
+        }
+        
+        statusDiv.style.background = '#DCFCE7';
+        statusDiv.style.color = '#15803D';
+        statusDiv.textContent = '✅ Resource uploaded successfully!';
+        
+        document.getElementById('uploadForm').reset();
+        document.getElementById('docPrice').disabled = false;
+        
+        setTimeout(loadAllData, 1000);
+        
+    } catch (error) {
+        statusDiv.style.background = '#FEE2E2';
+        statusDiv.style.color = '#991B1B';
+        statusDiv.textContent = '❌ ' + error.message;
+    }
+}
+
+// ─── BULK UPLOAD (FIXED) ────────────────────────────────────
+
+function renderBulkUpload() {
+    const html = `
+        <div class="admin-section-card">
+            <div class="table-card-header">
+                <h2 class="table-card-title">
+                    <i class="bi bi-file-zip"></i> Bulk Upload (ZIP Archive)
+                </h2>
+            </div>
+            <div style="padding: 24px;">
+                <div style="max-width: 600px;">
+                    <div style="background:#FEF3C7;padding:16px;border-radius:var(--admin-radius-sm);margin-bottom:20px;border-left:4px solid #F59E0B;">
+                        <p style="font-weight:600;color:#92400E;margin-bottom:4px;">📦 ZIP Upload Instructions</p>
+                        <p style="font-size:0.85rem;color:#92400E;margin:0;">
+                            Upload a ZIP file containing your resources. Each file in the ZIP will be uploaded with the filename as the title.
+                            Supported formats: PDF, DOC, DOCX, PPT, PPTX, XLS, XLSX.
+                        </p>
+                    </div>
+                    
+                    <form id="bulkUploadForm" enctype="multipart/form-data">
+                        <div style="margin-bottom: 16px;">
+                            <label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.85rem;">Category *</label>
+                            <input type="text" id="bulkCategory" required style="width:100%;padding:10px 12px;border:1px solid var(--admin-neutral-200);border-radius:var(--admin-radius-sm);font-size:0.9rem;">
+                        </div>
+                        <div style="margin-bottom: 16px;">
+                            <label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.85rem;">Education Level</label>
+                            <input type="text" id="bulkLevel" style="width:100%;padding:10px 12px;border:1px solid var(--admin-neutral-200);border-radius:var(--admin-radius-sm);font-size:0.9rem;">
+                        </div>
+                        <div style="margin-bottom: 16px;">
+                            <label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.85rem;">Price (KES) *</label>
+                            <input type="number" id="bulkPrice" value="0" min="0" required style="width:100%;padding:10px 12px;border:1px solid var(--admin-neutral-200);border-radius:var(--admin-radius-sm);font-size:0.9rem;">
+                        </div>
+                        <div style="margin-bottom: 16px;">
+                            <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">
+                                <input type="checkbox" id="bulkIsFree" onchange="toggleBulkPrice()"> Free Resources
+                            </label>
+                        </div>
+                        <div style="margin-bottom: 16px;">
+                            <label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.85rem;">ZIP File *</label>
+                            <input type="file" id="bulkFile" accept=".zip" required style="width:100%;padding:8px;border:1px solid var(--admin-neutral-200);border-radius:var(--admin-radius-sm);">
+                        </div>
+                        <div id="bulkProgress" style="display:none;margin-bottom:16px;">
+                            <div style="display:flex;justify-content:space-between;font-size:0.82rem;margin-bottom:4px;">
+                                <span id="bulkProgressText">Processing...</span>
+                                <span id="bulkProgressPercent">0%</span>
+                            </div>
+                            <div class="progress-bar-container">
+                                <div class="progress-bar" id="bulkProgressBar"></div>
+                            </div>
+                        </div>
+                        <button type="submit" class="admin-btn admin-btn-primary" style="width:100%;justify-content:center;padding:12px;" id="bulkSubmitBtn">
+                            <i class="bi bi-file-zip"></i> Upload ZIP Archive
+                        </button>
+                        <div id="bulkUploadStatus" style="margin-top:12px;padding:12px;border-radius:var(--admin-radius-sm);display:none;"></div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('mainContent').innerHTML = html;
+    document.getElementById('bulkUploadForm').addEventListener('submit', handleBulkUpload);
+}
+
+function toggleBulkPrice() {
+    const isFree = document.getElementById('bulkIsFree').checked;
+    const priceInput = document.getElementById('bulkPrice');
+    priceInput.disabled = isFree;
+    if (isFree) priceInput.value = 0;
+}
+
+async function handleBulkUpload(e) {
+    e.preventDefault();
+    
+    const statusDiv = document.getElementById('bulkUploadStatus');
+    const progressDiv = document.getElementById('bulkProgress');
+    const progressBar = document.getElementById('bulkProgressBar');
+    const progressText = document.getElementById('bulkProgressText');
+    const progressPercent = document.getElementById('bulkProgressPercent');
+    const submitBtn = document.getElementById('bulkSubmitBtn');
+    
+    statusDiv.style.display = 'block';
+    statusDiv.textContent = 'Preparing ZIP file...';
+    statusDiv.style.background = 'var(--admin-neutral-100)';
+    statusDiv.style.color = 'var(--admin-neutral-700)';
+    progressDiv.style.display = 'block';
+    submitBtn.disabled = true;
+    
+    try {
+        const category = document.getElementById('bulkCategory').value;
+        const level = document.getElementById('bulkLevel').value;
+        const price = parseInt(document.getElementById('bulkPrice').value) || 0;
+        const isFree = document.getElementById('bulkIsFree').checked;
+        const fileInput = document.getElementById('bulkFile');
+        
+        if (!fileInput.files || fileInput.files.length === 0) {
+            throw new Error('Please select a ZIP file.');
+        }
+        
+        const zipFile = fileInput.files[0];
+        
+        // Check if JSZip is loaded
+        if (typeof JSZip === 'undefined') {
+            throw new Error('JSZip library not loaded. Please refresh the page and try again.');
+        }
+        
+        // Read ZIP file
+        const zipData = await zipFile.arrayBuffer();
+        const zip = await JSZip.loadAsync(zipData);
+        const files = zip.files;
+        
+        const fileNames = Object.keys(files).filter(name => !files[name].dir);
+        const totalFiles = fileNames.length;
+        
+        if (totalFiles === 0) {
+            throw new Error('ZIP file is empty or contains no files.');
+        }
+        
+        statusDiv.textContent = `Found ${totalFiles} files in ZIP. Starting upload...`;
+        
+        let uploadedCount = 0;
+        let failedFiles = [];
+        let skippedFiles = [];
+        
+        for (let i = 0; i < fileNames.length; i++) {
+            const filename = fileNames[i];
+            const fileData = files[filename];
             
-            // Prepare data for Supabase
-            const resourceData = {
-                title: title,
-                description: null,
-                price: price,
-                is_free: price === 0,
-                category: category,
-                level: file.level,
-                education_level: file.level,
-                grade: file.grade,
-                term: file.term,
-                file_name: file.original_filename,
-                file_url: null,
-                resource_type: category.toLowerCase().replace(/\s+/g, '-'),
-                type: category.toLowerCase().replace(/\s+/g, '-'),
-                is_published: true,
-                status: 'published',
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
-            };
+            // Update progress
+            const percent = Math.round(((i + 1) / totalFiles) * 100);
+            progressBar.style.width = percent + '%';
+            progressPercent.textContent = percent + '%';
+            progressText.textContent = `Processing ${i + 1}/${totalFiles}: ${filename}`;
             
-            // Save to Supabase
-            const response = await fetch(SUPABASE_URL + '/rest/v1/resources', {
-                method: 'POST',
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
-                    'Content-Type': 'application/json',
-                    'Prefer': 'return=representation'
-                },
-                body: JSON.stringify(resourceData)
-            });
+            const ext = filename.split('.').pop().toLowerCase();
+            const supportedExts = ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx'];
             
-            if (response.ok) {
-                const result = await response.json();
-                published.push(result);
-            } else {
-                const errorText = await response.text();
-                console.error('Failed to publish:', errorText);
-                showAlert(`Failed to publish "${title}": ${errorText}`, 'danger');
+            if (!supportedExts.includes(ext)) {
+                skippedFiles.push(filename + ' (unsupported format)');
+                continue;
+            }
+            
+            try {
+                const content = await fileData.async('blob');
+                const safeFilename = filename.replace(/[^a-zA-Z0-9.\-]/g, '_');
+                const filePath = 'resources/' + Date.now() + '_' + i + '_' + safeFilename;
+                const storageUrl = SUPABASE_URL + '/storage/v1/object/' + filePath;
+                
+                const uploadResponse = await fetch(storageUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                        'Content-Type': content.type || 'application/octet-stream'
+                    },
+                    body: content
+                });
+                
+                if (!uploadResponse.ok) {
+                    failedFiles.push(filename + ' (storage upload failed: ' + uploadResponse.status + ')');
+                    continue;
+                }
+                
+                const fileUrl = SUPABASE_URL + '/storage/v1/object/public/' + filePath;
+                
+                const resourceData = {
+                    title: filename.replace(/\.[^.]+$/, '').replace(/[_\-]/g, ' ').trim() || 'Untitled',
+                    description: 'Uploaded via bulk ZIP',
+                    category: category,
+                    education_level: level || null,
+                    level: level || null,
+                    price: isFree ? 0 : price,
+                    is_free: isFree,
+                    file_name: filename,
+                    file_path: filePath,
+                    file_url: fileUrl,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    download_count: 0
+                };
+                
+                const createResponse = await fetch(SUPABASE_URL + '/rest/v1/resources', {
+                    method: 'POST',
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(resourceData)
+                });
+                
+                if (!createResponse.ok) {
+                    failedFiles.push(filename + ' (record creation failed: ' + createResponse.status + ')');
+                    continue;
+                }
+                
+                uploadedCount++;
+            } catch (err) {
+                failedFiles.push(filename + ' (' + err.message + ')');
             }
         }
         
-        if (published.length > 0) {
-            // Clear staged files
-            stagedFiles = [];
-            sessionStorage.removeItem('staged_bulk_files');
-            
-            // Show complete step
-            document.getElementById('stepReview').style.display = 'none';
-            document.getElementById('stepComplete').style.display = 'block';
-            
-            showAlert(`Successfully published ${published.length} resources!`, 'success');
-            
-            // Update sidebar counts
-            loadSidebarCounts();
-        } else {
-            showAlert('No files were published. Please check your selections.', 'danger');
+        // Final status
+        let message = `✅ Uploaded ${uploadedCount} files successfully.`;
+        if (skippedFiles.length > 0) {
+            message += `\n📝 Skipped: ${skippedFiles.length} files (unsupported formats).`;
+        }
+        if (failedFiles.length > 0) {
+            message += `\n⚠️ Failed: ${failedFiles.length} files - ${failedFiles.join(', ')}`;
         }
         
-    } catch (error) {
-        console.error('Publish error:', error);
-        showAlert('Error publishing: ' + error.message, 'danger');
-    } finally {
-        isProcessing = false;
-        publishBtn.disabled = false;
-        publishBtn.innerHTML = '<i class="bi bi-rocket-takeoff-fill"></i> Publish All (<span id="publishCount">' + document.querySelectorAll('.file-cb:checked').length + '</span> Documents)';
-    }
-}
-
-// ─── CANCEL BULK UPLOAD ──────────────────────────────────
-
-function cancelBulkUpload() {
-    if (confirm('Are you sure you want to cancel? All staged files will be discarded.')) {
-        stagedFiles = [];
-        sessionStorage.removeItem('staged_bulk_files');
-        document.getElementById('stepReview').style.display = 'none';
-        document.getElementById('stepUpload').style.display = 'block';
-        clearAlerts();
-    }
-}
-
-// ─── RESET UPLOAD ─────────────────────────────────────────
-
-function resetUpload() {
-    stagedFiles = [];
-    sessionStorage.removeItem('staged_bulk_files');
-    document.getElementById('stepComplete').style.display = 'none';
-    document.getElementById('stepUpload').style.display = 'block';
-    document.getElementById('zipFileInput').value = '';
-    clearAlerts();
-}
-
-// ─── LOAD SIDEBAR COUNTS ──────────────────────────────────
-
-async function loadSidebarCounts() {
-    try {
-        const [resources, users, subscribers, transactions] = await Promise.all([
-            fetchSupabase('resources', { select: 'id' }),
-            fetchSupabase('users', { select: 'id' }),
-            fetchSupabase('newsletter_subscribers', { select: 'id,status' }),
-            fetchSupabase('transactions', { select: 'id,status' })
-        ]);
+        statusDiv.style.background = failedFiles.length === 0 && skippedFiles.length === 0 ? '#DCFCE7' : '#FEF3C7';
+        statusDiv.style.color = failedFiles.length === 0 && skippedFiles.length === 0 ? '#15803D' : '#92400E';
+        statusDiv.textContent = message;
+        statusDiv.style.whiteSpace = 'pre-wrap';
         
-        if (docCount) docCount.textContent = resources ? resources.length : 0;
-        if (userCount) userCount.textContent = users ? users.length : 0;
-        if (subscriberCount) subscriberCount.textContent = subscribers ? subscribers.filter(s => s.status === 'active' || s.status === 'subscribed').length : 0;
-        if (pendingCount) pendingCount.textContent = transactions ? transactions.filter(t => t.status === 'pending').length : 0;
+        progressText.textContent = 'Complete!';
+        progressBar.style.width = '100%';
+        progressPercent.textContent = '100%';
+        
+        document.getElementById('bulkUploadForm').reset();
+        document.getElementById('bulkPrice').disabled = false;
+        
+        setTimeout(loadAllData, 2000);
+        
     } catch (error) {
-        console.error('Error loading sidebar counts:', error);
+        statusDiv.style.background = '#FEE2E2';
+        statusDiv.style.color = '#991B1B';
+        statusDiv.textContent = '❌ ' + error.message;
+        statusDiv.style.whiteSpace = 'normal';
+    } finally {
+        submitBtn.disabled = false;
     }
 }
 
-// ─── SIDEBAR TOGGLE ───────────────────────────────────────
+// ─── TRANSACTIONS ───────────────────────────────────────────
+
+function renderTransactions() {
+    const { transactions } = allData;
+    
+    const completedCount = transactions.filter(t => t.status === 'completed' || t.status === 'paid' || t.status === 'success').length;
+    const pendingCount = transactions.filter(t => t.status === 'pending' || t.status === 'processing').length;
+    const failedCount = transactions.filter(t => t.status === 'failed').length;
+    const totalRevenue = transactions
+        .filter(t => t.status === 'completed' || t.status === 'paid' || t.status === 'success')
+        .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    
+    const html = `
+        <div class="dash-stats-grid" style="grid-template-columns:repeat(auto-fill, minmax(150px, 1fr));">
+            <div class="dash-card">
+                <div class="dash-card-body">
+                    <div class="dash-card-info">
+                        <span class="dash-card-label">Total Revenue</span>
+                        <span class="dash-card-number" style="font-size:1.2rem;">${formatCurrency(totalRevenue)}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="dash-card">
+                <div class="dash-card-body">
+                    <div class="dash-card-info">
+                        <span class="dash-card-label">Completed</span>
+                        <span class="dash-card-number" style="font-size:1.2rem;color:#10B981;">${completedCount}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="dash-card">
+                <div class="dash-card-body">
+                    <div class="dash-card-info">
+                        <span class="dash-card-label">Pending</span>
+                        <span class="dash-card-number" style="font-size:1.2rem;color:#F59E0B;">${pendingCount}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="dash-card">
+                <div class="dash-card-body">
+                    <div class="dash-card-info">
+                        <span class="dash-card-label">Failed</span>
+                        <span class="dash-card-number" style="font-size:1.2rem;color:#EF4444;">${failedCount}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="admin-section-card">
+            <div class="table-card-header">
+                <h2 class="table-card-title">
+                    <i class="bi bi-receipt"></i> All Transactions (${transactions.length})
+                </h2>
+            </div>
+            ${transactions.length === 0 ? `
+                <div class="admin-empty-state">
+                    <i class="bi bi-receipt"></i>
+                    <p>No transactions found.</p>
+                </div>
+            ` : `
+                <div class="table-container">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>Customer</th>
+                                <th>Amount</th>
+                                <th>Status</th>
+                                <th>Reference</th>
+                                <th>Date</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${transactions.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map(tx => `
+                                <tr>
+                                    <td>
+                                        <div style="font-weight:600;">${tx.user_name || tx.guest_name || tx.name || 'Guest'}</div>
+                                        ${tx.email ? `<div style="font-size:0.78rem;color:var(--admin-neutral-500);">${tx.email}</div>` : ''}
+                                    </td>
+                                    <td><strong>${formatCurrency(tx.amount)}</strong></td>
+                                    <td><span class="${getStatusBadge(tx.status)}">${tx.status || 'pending'}</span></td>
+                                    <td style="font-size:0.78rem;color:var(--admin-neutral-500);">${tx.reference || tx.id?.slice(0,8) || 'N/A'}</td>
+                                    <td>
+                                        <div style="font-weight:600;">${formatDate(tx.created_at)}</div>
+                                        <div style="font-size:.75rem;color:var(--admin-neutral-500);">${formatTime(tx.created_at)}</div>
+                                    </td>
+                                    <td>
+                                        <button class="admin-btn admin-btn-secondary admin-btn-sm" onclick="viewTransaction('${tx.id}')">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `}
+        </div>
+    `;
+    
+    document.getElementById('mainContent').innerHTML = html;
+}
+
+// ─── ANALYTICS ──────────────────────────────────────────────
+
+function renderAnalytics() {
+    const { users, resources, transactions } = allData;
+    
+    const completedTxs = transactions.filter(t => t.status === 'completed' || t.status === 'paid' || t.status === 'success');
+    const totalRevenue = completedTxs.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    const avgOrderValue = completedTxs.length > 0 ? totalRevenue / completedTxs.length : 0;
+    
+    // Monthly revenue data
+    const monthlyData = {};
+    completedTxs.forEach(t => {
+        const d = new Date(t.created_at);
+        const key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+        if (!monthlyData[key]) monthlyData[key] = 0;
+        monthlyData[key] += Number(t.amount) || 0;
+    });
+    
+    const monthlyLabels = Object.keys(monthlyData).sort();
+    const monthlyValues = monthlyLabels.map(k => monthlyData[k]);
+    
+    // Category breakdown
+    const categoryData = {};
+    resources.forEach(r => {
+        const cat = r.category || 'Uncategorized';
+        if (!categoryData[cat]) categoryData[cat] = 0;
+        categoryData[cat]++;
+    });
+    
+    const html = `
+        <div class="dash-stats-grid" style="grid-template-columns:repeat(auto-fill, minmax(180px, 1fr));">
+            <div class="dash-card">
+                <div class="dash-card-body">
+                    <div class="dash-card-info">
+                        <span class="dash-card-label">Total Revenue</span>
+                        <span class="dash-card-number" style="font-size:1.2rem;">${formatCurrency(totalRevenue)}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="dash-card">
+                <div class="dash-card-body">
+                    <div class="dash-card-info">
+                        <span class="dash-card-label">Total Transactions</span>
+                        <span class="dash-card-number" style="font-size:1.2rem;">${completedTxs.length}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="dash-card">
+                <div class="dash-card-body">
+                    <div class="dash-card-info">
+                        <span class="dash-card-label">Average Order Value</span>
+                        <span class="dash-card-number" style="font-size:1.2rem;">${formatCurrency(avgOrderValue)}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="dash-card">
+                <div class="dash-card-body">
+                    <div class="dash-card-info">
+                        <span class="dash-card-label">Total Resources</span>
+                        <span class="dash-card-number" style="font-size:1.2rem;">${resources.length}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="dash-card">
+                <div class="dash-card-body">
+                    <div class="dash-card-info">
+                        <span class="dash-card-label">Total Users</span>
+                        <span class="dash-card-number" style="font-size:1.2rem;">${users.length}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:28px;">
+            <div class="admin-section-card" style="margin-bottom:0;">
+                <div class="table-card-header">
+                    <h2 class="table-card-title" style="font-size:0.9rem;">
+                        <i class="bi bi-bar-chart"></i> Monthly Revenue
+                    </h2>
+                </div>
+                <div style="padding:20px;">
+                    ${monthlyLabels.length === 0 ? `
+                        <p style="text-align:center;color:var(--admin-neutral-400);">No revenue data yet.</p>
+                    ` : `
+                        <div style="display:flex;align-items:flex-end;height:200px;gap:12px;padding-top:8px;">
+                            ${monthlyValues.map((val, i) => {
+                                const maxVal = Math.max(...monthlyValues, 1);
+                                const height = (val / maxVal) * 180;
+                                return `
+                                    <div style="flex:1;display:flex;flex-direction:column;align-items:center;height:100%;justify-content:flex-end;">
+                                        <div style="font-size:0.7rem;font-weight:600;color:var(--admin-neutral-500);margin-bottom:4px;">${formatCurrency(val)}</div>
+                                        <div style="width:100%;background:var(--admin-gold);border-radius:4px 4px 0 0;min-height:4px;height:${Math.max(height, 4)}px;transition:height 0.3s;"></div>
+                                        <div style="font-size:0.6rem;color:var(--admin-neutral-400);margin-top:4px;transform:rotate(-45deg);transform-origin:center;white-space:nowrap;">${monthlyLabels[i]}</div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    `}
+                </div>
+            </div>
+
+            <div class="admin-section-card" style="margin-bottom:0;">
+                <div class="table-card-header">
+                    <h2 class="table-card-title" style="font-size:0.9rem;">
+                        <i class="bi bi-tags"></i> Resources by Category
+                    </h2>
+                </div>
+                <div style="padding:20px;">
+                    ${Object.keys(categoryData).length === 0 ? `
+                        <p style="text-align:center;color:var(--admin-neutral-400);">No categories yet.</p>
+                    ` : `
+                        ${Object.entries(categoryData).sort((a, b) => b[1] - a[1]).map(([cat, count]) => `
+                            <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--admin-neutral-100);">
+                                <span style="font-size:0.85rem;">${cat}</span>
+                                <span style="font-weight:600;color:var(--admin-gold);">${count}</span>
+                            </div>
+                        `).join('')}
+                    `}
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('mainContent').innerHTML = html;
+}
+
+// ─── USERS ───────────────────────────────────────────────────
+
+function renderUsers() {
+    const { users } = allData;
+    
+    const html = `
+        <div class="admin-section-card">
+            <div class="table-card-header">
+                <h2 class="table-card-title">
+                    <i class="bi bi-people"></i> All Users (${users.length})
+                </h2>
+            </div>
+            ${users.length === 0 ? `
+                <div class="admin-empty-state">
+                    <i class="bi bi-people"></i>
+                    <p>No users registered yet.</p>
+                </div>
+            ` : `
+                <div class="table-container">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Email</th>
+                                <th>Role</th>
+                                <th>Joined</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${users.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map(user => `
+                                <tr>
+                                    <td><span style="font-weight:600;">${user.name || 'Unnamed User'}</span></td>
+                                    <td>${user.email || '—'}</td>
+                                    <td><span class="status-badge ${user.role === 'admin' ? 'completed' : 'read'}">${user.role || 'user'}</span></td>
+                                    <td>${timeAgo(user.created_at)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `}
+        </div>
+    `;
+    
+    document.getElementById('mainContent').innerHTML = html;
+}
+
+// ─── SUBSCRIBERS ────────────────────────────────────────────
+
+function renderSubscribers() {
+    const { subscribers } = allData;
+    
+    const active = subscribers.filter(s => s.status === 'active' || s.status === 'subscribed' || s.status === 'confirmed');
+    
+    const html = `
+        <div class="dash-stats-grid" style="grid-template-columns:repeat(auto-fill, minmax(150px, 1fr));">
+            <div class="dash-card">
+                <div class="dash-card-body">
+                    <div class="dash-card-info">
+                        <span class="dash-card-label">Total Subscribers</span>
+                        <span class="dash-card-number" style="font-size:1.2rem;">${subscribers.length}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="dash-card">
+                <div class="dash-card-body">
+                    <div class="dash-card-info">
+                        <span class="dash-card-label">Active</span>
+                        <span class="dash-card-number" style="font-size:1.2rem;color:#10B981;">${active.length}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="admin-section-card">
+            <div class="table-card-header">
+                <h2 class="table-card-title">
+                    <i class="bi bi-envelope-heart"></i> Subscribers List
+                </h2>
+            </div>
+            ${subscribers.length === 0 ? `
+                <div class="admin-empty-state">
+                    <i class="bi bi-envelope-heart"></i>
+                    <p>No subscribers yet.</p>
+                </div>
+            ` : `
+                <div class="table-container">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>Email</th>
+                                <th>Status</th>
+                                <th>Subscribed</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${subscribers.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map(sub => `
+                                <tr>
+                                    <td><span style="font-weight:600;">${sub.email}</span></td>
+                                    <td><span class="status-badge ${sub.status === 'active' || sub.status === 'subscribed' || sub.status === 'confirmed' ? 'completed' : 'pending'}">${sub.status || 'pending'}</span></td>
+                                    <td>${timeAgo(sub.created_at)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `}
+        </div>
+    `;
+    
+    document.getElementById('mainContent').innerHTML = html;
+}
+
+// ─── MESSAGES ───────────────────────────────────────────────
+
+function renderMessages() {
+    const { messages } = allData;
+    
+    const unread = messages.filter(m => m.status === 'unread' || m.status === 'new');
+    
+    const html = `
+        <div class="dash-stats-grid" style="grid-template-columns:repeat(auto-fill, minmax(150px, 1fr));">
+            <div class="dash-card">
+                <div class="dash-card-body">
+                    <div class="dash-card-info">
+                        <span class="dash-card-label">Total Messages</span>
+                        <span class="dash-card-number" style="font-size:1.2rem;">${messages.length}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="dash-card">
+                <div class="dash-card-body">
+                    <div class="dash-card-info">
+                        <span class="dash-card-label">Unread</span>
+                        <span class="dash-card-number" style="font-size:1.2rem;color:#EF4444;">${unread.length}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="admin-section-card">
+            <div class="table-card-header">
+                <h2 class="table-card-title">
+                    <i class="bi bi-chat-left-dots"></i> All Messages
+                </h2>
+                ${unread.length > 0 ? `
+                    <button class="admin-btn admin-btn-secondary admin-btn-sm" onclick="markAllRead()">
+                        <i class="bi bi-check2-all"></i> Mark All Read
+                    </button>
+                ` : ''}
+            </div>
+            ${messages.length === 0 ? `
+                <div class="admin-empty-state">
+                    <i class="bi bi-chat-left-dots"></i>
+                    <p>No messages yet.</p>
+                </div>
+            ` : `
+                <div class="table-container">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Email</th>
+                                <th>Message</th>
+                                <th>Status</th>
+                                <th>Date</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${messages.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map(msg => `
+                                <tr>
+                                    <td><span style="font-weight:600;">${msg.name || 'Anonymous'}</span></td>
+                                    <td>${msg.email || '—'}</td>
+                                    <td style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${msg.message || ''}</td>
+                                    <td><span class="${getStatusBadge(msg.status)}">${msg.status || 'unread'}</span></td>
+                                    <td>
+                                        <div style="font-weight:600;">${formatDate(msg.created_at)}</div>
+                                        <div style="font-size:.75rem;color:var(--admin-neutral-500);">${formatTime(msg.created_at)}</div>
+                                    </td>
+                                    <td>
+                                        <button class="admin-btn admin-btn-secondary admin-btn-sm" onclick="viewMessage('${msg.id}')">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                        ${msg.status !== 'read' ? `
+                                            <button class="admin-btn admin-btn-secondary admin-btn-sm" onclick="markMessageRead('${msg.id}')">
+                                                <i class="bi bi-check2"></i>
+                                            </button>
+                                        ` : ''}
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `}
+        </div>
+    `;
+    
+    document.getElementById('mainContent').innerHTML = html;
+}
+
+// ─── SETTINGS ───────────────────────────────────────────────
+
+function renderSettings() {
+    const html = `
+        <div class="admin-section-card">
+            <div class="table-card-header">
+                <h2 class="table-card-title">
+                    <i class="bi bi-gear"></i> System Settings
+                </h2>
+            </div>
+            <div style="padding:24px;max-width:600px;">
+                <div style="margin-bottom:20px;padding:16px;background:var(--admin-neutral-50);border-radius:var(--admin-radius-sm);">
+                    <h3 style="font-size:0.9rem;margin-bottom:8px;">📊 Database Statistics</h3>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:0.85rem;">
+                        <div><strong>Users:</strong> ${allData.users.length}</div>
+                        <div><strong>Resources:</strong> ${allData.resources.length}</div>
+                        <div><strong>Transactions:</strong> ${allData.transactions.length}</div>
+                        <div><strong>Subscribers:</strong> ${allData.subscribers.length}</div>
+                        <div><strong>Messages:</strong> ${allData.messages.length}</div>
+                    </div>
+                </div>
+                
+                <div style="display:flex;flex-direction:column;gap:8px;">
+                    <button class="admin-btn admin-btn-secondary" onclick="refreshData()" style="justify-content:center;padding:12px;">
+                        <i class="bi bi-arrow-clockwise"></i> Refresh All Data
+                    </button>
+                    <button class="admin-btn admin-btn-danger" onclick="logout()" style="justify-content:center;padding:12px;">
+                        <i class="bi bi-box-arrow-right"></i> Logout
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('mainContent').innerHTML = html;
+}
+
+// ─── ACTION FUNCTIONS ──────────────────────────────────────
+
+function viewTransaction(id) {
+    alert('Transaction details for ID: ' + id + '\nThis would open a detailed view.');
+}
+
+function viewMessage(id) {
+    alert('Message details for ID: ' + id + '\nThis would open the full message.');
+}
+
+async function markMessageRead(id) {
+    try {
+        await fetch(SUPABASE_URL + '/rest/v1/contact_messages?id=eq.' + id, {
+            method: 'PATCH',
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ status: 'read' })
+        });
+        await loadAllData();
+    } catch (error) {
+        console.error('Error marking message as read:', error);
+        alert('Failed to mark message as read.');
+    }
+}
+
+async function markAllRead() {
+    if (!confirm('Mark all messages as read?')) return;
+    try {
+        const unreadMessages = allData.messages.filter(m => m.status === 'unread' || m.status === 'new');
+        for (const msg of unreadMessages) {
+            await fetch(SUPABASE_URL + '/rest/v1/contact_messages?id=eq.' + msg.id, {
+                method: 'PATCH',
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ status: 'read' })
+            });
+        }
+        await loadAllData();
+    } catch (error) {
+        console.error('Error marking all as read:', error);
+        alert('Failed to mark all messages as read.');
+    }
+}
+
+async function deleteDocument(id) {
+    if (!confirm('Are you sure you want to delete this resource?')) return;
+    try {
+        await fetch(SUPABASE_URL + '/rest/v1/resources?id=eq.' + id, {
+            method: 'DELETE',
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
+            }
+        });
+        await loadAllData();
+    } catch (error) {
+        console.error('Error deleting document:', error);
+        alert('Failed to delete document.');
+    }
+}
+
+async function refreshData() {
+    document.getElementById('mainContent').innerHTML = `
+        <div style="display:flex;justify-content:center;align-items:center;padding:60px;">
+            <div style="text-align:center;">
+                <i class="bi bi-arrow-clockwise" style="font-size:2rem;color:var(--admin-gold);display:block;margin-bottom:12px;animation:spin 1s linear infinite;"></i>
+                <p style="color:var(--admin-neutral-500);">Refreshing data...</p>
+            </div>
+        </div>
+        <style>
+            @keyframes spin {
+                from { transform: rotate(0deg); }
+                to { transform: rotate(360deg); }
+            }
+        </style>
+    `;
+    await loadAllData();
+}
+
+// ─── SIDEBAR TOGGLE ────────────────────────────────────────
 
 function toggleSidebar() {
     const sidebar = document.getElementById('adminSidebar');
@@ -1238,7 +2377,7 @@ function toggleSidebar() {
     if (overlay) overlay.classList.toggle('open');
 }
 
-// ─── LOGOUT ───────────────────────────────────────────────
+// ─── LOGOUT ────────────────────────────────────────────────
 
 function logout() {
     if (confirm('Are you sure you want to logout?')) {
@@ -1246,6 +2385,22 @@ function logout() {
         localStorage.removeItem('admin_auth_token');
         window.location.href = '/admin/login.html';
     }
+}
+
+// ─── SHOW ERROR ─────────────────────────────────────────────
+
+function showError(message) {
+    document.getElementById('mainContent').innerHTML = `
+        <div class="admin-section-card">
+            <div class="admin-empty-state">
+                <i class="bi bi-exclamation-triangle" style="color:#EF4444;"></i>
+                <p style="color:#EF4444;font-weight:600;">${message}</p>
+                <button class="admin-btn admin-btn-primary" onclick="refreshData()" style="margin-top:12px;">
+                    <i class="bi bi-arrow-clockwise"></i> Retry
+                </button>
+            </div>
+        </div>
+    `;
 }
 
 // ─── INIT ──────────────────────────────────────────────────
@@ -1267,8 +2422,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         if (sessionData.name) {
-            adminName.textContent = sessionData.name;
-            if (adminAvatar) adminAvatar.textContent = getInitials(sessionData.name);
+            document.getElementById('adminName').textContent = sessionData.name;
+            document.getElementById('adminAvatar').textContent = getInitials(sessionData.name);
         }
     } catch (e) {
         console.warn('Invalid session data:', e);
@@ -1277,49 +2432,15 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
     }
 
-    // Load sidebar counts
-    loadSidebarCounts();
-
-    // Update date
-    if (dateDisplay) {
-        dateDisplay.textContent = new Date().toLocaleDateString('en-US', { 
-            weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' 
-        });
-    }
-
-    // ─── DROPZONE HANDLING ──────────────────────────────────
-    const dropzone = document.getElementById('dropzoneBox');
-    const fileInput = document.getElementById('zipFileInput');
-    
-    dropzone.addEventListener('dragover', function(e) {
-        e.preventDefault();
-        this.classList.add('dragover');
-    });
-    
-    dropzone.addEventListener('dragleave', function(e) {
-        e.preventDefault();
-        this.classList.remove('dragover');
-    });
-    
-    dropzone.addEventListener('drop', function(e) {
-        e.preventDefault();
-        this.classList.remove('dragover');
-        const files = e.dataTransfer.files;
-        if (files.length > 0 && files[0].name.endsWith('.zip')) {
-            fileInput.files = files;
-            handleFileSelected(files[0]);
-        } else {
-            showAlert('Please drop a valid .zip file.', 'danger');
-        }
-    });
-    
-    fileInput.addEventListener('change', function(e) {
-        if (this.files.length > 0) {
-            handleFileSelected(this.files[0]);
-        }
+    // Set date
+    document.getElementById('dateDisplay').textContent = new Date().toLocaleDateString('en-US', { 
+        weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' 
     });
 
-    // ─── CLOSE SIDEBAR ON ESCAPE ──────────────────────────
+    // Load data
+    loadAllData();
+
+    // Keyboard shortcuts
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {
             const sidebar = document.getElementById('adminSidebar');
@@ -1332,42 +2453,20 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
-// ─── HANDLE FILE SELECTED ────────────────────────────────
-
-function handleFileSelected(file) {
-    if (!file.name.endsWith('.zip')) {
-        showAlert('Please select a valid .zip file.', 'danger');
-        return;
-    }
-    
-    if (file.size > 100 * 1024 * 1024) {
-        showAlert('File is too large. Maximum size is 100MB.', 'danger');
-        return;
-    }
-    
-    // Check if there are existing staged files
-    const existing = sessionStorage.getItem('staged_bulk_files');
-    if (existing) {
-        const parsed = JSON.parse(existing);
-        if (parsed.length > 0) {
-            if (!confirm(`You have ${parsed.length} files already staged. Uploading a new ZIP will replace them. Continue?`)) {
-                return;
-            }
-        }
-    }
-    
-    handleZipUpload(file);
-}
-
-// ─── EXPOSE GLOBALLY ──────────────────────────────────────
-
-window.toggleAll = toggleAll;
-window.cancelBulkUpload = cancelBulkUpload;
-window.publishStaged = publishStaged;
-window.resetUpload = resetUpload;
+// Expose functions globally
+window.showSection = showSection;
 window.toggleSidebar = toggleSidebar;
 window.logout = logout;
+window.refreshData = refreshData;
+window.viewTransaction = viewTransaction;
+window.viewMessage = viewMessage;
+window.markMessageRead = markMessageRead;
+window.markAllRead = markAllRead;
+window.deleteDocument = deleteDocument;
+window.togglePrice = togglePrice;
+window.toggleBulkPrice = toggleBulkPrice;
+window.handleUpload = handleUpload;
+window.handleBulkUpload = handleBulkUpload;
 </script>
-
 </body>
 </html>
