@@ -1745,24 +1745,28 @@ async function initiatePayment() {
 
     try {
         // ─── CREATE ORDER ──────────────────────────────────────────
-var orderData = {
-    order_ref: orderRef,
-    email: name.toLowerCase().replace(/\s/g, '.') + '@customer.com',
-    phone: phoneClean,
-    name: name,
-    amount: Number(currentProduct.price) || 0,
-    total_amount: Number(currentProduct.price) || 0,
-    status: 'pending',
-    payment_status: 'pending',
-    cart_items: [{
-        id: currentProduct.id,
-        title: currentProduct.title,
-        price: Number(currentProduct.price) || 0
-    }],  // Send as JSON array directly
-    resource_ids: [currentProduct.id],  // Now works with JSONB
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-   };
+        // Generate a session ID (you can use a random string or a hash)
+        var sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+        
+        var orderData = {
+            order_ref: orderRef,
+            session_id: sessionId,  // Add this required field
+            email: name.toLowerCase().replace(/\s/g, '.') + '@customer.com',
+            phone: phoneClean,
+            name: name,
+            amount: Number(currentProduct.price) || 0,
+            total_amount: Number(currentProduct.price) || 0,
+            status: 'pending',
+            payment_status: 'pending',
+            cart_items: [{
+                id: currentProduct.id,
+                title: currentProduct.title,
+                price: Number(currentProduct.price) || 0
+            }],
+            resource_ids: [currentProduct.id],
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+        };
 
         console.log('[KenyaVault] Creating order:', orderData);
 
@@ -1780,7 +1784,6 @@ var orderData = {
         if (!orderResponse.ok) {
             var errorText = await orderResponse.text();
             console.error('Order creation error:', errorText);
-            // Try to parse the error
             try {
                 var errorJson = JSON.parse(errorText);
                 throw new Error(errorJson.message || 'Failed to create order');
@@ -1852,7 +1855,6 @@ var orderData = {
         showToast('Payment Error', error.message || 'Network error. Please try again.', 'error');
     }
 }
-
     function pollPaymentStatus(transactionId, orderRef) {
     var pollCount = 0;
     var maxPolls = 30;
