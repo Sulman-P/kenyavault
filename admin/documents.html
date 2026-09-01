@@ -552,22 +552,6 @@
         .footer .footer-bottom span {
             color: var(--admin-gold-light);
         }
-
-        .debug-info {
-            background: #fffbeb;
-            border: 1px solid #fcd34d;
-            border-radius: var(--admin-radius-sm);
-            padding: 12px 16px;
-            margin: 12px 20px;
-            font-size: 0.82rem;
-            color: #92400e;
-        }
-        .debug-info pre {
-            white-space: pre-wrap;
-            word-break: break-all;
-            font-size: 0.75rem;
-            margin-top: 4px;
-        }
     </style>
 </head>
 <body>
@@ -660,7 +644,7 @@
                 <button class="menu-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">
                     <i class="bi bi-list"></i>
                 </button>
-                <h1>Documents</h1>
+                <h1>Resources</h1>
                 <span class="page-badge">Manage</span>
             </div>
             <div class="admin-topbar-right">
@@ -677,13 +661,13 @@
             <div class="table-header">
                 <h2 class="table-title">
                     <i class="bi bi-file-earmark-text"></i>
-                    All Documents
+                    All Resources
                     <span class="admin-badge" id="totalDocs">0</span>
                 </h2>
                 <div class="table-actions">
                     <div class="search-wrapper">
                         <i class="bi bi-search"></i>
-                        <input type="text" id="searchInput" class="search-input" placeholder="Search documents..." oninput="filterDocuments()" />
+                        <input type="text" id="searchInput" class="search-input" placeholder="Search resources..." oninput="filterDocuments()" />
                     </div>
                     <a href="/admin/upload.html" class="admin-btn admin-btn-primary">
                         <i class="bi bi-plus-lg"></i> Upload
@@ -694,14 +678,8 @@
             <div id="documentsContent">
                 <div class="loading-spinner">
                     <span class="spin-icon">⏳</span>
-                    Loading documents...
+                    Loading resources...
                 </div>
-            </div>
-
-            <!-- Debug Info -->
-            <div id="debugInfo" class="debug-info" style="display:none;">
-                <strong>🔍 Debug Info:</strong>
-                <pre id="debugOutput"></pre>
             </div>
         </div>
 
@@ -724,21 +702,15 @@ const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
 
 // ── STATE ──────────────────────────────────────────────────
-let allDocuments = [];
-let filteredDocuments = [];
+let allResources = [];
+let filteredResources = [];
 
 // ── DOM REFS ──────────────────────────────────────────────
 const docCount = document.getElementById('docCount');
 const totalDocs = document.getElementById('totalDocs');
-const pendingCount = document.getElementById('pendingCount');
-const userCount = document.getElementById('userCount');
-const subscriberCount = document.getElementById('subscriberCount');
-const messageCount = document.getElementById('messageCount');
 const adminName = document.getElementById('adminName');
 const adminAvatar = document.getElementById('adminAvatar');
 const dateDisplay = document.getElementById('dateDisplay');
-const debugInfo = document.getElementById('debugInfo');
-const debugOutput = document.getElementById('debugOutput');
 
 // ── HELPERS ──────────────────────────────────────────────
 function formatCurrency(amount) {
@@ -772,12 +744,6 @@ function getFileIcon(filename) {
 function getInitials(name) {
     if (!name) return 'A';
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-}
-
-function showDebug(message, data) {
-    debugInfo.style.display = 'block';
-    debugOutput.textContent = message + '\n\n' + JSON.stringify(data, null, 2);
-    console.log('[Debug]', message, data);
 }
 
 // ─── FETCH FUNCTIONS ──────────────────────────────────────
@@ -820,7 +786,7 @@ async function fetchSupabase(table, options = {}) {
     }
 }
 
-// ─── LOAD DOCUMENTS ────────────────────────────────────────
+// ─── LOAD RESOURCES ────────────────────────────────────────
 
 async function loadDocuments() {
     const container = document.getElementById('documentsContent');
@@ -829,35 +795,33 @@ async function loadDocuments() {
         container.innerHTML = `
             <div class="loading-spinner">
                 <span class="spin-icon">⏳</span>
-                Loading documents...
+                Loading resources...
             </div>
         `;
 
-        // Fetch documents from Supabase
-        const docs = await fetchSupabase('documents', { 
-            select: 'id,title,hits,price,is_free,filename,category_title,level_title,grade_title,created_at,updated_at,download_count,description' 
+        // ─── FETCH FROM RESOURCES TABLE ──────────────────────────
+        const resources = await fetchSupabase('resources', { 
+            select: 'id,title,description,filename,file_url,price,is_free,resource_type,category_title,level_title,grade_title,term,download_count,hits,cover_image_url,created_at,updated_at' 
         });
 
-        console.log('[Documents] Fetched:', docs);
-        showDebug('Fetched ' + (docs ? docs.length : 0) + ' documents from Supabase', docs);
+        console.log('[Resources] Fetched:', resources ? resources.length : 0, 'resources');
 
-        allDocuments = docs || [];
-        filteredDocuments = [...allDocuments];
+        allResources = resources || [];
+        filteredResources = [...allResources];
 
-        // Update sidebar badges
-        if (docCount) docCount.textContent = allDocuments.length;
-        if (totalDocs) totalDocs.textContent = allDocuments.length;
+        // Update sidebar badge
+        if (docCount) docCount.textContent = allResources.length;
+        if (totalDocs) totalDocs.textContent = allResources.length;
 
         renderDocuments();
 
     } catch (error) {
-        console.error('[Documents] Error loading:', error);
-        showDebug('Error loading documents:', error.message);
+        console.error('[Resources] Error loading:', error);
         container.innerHTML = `
             <div class="admin-empty-state">
                 <i class="bi bi-exclamation-triangle" style="color:#ef4444;"></i>
-                <p>Error loading documents: ${error.message}</p>
-                <p style="font-size:0.8rem; margin-top:8px; color:#64748b;">Check the debug info below for details.</p>
+                <p>Error loading resources: ${error.message}</p>
+                <p style="font-size:0.8rem; margin-top:8px; color:#64748b;">Please check your Supabase connection.</p>
             </div>
         `;
     }
@@ -869,27 +833,28 @@ function renderDocuments() {
     const container = document.getElementById('documentsContent');
     const searchTerm = document.getElementById('searchInput')?.value?.toLowerCase() || '';
 
-    // Filter documents based on search
+    // Filter resources based on search
     if (searchTerm) {
-        filteredDocuments = allDocuments.filter(doc => 
+        filteredResources = allResources.filter(doc => 
             (doc.title || '').toLowerCase().includes(searchTerm) ||
             (doc.category_title || '').toLowerCase().includes(searchTerm) ||
             (doc.level_title || '').toLowerCase().includes(searchTerm) ||
-            (doc.grade_title || '').toLowerCase().includes(searchTerm)
+            (doc.grade_title || '').toLowerCase().includes(searchTerm) ||
+            (doc.resource_type || '').toLowerCase().includes(searchTerm)
         );
     } else {
-        filteredDocuments = [...allDocuments];
+        filteredResources = [...allResources];
     }
 
-    if (filteredDocuments.length === 0) {
+    if (filteredResources.length === 0) {
         container.innerHTML = `
             <div class="admin-empty-state">
                 <i class="bi bi-file-earmark-x"></i>
-                <p>${allDocuments.length === 0 ? 'No documents uploaded yet.' : 'No documents match your search.'}</p>
-                ${allDocuments.length === 0 ? `
+                <p>${allResources.length === 0 ? 'No resources uploaded yet.' : 'No resources match your search.'}</p>
+                ${allResources.length === 0 ? `
                     <div style="margin-top:16px;">
                         <a href="/admin/upload.html" class="admin-btn admin-btn-primary">
-                            <i class="bi bi-plus-lg"></i> Upload Your First Document
+                            <i class="bi bi-plus-lg"></i> Upload Your First Resource
                         </a>
                     </div>
                 ` : ''}
@@ -903,7 +868,7 @@ function renderDocuments() {
             <table class="admin-table">
                 <thead>
                     <tr>
-                        <th>Document</th>
+                        <th>Resource</th>
                         <th>Category</th>
                         <th>Level</th>
                         <th>Grade</th>
@@ -917,20 +882,20 @@ function renderDocuments() {
                 <tbody>
     `;
 
-    filteredDocuments.forEach(doc => {
+    filteredResources.forEach(doc => {
         const isFree = doc.is_free || doc.price === 0;
         const priceDisplay = isFree ? 'FREE' : formatCurrency(doc.price);
         const priceClass = isFree ? 'free' : 'paid';
 
         html += `
             <tr>
-                <td data-label="Document">
+                <td data-label="Resource">
                     <div class="doc-title-cell" title="${doc.title || 'Untitled'}">
                         ${getFileIcon(doc.filename)}
                         <span class="doc-title-text">${doc.title || 'Untitled'}</span>
                     </div>
                 </td>
-                <td data-label="Category">${doc.category_title || '—'}</td>
+                <td data-label="Category">${doc.category_title || doc.resource_type || '—'}</td>
                 <td data-label="Level">${doc.level_title || '—'}</td>
                 <td data-label="Grade">${doc.grade_title || '—'}</td>
                 <td data-label="Price">
@@ -944,7 +909,7 @@ function renderDocuments() {
                         <a href="/admin/edit-document.html?id=${doc.id}" class="admin-btn admin-btn-secondary admin-btn-sm" title="Edit">
                             <i class="bi bi-pencil"></i>
                         </a>
-                        <button onclick="deleteDocument(${doc.id})" class="admin-btn admin-btn-secondary admin-btn-sm" title="Delete" style="color:#ef4444;">
+                        <button onclick="deleteResource(${doc.id})" class="admin-btn admin-btn-secondary admin-btn-sm" title="Delete" style="color:#ef4444;">
                             <i class="bi bi-trash3"></i>
                         </button>
                     </div>
@@ -958,28 +923,28 @@ function renderDocuments() {
             </table>
         </div>
         <div style="padding:12px 20px; border-top:1px solid var(--admin-neutral-200); font-size:0.78rem; color:var(--admin-neutral-500);">
-            Showing ${filteredDocuments.length} of ${allDocuments.length} documents
+            Showing ${filteredResources.length} of ${allResources.length} resources
         </div>
     `;
 
     container.innerHTML = html;
 }
 
-// ─── FILTER DOCUMENTS ──────────────────────────────────────
+// ─── FILTER RESOURCES ──────────────────────────────────────
 
 function filterDocuments() {
     renderDocuments();
 }
 
-// ─── DELETE DOCUMENT ──────────────────────────────────────
+// ─── DELETE RESOURCE ──────────────────────────────────────
 
-async function deleteDocument(id) {
-    if (!confirm('Are you sure you want to delete this document? This action cannot be undone.')) {
+async function deleteResource(id) {
+    if (!confirm('Are you sure you want to delete this resource? This action cannot be undone.')) {
         return;
     }
 
     try {
-        const response = await fetch(SUPABASE_URL + '/rest/v1/documents?id=eq.' + id, {
+        const response = await fetch(SUPABASE_URL + '/rest/v1/resources?id=eq.' + id, {
             method: 'DELETE',
             headers: {
                 'apikey': SUPABASE_ANON_KEY,
@@ -989,23 +954,23 @@ async function deleteDocument(id) {
         });
 
         if (!response.ok) {
-            throw new Error('Failed to delete document');
+            throw new Error('Failed to delete resource');
         }
 
         // Remove from local array
-        allDocuments = allDocuments.filter(d => d.id !== id);
-        filteredDocuments = filteredDocuments.filter(d => d.id !== id);
+        allResources = allResources.filter(d => d.id !== id);
+        filteredResources = filteredResources.filter(d => d.id !== id);
         
         // Update counts
-        if (docCount) docCount.textContent = allDocuments.length;
-        if (totalDocs) totalDocs.textContent = allDocuments.length;
+        if (docCount) docCount.textContent = allResources.length;
+        if (totalDocs) totalDocs.textContent = allResources.length;
 
         renderDocuments();
-        alert('Document deleted successfully!');
+        alert('Resource deleted successfully!');
 
     } catch (error) {
-        console.error('[Documents] Delete error:', error);
-        alert('Failed to delete document. Please try again.');
+        console.error('[Resources] Delete error:', error);
+        alert('Failed to delete resource. Please try again.');
     }
 }
 
@@ -1057,7 +1022,7 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
     }
 
-    // Load documents
+    // Load resources
     loadDocuments();
 
     // Update date
@@ -1087,7 +1052,7 @@ document.addEventListener('DOMContentLoaded', function() {
 window.toggleSidebar = toggleSidebar;
 window.logout = logout;
 window.filterDocuments = filterDocuments;
-window.deleteDocument = deleteDocument;
+window.deleteResource = deleteResource;
 window.loadDocuments = loadDocuments;
 </script>
 
