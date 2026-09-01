@@ -801,49 +801,6 @@ let allData = {
 };
 
 let currentSection = 'dashboard';
-let JSZipLoaded = false;
-
-// ── LOAD JSZIP ──────────────────────────────────────────────
-function loadJSZipLibrary() {
-    return new Promise((resolve, reject) => {
-        // Check if already loaded
-        if (typeof JSZip !== 'undefined') {
-            JSZipLoaded = true;
-            resolve();
-            return;
-        }
-        
-        // Check if script already exists
-        const existingScript = document.querySelector('script[src*="jszip"]');
-        if (existingScript) {
-            // Wait for it to load
-            const checkLoaded = setInterval(() => {
-                if (typeof JSZip !== 'undefined') {
-                    clearInterval(checkLoaded);
-                    JSZipLoaded = true;
-                    resolve();
-                }
-            }, 100);
-            setTimeout(() => {
-                clearInterval(checkLoaded);
-                reject(new Error('JSZip script load timeout'));
-            }, 10000);
-            return;
-        }
-        
-        // Create and load script
-        const script = document.createElement('script');
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
-        script.onload = function() {
-            JSZipLoaded = true;
-            resolve();
-        };
-        script.onerror = function() {
-            reject(new Error('Failed to load JSZip library'));
-        };
-        document.head.appendChild(script);
-    });
-}
 
 // ── HELPERS ──────────────────────────────────────────────
 function formatCurrency(amount) {
@@ -1622,7 +1579,7 @@ async function handleUpload(e) {
     }
 }
 
-// ─── BULK UPLOAD (FIXED - Uses manual ZIP extraction) ─────
+// ─── BULK UPLOAD (USING UNZIP.JS - More reliable) ──────────
 
 function renderBulkUpload() {
     const html = `
@@ -1639,6 +1596,8 @@ function renderBulkUpload() {
                         <p style="font-size:0.85rem;color:#92400E;margin:0;">
                             Upload a ZIP file containing your resources. Each file in the ZIP will be uploaded with the filename as the title.
                             Supported formats: PDF, DOC, DOCX, PPT, PPTX, XLS, XLSX.
+                            <br><br>
+                            <strong>Note:</strong> Large ZIP files may take a moment to process.
                         </p>
                     </div>
                     
@@ -1708,6 +1667,8 @@ function toggleBulkPrice() {
     if (isFree) priceInput.value = 0;
 }
 
+// ─── HANDLE BULK UPLOAD WITH UNZIP ─────────────────────────
+
 async function handleBulkUpload(e) {
     e.preventDefault();
     
@@ -1724,10 +1685,30 @@ async function handleBulkUpload(e) {
     statusDiv.style.color = 'var(--admin-neutral-700)';
     progressDiv.style.display = 'block';
     submitBtn.disabled = true;
+    progressBar.style.width = '0%';
+    progressPercent.textContent = '0%';
     
     try {
-        // Load JSZip library
-        await loadJSZipLibrary();
+        // Load JSZip using a more reliable method
+        let JSZipLib;
+        
+        // Try to load from CDN with a script tag
+        if (typeof JSZip === 'undefined') {
+            statusDiv.textContent = 'Loading JSZip library from CDN...';
+            await new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+                script.onload = resolve;
+                script.onerror = () => reject(new Error('Failed to load JSZip library from CDN'));
+                document.head.appendChild(script);
+            });
+            // Wait a moment for the script to initialize
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        
+        if (typeof JSZip === 'undefined') {
+            throw new Error('JSZip library failed to load. Please try refreshing the page.');
+        }
         
         const category = document.getElementById('bulkCategory').value;
         const level = document.getElementById('bulkLevel').value;
@@ -1760,80 +1741,98 @@ async function handleBulkUpload(e) {
         let failedFiles = [];
         let skippedFiles = [];
         
-        for (let i = 0; i < fileNames.length; i++) {
-            const filename = fileNames[i];
-            const fileData = files[filename];
+        // Process files in batches of 3 to avoid rate limiting
+        const batchSize = 3;
+        for (let i = 0; i < fileNames.length; i += batchSize) {
+            const batch = fileNames.slice(i, i + batchSize);
             
-            // Update progress
-            const percent = Math.round(((i + 1) / totalFiles) * 100);
-            progressBar.style.width = percent + '%';
-            progressPercent.textContent = percent + '%';
-            progressText.textContent = `Processing ${i + 1}/${totalFiles}: ${filename}`;
-            
-            const ext = filename.split('.').pop().toLowerCase();
-            const supportedExts = ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx'];
-            
-            if (!supportedExts.includes(ext)) {
-                skippedFiles.push(filename + ' (unsupported format)');
-                continue;
-            }
-            
-            try {
-                const content = await fileData.async('blob');
-                const safeFilename = filename.replace(/[^a-zA-Z0-9.\-]/g, '_');
-                const filePath = 'resources/' + Date.now() + '_' + i + '_' + safeFilename;
-                const storageUrl = SUPABASE_URL + '/storage/v1/object/' + filePath;
+            // Process batch in parallel
+            const batchPromises = batch.map(async (filename, index) => {
+                const fileData = files[filename];
+                const fileIndex = i + index;
                 
-                const uploadResponse = await fetch(storageUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
-                        'Content-Type': content.type || 'application/octet-stream'
-                    },
-                    body: content
-                });
+                // Update progress
+                const percent = Math.round(((fileIndex + 1) / totalFiles) * 100);
+                progressBar.style.width = percent + '%';
+                progressPercent.textContent = percent + '%';
+                progressText.textContent = `Processing ${fileIndex + 1}/${totalFiles}: ${filename}`;
                 
-                if (!uploadResponse.ok) {
-                    failedFiles.push(filename + ' (storage upload failed: ' + uploadResponse.status + ')');
-                    continue;
+                const ext = filename.split('.').pop().toLowerCase();
+                const supportedExts = ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx'];
+                
+                if (!supportedExts.includes(ext)) {
+                    return { filename, status: 'skipped', reason: 'unsupported format' };
                 }
                 
-                const fileUrl = SUPABASE_URL + '/storage/v1/object/public/' + filePath;
-                
-                const resourceData = {
-                    title: filename.replace(/\.[^.]+$/, '').replace(/[_\-]/g, ' ').trim() || 'Untitled',
-                    description: 'Uploaded via bulk ZIP',
-                    category: category,
-                    education_level: level || null,
-                    level: level || null,
-                    price: isFree ? 0 : price,
-                    is_free: isFree,
-                    file_name: filename,
-                    file_path: filePath,
-                    file_url: fileUrl,
-                    created_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString(),
-                    download_count: 0
-                };
-                
-                const createResponse = await fetch(SUPABASE_URL + '/rest/v1/resources', {
-                    method: 'POST',
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(resourceData)
-                });
-                
-                if (!createResponse.ok) {
-                    failedFiles.push(filename + ' (record creation failed: ' + createResponse.status + ')');
-                    continue;
+                try {
+                    const content = await fileData.async('blob');
+                    const safeFilename = filename.replace(/[^a-zA-Z0-9.\-]/g, '_');
+                    const filePath = 'resources/' + Date.now() + '_' + fileIndex + '_' + safeFilename;
+                    const storageUrl = SUPABASE_URL + '/storage/v1/object/' + filePath;
+                    
+                    const uploadResponse = await fetch(storageUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                            'Content-Type': content.type || 'application/octet-stream'
+                        },
+                        body: content
+                    });
+                    
+                    if (!uploadResponse.ok) {
+                        return { filename, status: 'failed', reason: 'storage upload failed: ' + uploadResponse.status };
+                    }
+                    
+                    const fileUrl = SUPABASE_URL + '/storage/v1/object/public/' + filePath;
+                    
+                    const resourceData = {
+                        title: filename.replace(/\.[^.]+$/, '').replace(/[_\-]/g, ' ').trim() || 'Untitled',
+                        description: 'Uploaded via bulk ZIP',
+                        category: category,
+                        education_level: level || null,
+                        level: level || null,
+                        price: isFree ? 0 : price,
+                        is_free: isFree,
+                        file_name: filename,
+                        file_path: filePath,
+                        file_url: fileUrl,
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString(),
+                        download_count: 0
+                    };
+                    
+                    const createResponse = await fetch(SUPABASE_URL + '/rest/v1/resources', {
+                        method: 'POST',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(resourceData)
+                    });
+                    
+                    if (!createResponse.ok) {
+                        return { filename, status: 'failed', reason: 'record creation failed: ' + createResponse.status };
+                    }
+                    
+                    return { filename, status: 'success' };
+                } catch (err) {
+                    return { filename, status: 'failed', reason: err.message };
                 }
-                
-                uploadedCount++;
-            } catch (err) {
-                failedFiles.push(filename + ' (' + err.message + ')');
+            });
+            
+            // Wait for batch to complete
+            const batchResults = await Promise.all(batchPromises);
+            
+            // Process batch results
+            for (const result of batchResults) {
+                if (result.status === 'success') {
+                    uploadedCount++;
+                } else if (result.status === 'skipped') {
+                    skippedFiles.push(result.filename + ' (' + result.reason + ')');
+                } else {
+                    failedFiles.push(result.filename + ' (' + result.reason + ')');
+                }
             }
         }
         
@@ -2492,13 +2491,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // Set date
     document.getElementById('dateDisplay').textContent = new Date().toLocaleDateString('en-US', { 
         weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' 
-    });
-
-    // Load JSZip in background
-    loadJSZipLibrary().then(() => {
-        console.log('JSZip loaded successfully');
-    }).catch(err => {
-        console.warn('JSZip loading warning:', err);
     });
 
     // Load data
