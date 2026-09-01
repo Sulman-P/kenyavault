@@ -5,11 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes" />
     <title>KenyaVault — Download Schemes of Work & CBC Learning Resources in Kenya</title>
     <meta name="description" content="Kenya's leading platform for downloading CBC schemes of work, lesson plans, exams, notes, and revision materials for Junior Secondary, Senior Secondary, and primary schools." />
-    <meta name="keywords" content="schemes of work kenya, CBC learning materials, lesson plans kenya, junior secondary resources, senior secondary revision materials, KCSE exams pdf, Kenyan education" />
-    <meta property="og:title" content="KenyaVault — Educational Resources Marketplace" />
-    <meta property="og:description" content="Access verified notes, schemes, and past papers for all levels. Download instantly with M-PESA." />
-    <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://kenyavault.co.ke" />
     <link rel="canonical" href="https://kenyavault.co.ke" />
     
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -1334,7 +1329,7 @@ SCRIPT
 ============================================================ -->
 <script>
 // ============================================================
-// KENYAVAULT — COMPLETE MARKETPLACE ENGINE
+// KENYAVAULT — COMPLETE MARKETPLACE ENGINE (FIXED)
 // ============================================================
 
 (function() {
@@ -1433,13 +1428,19 @@ SCRIPT
 
     // ─── PRICING LOGIC ──────────────────────────────────────────
     function getResourcePricing(resource) {
-        if (resource.price === 0 || resource.is_free === true || resource.resource_type === 'free') {
+        // Check multiple possible price fields
+        var price = resource.price;
+        if (price === undefined || price === null) {
+            price = resource.amount || 0;
+        }
+        
+        if (resource.is_free === true || price === 0 || price === '0') {
             return { isFree: true, priceDisplay: 'FREE', status: 'free' };
         }
-        if (resource.price > 0) {
-            return { isFree: false, priceDisplay: 'KES ' + resource.price, status: 'paid' };
+        if (price > 0) {
+            return { isFree: false, priceDisplay: 'KES ' + Number(price).toLocaleString(), status: 'paid' };
         }
-        return { isFree: false, priceDisplay: 'Price unavailable', status: 'unavailable' };
+        return { isFree: false, priceDisplay: 'FREE', status: 'free' };
     }
 
     function isResourceFree(resource) {
@@ -1482,6 +1483,8 @@ SCRIPT
 
         var url = SUPABASE_URL + '/rest/v1/' + table + '?select=' + select + order + limit + filter;
         
+        console.log('[KenyaVault] Fetching from:', url);
+        
         var response = await fetch(url, {
             headers: {
                 'apikey': SUPABASE_ANON_KEY,
@@ -1491,7 +1494,9 @@ SCRIPT
         });
         
         if (!response.ok) {
-            throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+            var errorText = await response.text();
+            console.error('[KenyaVault] Fetch error:', response.status, errorText);
+            throw new Error('HTTP ' + response.status + ': ' + errorText);
         }
         return response.json();
     }
@@ -1503,9 +1508,24 @@ SCRIPT
                 select: '*',
                 order: 'created_at.desc'
             });
+            
             console.log('[KenyaVault] Loaded ' + data.length + ' resources from Supabase');
 
-            data.forEach(function(r) {
+            // Log the first resource to see its structure
+            if (data.length > 0) {
+                console.log('[KenyaVault] Sample resource structure:', data[0]);
+                console.log('[KenyaVault] Available columns:', Object.keys(data[0]));
+            } else {
+                console.warn('[KenyaVault] No resources found in the database');
+            }
+
+            // Normalize each resource
+            data.forEach(function(r, index) {
+                // Ensure we have an ID
+                if (!r.id) {
+                    console.warn('[KenyaVault] Resource at index ' + index + ' has no id');
+                }
+                
                 // Normalize level
                 if (r.level) {
                     r.level_normalized = r.level.toLowerCase().trim().replace(/\s+/g, '-');
@@ -1518,18 +1538,28 @@ SCRIPT
                 } else {
                     r.level_display = 'General';
                 }
+                
                 // Normalize category
                 if (r.category) {
                     r.category_normalized = r.category.toLowerCase().trim().replace(/\s+/g, '-');
+                } else {
+                    r.category = 'General';
+                    r.category_normalized = 'general';
                 }
+                
+                // Ensure download_count exists
                 if (r.download_count === undefined || r.download_count === null) {
                     r.download_count = 0;
                 }
                 if (r.downloads === undefined || r.downloads === null) {
                     r.downloads = 0;
                 }
-                // Use either downloads or download_count
                 r.total_downloads = r.download_count || r.downloads || 0;
+                
+                // Ensure file_url exists
+                if (!r.file_url) {
+                    console.warn('[KenyaVault] Resource "' + r.title + '" has no file_url');
+                }
             });
 
             return data || [];
@@ -1611,7 +1641,7 @@ SCRIPT
 
         var items = limit ? resources.slice(0, limit) : resources;
 
-        if (items.length === 0) {
+        if (!items || items.length === 0) {
             grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:30px;color:#667085;">No resources available yet.</div>';
             return;
         }
@@ -1625,6 +1655,12 @@ SCRIPT
 
     // ─── BUILD CARD HTML ──────────────────────────────────────
     function buildCardHTML(r) {
+        // Skip if no title or no file_url
+        if (!r.title) {
+            console.warn('[KenyaVault] Skipping resource with no title:', r);
+            return '';
+        }
+        
         var pricing = getResourcePricing(r);
         var isFree = pricing.isFree;
         var priceDisplay = pricing.priceDisplay;
@@ -1710,266 +1746,257 @@ SCRIPT
         document.getElementById('paymentModal').classList.remove('open');
     }
 
-  // ─── INITIATE PAYMENT ──────────────────────────────────
-async function initiatePayment() {
-    if (!currentProduct) {
-        showToast('Error', 'No product selected.', 'error');
-        return;
-    }
-
-    var name = document.getElementById('customerName').value.trim();
-    var phone = document.getElementById('phoneInput').value.trim();
-
-    if (!name || name.length < 2) {
-        showToast('Error', 'Please enter your full name.', 'error');
-        return;
-    }
-
-    var phoneClean = phone.replace(/\s/g, '').replace(/^0/, '254');
-    if (phoneClean.length < 10 || !phoneClean.startsWith('254')) {
-        showToast('Error', 'Please enter a valid Safaricom phone number (e.g., 0712345678)', 'error');
-        return;
-    }
-
-    var payBtn = document.getElementById('payBtn');
-    var statusEl = document.getElementById('stkStatus');
-
-    payBtn.disabled = true;
-    document.getElementById('payBtnText').textContent = 'Processing...';
-    document.getElementById('paySpinner').style.display = 'inline-block';
-
-    statusEl.className = 'stk-status visible pending';
-    statusEl.innerHTML = '<span class="spinner"></span> Creating order...';
-
-    var orderRef = 'KV-' + Date.now().toString().slice(-8) + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
-
-    try {
-        // ─── GENERATE SESSION ID ──────────────────────────────────
-        var sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substring(2, 10);
-
-        // ─── CREATE ORDER ──────────────────────────────────────────
-        var orderData = {
-            order_ref: orderRef,
-            session_id: sessionId,  // REQUIRED - NOT NULL
-            customer_name: name,
-            customer_phone: phoneClean,
-            customer_email: name.toLowerCase().replace(/\s/g, '.') + '@customer.com',
-            name: name,
-            email: name.toLowerCase().replace(/\s/g, '.') + '@customer.com',
-            phone: phoneClean,
-            amount: Number(currentProduct.price) || 0,
-            total_amount: Number(currentProduct.price) || 0,
-            item_title: currentProduct.title,
-            item_price: Number(currentProduct.price) || 0,
-            status: 'pending',
-            payment_status: 'pending',
-            payment_method: 'M-PESA',
-            cart_items: [{
-                id: currentProduct.id,
-                title: currentProduct.title,
-                price: Number(currentProduct.price) || 0
-            }],
-            resource_ids: [currentProduct.id],
-            resource_id: currentProduct.id,
-            item_count: 1,
-            cart_total: Number(currentProduct.price) || 0,
-            currency: 'KES',
-            ip_address: '0.0.0.0',
-            user_agent: navigator.userAgent || 'Unknown',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-        };
-
-        console.log('[KenyaVault] Creating order:', orderData);
-
-        var orderResponse = await fetch(SUPABASE_URL + '/rest/v1/orders', {
-            method: 'POST',
-            headers: {
-                'apikey': SUPABASE_ANON_KEY,
-                'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
-                'Content-Type': 'application/json',
-                'Prefer': 'return=representation'
-            },
-            body: JSON.stringify(orderData)
-        });
-
-        if (!orderResponse.ok) {
-            var errorText = await orderResponse.text();
-            console.error('Order creation error:', errorText);
-            try {
-                var errorJson = JSON.parse(errorText);
-                throw new Error(errorJson.message || 'Failed to create order');
-            } catch (e) {
-                throw new Error('Failed to create order: ' + orderResponse.status);
-            }
+    // ─── INITIATE PAYMENT ──────────────────────────────────
+    async function initiatePayment() {
+        if (!currentProduct) {
+            showToast('Error', 'No product selected.', 'error');
+            return;
         }
 
-        var orderResult = await orderResponse.json();
-        var orderId = orderResult[0]?.id || orderResult.id;
+        var name = document.getElementById('customerName').value.trim();
+        var phone = document.getElementById('phoneInput').value.trim();
 
-        if (!orderId) {
-            throw new Error('Order creation failed - no ID returned');
+        if (!name || name.length < 2) {
+            showToast('Error', 'Please enter your full name.', 'error');
+            return;
         }
 
-        console.log('[KenyaVault] Order created:', orderId, orderRef);
-        statusEl.innerHTML = '<span class="spinner"></span> Sending STK Push to ' + phoneClean + '...';
-
-        // ─── SEND STK PUSH ──────────────────────────────────────────
-        var payload = {
-            order_id: orderId,
-            order_ref: orderRef,
-            phone: phoneClean,
-            amount: Number(currentProduct.price) || 0,
-            customer_name: name,
-            customer_email: name.toLowerCase().replace(/\s/g, '.') + '@customer.com',
-            resource_ids: [currentProduct.id]
-        };
-
-        console.log('[KenyaVault] Sending STK push:', payload);
-
-        var response = await fetch(API_BASE_URL + '/mpesa/stk-push', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(payload)
-        });
-
-        var result = await response.json();
-
-        if (!response.ok) {
-            throw new Error(result.error || result.message || 'Payment initiation failed');
+        var phoneClean = phone.replace(/\s/g, '').replace(/^0/, '254');
+        if (phoneClean.length < 10 || !phoneClean.startsWith('254')) {
+            showToast('Error', 'Please enter a valid Safaricom phone number (e.g., 0712345678)', 'error');
+            return;
         }
 
-        if (result.success) {
-            statusEl.className = 'stk-status visible pending';
-            statusEl.innerHTML = '<span class="spinner"></span> STK Push sent to ' + phoneClean + '. Please check your phone and enter your M-PESA PIN.';
+        var payBtn = document.getElementById('payBtn');
+        var statusEl = document.getElementById('stkStatus');
 
-            var transactionId = result.data?.transaction_request_id || result.data?.reference || orderRef;
-            pollPaymentStatus(transactionId, orderRef);
+        payBtn.disabled = true;
+        document.getElementById('payBtnText').textContent = 'Processing...';
+        document.getElementById('paySpinner').style.display = 'inline-block';
 
-        } else {
-            statusEl.className = 'stk-status visible error';
-            statusEl.innerHTML = '❌ ' + (result.error || result.message || 'Payment initiation failed. Please try again.');
-            payBtn.disabled = false;
-            document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
-            document.getElementById('paySpinner').style.display = 'none';
-            showToast('Payment Failed', result.error || result.message || 'Please try again.', 'error');
-        }
+        statusEl.className = 'stk-status visible pending';
+        statusEl.innerHTML = '<span class="spinner"></span> Creating order...';
 
-    } catch (error) {
-        console.error('[KenyaVault] Payment error:', error);
-        statusEl.className = 'stk-status visible error';
-        statusEl.innerHTML = '❌ ' + (error.message || 'Network error. Please check your connection and try again.');
-        payBtn.disabled = false;
-        document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
-        document.getElementById('paySpinner').style.display = 'none';
-        showToast('Payment Error', error.message || 'Network error. Please try again.', 'error');
-    }
-}
-    function pollPaymentStatus(transactionId, orderRef) {
-    var pollCount = 0;
-    var maxPolls = 30;
-    var statusEl = document.getElementById('stkStatus');
-    var payBtn = document.getElementById('payBtn');
-
-    var pollInterval = setInterval(async function() {
-        pollCount++;
+        var orderRef = 'KV-' + Date.now().toString().slice(-8) + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
 
         try {
-            // ─── CHECK PAYMENT STATUS ──────────────────────────────
-            var response = await fetch(API_BASE_URL + '/mpesa/verify-payment', {
+            var sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substring(2, 10);
+
+            var orderData = {
+                order_ref: orderRef,
+                session_id: sessionId,
+                customer_name: name,
+                customer_phone: phoneClean,
+                customer_email: name.toLowerCase().replace(/\s/g, '.') + '@customer.com',
+                name: name,
+                email: name.toLowerCase().replace(/\s/g, '.') + '@customer.com',
+                phone: phoneClean,
+                amount: Number(currentProduct.price) || 0,
+                total_amount: Number(currentProduct.price) || 0,
+                item_title: currentProduct.title,
+                item_price: Number(currentProduct.price) || 0,
+                status: 'pending',
+                payment_status: 'pending',
+                payment_method: 'M-PESA',
+                cart_items: [{
+                    id: currentProduct.id,
+                    title: currentProduct.title,
+                    price: Number(currentProduct.price) || 0
+                }],
+                resource_ids: [currentProduct.id],
+                resource_id: currentProduct.id,
+                item_count: 1,
+                cart_total: Number(currentProduct.price) || 0,
+                currency: 'KES',
+                ip_address: '0.0.0.0',
+                user_agent: navigator.userAgent || 'Unknown',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            };
+
+            console.log('[KenyaVault] Creating order:', orderData);
+
+            var orderResponse = await fetch(SUPABASE_URL + '/rest/v1/orders', {
+                method: 'POST',
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=representation'
+                },
+                body: JSON.stringify(orderData)
+            });
+
+            if (!orderResponse.ok) {
+                var errorText = await orderResponse.text();
+                console.error('Order creation error:', errorText);
+                throw new Error('Failed to create order: ' + orderResponse.status);
+            }
+
+            var orderResult = await orderResponse.json();
+            var orderId = orderResult[0]?.id || orderResult.id;
+
+            if (!orderId) {
+                throw new Error('Order creation failed - no ID returned');
+            }
+
+            console.log('[KenyaVault] Order created:', orderId, orderRef);
+            statusEl.innerHTML = '<span class="spinner"></span> Sending STK Push to ' + phoneClean + '...';
+
+            var payload = {
+                order_id: orderId,
+                order_ref: orderRef,
+                phone: phoneClean,
+                amount: Number(currentProduct.price) || 0,
+                customer_name: name,
+                customer_email: name.toLowerCase().replace(/\s/g, '.') + '@customer.com',
+                resource_ids: [currentProduct.id]
+            };
+
+            console.log('[KenyaVault] Sending STK push:', payload);
+
+            var response = await fetch(API_BASE_URL + '/mpesa/stk-push', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    order_ref: orderRef
-                })
+                body: JSON.stringify(payload)
             });
-
-            if (!response.ok) {
-                throw new Error('Status check failed');
-            }
 
             var result = await response.json();
 
-            if (result.isPaid || result.status === 'paid' || result.payment_confirmed === true) {
-                clearInterval(pollInterval);
-                statusEl.className = 'stk-status visible success';
-                statusEl.innerHTML = '✅ Payment successful! Your download will begin shortly.';
+            if (!response.ok) {
+                throw new Error(result.error || result.message || 'Payment initiation failed');
+            }
 
-                // Download the resource
-                if (currentProduct && currentProduct.file_url) {
-                    window.open(currentProduct.file_url, '_blank');
-                }
+            if (result.success) {
+                statusEl.className = 'stk-status visible pending';
+                statusEl.innerHTML = '<span class="spinner"></span> STK Push sent to ' + phoneClean + '. Please check your phone and enter your M-PESA PIN.';
 
-                // Record transaction
-                await recordTransaction(currentProduct, orderRef);
+                var transactionId = result.data?.transaction_request_id || result.data?.reference || orderRef;
+                pollPaymentStatus(transactionId, orderRef);
 
-                showToast('Payment Successful', 'Your payment was confirmed!', 'success');
-                payBtn.disabled = false;
-                document.getElementById('payBtnText').textContent = '✅ Done';
-                document.getElementById('paySpinner').style.display = 'none';
-
-                setTimeout(function() {
-                    closePaymentModal();
-                }, 3000);
-
-            } else if (result.status === 'failed' || result.status === 'cancelled' || result.isPaid === false) {
-                clearInterval(pollInterval);
+            } else {
                 statusEl.className = 'stk-status visible error';
-                statusEl.innerHTML = '❌ Payment ' + (result.status || 'failed') + '. Please try again.';
+                statusEl.innerHTML = '❌ ' + (result.error || result.message || 'Payment initiation failed. Please try again.');
                 payBtn.disabled = false;
                 document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
                 document.getElementById('paySpinner').style.display = 'none';
-
-            } else if (pollCount >= maxPolls) {
-                clearInterval(pollInterval);
-                statusEl.className = 'stk-status visible pending';
-                statusEl.innerHTML = '⏳ Payment is still being processed. Please check your M-PESA messages.';
-                payBtn.disabled = false;
-                document.getElementById('payBtnText').textContent = '🔄 Check Status';
-                document.getElementById('paySpinner').style.display = 'none';
-                
-                payBtn.onclick = function() {
-                    document.getElementById('stkStatus').className = 'stk-status';
-                    document.getElementById('stkStatus').textContent = '';
-                    payBtn.onclick = initiatePayment;
-                    initiatePayment();
-                };
+                showToast('Payment Failed', result.error || result.message || 'Please try again.', 'error');
             }
 
         } catch (error) {
-            console.error('[KenyaVault] Polling error:', error);
-            // Continue polling on network errors
+            console.error('[KenyaVault] Payment error:', error);
+            statusEl.className = 'stk-status visible error';
+            statusEl.innerHTML = '❌ ' + (error.message || 'Network error. Please check your connection and try again.');
+            payBtn.disabled = false;
+            document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
+            document.getElementById('paySpinner').style.display = 'none';
+            showToast('Payment Error', error.message || 'Network error. Please try again.', 'error');
         }
-    }, 5000);
-}
-    async function recordTransaction(product, reference) {
-    try {
-        var data = {
-            document_id: product.id,
-            amount: product.price || 0,
-            status: 'completed',
-            reference: reference,
-            created_at: new Date().toISOString()
-        };
-
-        await fetch(SUPABASE_URL + '/rest/v1/transactions', {
-            method: 'POST',
-            headers: {
-                'apikey': SUPABASE_ANON_KEY,
-                'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(data)
-        });
-        console.log('[KenyaVault] Transaction recorded:', reference);
-    } catch (error) {
-        console.error('[KenyaVault] Error recording transaction:', error);
     }
-}
+
+    function pollPaymentStatus(transactionId, orderRef) {
+        var pollCount = 0;
+        var maxPolls = 30;
+        var statusEl = document.getElementById('stkStatus');
+        var payBtn = document.getElementById('payBtn');
+
+        var pollInterval = setInterval(async function() {
+            pollCount++;
+
+            try {
+                var response = await fetch(API_BASE_URL + '/mpesa/verify-payment', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        order_ref: orderRef
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Status check failed');
+                }
+
+                var result = await response.json();
+
+                if (result.isPaid || result.status === 'paid' || result.payment_confirmed === true) {
+                    clearInterval(pollInterval);
+                    statusEl.className = 'stk-status visible success';
+                    statusEl.innerHTML = '✅ Payment successful! Your download will begin shortly.';
+
+                    if (currentProduct && currentProduct.file_url) {
+                        window.open(currentProduct.file_url, '_blank');
+                    }
+
+                    await recordTransaction(currentProduct, orderRef);
+
+                    showToast('Payment Successful', 'Your payment was confirmed!', 'success');
+                    payBtn.disabled = false;
+                    document.getElementById('payBtnText').textContent = '✅ Done';
+                    document.getElementById('paySpinner').style.display = 'none';
+
+                    setTimeout(function() {
+                        closePaymentModal();
+                    }, 3000);
+
+                } else if (result.status === 'failed' || result.status === 'cancelled' || result.isPaid === false) {
+                    clearInterval(pollInterval);
+                    statusEl.className = 'stk-status visible error';
+                    statusEl.innerHTML = '❌ Payment ' + (result.status || 'failed') + '. Please try again.';
+                    payBtn.disabled = false;
+                    document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
+                    document.getElementById('paySpinner').style.display = 'none';
+
+                } else if (pollCount >= maxPolls) {
+                    clearInterval(pollInterval);
+                    statusEl.className = 'stk-status visible pending';
+                    statusEl.innerHTML = '⏳ Payment is still being processed. Please check your M-PESA messages.';
+                    payBtn.disabled = false;
+                    document.getElementById('payBtnText').textContent = '🔄 Check Status';
+                    document.getElementById('paySpinner').style.display = 'none';
+                    
+                    payBtn.onclick = function() {
+                        document.getElementById('stkStatus').className = 'stk-status';
+                        document.getElementById('stkStatus').textContent = '';
+                        payBtn.onclick = initiatePayment;
+                        initiatePayment();
+                    };
+                }
+
+            } catch (error) {
+                console.error('[KenyaVault] Polling error:', error);
+            }
+        }, 5000);
+    }
+
+    async function recordTransaction(product, reference) {
+        try {
+            var data = {
+                document_id: product.id,
+                amount: product.price || 0,
+                status: 'completed',
+                reference: reference,
+                created_at: new Date().toISOString()
+            };
+
+            await fetch(SUPABASE_URL + '/rest/v1/transactions', {
+                method: 'POST',
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            });
+            console.log('[KenyaVault] Transaction recorded:', reference);
+        } catch (error) {
+            console.error('[KenyaVault] Error recording transaction:', error);
+        }
+    }
+
     // ─── HERO COUNTER ANIMATION ──────────────────────────────
     function animateCounter() {
         var counters = document.querySelectorAll('.hero-v2__counter');
@@ -2013,7 +2040,7 @@ async function initiatePayment() {
         });
     }
 
-    // ─── ADD TO CART (event delegation) ──────────────────────
+    // ─── ADD TO CART ──────────────────────────────────────
     function setupAddToCart() {
         document.addEventListener('click', function(e) {
             var btn = e.target.closest('[data-add-to-cart]');
@@ -2025,7 +2052,6 @@ async function initiatePayment() {
 
             if (!id) return;
 
-            // Check if already in cart
             var existingIndex = cart.findIndex(function(item) { return item.id === id; });
             if (existingIndex !== -1) {
                 cart.splice(existingIndex, 1);
@@ -2039,12 +2065,10 @@ async function initiatePayment() {
                 updateCartBadge();
             }
 
-            // Save cart to localStorage
             try {
                 localStorage.setItem('kv_cart', JSON.stringify(cart));
             } catch(e) {}
 
-            // Update all buttons with same product ID
             document.querySelectorAll('[data-add-to-cart][data-doc-id="' + id + '"]').forEach(function(b) {
                 var inCart = cart.some(function(item) { return item.id === id; });
                 b.innerHTML = inCart ? '<i class="bi bi-cart-plus"></i> In Cart' : '<i class="bi bi-cart-plus"></i> Add to cart';
@@ -2054,7 +2078,6 @@ async function initiatePayment() {
 
     // ─── UPDATE CART BADGE ──────────────────────────────────
     function updateCartBadge() {
-        var cartBtn = document.querySelector('.btn-nav-cta .fa-shopping-cart');
         var badge = document.querySelector('.cart-badge');
         var totalItems = cart.reduce(function(sum, item) { return sum + (item.quantity || 1); }, 0);
         
@@ -2076,7 +2099,7 @@ async function initiatePayment() {
         }
     }
 
-    // ─── LOAD CART FROM LOCALSTORAGE ──────────────────────
+    // ─── LOAD CART ──────────────────────────────────────────
     function loadCart() {
         try {
             var savedCart = localStorage.getItem('kv_cart');
@@ -2090,8 +2113,9 @@ async function initiatePayment() {
     // ─── INIT ──────────────────────────────────────────────────
     async function init() {
         try {
-            // Load cart from localStorage
             loadCart();
+            setupHamburger();
+            setupAddToCart();
 
             if (categoryGrid) categoryGrid.innerHTML = '<div class="loading-spinner"><span class="spin-icon">⏳</span>Loading categories...</div>';
             if (popularGrid) popularGrid.innerHTML = '<div class="loading-spinner"><span class="spin-icon">⏳</span>Loading resources...</div>';
@@ -2101,22 +2125,32 @@ async function initiatePayment() {
 
             if (allResources.length === 0) {
                 showToast('Info', 'No resources found. Please check back later.', 'info');
+            } else {
+                showToast('Success', 'Loaded ' + allResources.length + ' resources.', 'success');
             }
 
             renderCategories();
-            renderCards('popularGrid', allResources.sort(function(a, b) { return (b.total_downloads || b.download_count || 0) - (a.total_downloads || a.download_count || 0); }), 6);
+            
+            // Sort by downloads for popular
+            var sortedByDownloads = allResources.slice().sort(function(a, b) {
+                var aCount = a.total_downloads || a.download_count || a.downloads || 0;
+                var bCount = b.total_downloads || b.download_count || b.downloads || 0;
+                return bCount - aCount;
+            });
+            renderCards('popularGrid', sortedByDownloads, 6);
+            
+            // Sort by created_at for recent (already sorted from fetch)
             renderCards('recentGrid', allResources, 6);
 
             animateCounter();
-            setupHamburger();
-            setupAddToCart();
 
         } catch (error) {
             console.error('[KenyaVault] Initialization error:', error);
-            if (categoryGrid) categoryGrid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:30px;color:#BB0000;">Error loading resources. Please refresh.</div>';
-            if (popularGrid) popularGrid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:30px;color:#BB0000;">Error loading resources. Please refresh.</div>';
-            if (recentGrid) recentGrid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:30px;color:#BB0000;">Error loading resources. Please refresh.</div>';
-            showToast('Error', 'Failed to load resources. Please refresh the page.', 'error');
+            var errorMsg = 'Error loading resources. Please refresh.';
+            if (categoryGrid) categoryGrid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:30px;color:#BB0000;">' + errorMsg + '</div>';
+            if (popularGrid) popularGrid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:30px;color:#BB0000;">' + errorMsg + '</div>';
+            if (recentGrid) recentGrid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:30px;color:#BB0000;">' + errorMsg + '</div>';
+            showToast('Error', error.message || 'Failed to load resources.', 'error');
         }
     }
 
