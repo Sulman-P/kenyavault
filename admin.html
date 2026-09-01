@@ -7,7 +7,7 @@
     <title>Dashboard — Admin | KenyaVault</title>
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" "https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
     
@@ -1275,7 +1275,7 @@ function getInitials(name) {
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 }
 
-// ─── FETCH FUNCTIONS ──────────────────────────────────────
+// ─── FETCH FUNCTIONS WITH ERROR HANDLING ──────────────────
 
 async function fetchSupabase(table, options = {}) {
     const { select = '*', order = null, limit = null, filter = null } = options;
@@ -1291,18 +1291,28 @@ async function fetchSupabase(table, options = {}) {
         url += '&limit=' + limit;
     }
     
-    const response = await fetch(url, {
-        headers: {
-            'apikey': SUPABASE_ANON_KEY,
-            'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
-            'Content-Type': 'application/json'
+    try {
+        const response = await fetch(url, {
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (response.status === 404) {
+            console.warn(`Table '${table}' not found. Returning empty array.`);
+            return [];
         }
-    });
-    
-    if (!response.ok) {
-        throw new Error('HTTP ' + response.status);
+        
+        if (!response.ok) {
+            throw new Error('HTTP ' + response.status);
+        }
+        return response.json();
+    } catch (error) {
+        console.warn(`Error fetching from ${table}:`, error);
+        return [];
     }
-    return response.json();
 }
 
 // ─── DASHBOARD DATA ────────────────────────────────────────
@@ -1319,16 +1329,36 @@ async function loadDashboardData() {
         statPending.textContent = '...';
         statMessages.textContent = '...';
 
-        // Fetch all data in parallel from Supabase with correct column names
-        const [users, docs, txs, subscribers, msgs] = await Promise.all([
-            fetchSupabase('users', { select: 'id,role,created_at,name,email' }),
-            fetchSupabase('documents', { select: 'id,title,hits,price,filename,category_title,level_title,grade_title,created_at,updated_at,download_count' }),
-            fetchSupabase('transactions', { 
+        // Fetch all data in parallel with error handling
+        let users = [], docs = [], txs = [], subscribers = [], msgs = [];
+        
+        try {
+            users = await fetchSupabase('users', { select: 'id,role,created_at,name,email' });
+        } catch (e) { users = []; }
+        
+        try {
+            docs = await fetchSupabase('documents', { 
+                select: 'id,title,hits,price,filename,category_title,level_title,grade_title,created_at,updated_at,download_count' 
+            });
+        } catch (e) { docs = []; }
+        
+        try {
+            txs = await fetchSupabase('transactions', { 
                 select: 'id,user_id,amount,status,phone,email,created_at,user_name,guest_email,guest_name,document_id,reference,name' 
-            }),
-            fetchSupabase('newsletter_subscribers', { select: 'id,email,status,created_at' }),
-            fetchSupabase('contact_messages', { select: 'id,name,email,message,status,created_at' })
-        ]);
+            });
+        } catch (e) { txs = []; }
+        
+        try {
+            subscribers = await fetchSupabase('newsletter_subscribers', { 
+                select: 'id,email,status,created_at' 
+            });
+        } catch (e) { subscribers = []; }
+        
+        try {
+            msgs = await fetchSupabase('contact_messages', { 
+                select: 'id,name,email,message,status,created_at' 
+            });
+        } catch (e) { msgs = []; }
 
         // Calculate stats from real data
         const totalUsers = users ? users.length : 0;
@@ -1762,28 +1792,21 @@ document.addEventListener('DOMContentLoaded', function() {
     // Check for admin session
     const session = localStorage.getItem('kv_admin_session');
     if (!session) {
-        // Redirect to login
         window.location.href = '/admin/login.html';
         return;
     }
 
     try {
         const sessionData = JSON.parse(session);
-        // Check if session is still valid (not expired)
         if (!sessionData.loggedIn || !sessionData.timestamp || (Date.now() - sessionData.timestamp) > 86400000) {
-            // Session expired or invalid
             localStorage.removeItem('kv_admin_session');
             window.location.href = '/admin/login.html';
             return;
         }
         
-        // Session is valid - update UI
         if (sessionData.name) {
             adminName.textContent = sessionData.name;
             if (adminAvatar) adminAvatar.textContent = getInitials(sessionData.name);
-        }
-        if (sessionData.email) {
-            // Could show email in sidebar if needed
         }
     } catch (e) {
         console.warn('Invalid session data:', e);
@@ -1792,13 +1815,9 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
     }
 
-    // Load dashboard data
     loadDashboardData();
-
-    // Auto-refresh every 60 seconds
     setInterval(loadDashboardData, 60000);
 
-    // Close sidebar on escape key
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {
             const sidebar = document.getElementById('adminSidebar');
@@ -1811,7 +1830,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
-// Expose functions globally for inline onclick
+// Expose functions globally
 window.toggleSidebar = toggleSidebar;
 window.logout = logout;
 window.copyToClipboard = copyToClipboard;
