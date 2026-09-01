@@ -61,7 +61,6 @@
         a { text-decoration: none; color: inherit; }
         button { cursor: pointer; border: none; background: none; font-family: inherit; }
 
-        /* ── FLAG STRIPE ── */
         .flag-stripe {
             height: 3px;
             width: 100%;
@@ -76,14 +75,12 @@
         .flag-stripe .stripe-green { flex: 1; background: #1F7A3A; }
         .flag-stripe .stripe-white { flex: 1; background: var(--admin-white); }
 
-        /* ── ADMIN WRAPPER ── */
         .admin-wrapper {
             display: flex;
             min-height: 100vh;
             padding-top: 3px;
         }
 
-        /* ── SIDEBAR ── */
         .admin-sidebar {
             width: var(--admin-sidebar-width);
             background: var(--admin-primary);
@@ -217,7 +214,6 @@
             color: #EF4444;
         }
 
-        /* ── SIDEBAR OVERLAY ── */
         .admin-sidebar-overlay {
             display: none;
             position: fixed;
@@ -230,7 +226,6 @@
             display: block;
         }
 
-        /* ── MAIN CONTENT ── */
         .admin-main-content {
             flex: 1;
             margin-left: var(--admin-sidebar-width);
@@ -238,7 +233,6 @@
             min-height: 100vh;
         }
 
-        /* ── TOPBAR ── */
         .admin-topbar {
             display: flex;
             align-items: center;
@@ -274,6 +268,16 @@
             font-weight: 700;
             color: var(--admin-neutral-800);
             letter-spacing: -0.3px;
+        }
+        .admin-topbar-left .page-badge {
+            font-size: 0.6rem;
+            font-weight: 700;
+            padding: 2px 10px;
+            border-radius: 99px;
+            background: var(--admin-gold-pale);
+            color: var(--admin-gold);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
         .admin-topbar-right {
             display: flex;
@@ -322,7 +326,6 @@
             font-size: 0.72rem;
         }
 
-        /* ── DOCUMENTS TABLE ── */
         .documents-container {
             background: var(--admin-white);
             border-radius: var(--admin-radius);
@@ -436,7 +439,6 @@
             margin: 0;
         }
 
-        /* ── SEARCH ── */
         .search-input {
             padding: 6px 12px 6px 32px;
             border: 1.5px solid var(--admin-neutral-200);
@@ -464,7 +466,6 @@
             color: var(--admin-neutral-400);
         }
 
-        /* ── LOADING ── */
         .loading-spinner {
             text-align: center;
             padding: 60px 20px;
@@ -480,7 +481,6 @@
             to { transform: rotate(360deg); }
         }
 
-        /* ── RESPONSIVE ── */
         @media (max-width: 768px) {
             .admin-sidebar {
                 transform: translateX(-100%);
@@ -534,7 +534,6 @@
             }
         }
 
-        /* ── FOOTER ── */
         .footer {
             background: var(--admin-primary-dark);
             color: #c8d6e5;
@@ -552,6 +551,22 @@
         }
         .footer .footer-bottom span {
             color: var(--admin-gold-light);
+        }
+
+        .debug-info {
+            background: #fffbeb;
+            border: 1px solid #fcd34d;
+            border-radius: var(--admin-radius-sm);
+            padding: 12px 16px;
+            margin: 12px 20px;
+            font-size: 0.82rem;
+            color: #92400e;
+        }
+        .debug-info pre {
+            white-space: pre-wrap;
+            word-break: break-all;
+            font-size: 0.75rem;
+            margin-top: 4px;
         }
     </style>
 </head>
@@ -572,7 +587,6 @@
 <!-- ════════════════════════════════════════ -->
 <div class="admin-wrapper">
 
-    <!-- ── SIDEBAR ── -->
     <aside class="admin-sidebar" id="adminSidebar">
         <div class="admin-sidebar-brand">
             <div class="logo">Kenya<span>Vault</span></div>
@@ -637,13 +651,10 @@
         </div>
     </aside>
 
-    <!-- Sidebar Overlay -->
     <div class="admin-sidebar-overlay" id="adminSidebarOverlay" onclick="toggleSidebar()"></div>
 
-    <!-- ── MAIN CONTENT ── -->
     <div class="admin-main-content">
 
-        <!-- Topbar -->
         <header class="admin-topbar">
             <div class="admin-topbar-left">
                 <button class="menu-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">
@@ -662,7 +673,6 @@
             </div>
         </header>
 
-        <!-- ── DOCUMENTS TABLE ── -->
         <div class="documents-container">
             <div class="table-header">
                 <h2 class="table-title">
@@ -687,9 +697,14 @@
                     Loading documents...
                 </div>
             </div>
+
+            <!-- Debug Info -->
+            <div id="debugInfo" class="debug-info" style="display:none;">
+                <strong>🔍 Debug Info:</strong>
+                <pre id="debugOutput"></pre>
+            </div>
         </div>
 
-        <!-- Footer -->
         <div class="footer">
             <div class="footer-bottom">
                 <span>© 2026 KenyaVault. All rights reserved.</span>
@@ -722,6 +737,8 @@ const messageCount = document.getElementById('messageCount');
 const adminName = document.getElementById('adminName');
 const adminAvatar = document.getElementById('adminAvatar');
 const dateDisplay = document.getElementById('dateDisplay');
+const debugInfo = document.getElementById('debugInfo');
+const debugOutput = document.getElementById('debugOutput');
 
 // ── HELPERS ──────────────────────────────────────────────
 function formatCurrency(amount) {
@@ -757,6 +774,12 @@ function getInitials(name) {
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 }
 
+function showDebug(message, data) {
+    debugInfo.style.display = 'block';
+    debugOutput.textContent = message + '\n\n' + JSON.stringify(data, null, 2);
+    console.log('[Debug]', message, data);
+}
+
 // ─── FETCH FUNCTIONS ──────────────────────────────────────
 
 async function fetchSupabase(table, options = {}) {
@@ -788,12 +811,12 @@ async function fetchSupabase(table, options = {}) {
         }
         
         if (!response.ok) {
-            throw new Error('HTTP ' + response.status);
+            throw new Error('HTTP ' + response.status + ' - ' + response.statusText);
         }
         return response.json();
     } catch (error) {
         console.warn(`Error fetching from ${table}:`, error);
-        return [];
+        throw error;
     }
 }
 
@@ -810,10 +833,13 @@ async function loadDocuments() {
             </div>
         `;
 
-        // Fetch documents
+        // Fetch documents from Supabase
         const docs = await fetchSupabase('documents', { 
             select: 'id,title,hits,price,is_free,filename,category_title,level_title,grade_title,created_at,updated_at,download_count,description' 
         });
+
+        console.log('[Documents] Fetched:', docs);
+        showDebug('Fetched ' + (docs ? docs.length : 0) + ' documents from Supabase', docs);
 
         allDocuments = docs || [];
         filteredDocuments = [...allDocuments];
@@ -826,10 +852,12 @@ async function loadDocuments() {
 
     } catch (error) {
         console.error('[Documents] Error loading:', error);
+        showDebug('Error loading documents:', error.message);
         container.innerHTML = `
             <div class="admin-empty-state">
                 <i class="bi bi-exclamation-triangle" style="color:#ef4444;"></i>
-                <p>Error loading documents. Please refresh the page.</p>
+                <p>Error loading documents: ${error.message}</p>
+                <p style="font-size:0.8rem; margin-top:8px; color:#64748b;">Check the debug info below for details.</p>
             </div>
         `;
     }
@@ -1029,7 +1057,7 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
     }
 
-    // Load data
+    // Load documents
     loadDocuments();
 
     // Update date
