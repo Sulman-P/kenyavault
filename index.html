@@ -1710,7 +1710,7 @@ SCRIPT
         document.getElementById('paymentModal').classList.remove('open');
     }
 
-    // ─── INITIATE PAYMENT ──────────────────────────────────
+   // ─── INITIATE PAYMENT ──────────────────────────────────
 async function initiatePayment() {
     if (!currentProduct) {
         showToast('Error', 'No product selected.', 'error');
@@ -1744,24 +1744,27 @@ async function initiatePayment() {
     var orderRef = 'KV-' + Date.now().toString().slice(-8) + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
 
     try {
-        // ─── STEP 1: CREATE ORDER IN SUPABASE ──────────────────────
+        // ─── CREATE ORDER ──────────────────────────────────────────
+        // Use only columns that exist and with correct types
         var orderData = {
             order_ref: orderRef,
             email: name.toLowerCase().replace(/\s/g, '.') + '@customer.com',
             phone: phoneClean,
             name: name,
-            amount: currentProduct.price || 0,
-            total_amount: currentProduct.price || 0,
+            amount: Number(currentProduct.price) || 0,
+            total_amount: Number(currentProduct.price) || 0,
             status: 'pending',
             payment_status: 'pending',
             cart_items: JSON.stringify([{
                 id: currentProduct.id,
                 title: currentProduct.title,
-                price: currentProduct.price || 0
+                price: Number(currentProduct.price) || 0
             }]),
-            resource_ids: JSON.stringify([currentProduct.id]),
-            created_at: new Date().toISOString()
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
         };
+
+        console.log('[KenyaVault] Creating order:', orderData);
 
         var orderResponse = await fetch(SUPABASE_URL + '/rest/v1/orders', {
             method: 'POST',
@@ -1777,7 +1780,13 @@ async function initiatePayment() {
         if (!orderResponse.ok) {
             var errorText = await orderResponse.text();
             console.error('Order creation error:', errorText);
-            throw new Error('Failed to create order: ' + orderResponse.status);
+            // Try to parse the error
+            try {
+                var errorJson = JSON.parse(errorText);
+                throw new Error(errorJson.message || 'Failed to create order');
+            } catch (e) {
+                throw new Error('Failed to create order: ' + orderResponse.status);
+            }
         }
 
         var orderResult = await orderResponse.json();
@@ -1790,16 +1799,18 @@ async function initiatePayment() {
         console.log('[KenyaVault] Order created:', orderId, orderRef);
         statusEl.innerHTML = '<span class="spinner"></span> Sending STK Push to ' + phoneClean + '...';
 
-        // ─── STEP 2: SEND STK PUSH ──────────────────────────────────
+        // ─── SEND STK PUSH ──────────────────────────────────────────
         var payload = {
             order_id: orderId,
             order_ref: orderRef,
             phone: phoneClean,
-            amount: currentProduct.price || 0,
+            amount: Number(currentProduct.price) || 0,
             customer_name: name,
             customer_email: name.toLowerCase().replace(/\s/g, '.') + '@customer.com',
             resource_ids: [currentProduct.id]
         };
+
+        console.log('[KenyaVault] Sending STK push:', payload);
 
         var response = await fetch(API_BASE_URL + '/mpesa/stk-push', {
             method: 'POST',
