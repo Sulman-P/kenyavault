@@ -799,9 +799,10 @@ async function loadDocuments() {
             </div>
         `;
 
-        // ─── FETCH FROM RESOURCES TABLE ──────────────────────────
+        // ─── FETCH FROM RESOURCES TABLE WITH CORRECT COLUMNS ───
+        // Use actual column names from your resources table
         const resources = await fetchSupabase('resources', { 
-            select: 'id,title,description,filename,file_url,price,is_free,resource_type,category_title,level_title,grade_title,term,download_count,hits,cover_image_url,created_at,updated_at' 
+            select: 'id,title,description,file_name,file_url,price,is_free,resource_type,category,level,education_level,grade,subject,downloads,download_count,hits,cover_image_url,created_at,updated_at,type,status,is_published' 
         });
 
         console.log('[Resources] Fetched:', resources ? resources.length : 0, 'resources');
@@ -822,11 +823,13 @@ async function loadDocuments() {
                 <i class="bi bi-exclamation-triangle" style="color:#ef4444;"></i>
                 <p>Error loading resources: ${error.message}</p>
                 <p style="font-size:0.8rem; margin-top:8px; color:#64748b;">Please check your Supabase connection.</p>
+                <button onclick="loadDocuments()" class="admin-btn admin-btn-primary" style="margin-top:12px;">
+                    <i class="bi bi-arrow-repeat"></i> Retry
+                </button>
             </div>
         `;
     }
 }
-
 // ─── RENDER DOCUMENTS ──────────────────────────────────────
 
 function renderDocuments() {
@@ -837,10 +840,13 @@ function renderDocuments() {
     if (searchTerm) {
         filteredResources = allResources.filter(doc => 
             (doc.title || '').toLowerCase().includes(searchTerm) ||
-            (doc.category_title || '').toLowerCase().includes(searchTerm) ||
-            (doc.level_title || '').toLowerCase().includes(searchTerm) ||
-            (doc.grade_title || '').toLowerCase().includes(searchTerm) ||
-            (doc.resource_type || '').toLowerCase().includes(searchTerm)
+            (doc.category || '').toLowerCase().includes(searchTerm) ||
+            (doc.level || '').toLowerCase().includes(searchTerm) ||
+            (doc.education_level || '').toLowerCase().includes(searchTerm) ||
+            (doc.grade || '').toLowerCase().includes(searchTerm) ||
+            (doc.subject || '').toLowerCase().includes(searchTerm) ||
+            (doc.resource_type || '').toLowerCase().includes(searchTerm) ||
+            (doc.type || '').toLowerCase().includes(searchTerm)
         );
     } else {
         filteredResources = [...allResources];
@@ -874,7 +880,6 @@ function renderDocuments() {
                         <th>Grade</th>
                         <th>Price</th>
                         <th>Downloads</th>
-                        <th>Views</th>
                         <th>Date</th>
                         <th>Actions</th>
                     </tr>
@@ -886,30 +891,32 @@ function renderDocuments() {
         const isFree = doc.is_free || doc.price === 0;
         const priceDisplay = isFree ? 'FREE' : formatCurrency(doc.price);
         const priceClass = isFree ? 'free' : 'paid';
+        const displayLevel = doc.education_level || doc.level || '—';
+        const displayCategory = doc.category || doc.type || '—';
+        const downloadCount = doc.download_count || doc.downloads || 0;
 
         html += `
             <tr>
                 <td data-label="Resource">
                     <div class="doc-title-cell" title="${doc.title || 'Untitled'}">
-                        ${getFileIcon(doc.filename)}
+                        ${getFileIcon(doc.file_name)}
                         <span class="doc-title-text">${doc.title || 'Untitled'}</span>
                     </div>
                 </td>
-                <td data-label="Category">${doc.category_title || doc.resource_type || '—'}</td>
-                <td data-label="Level">${doc.level_title || '—'}</td>
-                <td data-label="Grade">${doc.grade_title || '—'}</td>
+                <td data-label="Category">${displayCategory}</td>
+                <td data-label="Level">${displayLevel}</td>
+                <td data-label="Grade">${doc.grade || '—'}</td>
                 <td data-label="Price">
                     <span class="status-badge ${priceClass}">${priceDisplay}</span>
                 </td>
-                <td data-label="Downloads">${doc.download_count || 0}</td>
-                <td data-label="Views">${doc.hits || 0}</td>
+                <td data-label="Downloads">${downloadCount}</td>
                 <td data-label="Date">${formatDate(doc.created_at)}</td>
                 <td data-label="Actions">
                     <div style="display:flex; gap:4px; flex-wrap:wrap;">
                         <a href="/admin/edit-document.html?id=${doc.id}" class="admin-btn admin-btn-secondary admin-btn-sm" title="Edit">
                             <i class="bi bi-pencil"></i>
                         </a>
-                        <button onclick="deleteResource(${doc.id})" class="admin-btn admin-btn-secondary admin-btn-sm" title="Delete" style="color:#ef4444;">
+                        <button onclick="deleteResource('${doc.id}')" class="admin-btn admin-btn-secondary admin-btn-sm" title="Delete" style="color:#ef4444;">
                             <i class="bi bi-trash3"></i>
                         </button>
                     </div>
