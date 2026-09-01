@@ -1711,183 +1711,236 @@ SCRIPT
     }
 
     // ─── INITIATE PAYMENT ──────────────────────────────────
-    async function initiatePayment() {
-        if (!currentProduct) {
-            showToast('Error', 'No product selected.', 'error');
-            return;
+async function initiatePayment() {
+    if (!currentProduct) {
+        showToast('Error', 'No product selected.', 'error');
+        return;
+    }
+
+    var name = document.getElementById('customerName').value.trim();
+    var phone = document.getElementById('phoneInput').value.trim();
+
+    if (!name || name.length < 2) {
+        showToast('Error', 'Please enter your full name.', 'error');
+        return;
+    }
+
+    var phoneClean = phone.replace(/\s/g, '').replace(/^0/, '254');
+    if (phoneClean.length < 10 || !phoneClean.startsWith('254')) {
+        showToast('Error', 'Please enter a valid Safaricom phone number (e.g., 0712345678)', 'error');
+        return;
+    }
+
+    var payBtn = document.getElementById('payBtn');
+    var statusEl = document.getElementById('stkStatus');
+
+    payBtn.disabled = true;
+    document.getElementById('payBtnText').textContent = 'Processing...';
+    document.getElementById('paySpinner').style.display = 'inline-block';
+
+    statusEl.className = 'stk-status visible pending';
+    statusEl.innerHTML = '<span class="spinner"></span> Creating order...';
+
+    var orderRef = 'KV-' + Date.now().toString().slice(-8) + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
+
+    try {
+        // ─── STEP 1: CREATE ORDER IN SUPABASE ──────────────────────
+        var orderData = {
+            order_ref: orderRef,
+            email: name.toLowerCase().replace(/\s/g, '.') + '@customer.com',
+            phone: phoneClean,
+            name: name,
+            amount: currentProduct.price || 0,
+            total_amount: currentProduct.price || 0,
+            status: 'pending',
+            payment_status: 'pending',
+            cart_items: JSON.stringify([{
+                id: currentProduct.id,
+                title: currentProduct.title,
+                price: currentProduct.price || 0
+            }]),
+            resource_ids: JSON.stringify([currentProduct.id]),
+            created_at: new Date().toISOString()
+        };
+
+        var orderResponse = await fetch(SUPABASE_URL + '/rest/v1/orders', {
+            method: 'POST',
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=representation'
+            },
+            body: JSON.stringify(orderData)
+        });
+
+        if (!orderResponse.ok) {
+            var errorText = await orderResponse.text();
+            console.error('Order creation error:', errorText);
+            throw new Error('Failed to create order: ' + orderResponse.status);
         }
 
-        var name = document.getElementById('customerName').value.trim();
-        var phone = document.getElementById('phoneInput').value.trim();
+        var orderResult = await orderResponse.json();
+        var orderId = orderResult[0]?.id || orderResult.id;
 
-        if (!name || name.length < 2) {
-            showToast('Error', 'Please enter your full name.', 'error');
-            return;
+        if (!orderId) {
+            throw new Error('Order creation failed - no ID returned');
         }
 
-        var phoneClean = phone.replace(/\s/g, '').replace(/^0/, '254');
-        if (phoneClean.length < 10 || !phoneClean.startsWith('254')) {
-            showToast('Error', 'Please enter a valid Safaricom phone number (e.g., 0712345678)', 'error');
-            return;
-        }
-
-        var payBtn = document.getElementById('payBtn');
-        var statusEl = document.getElementById('stkStatus');
-
-        payBtn.disabled = true;
-        document.getElementById('payBtnText').textContent = 'Processing...';
-        document.getElementById('paySpinner').style.display = 'inline-block';
-
-        statusEl.className = 'stk-status visible pending';
+        console.log('[KenyaVault] Order created:', orderId, orderRef);
         statusEl.innerHTML = '<span class="spinner"></span> Sending STK Push to ' + phoneClean + '...';
 
-        var orderRef = 'KV-' + Date.now().toString().slice(-8) + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
+        // ─── STEP 2: SEND STK PUSH ──────────────────────────────────
+        var payload = {
+            order_id: orderId,
+            order_ref: orderRef,
+            phone: phoneClean,
+            amount: currentProduct.price || 0,
+            customer_name: name,
+            customer_email: name.toLowerCase().replace(/\s/g, '.') + '@customer.com',
+            resource_ids: [currentProduct.id]
+        };
 
-        try {
-            var payload = {
-                customer_phone: phoneClean,
-                customer_name: name,
-                customer_email: name.toLowerCase().replace(/\s/g, '.') + '@customer.com',
-                amount: currentProduct.price || 0,
-                reference: orderRef,
-                description: 'KenyaVault: ' + currentProduct.title,
-                callback_url: window.location.origin + '/payment-callback.html',
-                resource_ids: [currentProduct.id]
-            };
+        var response = await fetch(API_BASE_URL + '/mpesa/stk-push', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
 
-            var response = await fetch(API_BASE_URL + '/mpesa/stk-push', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(payload)
-            });
+        var result = await response.json();
 
-            var result = await response.json();
+        if (!response.ok) {
+            throw new Error(result.error || result.message || 'Payment initiation failed');
+        }
 
-            if (!response.ok) {
-                throw new Error(result.error || result.message || 'Payment initiation failed');
-            }
+        if (result.success) {
+            statusEl.className = 'stk-status visible pending';
+            statusEl.innerHTML = '<span class="spinner"></span> STK Push sent to ' + phoneClean + '. Please check your phone and enter your M-PESA PIN.';
 
-            if (result.success) {
-                statusEl.className = 'stk-status visible pending';
-                statusEl.innerHTML = '<span class="spinner"></span> STK Push sent to ' + phoneClean + '. Please check your phone and enter your M-PESA PIN.';
+            var transactionId = result.data?.transaction_request_id || result.data?.reference || orderRef;
+            pollPaymentStatus(transactionId, orderRef);
 
-                var transactionId = result.data?.transaction_request_id || result.data?.reference || orderRef;
-                pollPaymentStatus(transactionId, orderRef);
-
-            } else {
-                statusEl.className = 'stk-status visible error';
-                statusEl.innerHTML = '❌ ' + (result.error || result.message || 'Payment initiation failed. Please try again.');
-                payBtn.disabled = false;
-                document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
-                document.getElementById('paySpinner').style.display = 'none';
-                showToast('Payment Failed', result.error || result.message || 'Please try again.', 'error');
-            }
-
-        } catch (error) {
-            console.error('[KenyaVault] Payment error:', error);
+        } else {
             statusEl.className = 'stk-status visible error';
-            statusEl.innerHTML = '❌ ' + (error.message || 'Network error. Please check your connection and try again.');
+            statusEl.innerHTML = '❌ ' + (result.error || result.message || 'Payment initiation failed. Please try again.');
             payBtn.disabled = false;
             document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
             document.getElementById('paySpinner').style.display = 'none';
-            showToast('Payment Error', error.message || 'Network error. Please try again.', 'error');
+            showToast('Payment Failed', result.error || result.message || 'Please try again.', 'error');
         }
+
+    } catch (error) {
+        console.error('[KenyaVault] Payment error:', error);
+        statusEl.className = 'stk-status visible error';
+        statusEl.innerHTML = '❌ ' + (error.message || 'Network error. Please check your connection and try again.');
+        payBtn.disabled = false;
+        document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
+        document.getElementById('paySpinner').style.display = 'none';
+        showToast('Payment Error', error.message || 'Network error. Please try again.', 'error');
     }
+}
 
     function pollPaymentStatus(transactionId, orderRef) {
-        var pollCount = 0;
-        var maxPolls = 30;
-        var statusEl = document.getElementById('stkStatus');
-        var payBtn = document.getElementById('payBtn');
+    var pollCount = 0;
+    var maxPolls = 30;
+    var statusEl = document.getElementById('stkStatus');
+    var payBtn = document.getElementById('payBtn');
 
-        var pollInterval = setInterval(async function() {
-            pollCount++;
+    var pollInterval = setInterval(async function() {
+        pollCount++;
 
-            try {
-                var response = await fetch(API_BASE_URL + '/mpesa/status/' + encodeURIComponent(transactionId));
-
-                if (!response.ok) {
-                    throw new Error('Status check failed');
-                }
-
-                var result = await response.json();
-
-                if (result.isPaid || result.status === 'completed' || result.status === 'success' || result.status === 'paid') {
-                    clearInterval(pollInterval);
-                    statusEl.className = 'stk-status visible success';
-                    statusEl.innerHTML = '✅ Payment successful! Your download will begin shortly.';
-
-                    if (currentProduct && currentProduct.file_url) {
-                        window.open(currentProduct.file_url, '_blank');
-                    }
-
-                    await recordTransaction(currentProduct, orderRef);
-                    showToast('Payment Successful', 'Your payment was confirmed!', 'success');
-                    payBtn.disabled = false;
-                    document.getElementById('payBtnText').textContent = '✅ Done';
-                    document.getElementById('paySpinner').style.display = 'none';
-
-                    setTimeout(function() {
-                        closePaymentModal();
-                    }, 3000);
-
-                } else if (result.status === 'failed' || result.status === 'cancelled' || result.isPaid === false) {
-                    clearInterval(pollInterval);
-                    statusEl.className = 'stk-status visible error';
-                    statusEl.innerHTML = '❌ Payment ' + (result.status || 'failed') + '. Please try again.';
-                    payBtn.disabled = false;
-                    document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
-                    document.getElementById('paySpinner').style.display = 'none';
-
-                } else if (pollCount >= maxPolls) {
-                    clearInterval(pollInterval);
-                    statusEl.className = 'stk-status visible pending';
-                    statusEl.innerHTML = '⏳ Payment is still being processed. Please check your M-PESA messages.';
-                    payBtn.disabled = false;
-                    document.getElementById('payBtnText').textContent = '🔄 Check Status';
-                    document.getElementById('paySpinner').style.display = 'none';
-                    
-                    payBtn.onclick = function() {
-                        document.getElementById('stkStatus').className = 'stk-status';
-                        document.getElementById('stkStatus').textContent = '';
-                        payBtn.onclick = initiatePayment;
-                        initiatePayment();
-                    };
-                }
-
-            } catch (error) {
-                console.error('[KenyaVault] Polling error:', error);
-            }
-        }, 5000);
-    }
-
-    async function recordTransaction(product, reference) {
         try {
-            var data = {
-                document_id: product.id,
-                amount: product.price || 0,
-                status: 'completed',
-                reference: reference,
-                created_at: new Date().toISOString()
-            };
-
-            await fetch(SUPABASE_URL + '/rest/v1/transactions', {
+            // ─── CHECK PAYMENT STATUS ──────────────────────────────
+            var response = await fetch(API_BASE_URL + '/mpesa/verify-payment', {
                 method: 'POST',
                 headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(data)
+                body: JSON.stringify({
+                    order_ref: orderRef
+                })
             });
-            console.log('[KenyaVault] Transaction recorded:', reference);
-        } catch (error) {
-            console.error('[KenyaVault] Error recording transaction:', error);
-        }
-    }
 
+            if (!response.ok) {
+                throw new Error('Status check failed');
+            }
+
+            var result = await response.json();
+
+            if (result.isPaid || result.status === 'paid') {
+                clearInterval(pollInterval);
+                statusEl.className = 'stk-status visible success';
+                statusEl.innerHTML = '✅ Payment successful! Your download will begin shortly.';
+
+                if (currentProduct && currentProduct.file_url) {
+                    window.open(currentProduct.file_url, '_blank');
+                }
+
+                await recordTransaction(currentProduct, orderRef);
+                showToast('Payment Successful', 'Your payment was confirmed!', 'success');
+                payBtn.disabled = false;
+                document.getElementById('payBtnText').textContent = '✅ Done';
+                document.getElementById('paySpinner').style.display = 'none';
+
+                setTimeout(function() {
+                    closePaymentModal();
+                }, 3000);
+
+            } else if (result.status === 'failed' || result.status === 'cancelled' || result.isPaid === false) {
+                clearInterval(pollInterval);
+                statusEl.className = 'stk-status visible error';
+                statusEl.innerHTML = '❌ Payment ' + (result.status || 'failed') + '. Please try again.';
+                payBtn.disabled = false;
+                document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
+                document.getElementById('paySpinner').style.display = 'none';
+
+            } else if (pollCount >= maxPolls) {
+                clearInterval(pollInterval);
+                statusEl.className = 'stk-status visible pending';
+                statusEl.innerHTML = '⏳ Payment is still being processed. Please check your M-PESA messages.';
+                payBtn.disabled = false;
+                document.getElementById('payBtnText').textContent = '🔄 Check Status';
+                document.getElementById('paySpinner').style.display = 'none';
+                
+                payBtn.onclick = function() {
+                    document.getElementById('stkStatus').className = 'stk-status';
+                    document.getElementById('stkStatus').textContent = '';
+                    payBtn.onclick = initiatePayment;
+                    initiatePayment();
+                };
+            }
+
+        } catch (error) {
+            console.error('[KenyaVault] Polling error:', error);
+        }
+    }, 5000);
+}
+    async function recordTransaction(product, reference) {
+    try {
+        var data = {
+            document_id: product.id,
+            amount: product.price || 0,
+            status: 'completed',
+            reference: reference,
+            created_at: new Date().toISOString()
+        };
+
+        await fetch(SUPABASE_URL + '/rest/v1/transactions', {
+            method: 'POST',
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
+        console.log('[KenyaVault] Transaction recorded:', reference);
+    } catch (error) {
+        console.error('[KenyaVault] Error recording transaction:', error);
+    }
+}
     // ─── HERO COUNTER ANIMATION ──────────────────────────────
     function animateCounter() {
         var counters = document.querySelectorAll('.hero-v2__counter');
