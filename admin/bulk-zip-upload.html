@@ -761,7 +761,7 @@ function parseCurriculumFilename(filename) {
     
     // Find category ID
     let categoryId = 1;
-    const catMatch = categories.find(c => c.title.toLowerCase().includes(categoryName.toLowerCase()));
+    const catMatch = categories.find(c => c.title && c.title.toLowerCase().includes(categoryName.toLowerCase()));
     if (catMatch) categoryId = catMatch.id;
     
     return {
@@ -852,13 +852,16 @@ async function uploadToStorage(file, fileName) {
     });
     
     if (!response.ok) {
-        throw new Error('Failed to upload to storage: ' + response.status);
+        const errorText = await response.text();
+        throw new Error('Failed to upload to storage: ' + response.status + ' - ' + errorText);
     }
     
     return SUPABASE_URL + '/storage/v1/object/public/' + filePath;
 }
 
 async function createDocument(docData) {
+    console.log('Creating document with data:', docData);
+    
     const response = await fetch(SUPABASE_URL + '/rest/v1/resources', {
         method: 'POST',
         headers: {
@@ -872,7 +875,8 @@ async function createDocument(docData) {
     
     if (!response.ok) {
         const errorText = await response.text();
-        throw new Error('Failed to create document: ' + errorText);
+        console.error('Create document error response:', errorText);
+        throw new Error('Failed to create document: ' + response.status + ' - ' + errorText);
     }
     
     return await response.json();
@@ -995,9 +999,9 @@ function renderReview() {
     // Calculate stats
     const totalFiles = stagedFiles.length;
     const totalPrice = stagedFiles.reduce((sum, f) => sum + (f.price || 0), 0);
-    const categories = [...new Set(stagedFiles.map(f => f.categoryName))];
+    const uniqueCategories = [...new Set(stagedFiles.map(f => f.categoryName))];
     
-    const categoryOptions = window.categories.map(c => 
+    const categoryOptions = categories.map(c => 
         `<option value="${c.id}">${c.title}</option>`
     ).join('');
     
@@ -1043,7 +1047,7 @@ function renderReview() {
                 <div class="label">Total Files</div>
             </div>
             <div class="summary-stat">
-                <div class="number">${categories.length}</div>
+                <div class="number">${uniqueCategories.length}</div>
                 <div class="label">Categories</div>
             </div>
             <div class="summary-stat">
@@ -1088,15 +1092,16 @@ function renderReview() {
     document.getElementById('mainContent').innerHTML = html;
 }
 
-function renderComplete() {
+function renderComplete(publishedCount, failedCount) {
     const html = `
         <div class="admin-card" style="text-align:center;padding:3rem;">
             <i class="bi bi-check-circle-fill" style="font-size:4rem;color:#10b981;"></i>
             <h2 style="margin:1rem 0 0.5rem 0;">Bulk Ingestion Complete!</h2>
-            <p style="color:#64748b;max-width:500px;margin:0 auto 2rem auto;">
-                All staged documents have been processed, registered in database, and are now available for teachers to download.
+            <p style="color:#64748b;max-width:500px;margin:0 auto 0.5rem auto;">
+                Successfully published <strong>${publishedCount}</strong> documents to the catalog.
+                ${failedCount > 0 ? `<span style="color:#DC2626;">${failedCount} files failed.</span>` : ''}
             </p>
-            <div style="display:flex;justify-content:center;gap:1rem;flex-wrap:wrap;">
+            <div style="display:flex;justify-content:center;gap:1rem;flex-wrap:wrap;margin-top:2rem;">
                 <a href="admin-documents.html" class="admin-btn admin-btn-primary">View Document Catalog</a>
                 <button onclick="resetUpload()" class="admin-btn admin-btn-secondary">Upload Another ZIP</button>
             </div>
@@ -1258,31 +1263,36 @@ async function publishAll() {
             const price = prices[idx] || file.price || 50;
             const categoryId = categoryIds[idx] || file.categoryId;
             
+            // Update progress on button
+            if (publishBtn) {
+                publishBtn.innerHTML = `<i class="bi bi-hourglass-split"></i> Publishing ${published + 1}/${selectedIndices.length}...`;
+            }
+            
             try {
                 // Upload to storage
                 const blob = file.content;
                 const safeFilename = file.originalFilename.replace(/[^a-zA-Z0-9.]/g, '_');
                 const fileUrl = await uploadToStorage(blob, safeFilename);
                 
-                // Create document record
+                // Create document record - MATCH YOUR TABLE SCHEMA
+                // Only send fields that exist in your resources table
                 const docData = {
                     title: title,
                     description: 'Uploaded via bulk ZIP import',
                     category: file.categoryName,
-                    category_id: categoryId,
-                    education_level: file.levelTitle || '',
-                    level: file.levelTitle || '',
-                    grade: file.gradeTitle || '',
-                    term: file.termTitle || '',
                     price: price,
                     is_free: price === 0,
                     file_name: safeFilename,
                     file_url: fileUrl,
                     created_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString(),
                     download_count: 0
                 };
                 
+                // Add optional fields if they exist in your table
+                if (file.levelTitle) docData.education_level = file.levelTitle;
+                if (file.gradeTitle) docData.grade = file.gradeTitle;
+                
+                console.log('Creating document:', docData);
                 await createDocument(docData);
                 published++;
             } catch (err) {
@@ -1293,28 +1303,27 @@ async function publishAll() {
         }
         
         // Clear staged files after successful publish
-        if (published > 0) {
-            stagedFiles = [];
-            localStorage.removeItem('staged_bulk_files');
-            currentStep = 'complete';
-            renderComplete();
-        }
+        stagedFiles = [];
+        localStorage.removeItem('staged_bulk_files');
+        
+        // Show completion
+        renderComplete(published, failed);
         
         let message = `✅ Published ${published} files successfully.`;
         if (failed > 0) {
             message += `\n⚠️ ${failed} files failed: ${errors.join('; ')}`;
         }
-        alert(message);
+        if (failed === 0) {
+            alert(message);
+        } else {
+            alert(message);
+        }
         
     } catch (error) {
         console.error('Publish error:', error);
         alert('Error publishing: ' + error.message);
     } finally {
         isProcessing = false;
-        if (publishBtn) {
-            publishBtn.disabled = false;
-            publishBtn.innerHTML = '<i class="bi bi-rocket-takeoff-fill"></i> Publish All (' + selectedIndices.length + ')';
-        }
     }
 }
 
