@@ -1710,7 +1710,7 @@ SCRIPT
         document.getElementById('paymentModal').classList.remove('open');
     }
 
-   // ─── INITIATE PAYMENT ──────────────────────────────────
+  // ─── INITIATE PAYMENT ──────────────────────────────────
 async function initiatePayment() {
     if (!currentProduct) {
         showToast('Error', 'No product selected.', 'error');
@@ -1744,26 +1744,38 @@ async function initiatePayment() {
     var orderRef = 'KV-' + Date.now().toString().slice(-8) + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
 
     try {
+        // ─── GENERATE SESSION ID ──────────────────────────────────
+        var sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substring(2, 10);
+
         // ─── CREATE ORDER ──────────────────────────────────────────
-        // Generate a session ID (you can use a random string or a hash)
-        var sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
-        
         var orderData = {
             order_ref: orderRef,
-            session_id: sessionId,  // Add this required field
+            session_id: sessionId,  // REQUIRED - NOT NULL
+            customer_name: name,
+            customer_phone: phoneClean,
+            customer_email: name.toLowerCase().replace(/\s/g, '.') + '@customer.com',
+            name: name,
             email: name.toLowerCase().replace(/\s/g, '.') + '@customer.com',
             phone: phoneClean,
-            name: name,
             amount: Number(currentProduct.price) || 0,
             total_amount: Number(currentProduct.price) || 0,
+            item_title: currentProduct.title,
+            item_price: Number(currentProduct.price) || 0,
             status: 'pending',
             payment_status: 'pending',
+            payment_method: 'M-PESA',
             cart_items: [{
                 id: currentProduct.id,
                 title: currentProduct.title,
                 price: Number(currentProduct.price) || 0
             }],
             resource_ids: [currentProduct.id],
+            resource_id: currentProduct.id,
+            item_count: 1,
+            cart_total: Number(currentProduct.price) || 0,
+            currency: 'KES',
+            ip_address: '0.0.0.0',
+            user_agent: navigator.userAgent || 'Unknown',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
         };
@@ -1882,16 +1894,19 @@ async function initiatePayment() {
 
             var result = await response.json();
 
-            if (result.isPaid || result.status === 'paid') {
+            if (result.isPaid || result.status === 'paid' || result.payment_confirmed === true) {
                 clearInterval(pollInterval);
                 statusEl.className = 'stk-status visible success';
                 statusEl.innerHTML = '✅ Payment successful! Your download will begin shortly.';
 
+                // Download the resource
                 if (currentProduct && currentProduct.file_url) {
                     window.open(currentProduct.file_url, '_blank');
                 }
 
+                // Record transaction
                 await recordTransaction(currentProduct, orderRef);
+
                 showToast('Payment Successful', 'Your payment was confirmed!', 'success');
                 payBtn.disabled = false;
                 document.getElementById('payBtnText').textContent = '✅ Done';
@@ -1927,6 +1942,7 @@ async function initiatePayment() {
 
         } catch (error) {
             console.error('[KenyaVault] Polling error:', error);
+            // Continue polling on network errors
         }
     }, 5000);
 }
