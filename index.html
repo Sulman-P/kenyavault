@@ -1355,11 +1355,11 @@ TOAST CONTAINER
 <div class="toast-container" id="toastContainer"></div>
 
 <!-- ============================================================
-SCRIPT - FULLY UPDATED WITH FIXED PAYMENT FLOW
+SCRIPT - REBUILT WITH FIXES
 ============================================================ -->
 <script>
 // ============================================================
-// KENYAVAULT — HOMEPAGE WITH REAL DATA & FIXED PAYMENT
+// KENYAVAULT — HOMEPAGE WITH FIXED PAYMENT
 // ============================================================
 
 (function() {
@@ -1378,6 +1378,7 @@ SCRIPT - FULLY UPDATED WITH FIXED PAYMENT FLOW
     var paymentTimeout = null;
     var isProcessingPayment = false;
     var currentOrderRef = null;
+    var paymentConfirmed = false;
 
     // ─── DOM REFS ──────────────────────────────────────────────
     var categoryGrid = document.getElementById('categoryGrid');
@@ -1760,6 +1761,7 @@ SCRIPT - FULLY UPDATED WITH FIXED PAYMENT FLOW
         }
         currentProduct = resource;
         currentOrderRef = null;
+        paymentConfirmed = false;
         document.getElementById('paymentProductTitle').textContent = resource.title || 'Resource';
         document.getElementById('paymentProductPrice').textContent = 'KES ' + (resource.price || 0);
         document.getElementById('paymentModal').classList.add('open');
@@ -1796,6 +1798,7 @@ SCRIPT - FULLY UPDATED WITH FIXED PAYMENT FLOW
         }
         isProcessingPayment = false;
         currentOrderRef = null;
+        paymentConfirmed = false;
     }
 
     // ─── VERIFY PAYMENT IN DATABASE ──────────────────────────
@@ -1860,6 +1863,7 @@ SCRIPT - FULLY UPDATED WITH FIXED PAYMENT FLOW
         document.getElementById('payBtnText').textContent = 'Processing...';
         document.getElementById('paySpinner').style.display = 'inline-block';
         isProcessingPayment = true;
+        paymentConfirmed = false;
 
         statusEl.className = 'stk-status visible pending';
         statusEl.style.display = 'block';
@@ -2088,12 +2092,14 @@ SCRIPT - FULLY UPDATED WITH FIXED PAYMENT FLOW
                         statusEl.innerHTML = '✅ Payment successful! Your download will begin shortly.';
                         document.getElementById('paymentTimer').textContent = '✅ Payment confirmed!';
 
-                        // Download the resource
+                        paymentConfirmed = true;
+
+                        // Download the resource - ONLY HERE
                         if (currentProduct && currentProduct.file_url) {
                             window.open(currentProduct.file_url, '_blank');
                         }
 
-                        // Record transaction
+                        // Record transaction - FIXED without order_ref
                         await recordTransaction(currentProduct, orderRef);
 
                         showToast('Payment Successful', 'Your payment was confirmed!', 'success');
@@ -2199,34 +2205,26 @@ SCRIPT - FULLY UPDATED WITH FIXED PAYMENT FLOW
         }
     }
 
+    // ─── RECORD TRANSACTION - FIXED ──────────────────────────
     async function recordTransaction(product, reference) {
         try {
             // FIX: document_id expects bigint (number), not UUID
-            // Convert the ID to a number if possible, or use a numeric fallback
-            var docId = parseInt(product.id);
-            if (isNaN(docId)) {
-                // If the ID is not a number (UUID), we need to use the order reference instead
-                // Or we can omit document_id if your table allows null
-                console.warn('[KenyaVault] Product ID is not numeric:', product.id);
-                // Try to extract numeric part from the ID if it's a mix
-                var numericMatch = product.id.match(/\d+/);
+            var docId = null;
+            if (product.id) {
+                var numericMatch = String(product.id).match(/\d+/);
                 if (numericMatch) {
                     docId = parseInt(numericMatch[0]);
-                } else {
-                    // If no numeric part, we'll use a null or skip the field
-                    docId = null;
                 }
             }
             
             var data = {
-                order_ref: reference,
                 amount: product.price || 0,
                 status: 'completed',
                 reference: reference,
                 created_at: new Date().toISOString()
             };
             
-            // Only add document_id if it's valid and not null
+            // Only add document_id if it's valid
             if (docId !== null && !isNaN(docId)) {
                 data.document_id = docId;
             }
