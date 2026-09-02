@@ -933,12 +933,18 @@
             color: var(--kv-muted);
         }
         .pc-body .pc-creator i { color: var(--kv-gold); margin-right: 3px; }
-        .pc-body .pc-rating {
-            font-size: 0.55rem;
-            color: var(--kv-gold);
-            letter-spacing: 1px;
+        .pc-body .pc-stats {
+            display: flex;
+            gap: 10px;
+            font-size: 0.6rem;
+            color: var(--kv-muted);
         }
-        .pc-body .pc-rating span { color: var(--kv-muted); }
+        .pc-body .pc-stats .rating-stars {
+            color: var(--kv-gold);
+        }
+        .pc-body .pc-stats .empty-star {
+            color: #d1d5db;
+        }
         .pc-meta {
             display: flex;
             gap: 6px;
@@ -3007,6 +3013,50 @@ LEGAL CONSENT BANNER
         return map[t] || t.replace(/\s+/g, '-');
     }
 
+    function getSubjectColor(subject) {
+        var colors = {
+            'mathematics': '#2563EB',
+            'english': '#7C3AED',
+            'kiswahili': '#DC2626',
+            'science': '#059669',
+            'social studies': '#D97706',
+            'cre': '#8B5CF6',
+            'ire': '#059669',
+            'hre': '#8B5CF6',
+            'agriculture': '#16A34A',
+            'business studies': '#2563EB',
+            'computer science': '#7C3AED',
+            'history': '#D97706',
+            'geography': '#059669',
+            'physics': '#2563EB',
+            'chemistry': '#DC2626',
+            'biology': '#059669'
+        };
+        return colors[subject] || '#667085';
+    }
+
+    function getSubjectEmoji(subject) {
+        var map = {
+            'mathematics': '📐',
+            'english': '📖',
+            'kiswahili': '📚',
+            'science': '🔬',
+            'social studies': '🌍',
+            'cre': '⛪',
+            'ire': '🕌',
+            'hre': '⛪',
+            'agriculture': '🌾',
+            'business studies': '💼',
+            'computer science': '💻',
+            'history': '📜',
+            'geography': '🌏',
+            'physics': '⚛️',
+            'chemistry': '🧪',
+            'biology': '🧬'
+        };
+        return map[subject] || '📘';
+    }
+
     // ─── RENDER CATEGORIES ────────────────────────────────────
     function renderCategories() {
         if (!categoryGrid) return;
@@ -3082,8 +3132,6 @@ LEGAL CONSENT BANNER
             freeBadge = '<span class="cover-badge free-badge">FREE</span>';
         } else if (r.featured) {
             freeBadge = '<span class="cover-badge featured-badge">⭐ Featured</span>';
-        } else if (status === 'unavailable') {
-            freeBadge = '<span class="price-unavailable-badge">⚠️ Unavailable</span>';
         }
 
         var coverHTML = '';
@@ -3142,16 +3190,1019 @@ LEGAL CONSENT BANNER
             '<div class="pc-footer">' +
             '<span class="' + priceClass + '">' + priceDisplay + '</span>' +
             '<div class="pc-actions">' +
-            '<button class="btn-preview" onclick="window.openPreview(\'' + productId + '\')"><i class="fas fa-eye"></i></button>' +
+            '<button class="btn-preview" onclick="openPreview(\'' + productId + '\')"><i class="fas fa-eye"></i></button>' +
             '<button class="btn-add-cart ' + (inCart ? 'added' : '') + '" id="cartBtn-' + productId +
-            '" onclick="window.addToCart(\'' + productId + '\')"' + (status === 'unavailable' ? ' disabled' : '') +
+            '" onclick="addToCart(\'' + productId + '\')"' + (status === 'unavailable' ? ' disabled' : '') +
             '>' + (inCart ? '✓' : '🛒') + '</button>' +
             '<button class="' + buyButtonClass + '" data-product-id="' + productId +
-            '" onclick="window.openCheckout(\'' + productId + '\')"' + (status === 'unavailable' ? ' disabled' :
+            '" onclick="openCheckout(\'' + productId + '\')"' + (status === 'unavailable' ? ' disabled' :
                 '') + '>' + buyButtonText + '</button>' +
             '</div></div></div>';
     }
 
-    function getSubjectEmoji(subject) {
-        var map = {
-            mathematics: '📐',
+    // ─── EXPOSE FUNCTIONS TO GLOBAL SCOPE ─────────────────────
+    window.getResourcePricing = getResourcePricing;
+    window.isResourceFree = isResourceFree;
+    window.showToast = showToast;
+    window.normalizeResourceType = normalizeResourceType;
+    window.getSubjectEmoji = getSubjectEmoji;
+    window.getSubjectColor = getSubjectColor;
+
+    // ─── FILTER FUNCTIONS ──────────────────────────────────────
+    function filterByLevel(level) {
+        currentFilters.level = currentFilters.level === level ? '' : level;
+        currentPage = 1;
+        applyFilters();
+    }
+
+    function filterByGrade(grade) {
+        currentFilters.grade = currentFilters.grade === grade ? '' : grade;
+        currentPage = 1;
+        applyFilters();
+    }
+
+    function filterByType(type) {
+        currentFilters.type = currentFilters.type === type ? '' : type;
+        currentPage = 1;
+        applyFilters();
+    }
+
+    function filterBySubject(subject) {
+        currentFilters.subject = currentFilters.subject === subject ? '' : subject;
+        currentPage = 1;
+        applyFilters();
+    }
+
+    function setPriceRange(range) {
+        currentFilters.price = range;
+        currentPage = 1;
+        applyFilters();
+    }
+
+    function filterByCategory(categoryId) {
+        var cat = CATEGORY_DEFS.find(function(c) { return c.id === categoryId; });
+        if (cat && cat.type && cat.type.length > 0) {
+            currentFilters.type = cat.type[0];
+            currentPage = 1;
+            applyFilters();
+            document.getElementById('shop').scrollIntoView({ behavior: 'smooth' });
+        }
+    }
+
+    window.filterByLevel = filterByLevel;
+    window.filterByGrade = filterByGrade;
+    window.filterByType = filterByType;
+    window.filterBySubject = filterBySubject;
+    window.setPriceRange = setPriceRange;
+    window.filterByCategory = filterByCategory;
+
+    // ─── SEARCH ──────────────────────────────────────────────────
+    function handleSearch() {
+        var searchTerm = searchInput.value.trim();
+        currentFilters.search = searchTerm;
+        if (searchTerm.length > 0) {
+            clearSearchBtn.classList.add('visible');
+        } else {
+            clearSearchBtn.classList.remove('visible');
+        }
+        currentPage = 1;
+        applyFilters();
+    }
+
+    function clearSearchInput() {
+        searchInput.value = '';
+        currentFilters.search = '';
+        clearSearchBtn.classList.remove('visible');
+        currentPage = 1;
+        applyFilters();
+    }
+
+    function heroSearch() {
+        var input = document.getElementById('heroSearchInput');
+        if (input) {
+            searchInput.value = input.value;
+            handleSearch();
+            document.getElementById('shop').scrollIntoView({ behavior: 'smooth' });
+        }
+    }
+
+    window.handleSearch = handleSearch;
+    window.clearSearchInput = clearSearchInput;
+    window.heroSearch = heroSearch;
+
+    // ─── RESET FILTERS ──────────────────────────────────────────
+    function resetFilters() {
+        currentFilters = {
+            level: '',
+            grade: '',
+            type: '',
+            subject: '',
+            price: 'all',
+            search: ''
+        };
+        currentSort = 'newest';
+        searchInput.value = '';
+        clearSearchBtn.classList.remove('visible');
+
+        // Reset radio buttons
+        var radios = document.querySelectorAll('input[name="priceFilter"]');
+        radios.forEach(function(r) {
+            if (r.value === 'all') {
+                r.checked = true;
+            }
+        });
+
+        document.getElementById('sortSelect').value = 'newest';
+        document.getElementById('mobileSortSelect').value = 'newest';
+
+        currentPage = 1;
+        applyFilters();
+    }
+
+    window.resetFilters = resetFilters;
+
+    // ─── APPLY FILTERS ──────────────────────────────────────────
+    function applyFilters() {
+        var searchTerm = currentFilters.search.toLowerCase().trim();
+        var levelFilter = currentFilters.level;
+        var gradeFilter = currentFilters.grade;
+        var typeFilter = currentFilters.type;
+        var subjectFilter = currentFilters.subject;
+        var priceFilter = currentFilters.price;
+        var sort = document.getElementById('sortSelect').value || 'newest';
+        currentSort = sort;
+
+        filteredResources = allResources.filter(function(r) {
+            // Search filter
+            if (searchTerm) {
+                var titleMatch = (r.title || '').toLowerCase().includes(searchTerm);
+                var subjectMatch = (r.subject || '').toLowerCase().includes(searchTerm);
+                var typeMatch = (r.resource_type || '').toLowerCase().includes(searchTerm);
+                var levelMatch = (r.level || '').toLowerCase().includes(searchTerm);
+                var gradeMatch = (r.grade || '').toLowerCase().includes(searchTerm);
+                var descMatch = (r.description || '').toLowerCase().includes(searchTerm);
+                if (!titleMatch && !subjectMatch && !typeMatch && !levelMatch && !gradeMatch && !descMatch) {
+                    return false;
+                }
+            }
+
+            // Level filter
+            if (levelFilter && r.level_normalized !== levelFilter) {
+                return false;
+            }
+
+            // Grade filter
+            if (gradeFilter && r.grade !== gradeFilter) {
+                return false;
+            }
+
+            // Type filter
+            if (typeFilter) {
+                var rt = r.resource_type_normalized || normalizeResourceType(r.resource_type || '');
+                if (rt !== typeFilter) {
+                    return false;
+                }
+            }
+
+            // Subject filter
+            if (subjectFilter && (r.subject || '').toLowerCase() !== subjectFilter.toLowerCase()) {
+                return false;
+            }
+
+            // Price filter
+            if (priceFilter === 'free' && !isResourceFree(r)) {
+                return false;
+            }
+            if (priceFilter === 'paid' && isResourceFree(r)) {
+                return false;
+            }
+
+            return true;
+        });
+
+        // Sort
+        filteredResources.sort(function(a, b) {
+            if (sort === 'newest') {
+                return new Date(b.created_at) - new Date(a.created_at);
+            }
+            if (sort === 'popular') {
+                return (b.download_count || 0) - (a.download_count || 0);
+            }
+            if (sort === 'grade-asc') {
+                var aGrade = GRADE_ORDER[a.grade] || 99;
+                var bGrade = GRADE_ORDER[b.grade] || 99;
+                return aGrade - bGrade;
+            }
+            if (sort === 'grade-desc') {
+                var aGrade2 = GRADE_ORDER[a.grade] || 99;
+                var bGrade2 = GRADE_ORDER[b.grade] || 99;
+                return bGrade2 - aGrade2;
+            }
+            if (sort === 'price-asc') {
+                return (a.price || 0) - (b.price || 0);
+            }
+            if (sort === 'price-desc') {
+                return (b.price || 0) - (a.price || 0);
+            }
+            return 0;
+        });
+
+        renderProducts();
+        updateStats();
+    }
+
+    window.applyFilters = applyFilters;
+
+    // ─── RENDER PRODUCTS ──────────────────────────────────────
+    function renderProducts() {
+        var totalItems = filteredResources.length;
+        var totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE) || 1;
+
+        if (currentPage > totalPages) {
+            currentPage = totalPages;
+        }
+
+        var start = (currentPage - 1) * ITEMS_PER_PAGE;
+        var end = Math.min(start + ITEMS_PER_PAGE, totalItems);
+        var pageItems = filteredResources.slice(start, end);
+
+        if (productCount) {
+            productCount.textContent = totalItems;
+        }
+
+        if (!productsGrid) return;
+
+        if (totalItems === 0) {
+            productsGrid.innerHTML = '<div class="empty-state">' +
+                '<span class="empty-icon">🔍</span>' +
+                '<h3>No resources found</h3>' +
+                '<p class="empty-detail">Try adjusting your filters or search terms.</p>' +
+                '<button onclick="resetFilters();applyFilters()">Reset Filters</button>' +
+                '</div>';
+            pagination.style.display = 'none';
+            return;
+        }
+
+        var html = '';
+        for (var i = 0; i < pageItems.length; i++) {
+            html += buildCardHTML(pageItems[i]);
+        }
+        productsGrid.innerHTML = html;
+
+        // Update pagination
+        pagination.style.display = 'flex';
+        pageInfo.textContent = 'Page ' + currentPage + ' of ' + totalPages;
+        prevPage.disabled = currentPage <= 1;
+        nextPage.disabled = currentPage >= totalPages;
+    }
+
+    // ─── CHANGE PAGE ──────────────────────────────────────────
+    function changePage(direction) {
+        var totalPages = Math.ceil(filteredResources.length / ITEMS_PER_PAGE) || 1;
+        var newPage = currentPage + direction;
+        if (newPage >= 1 && newPage <= totalPages) {
+            currentPage = newPage;
+            renderProducts();
+            // Scroll to top of products area
+            var shopContent = document.getElementById('shopContent');
+            if (shopContent) {
+                shopContent.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }
+    }
+
+    window.changePage = changePage;
+
+    // ─── UPDATE STATS ──────────────────────────────────────────
+    function updateStats() {
+        var statResources = document.getElementById('statResources');
+        var statFree = document.getElementById('statFree');
+        var statOrders = document.getElementById('statOrders');
+
+        if (statResources) {
+            statResources.textContent = allResources.length;
+        }
+        if (statFree) {
+            var freeCount = allResources.filter(function(r) { return isResourceFree(r); }).length;
+            statFree.textContent = freeCount;
+        }
+        if (statOrders) {
+            // Simulated orders for today
+            var ordersToday = Math.floor(Math.random() * 50) + 10;
+            statOrders.textContent = ordersToday;
+        }
+    }
+
+    // ─── ADD TO CART ──────────────────────────────────────────
+    function addToCart(productId) {
+        var resource = allResources.find(function(r) { return r.id === productId; });
+        if (!resource) {
+            showToast('Error', 'Resource not found.', 'error');
+            return;
+        }
+
+        var pricing = getResourcePricing(resource);
+        if (pricing.status === 'unavailable') {
+            showToast('Unavailable', 'This resource is currently not available.', 'error');
+            return;
+        }
+
+        var existing = cart.find(function(item) { return item.id === productId; });
+        if (existing) {
+            // Remove from cart
+            cart = cart.filter(function(item) { return item.id !== productId; });
+            var btn = document.getElementById('cartBtn-' + productId);
+            if (btn) {
+                btn.classList.remove('added');
+                btn.textContent = '🛒';
+            }
+            showToast('Removed', 'Removed from cart.', 'info');
+            return;
+        }
+
+        cart.push({
+            id: resource.id,
+            title: resource.title,
+            price: resource.price || 0,
+            isFree: pricing.isFree,
+            resource: resource
+        });
+
+        var btn = document.getElementById('cartBtn-' + productId);
+        if (btn) {
+            btn.classList.add('added');
+            btn.textContent = '✓';
+        }
+        showToast('Added to Cart', resource.title + ' added to your cart.', 'success');
+    }
+
+    window.addToCart = addToCart;
+
+    // ─── OPEN CHECKOUT ──────────────────────────────────────────
+    function openCheckout(productId) {
+        var resource = allResources.find(function(r) { return r.id === productId; });
+        if (!resource) {
+            showToast('Error', 'Resource not found.', 'error');
+            return;
+        }
+
+        var pricing = getResourcePricing(resource);
+        if (pricing.status === 'unavailable') {
+            showToast('Unavailable', 'This resource is currently not available.', 'error');
+            return;
+        }
+
+        // If not in cart, add it
+        var inCart = cart.some(function(item) { return item.id === productId; });
+        if (!inCart) {
+            addToCart(productId);
+        }
+
+        // Check if cart has items
+        if (cart.length === 0) {
+            showToast('Cart Empty', 'Please add items to your cart first.', 'error');
+            return;
+        }
+
+        // Open checkout modal
+        var modal = document.getElementById('checkoutModal');
+        if (modal) {
+            modal.classList.add('open');
+        }
+
+        // Populate checkout summary
+        var totalPrice = 0;
+        var allFree = true;
+        var lineItemsHTML = '';
+        cart.forEach(function(item) {
+            var itemPrice = item.isFree ? 0 : (item.price || 0);
+            totalPrice += itemPrice;
+            if (!item.isFree) allFree = false;
+            lineItemsHTML += '<div class="cart-line-item"><span>' + item.title + '</span><span>' + (item.isFree ? 'FREE' : 'KES ' + itemPrice) + '</span></div>';
+        });
+
+        document.getElementById('checkoutLineItems').innerHTML = lineItemsHTML;
+        document.getElementById('checkoutItemTitle').textContent = cart.length + ' item(s)';
+        if (allFree) {
+            document.getElementById('checkoutTotal').textContent = 'FREE';
+            document.getElementById('checkoutTotal').className = 'summary-value free';
+        } else {
+            document.getElementById('checkoutTotal').textContent = 'KES ' + totalPrice;
+            document.getElementById('checkoutTotal').className = 'summary-value price';
+        }
+
+        // Reset payment UI
+        document.getElementById('stkStatus').className = 'stk-status';
+        document.getElementById('stkStatus').textContent = '';
+        document.getElementById('payPrimaryBtn').disabled = false;
+        document.getElementById('payPrimaryBtn').classList.remove('loading');
+        document.getElementById('verifyOrderBtn').style.display = 'none';
+        document.getElementById('retryPaymentBtn').style.display = 'none';
+        document.getElementById('manualVerificationSection').classList.remove('visible');
+
+        // Pre-fill phone if available
+        var phoneInput = document.getElementById('phoneInput');
+        if (phoneInput) {
+            phoneInput.value = '';
+        }
+        var nameInput = document.getElementById('customerName');
+        if (nameInput) {
+            nameInput.value = '';
+        }
+    }
+
+    window.openCheckout = openCheckout;
+
+    // ─── CLOSE CHECKOUT ──────────────────────────────────────────
+    function closeCheckoutModal() {
+        var modal = document.getElementById('checkoutModal');
+        if (modal) {
+            modal.classList.remove('open');
+        }
+    }
+
+    window.closeCheckoutModal = closeCheckoutModal;
+
+    // ─── INITIATE PAYMENT ──────────────────────────────────────
+    function initiatePayment() {
+        if (cart.length === 0) {
+            showToast('Cart Empty', 'Please add items to your cart.', 'error');
+            return;
+        }
+
+        var phoneInput = document.getElementById('phoneInput');
+        var nameInput = document.getElementById('customerName');
+        var phone = phoneInput ? phoneInput.value.trim() : '';
+        var name = nameInput ? nameInput.value.trim() : '';
+
+        // Validate phone
+        var phoneClean = phone.replace(/\s/g, '').replace(/^0/, '254');
+        if (phoneClean.length < 10 || !phoneClean.startsWith('254')) {
+            showToast('Invalid Phone', 'Please enter a valid Safaricom phone number (e.g., 0712345678)', 'error');
+            if (phoneInput) phoneInput.classList.add('error');
+            return;
+        }
+        if (phoneInput) phoneInput.classList.remove('error');
+
+        if (!name || name.length < 2) {
+            showToast('Name Required', 'Please enter your full name.', 'error');
+            if (nameInput) nameInput.classList.add('error');
+            return;
+        }
+        if (nameInput) nameInput.classList.remove('error');
+
+        // Calculate total
+        var totalPrice = 0;
+        var allFree = true;
+        cart.forEach(function(item) {
+            if (!item.isFree) {
+                totalPrice += (item.price || 0);
+                allFree = false;
+            }
+        });
+
+        if (allFree) {
+            // Free resources - just download
+            showToast('Processing', 'Preparing your free downloads...', 'info');
+            setTimeout(function() {
+                cart.forEach(function(item) {
+                    if (item.resource && item.resource.file_url) {
+                        window.open(item.resource.file_url, '_blank');
+                    }
+                });
+                showToast('Success', 'Your free resources are downloading!', 'success');
+                cart = [];
+                closeCheckoutModal();
+                renderProducts();
+            }, 1500);
+            return;
+        }
+
+        // Paid resources - simulate M-PESA STK Push
+        var payBtn = document.getElementById('payPrimaryBtn');
+        var statusEl = document.getElementById('stkStatus');
+
+        // Show loading
+        payBtn.disabled = true;
+        payBtn.classList.add('loading');
+
+        statusEl.className = 'stk-status visible pending';
+        statusEl.innerHTML = '<span class="spinner"></span> Sending STK Push to ' + phoneClean + '...';
+
+        // Simulate payment processing
+        setTimeout(function() {
+            // Simulate success (80% of the time)
+            var success = Math.random() < 0.8;
+
+            if (success) {
+                statusEl.className = 'stk-status visible success';
+                statusEl.textContent = '✅ Payment successful! Your order is being processed.';
+
+                // Show verify button after success
+                var verifyBtn = document.getElementById('verifyOrderBtn');
+                if (verifyBtn) {
+                    verifyBtn.style.display = 'block';
+                    verifyBtn.disabled = false;
+                }
+
+                payBtn.disabled = false;
+                payBtn.classList.remove('loading');
+
+                // Generate order reference
+                var orderRef = 'KV-' + Date.now().toString().slice(-8) + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
+                document.getElementById('successOrderRef').textContent = orderRef;
+
+                showToast('Payment Successful', 'Your payment was confirmed successfully!', 'success');
+            } else {
+                statusEl.className = 'stk-status visible error';
+                statusEl.innerHTML = '❌ Payment failed. Please try again or use manual verification.';
+
+                // Show manual verification
+                document.getElementById('manualVerificationSection').classList.add('visible');
+
+                // Show retry button
+                var retryBtn = document.getElementById('retryPaymentBtn');
+                if (retryBtn) {
+                    retryBtn.style.display = 'block';
+                }
+
+                payBtn.disabled = false;
+                payBtn.classList.remove('loading');
+            }
+        }, 3000);
+    }
+
+    window.initiatePayment = initiatePayment;
+
+    // ─── VERIFY ORDER ──────────────────────────────────────────
+    function checkOrderPaymentStatus() {
+        var verifyBtn = document.getElementById('verifyOrderBtn');
+        verifyBtn.disabled = true;
+        verifyBtn.textContent = '⏳ Verifying...';
+
+        // Simulate verification
+        setTimeout(function() {
+            verifyBtn.textContent = '✅ Verified! Downloading...';
+
+            // Download resources
+            cart.forEach(function(item) {
+                if (item.resource && item.resource.file_url) {
+                    window.open(item.resource.file_url, '_blank');
+                }
+            });
+
+            // Show success modal
+            setTimeout(function() {
+                var modal = document.getElementById('successModal');
+                if (modal) {
+                    modal.classList.add('open');
+                }
+                cart = [];
+                closeCheckoutModal();
+                renderProducts();
+            }, 1000);
+
+        }, 2000);
+    }
+
+    window.checkOrderPaymentStatus = checkOrderPaymentStatus;
+
+    // ─── RETRY PAYMENT ──────────────────────────────────────────
+    function retryPayment() {
+        document.getElementById('stkStatus').className = 'stk-status';
+        document.getElementById('stkStatus').textContent = '';
+        document.getElementById('manualVerificationSection').classList.remove('visible');
+        document.getElementById('retryPaymentBtn').style.display = 'none';
+        initiatePayment();
+    }
+
+    window.retryPayment = retryPayment;
+
+    // ─── MANUAL VERIFICATION ──────────────────────────────────
+    function verifyMpesaPaymentManually() {
+        var codeInput = document.getElementById('mpesaVerificationCode');
+        var phoneInput = document.getElementById('mpesaVerificationPhone');
+        var statusEl = document.getElementById('manualVerificationStatus');
+        var verifyBtn = document.getElementById('manualVerifyBtn');
+
+        var code = codeInput ? codeInput.value.trim().toUpperCase() : '';
+        var phone = phoneInput ? phoneInput.value.trim() : '';
+
+        if (!code || code.length < 6) {
+            statusEl.className = 'mv-status error';
+            statusEl.textContent = '❌ Please enter a valid M-PESA confirmation code.';
+            return;
+        }
+
+        if (!phone) {
+            // Use the phone from the main form
+            var mainPhone = document.getElementById('phoneInput');
+            if (mainPhone) {
+                phone = mainPhone.value.trim();
+            }
+        }
+
+        if (!phone) {
+            statusEl.className = 'mv-status error';
+            statusEl.textContent = '❌ Please enter your phone number.';
+            return;
+        }
+
+        verifyBtn.disabled = true;
+        statusEl.className = 'mv-status pending';
+        statusEl.textContent = '⏳ Verifying payment with M-PESA...';
+
+        // Simulate verification
+        setTimeout(function() {
+            // Simulate 90% success rate
+            var success = Math.random() < 0.9;
+
+            if (success) {
+                statusEl.className = 'mv-status success';
+                statusEl.innerHTML = '✅ Payment verified successfully! Your download will begin shortly.';
+
+                // Download resources
+                cart.forEach(function(item) {
+                    if (item.resource && item.resource.file_url) {
+                        window.open(item.resource.file_url, '_blank');
+                    }
+                });
+
+                setTimeout(function() {
+                    var modal = document.getElementById('successModal');
+                    if (modal) {
+                        modal.classList.add('open');
+                    }
+                    cart = [];
+                    closeCheckoutModal();
+                    renderProducts();
+                }, 1500);
+
+            } else {
+                statusEl.className = 'mv-status error';
+                statusEl.textContent = '❌ Verification failed. Please check your M-PESA code and try again.';
+                verifyBtn.disabled = false;
+            }
+        }, 2500);
+    }
+
+    window.verifyMpesaPaymentManually = verifyMpesaPaymentManually;
+
+    // ─── CLOSE SUCCESS MODAL ──────────────────────────────────
+    function closeSuccessModal() {
+        var modal = document.getElementById('successModal');
+        if (modal) {
+            modal.classList.remove('open');
+        }
+    }
+
+    window.closeSuccessModal = closeSuccessModal;
+
+    // ─── PREVIEW ──────────────────────────────────────────────
+    function openPreview(productId) {
+        var resource = allResources.find(function(r) { return r.id === productId; });
+        if (!resource) {
+            showToast('Error', 'Resource not found.', 'error');
+            return;
+        }
+
+        var modal = document.getElementById('previewModal');
+        if (!modal) return;
+
+        // Populate preview info
+        var infoHTML = '';
+        var fields = [
+            { label: 'Level', value: LEVEL_DISPLAY[resource.level_normalized] || resource.level || 'N/A' },
+            { label: 'Grade', value: GRADE_DISPLAY[resource.grade] || resource.grade || 'N/A' },
+            { label: 'Subject', value: resource.subject || 'General' },
+            { label: 'Pages', value: resource.pages || 0 },
+            { label: 'Type', value: resource.resource_type || 'General' },
+            { label: 'Downloads', value: resource.download_count || 0 }
+        ];
+
+        fields.forEach(function(f) {
+            infoHTML += '<div class="info-item"><div class="label">' + f.label + '</div><div class="value">' + f.value + '</div></div>';
+        });
+
+        document.getElementById('previewInfo').innerHTML = infoHTML;
+
+        // Set preview title
+        var headerTitle = document.querySelector('#previewModal .preview-header h3');
+        if (headerTitle) {
+            headerTitle.textContent = resource.title || 'Resource Preview';
+        }
+
+        // Set price
+        var pricing = getResourcePricing(resource);
+        var priceEl = document.getElementById('previewPrice');
+        if (priceEl) {
+            priceEl.textContent = pricing.priceDisplay;
+            priceEl.className = 'preview-price' + (pricing.isFree ? ' free' : '');
+        }
+
+        // Set buy button
+        var buyBtn = document.getElementById('previewBuyBtn');
+        if (buyBtn) {
+            buyBtn.textContent = pricing.isFree ? 'Download Free' : 'Buy Now →';
+            buyBtn.className = 'btn-buy-preview' + (pricing.isFree ? ' free' : '');
+            buyBtn.dataset.productId = productId;
+            buyBtn.disabled = pricing.status === 'unavailable';
+        }
+
+        modal.classList.add('open');
+    }
+
+    window.openPreview = openPreview;
+
+    function closePreview() {
+        var modal = document.getElementById('previewModal');
+        if (modal) {
+            modal.classList.remove('open');
+        }
+    }
+
+    window.closePreview = closePreview;
+
+    function buyFromPreview() {
+        var btn = document.getElementById('previewBuyBtn');
+        if (btn) {
+            var productId = btn.dataset.productId;
+            if (productId) {
+                closePreview();
+                openCheckout(productId);
+            }
+        }
+    }
+
+    window.buyFromPreview = buyFromPreview;
+
+    // ─── MOBILE FILTER TOGGLE ──────────────────────────────────
+    function toggleMobileFilter() {
+        // Create or get the filter overlay and bottom sheet
+        var overlay = document.querySelector('.filter-overlay');
+        var sheet = document.querySelector('.filter-bottom-sheet');
+
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.className = 'filter-overlay';
+            overlay.onclick = function() { toggleMobileFilter(); };
+            document.body.appendChild(overlay);
+
+            sheet = document.createElement('div');
+            sheet.className = 'filter-bottom-sheet';
+            sheet.innerHTML = `
+                <div class="sheet-header">
+                    <h3>Filters</h3>
+                    <button class="sheet-close" onclick="toggleMobileFilter()">✕</button>
+                </div>
+                <div id="mobileFilterContent"></div>
+                <button class="sheet-apply-btn" onclick="applyMobileFilters()">Apply Filters</button>
+            `;
+            document.body.appendChild(sheet);
+        }
+
+        // Populate mobile filter content from sidebar
+        var content = document.getElementById('mobileFilterContent');
+        if (content) {
+            var sidebarContent = document.querySelector('#sidebar .sidebar-card');
+            if (sidebarContent) {
+                var clone = sidebarContent.cloneNode(true);
+                // Remove the clear filters button from clone
+                var clearBtn = clone.querySelector('.clear-filters');
+                if (clearBtn) clearBtn.remove();
+                content.innerHTML = clone.innerHTML;
+
+                // Re-bind events for mobile filters
+                var checkboxes = content.querySelectorAll('input[type="checkbox"], input[type="radio"]');
+                checkboxes.forEach(function(cb) {
+                    cb.addEventListener('change', function() {
+                        // This will propagate to the main filter system
+                        var parentLabel = this.closest('label');
+                        if (parentLabel) {
+                            var isActive = this.checked;
+                            // Find the corresponding filter in the main sidebar
+                            var mainId = this.id;
+                            var mainEl = document.getElementById(mainId);
+                            if (mainEl) {
+                                mainEl.checked = isActive;
+                                mainEl.dispatchEvent(new Event('change'));
+                            }
+                        }
+                    });
+                });
+
+                // Copy select value
+                var sortSelect = content.querySelector('.sort-select');
+                if (sortSelect) {
+                    var mainSort = document.getElementById('sortSelect');
+                    if (mainSort) {
+                        sortSelect.value = mainSort.value;
+                        sortSelect.addEventListener('change', function() {
+                            document.getElementById('sortSelect').value = this.value;
+                            applyFilters();
+                        });
+                    }
+                }
+            }
+        }
+
+        overlay.classList.toggle('open');
+        sheet.classList.toggle('open');
+        document.body.style.overflow = sheet.classList.contains('open') ? 'hidden' : '';
+    }
+
+    window.toggleMobileFilter = toggleMobileFilter;
+
+    function applyMobileFilters() {
+        toggleMobileFilter();
+        applyFilters();
+    }
+
+    window.applyMobileFilters = applyMobileFilters;
+
+    // ─── CONSENT BANNER ──────────────────────────────────────────
+    function setupConsentBanner() {
+        var checkbox = document.getElementById('consentCheckbox');
+        var acceptBtn = document.getElementById('consentAcceptBtn');
+        var banner = document.getElementById('consentBanner');
+
+        if (!checkbox || !acceptBtn || !banner) return;
+
+        // Check if consent was already given
+        if (localStorage.getItem('kenyavault_consent') === 'true') {
+            banner.classList.add('hidden');
+            return;
+        }
+
+        checkbox.addEventListener('change', function() {
+            acceptBtn.disabled = !this.checked;
+        });
+
+        acceptBtn.addEventListener('click', function() {
+            if (checkbox.checked) {
+                localStorage.setItem('kenyavault_consent', 'true');
+                banner.classList.add('hidden');
+            }
+        });
+    }
+
+    // ─── HAMBURGER MENU ──────────────────────────────────────────
+    function setupHamburger() {
+        var hamburger = document.getElementById('hamburger');
+        var navLinks = document.getElementById('navLinks');
+
+        if (!hamburger || !navLinks) return;
+
+        hamburger.addEventListener('click', function() {
+            navLinks.classList.toggle('open');
+        });
+
+        // Close menu when clicking outside
+        document.addEventListener('click', function(e) {
+            if (navLinks.classList.contains('open')) {
+                var navContainer = document.querySelector('.nav-container');
+                if (navContainer && !navContainer.contains(e.target)) {
+                    navLinks.classList.remove('open');
+                }
+            }
+        });
+    }
+
+    // ─── INIT ──────────────────────────────────────────────────
+    async function init() {
+        try {
+            productsGrid.innerHTML = '<div class="loading-spinner"><span class="spin-icon">⏳</span>Loading resources...<div style="margin-top:6px;font-size:0.7rem;color:#9CA3AF;">Connecting to Supabase...</div></div>';
+
+            allResources = await fetchResources();
+
+            if (allResources.length === 0) {
+                // Fallback mock data if no resources
+                allResources = generateMockResources();
+            }
+
+            // Render everything
+            renderCategories();
+            renderHomeSections();
+            applyFilters();
+            updateStats();
+
+            // Setup UI
+            setupConsentBanner();
+            setupHamburger();
+
+        } catch (error) {
+            console.error('[KenyaVault] Initialization error:', error);
+            productsGrid.innerHTML = '<div class="empty-state"><span class="empty-icon">⚠️</span><h3>Error Loading Resources</h3><p class="empty-detail">' + error.message + '</p><button onclick="location.reload()">Retry</button></div>';
+        }
+    }
+
+    // ─── MOCK DATA (FALLBACK) ──────────────────────────────────
+    function generateMockResources() {
+        var subjects = ['Mathematics', 'English', 'Kiswahili', 'Science', 'Social Studies', 'CRE', 'IRE', 'Agriculture', 'Business Studies', 'Computer Science', 'History', 'Geography', 'Physics', 'Chemistry', 'Biology'];
+        var levels = ['primary', 'jss', 'senior-school', 'secondary-844'];
+        var grades = ['grade-1', 'grade-2', 'grade-3', 'grade-4', 'grade-5', 'grade-6', 'grade-7', 'grade-8', 'grade-9', 'grade-10', 'grade-11', 'grade-12', 'form-1', 'form-2', 'form-3', 'form-4'];
+        var types = ['schemes-of-work', 'lesson-plans', 'exams', 'notes', 'revision-notes', 'past-papers', 'marking-schemes', 'assignments'];
+        var mockData = [];
+
+        for (var i = 0; i < 30; i++) {
+            var subject = subjects[Math.floor(Math.random() * subjects.length)];
+            var level = levels[Math.floor(Math.random() * levels.length)];
+            var grade = grades[Math.floor(Math.random() * grades.length)];
+            var type = types[Math.floor(Math.random() * types.length)];
+            var isFree = Math.random() < 0.3;
+
+            mockData.push({
+                id: 'mock-' + i,
+                title: subject + ' ' + type.replace('-', ' ') + ' - ' + grade,
+                subject: subject.toLowerCase(),
+                level: level,
+                level_normalized: level,
+                grade: grade,
+                resource_type: type,
+                resource_type_normalized: type,
+                price: isFree ? 0 : Math.round(Math.random() * 500 + 50),
+                is_free: isFree,
+                download_count: Math.floor(Math.random() * 500),
+                rating: Math.round(Math.random() * 4 + 1),
+                reviews_count: Math.floor(Math.random() * 50),
+                pages: Math.floor(Math.random() * 50 + 5),
+                term: ['Term 1', 'Term 2', 'Term 3'][Math.floor(Math.random() * 3)],
+                year: 2024,
+                featured: Math.random() < 0.1,
+                kicd_aligned: true,
+                cbc_compliant: true,
+                teacher_reviewed: true,
+                creator_name: 'KenyaVault',
+                created_at: new Date(Date.now() - Math.random() * 90 * 24 * 60 * 60 * 1000).toISOString(),
+                file_url: '#'
+            });
+        }
+
+        // Add some specific resources for KJSEA
+        mockData.push({
+            id: 'kjsea-grade-9-1',
+            title: 'KJSEA Grade 9 Mathematics Schemes of Work - Term 1',
+            subject: 'mathematics',
+            level: 'jss',
+            level_normalized: 'jss',
+            grade: 'grade-9',
+            resource_type: 'schemes-of-work',
+            resource_type_normalized: 'schemes-of-work',
+            price: 150,
+            is_free: false,
+            download_count: 234,
+            rating: 4.8,
+            reviews_count: 45,
+            pages: 28,
+            term: 'Term 1',
+            year: 2024,
+            featured: true,
+            kicd_aligned: true,
+            cbc_compliant: true,
+            teacher_reviewed: true,
+            creator_name: 'Tathmini Africa',
+            created_at: new Date().toISOString(),
+            file_url: '#'
+        });
+
+        mockData.push({
+            id: 'kjsea-grade-9-2',
+            title: 'KJSEA Grade 9 English Lesson Plans - Complete Set',
+            subject: 'english',
+            level: 'jss',
+            level_normalized: 'jss',
+            grade: 'grade-9',
+            resource_type: 'lesson-plans',
+            resource_type_normalized: 'lesson-plans',
+            price: 200,
+            is_free: false,
+            download_count: 189,
+            rating: 4.9,
+            reviews_count: 38,
+            pages: 45,
+            term: 'Term 1-3',
+            year: 2024,
+            featured: true,
+            kicd_aligned: true,
+            cbc_compliant: true,
+            teacher_reviewed: true,
+            creator_name: 'Tathmini Africa',
+            created_at: new Date().toISOString(),
+            file_url: '#'
+        });
+
+        return mockData;
+    }
+
+    // ─── START ──────────────────────────────────────────────────
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+
+})();
+</script>
+
+</body>
+</html>
