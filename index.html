@@ -1035,24 +1035,6 @@
             margin-right: 10px;
             vertical-align: middle;
         }
-        .payment-modal .stk-status .spinner-small {
-            display: inline-block;
-            width: 16px;
-            height: 16px;
-            border: 2px solid rgba(0,0,0,0.1);
-            border-top-color: var(--kv-gold);
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-            vertical-align: middle;
-            margin-right: 8px;
-        }
-
-        .payment-modal .btn-pay.loading {
-            position: relative;
-            pointer-events: none;
-            opacity: 0.7;
-        }
-
         .payment-modal .payment-timer {
             font-size: 0.75rem;
             color: var(--kv-muted);
@@ -2219,13 +2201,37 @@ SCRIPT - FULLY UPDATED WITH FIXED PAYMENT FLOW
 
     async function recordTransaction(product, reference) {
         try {
+            // FIX: document_id expects bigint (number), not UUID
+            // Convert the ID to a number if possible, or use a numeric fallback
+            var docId = parseInt(product.id);
+            if (isNaN(docId)) {
+                // If the ID is not a number (UUID), we need to use the order reference instead
+                // Or we can omit document_id if your table allows null
+                console.warn('[KenyaVault] Product ID is not numeric:', product.id);
+                // Try to extract numeric part from the ID if it's a mix
+                var numericMatch = product.id.match(/\d+/);
+                if (numericMatch) {
+                    docId = parseInt(numericMatch[0]);
+                } else {
+                    // If no numeric part, we'll use a null or skip the field
+                    docId = null;
+                }
+            }
+            
             var data = {
-                document_id: product.id,
+                order_ref: reference,
                 amount: product.price || 0,
                 status: 'completed',
                 reference: reference,
                 created_at: new Date().toISOString()
             };
+            
+            // Only add document_id if it's valid and not null
+            if (docId !== null && !isNaN(docId)) {
+                data.document_id = docId;
+            }
+            
+            console.log('[KenyaVault] Recording transaction with data:', data);
 
             const response = await fetch(SUPABASE_URL + '/rest/v1/transactions', {
                 method: 'POST',
@@ -2242,6 +2248,7 @@ SCRIPT - FULLY UPDATED WITH FIXED PAYMENT FLOW
             } else {
                 const errorText = await response.text();
                 console.error('[KenyaVault] Error recording transaction:', errorText);
+                // Don't throw - we still want to proceed even if transaction recording fails
             }
         } catch (error) {
             console.error('[KenyaVault] Error recording transaction:', error);
