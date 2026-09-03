@@ -1,5 +1,5 @@
 // ============================================================
-// KENYA VAULT - PAYMENT SERVER (FIXED VERIFICATION TIMEOUT)
+// KENYA VAULT - PAYMENT SERVER (FIXED - MANUAL CONFIRMATION)
 // ============================================================
 
 const express = require('express');
@@ -280,18 +280,25 @@ async function checkMegaPayStatus(transactionRequestId) {
             return null;
         }
 
-        // Check for payment confirmation
+        // Check for payment confirmation - MORE LENIENT
         const isPaid = 
-            (result.TransactionStatus === 'Completed' || result.TransactionStatus === 'completed') ||
-            (result.ResultCode === '0' || result.ResultCode === 0 || result.ResultCode === '00') ||
-            (result.ResponseCode === '0' || result.ResponseCode === 0 || result.ResponseCode === '00') ||
+            result.TransactionStatus === 'Completed' || 
+            result.TransactionStatus === 'completed' ||
+            result.ResultCode === '0' || 
+            result.ResultCode === 0 || 
+            result.ResultCode === '00' ||
+            result.ResponseCode === '0' || 
+            result.ResponseCode === 0 || 
+            result.ResponseCode === '00' ||
             result.success === true ||
             result.success === '200' ||
             result.success === 200 ||
             result.status === 'success' ||
             result.status === 'paid' ||
             result.isPaid === true ||
-            result.paid === true;
+            result.paid === true ||
+            result.TransactionCode === '0' ||
+            result.TransactionCode === 0;
 
         let amount = result.TransactionAmount || result.Amount || result.amount || 0;
         if (typeof amount === 'string') {
@@ -323,7 +330,7 @@ async function checkMegaPayStatus(transactionRequestId) {
 // ─── FULFILL PURCHASE ──────────────────────────────────────
 async function fulfillPurchase(orderId) {
     console.log(`📦 Fulfilling purchase for order: ${orderId}`);
-    let resourceUrl = null;
+    let resourceUrls = [];
     
     try {
         const { data: order, error } = await supabase
@@ -364,7 +371,7 @@ async function fulfillPurchase(orderId) {
             
             if (!resourceError && resource) {
                 if (resource.file_url) {
-                    resourceUrl = resource.file_url;
+                    resourceUrls.push(resource.file_url);
                 }
                 
                 const newCount = (resource.download_count || 0) + 1;
@@ -391,7 +398,7 @@ async function fulfillPurchase(orderId) {
         logPaymentEvent('PURCHASE_FULFILLED', { order_id: orderId, items: items.length });
         console.log(`✅ Purchase fulfilled for order ${orderId}`);
         
-        return resourceUrl;
+        return resourceUrls.length > 0 ? resourceUrls[0] : null;
         
     } catch (error) {
         console.error('❌ Fulfillment error:', error);
@@ -400,9 +407,109 @@ async function fulfillPurchase(orderId) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// ─── DOWNLOAD HANDLER ──────────────────────────────────────
+// ─── MANUAL PAYMENT CONFIRMATION (NEW) ─────────────────────
 // ══════════════════════════════════════════════════════════════
 
+app.post('/api/mpesa/confirm-payment', async (req, res) => {
+    console.log('📌 Manual payment confirmation received!');
+    console.log('📥 Body:', req.body);
+    
+    try {
+        const { order_id, order_ref, mpesa_code, receipt } = req.body;
+        
+        if (!order_id && !order_ref) {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing order_id or order_ref'
+            });
+        }
+        
+        let query = supabase.from('orders').select('*');
+        if (order_id) {
+            query = query.eq('id', order_id);
+        } else if (order_ref) {
+            query = query.eq('order_ref', order_ref);
+        }
+        
+        const { data: order, error: findError } = await query.single();
+        
+        if (findError || !order) {
+            console.error('❌ Order not found:', findError);
+            return res.status(404).json({
+                success: false,
+                error: 'Order not found'
+            });
+        }
+        
+        // Check if already paid
+        if (order.payment_status === 'paid' || order.payment_confirmed === true) {
+            console.log(`✅ Order ${order.order_ref} is already paid`);
+            return res.status(200).json({
+                success: true,
+                isPaid: true,
+                order_id: order.id,
+                order_ref: order.order_ref,
+                status: 'paid'
+            });
+        }
+        
+        // Use the provided mpesa_code or receipt
+        const paymentCode = mpesa_code || receipt || 'MANUAL-' + Date.now();
+        
+        // Update order as paid
+        const updateData = {
+            status: 'paid',
+            payment_status: 'paid',
+            payment_confirmed: true,
+            payment_verified: true,
+            mpesa_code: paymentCode,
+            transaction_code: paymentCode,
+            mpesa_receipt: paymentCode,
+            amount_paid: order.total_amount,
+            confirmed_at: new Date().toISOString(),
+            paid_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            admin_required: false
+        };
+        
+        const { error: updateError } = await supabase
+            .from('orders')
+            .update(updateData)
+            .eq('id', order.id);
+        
+        if (updateError) {
+            console.error('❌ Failed to update order:', updateError);
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to update order: ' + updateError.message
+            });
+        }
+        
+        // Fulfill the purchase
+        const resourceUrl = await fulfillPurchase(order.id);
+        
+        console.log(`✅ Order ${order.order_ref} manually confirmed as PAID`);
+        
+        return res.status(200).json({
+            success: true,
+            isPaid: true,
+            order_id: order.id,
+            order_ref: order.order_ref,
+            status: 'paid',
+            mpesa_code: paymentCode,
+            resource_url: resourceUrl || order.resource_file_path || null
+        });
+        
+    } catch (error) {
+        console.error('❌ Manual confirmation error:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Internal server error: ' + error.message
+        });
+    }
+});
+
+// ─── DOWNLOAD HANDLER ──────────────────────────────────────
 app.post('/api/download-resource', async (req, res) => {
     console.log('📥 Download request received!');
     console.log('📥 Body:', req.body);
@@ -665,11 +772,74 @@ app.post('/api/mpesa/verify-payment', async (req, res) => {
             }
         }
         
+        // If we have an M-PESA code provided, try to confirm
+        if (mpesa_code) {
+            console.log(`🔍 Attempting to confirm with M-PESA code: ${mpesa_code}`);
+            
+            // Check if this code is already used
+            const { data: existingOrder, error: dupError } = await supabase
+                .from('orders')
+                .select('*')
+                .eq('mpesa_code', mpesa_code)
+                .neq('id', order.id)
+                .maybeSingle();
+            
+            if (existingOrder) {
+                console.log(`⚠️ M-PESA code ${mpesa_code} already used`);
+                return res.status(200).json({
+                    isPaid: false,
+                    status: 'failed',
+                    error: 'This M-PESA code has already been used'
+                });
+            }
+            
+            // Mark as paid with the provided code
+            const updateData = {
+                status: 'paid',
+                payment_status: 'paid',
+                payment_confirmed: true,
+                payment_verified: true,
+                mpesa_code: mpesa_code,
+                transaction_code: mpesa_code,
+                mpesa_receipt: mpesa_code,
+                amount_paid: order.total_amount,
+                confirmed_at: new Date().toISOString(),
+                paid_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                admin_required: false
+            };
+            
+            const { error: updateError } = await supabase
+                .from('orders')
+                .update(updateData)
+                .eq('id', order.id);
+            
+            if (updateError) {
+                console.error('❌ Error updating order:', updateError);
+                return res.status(500).json({
+                    success: false,
+                    error: 'Failed to update order'
+                });
+            }
+            
+            const resourceUrl = await fulfillPurchase(order.id);
+            
+            console.log(`✅ Order ${order.order_ref} confirmed as PAID with code`);
+            
+            return res.status(200).json({
+                isPaid: true,
+                order_id: order.id,
+                order_ref: order.order_ref,
+                status: 'paid',
+                mpesa_code: mpesa_code,
+                resource_url: resourceUrl || order.resource_file_path || null
+            });
+        }
+        
         // If still pending, check if we should expire the order
         if (order.status === 'pending' || order.payment_status === 'pending') {
             const createdTime = new Date(order.created_at).getTime();
             const now = Date.now();
-            // Extended timeout - 3 minutes (180 seconds)
             const threeMinutes = 3 * 60 * 1000;
             
             if (now - createdTime > threeMinutes) {
@@ -691,7 +861,6 @@ app.post('/api/mpesa/verify-payment', async (req, res) => {
                 });
             }
             
-            // Still pending - return pending status with remaining time
             const elapsed = Math.floor((now - createdTime) / 1000);
             const remaining = Math.max(0, 180 - elapsed);
             
@@ -1267,6 +1436,7 @@ app.get('/api/health', (req, res) => {
             download: 'POST /api/download-resource',
             stk_push: 'POST /api/mpesa/stk-push',
             verify_payment: 'POST /api/mpesa/verify-payment',
+            confirm_payment: 'POST /api/mpesa/confirm-payment',
             callback: 'POST /api/mpesa/callback'
         }
     });
@@ -1282,7 +1452,8 @@ app.get('/', (req, res) => {
             stk_push: 'POST /api/mpesa/stk-push',
             health: 'GET /api/health',
             callback: 'POST /api/mpesa/callback',
-            verify_payment: 'POST /api/mpesa/verify-payment'
+            verify_payment: 'POST /api/mpesa/verify-payment',
+            confirm_payment: 'POST /api/mpesa/confirm-payment'
         }
     });
 });
