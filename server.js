@@ -128,7 +128,7 @@ app.post('/api/create-order', async (req, res) => {
     
     try {
         const { 
-            customer_id,    // ✅ Use customer_id instead of user_id
+            customer_id,
             user_email, 
             cart_items, 
             total_amount, 
@@ -153,11 +153,13 @@ app.post('/api/create-order', async (req, res) => {
         
         const orderId = crypto.randomUUID();
         const orderRef = generateOrderRef();
+        const sessionId = crypto.randomUUID();  // ✅ Generate session_id
         
-        // Prepare order data - use only columns that exist
+        // Prepare order data - include ALL required columns
         const orderData = {
             id: orderId,
             order_ref: orderRef,
+            session_id: sessionId,  // ✅ Required field
             customer_id: customer_id || null,
             user_email: user_email || null,
             email: user_email || null,
