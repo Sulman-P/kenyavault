@@ -1,12 +1,11 @@
 // ============================================================
-// KENYA VAULT - PAYMENT SERVER (FIXED - WITH BETTER ERROR HANDLING)
+// KENYA VAULT - PAYMENT SERVER (FIXED - NO node-fetch REQUIRED)
 // ============================================================
 
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 const crypto = require('crypto');
-const fetch = require('node-fetch');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
