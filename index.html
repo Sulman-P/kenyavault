@@ -1097,6 +1097,32 @@
             background: #DBEAFE;
             color: #1D4ED8;
         }
+
+        /* ── CONFIRM PAYMENT BUTTON ── */
+        .btn-confirm-payment {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: var(--kv-green);
+            color: white;
+            border: none;
+            border-radius: var(--kv-radius-sm);
+            font-weight: 700;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: var(--kv-transition);
+            width: 100%;
+            justify-content: center;
+            margin-top: 8px;
+        }
+        .btn-confirm-payment:hover {
+            background: #16692e;
+            transform: translateY(-2px);
+        }
+        .btn-confirm-payment i {
+            font-size: 1.1rem;
+        }
     </style>
 </head>
 <body>
@@ -1321,13 +1347,17 @@
         </div>
         <div class="stk-status" id="stkStatus"></div>
         <div id="paymentStatusIndicator" style="display:none;margin:12px 0;padding:10px 14px;border-radius:8px;font-size:0.85rem;font-weight:600;"></div>
+        
         <button class="btn-pay" id="payBtn" onclick="initiatePayment()">
             <span id="payBtnText">💳 Pay with M-PESA</span>
             <span class="spinner" id="paySpinner" style="display:none;width:18px;height:18px;border:2px solid rgba(255,255,255,0.3);border-top-color:var(--kv-primary);border-radius:50%;animation:spin 0.8s linear infinite;vertical-align:middle;margin-left:8px;"></span>
         </button>
-        <button onclick="confirmPaymentAfterSTK()" class="btn btn-success">
-          ✅ I've Made the Payment
-      </button>
+        
+        <!-- Manual Confirmation Button - Shows after STK push is sent -->
+        <button class="btn-confirm-payment" id="confirmPaymentBtn" style="display:none;" onclick="confirmPaymentManually()">
+            <i class="bi bi-check-circle-fill"></i> I've Made the Payment
+        </button>
+        
         <div class="payment-timer" id="paymentTimer"></div>
         <div id="paymentStatusMessage" style="display:none;margin-top:12px;padding:10px 14px;border-radius:8px;font-size:0.85rem;font-weight:600;text-align:center;"></div>
     </div>
@@ -1417,6 +1447,7 @@
     var paymentTimeout = null;
     var isProcessingPayment = false;
     var currentOrderRef = null;
+    var currentOrderId = null;
     var paymentVerified = false;
     var paymentPollInterval = null;
     var purchasedResources = {};
@@ -1666,7 +1697,6 @@
         var cartBtnClass = inCart ? 'add-to-cart-btn in-cart' : 'add-to-cart-btn';
         var cartBtnText = inCart ? 'In Cart' : 'Add to cart';
 
-        // Show status indicator
         var statusHtml = '';
         if (!isFree) {
             if (isPurchased) {
@@ -1808,7 +1838,6 @@
             return;
         }
 
-        // Check if user has purchased this resource
         if (!purchasedResources[productId]) {
             showToast('Error', 'You have not purchased this resource. Please complete payment first.', 'error');
             return;
@@ -1829,7 +1858,6 @@
             return;
         }
 
-        // Check if already purchased
         if (purchasedResources[productId]) {
             showToast('Info', 'You already own this resource.', 'info');
             return;
@@ -1840,9 +1868,12 @@
             showToast('Error', 'Resource not found.', 'error');
             return;
         }
+        
         currentProduct = resource;
         currentOrderRef = null;
+        currentOrderId = null;
         paymentVerified = false;
+        
         document.getElementById('paymentProductTitle').textContent = resource.title || 'Resource';
         document.getElementById('paymentProductPrice').textContent = 'KES ' + (resource.price || 0);
         document.getElementById('paymentModal').classList.add('open');
@@ -1851,6 +1882,7 @@
         document.getElementById('stkStatus').style.display = 'none';
         document.getElementById('paymentStatusIndicator').style.display = 'none';
         document.getElementById('paymentStatusMessage').style.display = 'none';
+        document.getElementById('confirmPaymentBtn').style.display = 'none';
         document.getElementById('payBtn').disabled = false;
         document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
         document.getElementById('paySpinner').style.display = 'none';
@@ -1858,7 +1890,7 @@
         document.getElementById('customerName').value = '';
         document.getElementById('phoneInput').value = '';
         
-        // Reset timer
+        // Reset timers
         if (paymentTimer) {
             clearInterval(paymentTimer);
             paymentTimer = null;
@@ -1890,14 +1922,92 @@
         isProcessingPayment = false;
         currentOrderRef = null;
         paymentVerified = false;
+        document.getElementById('confirmPaymentBtn').style.display = 'none';
+    }
+
+    // ─── CONFIRM PAYMENT MANUALLY ─────────────────────────────
+    async function confirmPaymentManually() {
+        if (!currentOrderRef && !currentOrderId) {
+            showToast('Error', 'No active payment found. Please try again.', 'error');
+            return;
+        }
+
+        var statusEl = document.getElementById('stkStatus');
+        var statusMessage = document.getElementById('paymentStatusMessage');
+        
+        statusEl.className = 'stk-status visible pending';
+        statusEl.innerHTML = '<span class="spinner"></span> Checking payment status...';
+        statusMessage.style.display = 'block';
+        statusMessage.className = 'stk-status pending';
+        statusMessage.innerHTML = '⏳ Checking if your payment was received...';
+
+        try {
+            var response = await fetch(API_BASE_URL + '/mpesa/verify-payment', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    order_ref: currentOrderRef,
+                    order_id: currentOrderId
+                })
+            });
+
+            var result = await response.json();
+            console.log('[KenyaVault] Manual verification result:', result);
+
+            if (result.isPaid === true || result.payment_confirmed === true || result.payment_status === 'paid') {
+                // Payment confirmed!
+                paymentVerified = true;
+                statusEl.className = 'stk-status visible success';
+                statusEl.innerHTML = '✅ Payment confirmed! Your resource is ready.';
+                statusMessage.className = 'stk-status success';
+                statusMessage.innerHTML = '✅ Payment successful! Your download will begin shortly.';
+                document.getElementById('paymentTimer').textContent = '✅ Payment confirmed!';
+                document.getElementById('confirmPaymentBtn').style.display = 'none';
+                
+                // Mark as purchased
+                if (currentProduct && currentProduct.id) {
+                    purchasedResources[currentProduct.id] = true;
+                    try {
+                        localStorage.setItem('kv_purchased', JSON.stringify(purchasedResources));
+                    } catch(e) {}
+                }
+                
+                // Download the resource
+                if (currentProduct && currentProduct.file_url) {
+                    setTimeout(function() {
+                        window.open(currentProduct.file_url, '_blank');
+                        showToast('Download Started', 'Your resource is downloading.', 'success');
+                    }, 1000);
+                }
+                
+                setTimeout(function() {
+                    closePaymentModal();
+                    window.location.reload();
+                }, 3000);
+                
+            } else {
+                statusEl.className = 'stk-status visible pending';
+                statusEl.innerHTML = '⏳ Payment not yet confirmed. Please check your M-PESA messages.';
+                statusMessage.className = 'stk-status pending';
+                statusMessage.innerHTML = '⏳ Payment not yet confirmed. If you entered your PIN, please wait a moment and try again.';
+                
+                // Keep the confirm button visible
+                document.getElementById('confirmPaymentBtn').style.display = 'block';
+                document.getElementById('confirmPaymentBtn').innerHTML = '<i class="bi bi-arrow-clockwise"></i> Check Again';
+            }
+
+        } catch (error) {
+            console.error('[KenyaVault] Manual verification error:', error);
+            statusEl.className = 'stk-status visible error';
+            statusEl.innerHTML = '❌ Error checking payment status. Please try again.';
+            statusMessage.className = 'stk-status error';
+            statusMessage.innerHTML = '❌ ' + (error.message || 'Network error. Please try again.');
+        }
     }
 
     // ─── VERIFY PAYMENT IN DATABASE ──────────────────────────
-    // Requires BOTH payment_confirmed === true AND real evidence of a
-    // completed M-PESA transaction (a receipt/transaction code and, when
-    // present, amount_paid covering the order total). A boolean flag
-    // alone is not trusted, since a backend/webhook bug could set it
-    // without a genuine completed payment.
     async function verifyPaymentInDatabase(orderRef) {
         try {
             const response = await fetch(SUPABASE_URL + '/rest/v1/orders?order_ref=eq.' + orderRef, {
@@ -1950,7 +2060,6 @@
             return;
         }
         
-        // Mark as purchased
         if (resource.id) {
             purchasedResources[resource.id] = true;
             try {
@@ -1958,11 +2067,11 @@
             } catch(e) {}
         }
         
-        // Open the file
         window.open(resource.file_url, '_blank');
         showToast('Download Started', 'Your resource is downloading.', 'success');
     }
 
+    // ─── INITIATE PAYMENT ──────────────────────────────────────
     async function initiatePayment() {
         if (isProcessingPayment) {
             showToast('Info', 'Please wait for current payment to complete.', 'info');
@@ -1974,7 +2083,6 @@
             return;
         }
 
-        // Verify the price from the database (not from frontend)
         var dbPrice = currentProduct.price || 0;
         if (dbPrice <= 0) {
             showToast('Error', 'This resource is free or invalid price.', 'error');
@@ -1998,18 +2106,19 @@
         var payBtn = document.getElementById('payBtn');
         var statusEl = document.getElementById('stkStatus');
         var statusMessage = document.getElementById('paymentStatusMessage');
+        var confirmBtn = document.getElementById('confirmPaymentBtn');
 
         payBtn.disabled = true;
         document.getElementById('payBtnText').textContent = 'Processing...';
         document.getElementById('paySpinner').style.display = 'inline-block';
         isProcessingPayment = true;
         paymentVerified = false;
+        confirmBtn.style.display = 'none';
 
         statusEl.className = 'stk-status visible pending';
         statusEl.style.display = 'block';
         statusEl.innerHTML = '<span class="spinner"></span> Creating order...';
 
-        // Use database price, not frontend price
         var amount = dbPrice;
         var orderRef = 'KV-' + Date.now().toString().slice(-8) + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
         currentOrderRef = orderRef;
@@ -2017,7 +2126,7 @@
         try {
             var sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substring(2, 10);
 
-            // STEP 1: Create order with PENDING status
+            // STEP 1: Create order
             var orderData = {
                 order_ref: orderRef,
                 session_id: sessionId,
@@ -2048,8 +2157,7 @@
                 user_agent: navigator.userAgent || 'Unknown',
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
-                payment_confirmed: false,
-                callback_status: 'not-received'
+                payment_confirmed: false
             };
 
             console.log('[KenyaVault] Creating order:', orderData);
@@ -2072,18 +2180,18 @@
             }
 
             var orderResult = await orderResponse.json();
-            var orderId = orderResult[0]?.id || orderResult.id;
+            currentOrderId = orderResult[0]?.id || orderResult.id;
 
-            if (!orderId) {
+            if (!currentOrderId) {
                 throw new Error('Order creation failed - no ID returned');
             }
 
-            console.log('[KenyaVault] Order created:', orderId, orderRef);
+            console.log('[KenyaVault] Order created:', currentOrderId, orderRef);
             statusEl.innerHTML = '<span class="spinner"></span> Sending STK Push to ' + phoneClean + '...';
 
             // STEP 2: Initiate MegaPay STK Push
             var payload = {
-                order_id: orderId,
+                order_id: currentOrderId,
                 order_ref: orderRef,
                 phone: phoneClean,
                 amount: amount,
@@ -2112,14 +2220,16 @@
                 statusEl.className = 'stk-status visible pending';
                 statusEl.innerHTML = '<span class="spinner"></span> STK Push sent to ' + phoneClean + '. Please check your phone and enter your M-PESA PIN.';
                 
-                // Show waiting message
                 statusMessage.style.display = 'block';
                 statusMessage.className = 'stk-status pending';
                 statusMessage.innerHTML = '⏳ Waiting for payment confirmation. Please complete the M-PESA prompt on your phone.';
                 
-                // STEP 3: Start polling for payment confirmation
+                // Show the manual confirmation button
+                confirmBtn.style.display = 'block';
+                confirmBtn.innerHTML = '<i class="bi bi-check-circle-fill"></i> I\'ve Made the Payment';
+                
                 startPaymentTimer();
-                startPaymentPolling(orderRef);
+                startPaymentPolling(currentOrderRef);
 
             } else {
                 statusEl.className = 'stk-status visible error';
@@ -2131,7 +2241,6 @@
                 document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
                 document.getElementById('paySpinner').style.display = 'none';
                 isProcessingPayment = false;
-                currentOrderRef = null;
                 showToast('Payment Failed', result.error || result.message || 'Please try again.', 'error');
             }
 
@@ -2146,41 +2255,13 @@
             document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
             document.getElementById('paySpinner').style.display = 'none';
             isProcessingPayment = false;
-            currentOrderRef = null;
             showToast('Payment Error', error.message || 'Network error. Please try again.', 'error');
         }
     }
-        // When user clicks "I've made the payment" or after STK push
-async function confirmPayment(orderId, mpesaCode = null) {
-    try {
-        const response = await fetch('/api/mpesa/confirm-payment', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                order_id: orderId,
-                mpesa_code: mpesaCode // If user provides the code
-            })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success && data.isPaid) {
-            // Payment confirmed! Proceed to download
-            window.location.href = '/download-success.html?order=' + data.order_ref;
-        } else {
-            // Still not paid
-            showError('Payment not confirmed yet. Please wait or try again.');
-        }
-    } catch (error) {
-        console.error('Confirmation error:', error);
-    }
-   }
-    function confirmPaymentAfterSTK() {
-    const orderId = getOrderIdFromURL();
-    confirmPayment(orderId);
-    }
+
+    // ─── START PAYMENT TIMER ──────────────────────────────────
     function startPaymentTimer() {
-        var seconds = 60;
+        var seconds = 120;
         var timerEl = document.getElementById('paymentTimer');
         timerEl.textContent = '⏳ Waiting for payment... ' + seconds + 's remaining';
 
@@ -2198,7 +2279,6 @@ async function confirmPayment(orderId, mpesaCode = null) {
             }
         }, 1000);
 
-        // Auto-cancel after 2 minutes
         if (paymentTimeout) {
             clearTimeout(paymentTimeout);
         }
@@ -2207,11 +2287,14 @@ async function confirmPayment(orderId, mpesaCode = null) {
                 var statusEl = document.getElementById('stkStatus');
                 var statusMessage = document.getElementById('paymentStatusMessage');
                 var payBtn = document.getElementById('payBtn');
+                var confirmBtn = document.getElementById('confirmPaymentBtn');
+                
                 statusEl.className = 'stk-status visible error';
                 statusEl.innerHTML = '⏰ Payment timed out. Please try again.';
                 statusMessage.style.display = 'block';
                 statusMessage.className = 'stk-status error';
                 statusMessage.innerHTML = '⏰ Payment timed out. Please try again.';
+                confirmBtn.style.display = 'none';
                 payBtn.disabled = false;
                 document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
                 document.getElementById('paySpinner').style.display = 'none';
@@ -2224,22 +2307,19 @@ async function confirmPayment(orderId, mpesaCode = null) {
                     clearInterval(paymentPollInterval);
                     paymentPollInterval = null;
                 }
-                // Mark the order failed so a delayed/late webhook callback
-                // can't retroactively "confirm" it after we've stopped watching.
-                updateOrderStatus(orderRefAtTimeout(), 'timeout', false);
                 showToast('Payment Timeout', 'Payment request expired. Please try again.', 'error');
             }
-        }, 120000); // 2 minutes
-
-        function orderRefAtTimeout() { return currentOrderRef; }
+        }, 120000);
     }
 
+    // ─── START PAYMENT POLLING ────────────────────────────────
     function startPaymentPolling(orderRef) {
         var pollCount = 0;
         var maxPolls = 30;
         var statusEl = document.getElementById('stkStatus');
         var statusMessage = document.getElementById('paymentStatusMessage');
         var payBtn = document.getElementById('payBtn');
+        var confirmBtn = document.getElementById('confirmPaymentBtn');
 
         if (paymentPollInterval) {
             clearInterval(paymentPollInterval);
@@ -2248,7 +2328,6 @@ async function confirmPayment(orderId, mpesaCode = null) {
         paymentPollInterval = setInterval(async function() {
             pollCount++;
 
-            // If this order has already timed out / been superseded, stop polling.
             if (orderRef !== currentOrderRef || paymentVerified) {
                 clearInterval(paymentPollInterval);
                 paymentPollInterval = null;
@@ -2256,14 +2335,14 @@ async function confirmPayment(orderId, mpesaCode = null) {
             }
 
             try {
-                // SECURE: Check payment status via backend API
                 var response = await fetch(API_BASE_URL + '/mpesa/verify-payment', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        order_ref: orderRef
+                        order_ref: orderRef,
+                        order_id: currentOrderId
                     })
                 });
 
@@ -2275,21 +2354,16 @@ async function confirmPayment(orderId, mpesaCode = null) {
                 var result = await response.json();
                 console.log('[KenyaVault] Payment status check:', result);
 
-                // CRITICAL: Only trust if BOTH API says paid AND database confirms
-                // an actual completed transaction (receipt + amount), not just a flag.
                 var apiSaysPaid = result.isPaid === true || 
                                   result.status === 'paid' || 
                                   result.payment_confirmed === true ||
                                   result.payment_status === 'paid';
 
                 if (apiSaysPaid) {
-                    // VERIFY WITH DATABASE BEFORE proceeding
                     console.log('[KenyaVault] API says paid, verifying with database...');
                     const dbResult = await verifyPaymentInDatabase(orderRef);
                     
                     if (dbResult.verified) {
-                        // ✅ SECURE: Payment is confirmed in database with real
-                        // transaction evidence (not just a boolean flag).
                         clearInterval(paymentPollInterval);
                         paymentPollInterval = null;
                         if (paymentTimer) {
@@ -2308,8 +2382,8 @@ async function confirmPayment(orderId, mpesaCode = null) {
                         statusMessage.style.display = 'block';
                         statusMessage.className = 'stk-status success';
                         statusMessage.innerHTML = '✅ Payment successful! Your download will begin shortly.';
+                        confirmBtn.style.display = 'none';
 
-                        // 🔒 SECURE DOWNLOAD: Only after real, verified payment
                         if (currentProduct && currentProduct.file_url) {
                             secureDownload(currentProduct);
                         }
@@ -2322,21 +2396,17 @@ async function confirmPayment(orderId, mpesaCode = null) {
 
                         setTimeout(function() {
                             closePaymentModal();
-                            // Refresh the page to update resource status
                             window.location.reload();
                         }, 3000);
                     } else {
-                        // API says paid but the database doesn't show a real,
-                        // fully-evidenced transaction yet — keep waiting rather
-                        // than trusting the flag alone.
-                        console.warn('[KenyaVault] API reported paid but the database record is not yet fully confirmed (missing receipt/amount evidence). Continuing to wait.');
+                        console.warn('[KenyaVault] API reported paid but database not fully confirmed. Waiting.');
                         statusEl.className = 'stk-status visible pending';
                         statusEl.innerHTML = '⏳ Payment confirmation pending. Please check your M-PESA messages.';
                         statusMessage.style.display = 'block';
                         statusMessage.className = 'stk-status pending';
                         statusMessage.innerHTML = '⏳ Payment still pending. Please check your M-PESA messages.';
+                        confirmBtn.style.display = 'block';
                         
-                        // Keep polling up to max
                         if (pollCount >= maxPolls) {
                             clearInterval(paymentPollInterval);
                             paymentPollInterval = null;
@@ -2345,15 +2415,14 @@ async function confirmPayment(orderId, mpesaCode = null) {
                             statusMessage.style.display = 'block';
                             statusMessage.className = 'stk-status error';
                             statusMessage.innerHTML = '❌ Payment could not be confirmed. Please try again.';
+                            confirmBtn.style.display = 'none';
                             payBtn.disabled = false;
                             document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
                             document.getElementById('paySpinner').style.display = 'none';
                             isProcessingPayment = false;
-                            // Update order to failed
-                            await updateOrderStatus(orderRef, 'failed', false);
                         }
                     }
-                } else if (result.status === 'failed' || result.status === 'cancelled' || result.status === 'timeout' || result.isPaid === false) {
+                } else if (result.status === 'failed' || result.status === 'cancelled' || result.status === 'timeout') {
                     clearInterval(paymentPollInterval);
                     paymentPollInterval = null;
                     if (paymentTimer) {
@@ -2370,13 +2439,11 @@ async function confirmPayment(orderId, mpesaCode = null) {
                     statusMessage.style.display = 'block';
                     statusMessage.className = 'stk-status error';
                     statusMessage.innerHTML = '❌ Payment ' + (result.status || 'failed') + '. Please try again.';
+                    confirmBtn.style.display = 'none';
                     payBtn.disabled = false;
                     document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
                     document.getElementById('paySpinner').style.display = 'none';
                     isProcessingPayment = false;
-
-                    // Update order status
-                    await updateOrderStatus(orderRef, 'failed', false);
                     showToast('Payment Failed', 'Payment was not completed. Please try again.', 'error');
 
                 } else if (pollCount >= maxPolls) {
@@ -2387,28 +2454,21 @@ async function confirmPayment(orderId, mpesaCode = null) {
                     statusMessage.style.display = 'block';
                     statusMessage.className = 'stk-status pending';
                     statusMessage.innerHTML = '⏳ Payment still pending. Please check your M-PESA messages.';
+                    confirmBtn.style.display = 'block';
+                    confirmBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Check Status';
                     payBtn.disabled = false;
-                    document.getElementById('payBtnText').textContent = '🔄 Check Status';
+                    document.getElementById('payBtnText').textContent = '🔄 Try Again';
                     document.getElementById('paySpinner').style.display = 'none';
                     isProcessingPayment = false;
-                    
-                    payBtn.onclick = function() {
-                        document.getElementById('stkStatus').className = 'stk-status';
-                        document.getElementById('stkStatus').textContent = '';
-                        document.getElementById('stkStatus').style.display = 'none';
-                        document.getElementById('paymentStatusMessage').style.display = 'none';
-                        payBtn.onclick = initiatePayment;
-                        initiatePayment();
-                    };
                 }
 
             } catch (error) {
                 console.error('[KenyaVault] Polling error:', error);
-                // Continue polling on network errors
             }
         }, 5000);
     }
 
+    // ─── UPDATE ORDER STATUS ──────────────────────────────────
     async function updateOrderStatus(orderRef, status, confirmed) {
         if (!orderRef) return;
         try {
@@ -2501,7 +2561,6 @@ async function confirmPayment(orderId, mpesaCode = null) {
         fetchResources();
         animateCounter();
 
-        // Auto-refresh every 60 seconds
         setInterval(function() {
             fetchResources();
         }, 60000);
@@ -2514,12 +2573,13 @@ async function confirmPayment(orderId, mpesaCode = null) {
         init();
     }
 
-    // Expose functions globally
+    // ─── EXPOSE FUNCTIONS GLOBALLY ────────────────────────────
     window.downloadFree = downloadFree;
     window.downloadPurchased = downloadPurchased;
     window.openPayment = openPayment;
     window.closePaymentModal = closePaymentModal;
     window.initiatePayment = initiatePayment;
+    window.confirmPaymentManually = confirmPaymentManually;
     window.toggleCart = toggleCart;
     window.fetchResources = fetchResources;
     window.secureDownload = secureDownload;
