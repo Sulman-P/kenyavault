@@ -128,7 +128,7 @@ app.post('/api/create-order', async (req, res) => {
     
     try {
         const { 
-            customer_id, 
+            customer_id,    // ✅ Use customer_id instead of user_id
             user_email, 
             cart_items, 
             total_amount, 
@@ -154,15 +154,20 @@ app.post('/api/create-order', async (req, res) => {
         const orderId = crypto.randomUUID();
         const orderRef = generateOrderRef();
         
+        // Prepare order data - use only columns that exist
         const orderData = {
             id: orderId,
             order_ref: orderRef,
-            customer_id: user_id || null,
+            customer_id: customer_id || null,
             user_email: user_email || null,
+            email: user_email || null,
             customer_name: customer_name || null,
             customer_phone: phone || null,
+            phone: phone || null,
             cart_items: cart_items,
             total_amount: parseFloat(total_amount),
+            cart_total: parseFloat(total_amount),
+            item_count: cart_items.length,
             status: 'pending',
             payment_status: 'pending',
             payment_method: 'mpesa',
@@ -180,46 +185,6 @@ app.post('/api/create-order', async (req, res) => {
         
         if (createError) {
             console.error('❌ Order creation error:', createError);
-            
-            if (createError.code === 'PGRST204') {
-                console.log('⚠️ Missing columns - retrying with minimal fields');
-                
-                const minimalOrderData = {
-                    id: orderId,
-                    order_ref: orderRef,
-                    customer_id: user_id || null,
-                    user_email: user_email || null,
-                    cart_items: cart_items,
-                    total_amount: parseFloat(total_amount),
-                    status: 'pending',
-                    payment_status: 'pending',
-                    created_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString()
-                };
-                
-                const { data: retryOrder, error: retryError } = await supabase
-                    .from('orders')
-                    .insert(minimalOrderData)
-                    .select()
-                    .single();
-                
-                if (retryError) {
-                    console.error('❌ Retry order creation error:', retryError);
-                    return res.status(500).json({
-                        success: false,
-                        error: 'Failed to create order: ' + retryError.message
-                    });
-                }
-                
-                console.log('✅ Order created with minimal fields:', retryOrder);
-                return res.status(200).json({
-                    success: true,
-                    order: retryOrder,
-                    order_id: retryOrder.id,
-                    order_ref: retryOrder.order_ref
-                });
-            }
-            
             return res.status(500).json({
                 success: false,
                 error: 'Failed to create order: ' + createError.message
