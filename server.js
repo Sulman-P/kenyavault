@@ -128,7 +128,7 @@ app.post('/api/create-order', async (req, res) => {
     
     try {
         const { 
-            user_id, 
+            customer_id, 
             user_email, 
             cart_items, 
             total_amount, 
@@ -157,7 +157,7 @@ app.post('/api/create-order', async (req, res) => {
         const orderData = {
             id: orderId,
             order_ref: orderRef,
-            user_id: user_id || null,
+            customer_id: user_id || null,
             user_email: user_email || null,
             customer_name: customer_name || null,
             customer_phone: phone || null,
@@ -187,7 +187,7 @@ app.post('/api/create-order', async (req, res) => {
                 const minimalOrderData = {
                     id: orderId,
                     order_ref: orderRef,
-                    user_id: user_id || null,
+                    customer_id: user_id || null,
                     user_email: user_email || null,
                     cart_items: cart_items,
                     total_amount: parseFloat(total_amount),
