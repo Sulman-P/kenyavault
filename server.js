@@ -1,5 +1,5 @@
 // ============================================================
-// KENYA VAULT - PAYMENT SERVER (FIXED - CORRECT SUPABASE KEY)
+// KENYA VAULT - PAYMENT SERVER (UPDATED WITH DOWNLOAD HANDLER)
 // ============================================================
 
 const express = require('express');
@@ -11,12 +11,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ─── SUPABASE CONFIG ──────────────────────────────────────────
-// ✅ CORRECT SERVICE ROLE KEY - Get this from your Supabase dashboard
 const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
 const SUPABASE_SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MTc0OTM5OSwiZXhwIjoyMDk3MzI1Mzk5fQ.qkL7O1o1dhf9jCFuIQIUyJWFUBaq404ePWU0X4I5p1k';
-
-// ⚠️ If the above key doesn't work, get your actual service role key from:
-// Supabase Dashboard → Project Settings → API → Service Role Key
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -282,6 +278,173 @@ async function fulfillPurchase(orderId) {
     }
 }
 
+// ══════════════════════════════════════════════════════════════
+// ─── DOWNLOAD HANDLER ──────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+
+app.post('/api/download-resource', async (req, res) => {
+    console.log('📥 Download request received!');
+    console.log('📥 Body:', req.body);
+    
+    try {
+        const { resource_id, order_ref, user_id } = req.body;
+        
+        if (!resource_id) {
+            return res.status(400).json({ 
+                success: false,
+                error: 'Resource ID required' 
+            });
+        }
+        
+        // ─── GET RESOURCE ──────────────────────────────────
+        const { data: resource, error: resourceError } = await supabase
+            .from('resources')
+            .select('*')
+            .eq('id', resource_id)
+            .single();
+        
+        if (resourceError || !resource) {
+            console.error('❌ Resource not found:', resourceError);
+            return res.status(404).json({ 
+                success: false,
+                error: 'Resource not found' 
+            });
+        }
+        
+        console.log(`📄 Resource found: ${resource.title} (is_free: ${resource.is_free})`);
+        
+        // ─── FREE RESOURCES - PUBLIC URL ──────────────────
+        if (resource.is_free === true || resource.price === 0 || resource.price === '0') {
+            const fileUrl = resource.file_url || resource.file_path || resource.storage_path;
+            
+            if (!fileUrl) {
+                return res.status(500).json({ 
+                    success: false,
+                    error: 'File URL not found for free resource' 
+                });
+            }
+            
+            // Update download count
+            await supabase
+                .from('resources')
+                .update({ 
+                    download_count: (resource.download_count || 0) + 1,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', resource_id);
+            
+            console.log(`✅ Free resource download: ${resource.title}`);
+            
+            return res.status(200).json({
+                success: true,
+                download_url: fileUrl,
+                is_free: true,
+                resource_title: resource.title
+            });
+        }
+        
+        // ─── PAID RESOURCES - REQUIRE VERIFICATION ──────
+        if (!order_ref) {
+            console.log('❌ No order_ref provided for paid resource');
+            return res.status(403).json({ 
+                success: false,
+                error: 'Payment required',
+                requires_payment: true
+            });
+        }
+        
+        // ─── VERIFY PAYMENT ──────────────────────────────
+        const { data: order, error: orderError } = await supabase
+            .from('orders')
+            .select('*')
+            .eq('order_ref', order_ref)
+            .eq('payment_confirmed', true)
+            .maybeSingle();
+        
+        if (orderError || !order) {
+            console.log(`❌ Payment not confirmed for order_ref: ${order_ref}`);
+            return res.status(403).json({ 
+                success: false,
+                error: 'Payment not confirmed',
+                requires_payment: true
+            });
+        }
+        
+        // Check if resource is in the order's cart_items
+        let cartItems = order.cart_items;
+        if (typeof cartItems === 'string') {
+            try { cartItems = JSON.parse(cartItems); } catch (e) { cartItems = []; }
+        }
+        
+        const hasResource = Array.isArray(cartItems) && 
+            cartItems.some(item => item.id === resource_id || item.resource_id === resource_id);
+        
+        if (!hasResource) {
+            console.log(`❌ Resource ${resource_id} not in order ${order_ref}`);
+            return res.status(403).json({
+                success: false,
+                error: 'Resource not purchased in this order'
+            });
+        }
+        
+        console.log(`✅ Payment verified for ${resource.title} (order: ${order_ref})`);
+        
+        // ─── GENERATE SIGNED URL FOR PRIVATE BUCKET ──────
+        const filePath = resource.file_path || resource.storage_path;
+        
+        if (!filePath) {
+            return res.status(500).json({ 
+                success: false,
+                error: 'File path not found for this resource' 
+            });
+        }
+        
+        // Determine which bucket to use
+        const bucketName = resource.bucket || 'private-resources';
+        
+        console.log(`📦 Generating signed URL from bucket: ${bucketName}, path: ${filePath}`);
+        
+        const { data: signedUrlData, error: urlError } = await supabase
+            .storage
+            .from(bucketName)
+            .createSignedUrl(filePath, 60); // 60 seconds expiry
+        
+        if (urlError) {
+            console.error('❌ Failed to generate signed URL:', urlError);
+            return res.status(500).json({ 
+                success: false,
+                error: 'Failed to generate download URL: ' + urlError.message
+            });
+        }
+        
+        // ─── RECORD DOWNLOAD ──────────────────────────────
+        await supabase
+            .from('resources')
+            .update({ 
+                download_count: (resource.download_count || 0) + 1,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', resource_id);
+        
+        console.log(`✅ Download URL generated for ${resource.title}`);
+        
+        return res.status(200).json({
+            success: true,
+            download_url: signedUrlData.signedUrl,
+            expires_in: 60,
+            is_free: false,
+            resource_title: resource.title
+        });
+        
+    } catch (error) {
+        console.error('❌ Download handler error:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Internal server error: ' + error.message
+        });
+    }
+});
+
 // ─── VERIFY PAYMENT ENDPOINT ────────────────────────────────
 app.post('/api/mpesa/verify-payment', async (req, res) => {
     console.log('📊 Verify payment request received!');
@@ -323,6 +486,10 @@ app.post('/api/mpesa/verify-payment', async (req, res) => {
         
         if (isPaid) {
             console.log(`✅ Order ${order.order_ref} is already paid`);
+            
+            // Get resource file URL if available
+            let resourceUrl = order.resource_file_path || null;
+            
             return res.status(200).json({
                 isPaid: true,
                 order_id: order.id,
@@ -330,7 +497,7 @@ app.post('/api/mpesa/verify-payment', async (req, res) => {
                 status: 'paid',
                 payment_status: order.payment_status,
                 mpesa_code: order.mpesa_code || '',
-                resource_url: order.resource_file_path || null
+                resource_url: resourceUrl
             });
         }
         
@@ -1110,6 +1277,12 @@ app.get('/api/health', (req, res) => {
             callback_url: MEGAPAY_CALLBACK_URL,
             background_verification: 'running (every 60s)',
             supabase: 'connected'
+        },
+        endpoints: {
+            download: 'POST /api/download-resource',
+            stk_push: 'POST /api/mpesa/stk-push',
+            verify_payment: 'POST /api/mpesa/verify-payment',
+            callback: 'POST /api/mpesa/callback'
         }
     });
 });
@@ -1117,8 +1290,9 @@ app.get('/api/health', (req, res) => {
 // ─── ROOT ────────────────────────────────────────────────────
 app.get('/', (req, res) => {
     res.status(200).json({
-        message: 'KenyaVault Payment Server is running!',
+        message: 'KenyaVault Payment & Download Server is running!',
         endpoints: {
+            download: 'POST /api/download-resource',
             stk_push: 'POST /api/mpesa/stk-push',
             health: 'GET /api/health',
             callback: 'POST /api/mpesa/callback',
@@ -1131,7 +1305,8 @@ app.get('/', (req, res) => {
         security: {
             callback_verification: 'enabled',
             receipt_duplicate_check: 'enabled',
-            order_expiry: '2 minutes'
+            order_expiry: '2 minutes',
+            signed_url_expiry: '60 seconds'
         }
     });
 });
@@ -1142,6 +1317,7 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`📍 Health: https://kenyavault.onrender.com/api/health`);
     console.log(`📞 MegaPay API: ${MEGAPAY_INITIATE_URL}`);
     console.log(`🔗 Callback URL: ${MEGAPAY_CALLBACK_URL}`);
+    console.log(`📥 Download endpoint: POST /api/download-resource`);
     console.log(`✅ Server is ready!`);
     console.log(`🔍 Background verification running every 60 seconds`);
     console.log(`🔒 Security: Receipt duplicate check, order expiry, callback verification`);
