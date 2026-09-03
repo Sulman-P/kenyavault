@@ -1123,6 +1123,29 @@
         .btn-confirm-payment i {
             font-size: 1.1rem;
         }
+
+        /* ── RETRY BUTTON ── */
+        .btn-retry-payment {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: var(--kv-gold);
+            color: var(--kv-primary);
+            border: none;
+            border-radius: var(--kv-radius-sm);
+            font-weight: 700;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: var(--kv-transition);
+            width: 100%;
+            justify-content: center;
+            margin-top: 8px;
+        }
+        .btn-retry-payment:hover {
+            background: var(--kv-gold-light);
+            transform: translateY(-2px);
+        }
     </style>
 </head>
 <body>
@@ -1358,6 +1381,11 @@
             <i class="bi bi-check-circle-fill"></i> I've Made the Payment
         </button>
         
+        <!-- Retry Button -->
+        <button class="btn-retry-payment" id="retryPaymentBtn" style="display:none;" onclick="retryPayment()">
+            <i class="bi bi-arrow-repeat"></i> Try Again
+        </button>
+        
         <div class="payment-timer" id="paymentTimer"></div>
         <div id="paymentStatusMessage" style="display:none;margin-top:12px;padding:10px 14px;border-radius:8px;font-size:0.85rem;font-weight:600;text-align:center;"></div>
     </div>
@@ -1437,6 +1465,7 @@
     // ─── CONFIG ──────────────────────────────────────────────
     var SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
     var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
+    // Use the correct API endpoint
     var API_BASE_URL = 'https://kenyavault.onrender.com/api';
 
     // ─── STATE ──────────────────────────────────────────────
@@ -1451,6 +1480,7 @@
     var paymentVerified = false;
     var paymentPollInterval = null;
     var purchasedResources = {};
+    var paymentAttempts = 0;
 
     // ─── DOM REFS ──────────────────────────────────────────────
     var categoryGrid = document.getElementById('categoryGrid');
@@ -1851,6 +1881,40 @@
         }
     }
 
+    // ─── RETRY PAYMENT ────────────────────────────────────────
+    function retryPayment() {
+        // Reset the payment state
+        document.getElementById('paymentTimer').textContent = '';
+        document.getElementById('stkStatus').className = 'stk-status';
+        document.getElementById('stkStatus').textContent = '';
+        document.getElementById('stkStatus').style.display = 'none';
+        document.getElementById('paymentStatusMessage').style.display = 'none';
+        document.getElementById('confirmPaymentBtn').style.display = 'none';
+        document.getElementById('retryPaymentBtn').style.display = 'none';
+        document.getElementById('payBtn').disabled = false;
+        document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
+        document.getElementById('paySpinner').style.display = 'none';
+        
+        if (paymentTimer) {
+            clearInterval(paymentTimer);
+            paymentTimer = null;
+        }
+        if (paymentTimeout) {
+            clearTimeout(paymentTimeout);
+            paymentTimeout = null;
+        }
+        if (paymentPollInterval) {
+            clearInterval(paymentPollInterval);
+            paymentPollInterval = null;
+        }
+        
+        isProcessingPayment = false;
+        paymentVerified = false;
+        paymentAttempts = 0;
+        
+        showToast('Retry', 'Please try payment again.', 'info');
+    }
+
     // ─── PAYMENT ──────────────────────────────────────────────
     function openPayment(productId) {
         if (isProcessingPayment) {
@@ -1873,6 +1937,7 @@
         currentOrderRef = null;
         currentOrderId = null;
         paymentVerified = false;
+        paymentAttempts = 0;
         
         document.getElementById('paymentProductTitle').textContent = resource.title || 'Resource';
         document.getElementById('paymentProductPrice').textContent = 'KES ' + (resource.price || 0);
@@ -1883,6 +1948,7 @@
         document.getElementById('paymentStatusIndicator').style.display = 'none';
         document.getElementById('paymentStatusMessage').style.display = 'none';
         document.getElementById('confirmPaymentBtn').style.display = 'none';
+        document.getElementById('retryPaymentBtn').style.display = 'none';
         document.getElementById('payBtn').disabled = false;
         document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
         document.getElementById('paySpinner').style.display = 'none';
@@ -1923,6 +1989,7 @@
         currentOrderRef = null;
         paymentVerified = false;
         document.getElementById('confirmPaymentBtn').style.display = 'none';
+        document.getElementById('retryPaymentBtn').style.display = 'none';
     }
 
     // ─── CONFIRM PAYMENT MANUALLY ─────────────────────────────
@@ -1965,6 +2032,7 @@
                 statusMessage.innerHTML = '✅ Payment successful! Your download will begin shortly.';
                 document.getElementById('paymentTimer').textContent = '✅ Payment confirmed!';
                 document.getElementById('confirmPaymentBtn').style.display = 'none';
+                document.getElementById('retryPaymentBtn').style.display = 'none';
                 
                 // Mark as purchased
                 if (currentProduct && currentProduct.id) {
@@ -2107,6 +2175,7 @@
         var statusEl = document.getElementById('stkStatus');
         var statusMessage = document.getElementById('paymentStatusMessage');
         var confirmBtn = document.getElementById('confirmPaymentBtn');
+        var retryBtn = document.getElementById('retryPaymentBtn');
 
         payBtn.disabled = true;
         document.getElementById('payBtnText').textContent = 'Processing...';
@@ -2114,6 +2183,7 @@
         isProcessingPayment = true;
         paymentVerified = false;
         confirmBtn.style.display = 'none';
+        retryBtn.style.display = 'none';
 
         statusEl.className = 'stk-status visible pending';
         statusEl.style.display = 'block';
@@ -2210,10 +2280,20 @@
                 body: JSON.stringify(payload)
             });
 
-            var result = await response.json();
+            // Log the raw response for debugging
+            var responseText = await response.text();
+            console.log('[KenyaVault] STK Push raw response:', responseText);
+
+            var result;
+            try {
+                result = JSON.parse(responseText);
+            } catch (e) {
+                console.error('[KenyaVault] Failed to parse response:', e);
+                throw new Error('Invalid response from payment server: ' + responseText.substring(0, 100));
+            }
 
             if (!response.ok) {
-                throw new Error(result.error || result.message || 'Payment initiation failed');
+                throw new Error(result.error || result.message || 'Payment initiation failed (HTTP ' + response.status + ')');
             }
 
             if (result.success) {
@@ -2237,6 +2317,7 @@
                 statusMessage.style.display = 'block';
                 statusMessage.className = 'stk-status error';
                 statusMessage.innerHTML = '❌ Payment initiation failed. Please try again.';
+                retryBtn.style.display = 'block';
                 payBtn.disabled = false;
                 document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
                 document.getElementById('paySpinner').style.display = 'none';
@@ -2251,6 +2332,7 @@
             statusMessage.style.display = 'block';
             statusMessage.className = 'stk-status error';
             statusMessage.innerHTML = '❌ ' + (error.message || 'Network error. Please try again.');
+            retryBtn.style.display = 'block';
             payBtn.disabled = false;
             document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
             document.getElementById('paySpinner').style.display = 'none';
@@ -2288,6 +2370,7 @@
                 var statusMessage = document.getElementById('paymentStatusMessage');
                 var payBtn = document.getElementById('payBtn');
                 var confirmBtn = document.getElementById('confirmPaymentBtn');
+                var retryBtn = document.getElementById('retryPaymentBtn');
                 
                 statusEl.className = 'stk-status visible error';
                 statusEl.innerHTML = '⏰ Payment timed out. Please try again.';
@@ -2295,6 +2378,7 @@
                 statusMessage.className = 'stk-status error';
                 statusMessage.innerHTML = '⏰ Payment timed out. Please try again.';
                 confirmBtn.style.display = 'none';
+                retryBtn.style.display = 'block';
                 payBtn.disabled = false;
                 document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
                 document.getElementById('paySpinner').style.display = 'none';
@@ -2416,6 +2500,7 @@
                             statusMessage.className = 'stk-status error';
                             statusMessage.innerHTML = '❌ Payment could not be confirmed. Please try again.';
                             confirmBtn.style.display = 'none';
+                            document.getElementById('retryPaymentBtn').style.display = 'block';
                             payBtn.disabled = false;
                             document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
                             document.getElementById('paySpinner').style.display = 'none';
@@ -2440,6 +2525,7 @@
                     statusMessage.className = 'stk-status error';
                     statusMessage.innerHTML = '❌ Payment ' + (result.status || 'failed') + '. Please try again.';
                     confirmBtn.style.display = 'none';
+                    document.getElementById('retryPaymentBtn').style.display = 'block';
                     payBtn.disabled = false;
                     document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
                     document.getElementById('paySpinner').style.display = 'none';
@@ -2456,6 +2542,7 @@
                     statusMessage.innerHTML = '⏳ Payment still pending. Please check your M-PESA messages.';
                     confirmBtn.style.display = 'block';
                     confirmBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Check Status';
+                    document.getElementById('retryPaymentBtn').style.display = 'block';
                     payBtn.disabled = false;
                     document.getElementById('payBtnText').textContent = '🔄 Try Again';
                     document.getElementById('paySpinner').style.display = 'none';
@@ -2580,6 +2667,7 @@
     window.closePaymentModal = closePaymentModal;
     window.initiatePayment = initiatePayment;
     window.confirmPaymentManually = confirmPaymentManually;
+    window.retryPayment = retryPayment;
     window.toggleCart = toggleCart;
     window.fetchResources = fetchResources;
     window.secureDownload = secureDownload;
