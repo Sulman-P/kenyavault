@@ -163,6 +163,7 @@
             font-size: 20px;
             font-weight: bold;
             color: #4a6cf7;
+            margin-top: 8px;
         }
         .payment-actions {
             display: flex;
@@ -200,6 +201,32 @@
             text-align: center;
             margin-top: 12px;
         }
+        .back-link {
+            display: block;
+            text-align: center;
+            margin-top: 16px;
+            color: #4a6cf7;
+            text-decoration: none;
+            font-size: 14px;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        .mpesa-code-input {
+            margin-top: 12px;
+        }
+        .mpesa-code-input input {
+            width: 100%;
+            padding: 10px 14px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            margin-top: 4px;
+        }
+        .mpesa-code-input input:focus {
+            outline: none;
+            border-color: #4a6cf7;
+        }
     </style>
 </head>
 <body>
@@ -235,18 +262,25 @@
             </button>
 
             <div id="actionsContainer" class="payment-actions hidden">
-                <button onclick="confirmPaymentManually()" class="btn btn-success">
+                <button type="button" onclick="confirmPaymentManually()" class="btn btn-success">
                     ✅ I've Made the Payment
                 </button>
-                <button onclick="retryPayment()" class="btn btn-secondary">
+                <button type="button" onclick="retryPayment()" class="btn btn-secondary">
                     🔄 Retry
                 </button>
+            </div>
+
+            <div id="manualCodeContainer" class="mpesa-code-input hidden">
+                <label for="mpesaCodeInput">M-PESA Confirmation Code (Optional)</label>
+                <input type="text" id="mpesaCodeInput" placeholder="e.g., QWERTY123">
+                <small style="color: #6c757d; font-size: 12px;">Enter the code from your M-PESA confirmation message</small>
             </div>
         </form>
 
         <div class="note">
             🔒 Secure payment processed by MegaPay. You'll receive an STK push on your phone.
         </div>
+        <a href="/" class="back-link">← Back to Resources</a>
     </div>
 
     <script>
@@ -261,6 +295,7 @@
         let isProcessing = false;
         let remainingSeconds = 180;
         let countdownInterval = null;
+        let paymentCompleted = false;
 
         // ─── GET ORDER DATA FROM URL ──────────────────────
         function getOrderData() {
@@ -310,17 +345,19 @@
         // ─── INITIATE PAYMENT ──────────────────────────────
         async function initiatePayment(event) {
             if (event) event.preventDefault();
-            if (isProcessing) return;
+            if (isProcessing || paymentCompleted) return;
 
             const name = document.getElementById('customerName').value.trim();
             const phone = document.getElementById('phoneNumber').value.trim();
 
             if (!name) {
                 alert('Please enter your full name');
+                document.getElementById('customerName').focus();
                 return;
             }
             if (!phone) {
                 alert('Please enter your phone number');
+                document.getElementById('phoneNumber').focus();
                 return;
             }
 
@@ -328,6 +365,7 @@
             const cleanPhone = phone.replace(/\D/g, '');
             if (!cleanPhone.startsWith('254') && !cleanPhone.startsWith('0')) {
                 alert('Please enter a valid phone number (e.g., 254701710662 or 0701710662)');
+                document.getElementById('phoneNumber').focus();
                 return;
             }
 
@@ -341,6 +379,10 @@
             const payBtn = document.getElementById('payBtn');
             payBtn.disabled = true;
             payBtn.innerHTML = '<span class="loader"></span> Processing...';
+
+            // Hide any previous status
+            document.getElementById('statusBox').className = 'status-box';
+            document.getElementById('statusBox').style.display = 'none';
 
             try {
                 // ─── CREATE ORDER ─────────────────────────────
@@ -397,8 +439,9 @@
                 // ─── SHOW PENDING STATUS ──────────────────────
                 showStatus('pending', '⏳', 'STK Push sent! Check your phone and enter your M-PESA PIN.');
                 
-                // Show the "I've paid" button
+                // Show the "I've paid" button and manual code input
                 document.getElementById('actionsContainer').classList.remove('hidden');
+                document.getElementById('manualCodeContainer').classList.remove('hidden');
                 document.getElementById('payBtn').classList.add('hidden');
 
                 // Start countdown
@@ -427,14 +470,17 @@
 
             pollInterval = setInterval(async () => {
                 attempts++;
-                if (attempts > maxAttempts) {
-                    clearInterval(pollInterval);
-                    showStatus('expired', '⏰', 'Payment time expired. Please try again.');
-                    document.getElementById('actionsContainer').classList.add('hidden');
-                    document.getElementById('payBtn').classList.remove('hidden');
-                    document.getElementById('payBtn').disabled = false;
-                    document.getElementById('payBtn').innerHTML = '💳 Pay with M-PESA';
-                    isProcessing = false;
+                if (attempts > maxAttempts || paymentCompleted) {
+                    if (!paymentCompleted) {
+                        clearInterval(pollInterval);
+                        showStatus('expired', '⏰', 'Payment time expired. Please try again.');
+                        document.getElementById('actionsContainer').classList.add('hidden');
+                        document.getElementById('manualCodeContainer').classList.add('hidden');
+                        document.getElementById('payBtn').classList.remove('hidden');
+                        document.getElementById('payBtn').disabled = false;
+                        document.getElementById('payBtn').innerHTML = '💳 Pay with M-PESA';
+                        isProcessing = false;
+                    }
                     return;
                 }
 
@@ -449,17 +495,19 @@
                     console.log('[KenyaVault] Payment status check:', data);
 
                     if (data.isPaid) {
+                        paymentCompleted = true;
                         clearInterval(pollInterval);
                         clearInterval(countdownInterval);
                         showStatus('paid', '✅', 'Payment confirmed! You can now access your resources.');
                         document.getElementById('actionsContainer').classList.add('hidden');
+                        document.getElementById('manualCodeContainer').classList.add('hidden');
                         document.getElementById('payBtn').classList.add('hidden');
                         isProcessing = false;
 
                         // Redirect to success page or show download button
                         setTimeout(() => {
                             window.location.href = `/download.html?order=${orderRef}`;
-                        }, 2000);
+                        }, 3000);
                         return;
                     }
 
@@ -467,6 +515,7 @@
                         clearInterval(pollInterval);
                         showStatus('failed', '❌', data.message || 'Payment failed. Please try again.');
                         document.getElementById('actionsContainer').classList.add('hidden');
+                        document.getElementById('manualCodeContainer').classList.add('hidden');
                         document.getElementById('payBtn').classList.remove('hidden');
                         document.getElementById('payBtn').disabled = false;
                         document.getElementById('payBtn').innerHTML = '💳 Pay with M-PESA';
@@ -487,9 +536,10 @@
             // Set overall timeout (3 minutes)
             pollTimeout = setTimeout(() => {
                 clearInterval(pollInterval);
-                if (!document.querySelector('.status-box.paid')) {
+                if (!paymentCompleted) {
                     showStatus('expired', '⏰', 'Payment time expired. Please try again.');
                     document.getElementById('actionsContainer').classList.add('hidden');
+                    document.getElementById('manualCodeContainer').classList.add('hidden');
                     document.getElementById('payBtn').classList.remove('hidden');
                     document.getElementById('payBtn').disabled = false;
                     document.getElementById('payBtn').innerHTML = '💳 Pay with M-PESA';
@@ -523,17 +573,24 @@
                 alert('No order found. Please try again.');
                 return;
             }
+            if (paymentCompleted) {
+                alert('Payment already completed!');
+                return;
+            }
 
-            // Ask user for M-PESA code if they have it
-            const mpesaCode = prompt('Enter the M-PESA confirmation code (optional, leave empty if you don\'t have it):');
+            // Get M-PESA code if entered
+            const mpesaCodeInput = document.getElementById('mpesaCodeInput');
+            const mpesaCode = mpesaCodeInput ? mpesaCodeInput.value.trim() : '';
             
             showStatus('pending', '⏳', 'Confirming payment...');
 
             try {
                 const payload = { order_id: orderId };
-                if (mpesaCode && mpesaCode.trim()) {
-                    payload.mpesa_code = mpesaCode.trim();
+                if (mpesaCode) {
+                    payload.mpesa_code = mpesaCode;
                 }
+
+                console.log('[KenyaVault] Manual confirmation payload:', payload);
 
                 const response = await fetch(`${API_BASE}/api/mpesa/confirm-payment`, {
                     method: 'POST',
@@ -542,19 +599,21 @@
                 });
 
                 const data = await response.json();
-                console.log('[KenyaVault] Manual confirmation:', data);
+                console.log('[KenyaVault] Manual confirmation response:', data);
 
                 if (data.success && data.isPaid) {
+                    paymentCompleted = true;
                     clearInterval(pollInterval);
                     clearInterval(countdownInterval);
                     showStatus('paid', '✅', 'Payment confirmed! You can now access your resources.');
                     document.getElementById('actionsContainer').classList.add('hidden');
+                    document.getElementById('manualCodeContainer').classList.add('hidden');
                     document.getElementById('payBtn').classList.add('hidden');
                     isProcessing = false;
 
                     setTimeout(() => {
                         window.location.href = `/download.html?order=${orderRef}`;
-                    }, 2000);
+                    }, 3000);
                 } else {
                     showStatus('failed', '❌', 'Payment not confirmed. Please make sure you\'ve completed the M-PESA transaction and try again.');
                 }
@@ -566,15 +625,17 @@
 
         // ─── RETRY PAYMENT ──────────────────────────────────
         function retryPayment() {
-            if (isProcessing) return;
+            if (isProcessing || paymentCompleted) return;
             
             // Reset the status
             document.getElementById('statusBox').className = 'status-box';
             document.getElementById('statusBox').style.display = 'none';
             document.getElementById('actionsContainer').classList.add('hidden');
+            document.getElementById('manualCodeContainer').classList.add('hidden');
             document.getElementById('payBtn').classList.remove('hidden');
             document.getElementById('payBtn').disabled = false;
             document.getElementById('payBtn').innerHTML = '💳 Pay with M-PESA';
+            document.getElementById('countdownDisplay').textContent = '';
             
             if (countdownInterval) clearInterval(countdownInterval);
             if (pollInterval) clearInterval(pollInterval);
@@ -582,6 +643,10 @@
             
             isProcessing = false;
             remainingSeconds = 180;
+            
+            // Clear the M-PESA code input
+            const mpesaCodeInput = document.getElementById('mpesaCodeInput');
+            if (mpesaCodeInput) mpesaCodeInput.value = '';
             
             // Scroll to top
             window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -597,6 +662,11 @@
             box.style.display = 'block';
             iconEl.textContent = icon;
             msgEl.textContent = message;
+            
+            // If paid, update the icon
+            if (type === 'paid') {
+                document.getElementById('countdownDisplay').textContent = '';
+            }
         }
 
         // ─── INIT ────────────────────────────────────────────
@@ -616,9 +686,20 @@
                 document.getElementById('phoneNumber').value = savedPhone;
             }
             
+            // Pre-fill name if available
+            const savedName = localStorage.getItem('kenyavault_name');
+            if (savedName) {
+                document.getElementById('customerName').value = savedName;
+            }
+            
             // Save phone on change
             document.getElementById('phoneNumber').addEventListener('change', function() {
                 localStorage.setItem('kenyavault_phone', this.value);
+            });
+            
+            // Save name on change
+            document.getElementById('customerName').addEventListener('change', function() {
+                localStorage.setItem('kenyavault_name', this.value);
             });
         });
 
