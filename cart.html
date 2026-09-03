@@ -594,6 +594,10 @@
             border-radius: 50%;
             animation: spin 0.6s linear infinite;
         }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
 
         /* ── CART SUMMARY ── */
         .cart-summary-section {
@@ -1961,15 +1965,15 @@
 <!-- ════════════════════════════════════════ -->
 <script>
 // ════════════════════════════════════════════════════════════════
-// KENYAVAULT — CART PAGE ENGINE
+// KENYAVAULT — CART PAGE ENGINE (UPDATED WITH REAL PAYMENT)
 // ════════════════════════════════════════════════════════════════
 
 (function() {
     'use strict';
 
-    // ─── SUPABASE CONFIG ──────────────────────────────────────
-    const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
+    // ─── CONFIG ──────────────────────────────────────────────────
+    const API_BASE = 'https://kenyavault.onrender.com';
+    // const API_BASE = 'http://localhost:3000'; // For local testing
 
     // ─── STATE ──────────────────────────────────────────────────
     let appliedCartPromo = null;
@@ -1979,9 +1983,10 @@
     let cartProgressTimer = null;
     let cartCheckoutSessionId = 0;
     let cartPollFailures = 0;
-    const MAX_POLLS = 45;
     let _removingIds = new Set();
     let _clearAllInProgress = false;
+    let currentOrderId = null;
+    let currentOrderRef = null;
 
     // ─── CART ENGINE ──────────────────────────────────────────
     const Cart = {
@@ -2527,8 +2532,8 @@
         if (cartErrorBanner) cartErrorBanner.style.display = 'none';
     }
 
-    // ─── CHECKOUT ─────────────────────────────────────────────
-    function initiateCartCheckout() {
+    // ─── REAL CHECKOUT WITH SUPABASE ─────────────────────────
+    async function initiateCartCheckout() {
         clearInlineCartError();
         const session = ++cartCheckoutSessionId;
         cartPollFailures = 0;
@@ -2573,53 +2578,157 @@
         btn.innerHTML = '<span class="cart-remove-spinner--dark" style="border-top-color:#ffffff; border-color:rgba(255,255,255,0.3); width:16px; height:16px; margin-right:8px;"></span> Processing...';
         btn.style.opacity = '0.85';
 
-        // Simulate payment processing
         const payable = getCartPayableTotal();
 
-        if (selectedCartGateway === 'paystack') {
-            // Simulate Paystack redirect
-            setTimeout(() => {
-                if (form) form.style.display = 'none';
-                if (cartMpesaStatus) {
-                    cartMpesaStatus.style.display = 'block';
-                    cartMpesaStatus.innerHTML = `
-                        <div class="stk-live-card" style="text-align:center;">
-                            <div class="mpesa-spinner-v2" style="margin: 1.5rem auto 1rem;">
-                                <div class="stk-radar-container" style="width:60px;height:60px;">
-                                    <div class="stk-radar-wave wave-1"></div>
-                                    <div class="stk-radar-wave wave-2"></div>
-                                    <div class="stk-radar-icon" style="font-size:1.5rem;">
-                                        <i class="bi bi-credit-card"></i>
-                                    </div>
-                                </div>
-                            </div>
-                            <h3 class="stk-live-title" style="color: #2563eb;">Redirecting to Secure Gateway...</h3>
-                            <p class="stk-live-subtitle">Please wait while we transfer you to Paystack checkout.</p>
-                            <button class="btn-primary" onclick="simulatePaymentSuccess()" style="display:inline-block; margin-top:1rem; padding:0.75rem 1.5rem; background:var(--kv-gold); color:var(--kv-primary); border:none; border-radius:8px; font-weight:700; cursor:pointer;">
-                                Simulate Payment Success
-                            </button>
-                        </div>
-                    `;
-                }
-                btn.disabled = false;
-                btn.style.opacity = '1';
-            }, 1500);
+        try {
+            // ─── 1. CREATE ORDER ────────────────────────────────
+            const orderPayload = {
+                customer_name: 'Guest User',
+                phone: sanitizedPhone || '',
+                user_email: email,
+                cart_items: cart.map(item => ({
+                    id: item.id,
+                    title: item.title,
+                    price: item.price,
+                    filename: item.filename || '',
+                    ext: item.ext || '',
+                    category: item.category || 'CBC Document',
+                    level: item.level || '',
+                    grade: item.grade || ''
+                })),
+                total_amount: payable
+            };
+
+            console.log('[KenyaVault] Creating order:', orderPayload);
+
+            const createResponse = await fetch(`${API_BASE}/api/create-order`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(orderPayload)
+            });
+
+            const createResult = await createResponse.json();
+
+            if (!createResult.success) {
+                throw new Error(createResult.error || 'Failed to create order');
+            }
+
+            currentOrderId = createResult.order_id;
+            currentOrderRef = createResult.order_ref;
+            console.log(`[KenyaVault] Order created: ${currentOrderId} ${currentOrderRef}`);
+
+            // ─── 2. SEND STK PUSH ────────────────────────────────
+            const stkPayload = {
+                order_id: currentOrderId,
+                order_ref: currentOrderRef,
+                phone: sanitizedPhone,
+                amount: payable,
+                customer_name: 'Guest User',
+                customer_email: email
+            };
+
+            console.log('[KenyaVault] Sending STK push:', stkPayload);
+
+            const stkResponse = await fetch(`${API_BASE}/api/mpesa/stk-push`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(stkPayload)
+            });
+
+            const stkResult = await stkResponse.json();
+
+            if (!stkResult.success) {
+                throw new Error(stkResult.error || 'Failed to send STK push');
+            }
+
+            // ─── 3. SHOW PENDING STATUS ──────────────────────────
+            if (form) form.style.display = 'none';
+            if (cartMpesaStatus) {
+                renderStkLiveCard(stkResult.data?.transaction_request_id || 'pending', formattedPhone || sanitizedPhone, payable);
+                pollCount = 0;
+                startPollingPayment(currentOrderId, session);
+            }
+
+            btn.disabled = false;
+            btn.style.opacity = '1';
+
+        } catch (error) {
+            console.error('[KenyaVault] Checkout error:', error);
+            showInlineCartError(error.message || 'Payment failed. Please try again.');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-phone"></i> Pay via M-Pesa STK Push';
+            btn.style.opacity = '1';
+        }
+    }
+
+    // ─── POLL PAYMENT STATUS ──────────────────────────────────
+    function startPolling(orderId, sessionId) {
+        if (sessionId !== cartCheckoutSessionId) return;
+
+        if (pollCount >= 60) { // 60 * 3 seconds = 3 minutes
+            clearInterval(cartProgressTimer);
+            clearTimeout(pollTimer);
+            showCartTimeoutCard();
             return;
         }
 
-        // M-Pesa flow
-        setTimeout(() => {
-            if (form) form.style.display = 'none';
-            if (cartMpesaStatus) {
-                renderStkLiveCard('checkout_' + Date.now(), formattedPhone || sanitizedPhone, payable);
-                pollCount = 0;
-                pollCartPaymentStatus('checkout_' + Date.now(), formattedPhone || sanitizedPhone, session);
+        pollCount++;
+
+        pollTimer = setTimeout(async function() {
+            if (sessionId !== cartCheckoutSessionId) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/api/mpesa/verify-payment`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ order_id: orderId })
+                });
+
+                const data = await response.json();
+                console.log('[KenyaVault] Payment status check:', data);
+
+                if (data.isPaid) {
+                    clearInterval(cartProgressTimer);
+                    clearTimeout(pollTimer);
+                    Cart.clear();
+                    showPaymentSuccess(data);
+                    return;
+                }
+
+                if (data.status === 'expired' || data.status === 'failed') {
+                    clearInterval(cartProgressTimer);
+                    clearTimeout(pollTimer);
+                    showCartFailed(data.message || 'Payment failed. Please try again.');
+                    return;
+                }
+
+                // Update remaining time if available
+                if (data.remaining_seconds !== undefined) {
+                    const fillEl = document.getElementById('cart-stk-bar-fill');
+                    const labelEl = document.getElementById('cart-stk-timer-label');
+                    if (fillEl) {
+                        const pct = Math.max(0, (data.remaining_seconds / 180) * 100);
+                        fillEl.style.width = pct + '%';
+                    }
+                    if (labelEl) {
+                        labelEl.textContent = Math.max(0, data.remaining_seconds) + 's remaining';
+                    }
+                }
+
+                // Continue polling
+                startPolling(orderId, sessionId);
+
+            } catch (error) {
+                console.error('[KenyaVault] Polling error:', error);
+                // Retry after delay
+                setTimeout(() => {
+                    startPolling(orderId, sessionId);
+                }, 5000);
             }
-            btn.disabled = false;
-            btn.style.opacity = '1';
-        }, 1000);
+        }, 3000);
     }
 
+    // ─── RENDER STK LIVE CARD ─────────────────────────────────
     function renderStkLiveCard(checkoutRequestId, phoneFormatted, payablePrice) {
         if (!cartMpesaStatus) return;
         cartMpesaStatus.style.display = 'block';
@@ -2674,123 +2783,107 @@
                     </div>
                     <div class="stk-timer-labels">
                         <span><i class="bi bi-clock-history"></i> Waiting for response</span>
-                        <span class="stk-countdown-text" id="cart-stk-timer-label">120s remaining</span>
+                        <span class="stk-countdown-text" id="cart-stk-timer-label">180s remaining</span>
                     </div>
                 </div>
 
                 <div class="stk-actions-row">
-                    <button type="button" class="stk-btn-resend" onclick="initiateCartCheckout()">
-                        <i class="bi bi-arrow-repeat"></i> Resend PIN Prompt
-                    </button>
                     <button type="button" class="stk-btn-cancel" onclick="resetCartFormUI()">
-                        <i class="bi bi-x-circle"></i> Change Number / Cancel
+                        <i class="bi bi-arrow-left"></i> Back to Checkout
+                    </button>
+                    <button type="button" class="stk-btn-resend" onclick="initiateCartCheckout()">
+                        <i class="bi bi-arrow-repeat"></i> Retry Payment
                     </button>
                 </div>
             </div>
         `;
-
-        let secondsLeft = 120;
-        clearInterval(cartProgressTimer);
-        cartProgressTimer = setInterval(() => {
-            secondsLeft -= 1;
-            const fillEl = document.getElementById('cart-stk-bar-fill');
-            const labelEl = document.getElementById('cart-stk-timer-label');
-            if (fillEl) fillEl.style.width = Math.max(0, (secondsLeft / 120) * 100) + '%';
-            if (labelEl) labelEl.textContent = Math.max(0, secondsLeft) + 's remaining';
-            if (secondsLeft <= 0) clearInterval(cartProgressTimer);
-        }, 1000);
     }
 
-    function pollCartPaymentStatus(checkoutRequestId, phoneFormatted, sessionId) {
-        if (sessionId !== cartCheckoutSessionId) return;
-
-        if (pollCount >= MAX_POLLS) {
-            clearInterval(cartProgressTimer);
-            clearTimeout(pollTimer);
-            showCartTimeoutCard();
-            return;
-        }
-
-        pollCount++;
-
-        // Simulate payment status check
-        setTimeout(() => {
-            if (sessionId !== cartCheckoutSessionId) return;
-
-            // Simulate success after 5-10 seconds (70% chance)
-            const shouldSucceed = Math.random() < 0.7 && pollCount > 3;
-
-            if (shouldSucceed) {
-                clearInterval(cartProgressTimer);
-                clearTimeout(pollTimer);
-                Cart.clear();
-                simulatePaymentSuccess();
-            } else if (pollCount > 10) {
-                // Simulate timeout
-                clearInterval(cartProgressTimer);
-                clearTimeout(pollTimer);
-                showCartTimeoutCard();
-            } else {
-                // Continue polling
-                pollTimer = setTimeout(function() {
-                    pollCartPaymentStatus(checkoutRequestId, phoneFormatted, sessionId);
-                }, 3000);
-            }
-        }, 3000);
-    }
-
-    function simulatePaymentSuccess() {
-        clearInterval(cartProgressTimer);
-        clearTimeout(pollTimer);
-        Cart.clear();
-
-        if (cartMpesaStatus) {
-            cartMpesaStatus.innerHTML = `
-                <div class="stk-success-box">
-                    <div class="stk-success-icon-wrap">
-                        <i class="bi bi-check-lg"></i>
-                    </div>
-                    <h3 class="stk-success-title">Order Confirmed!</h3>
-                    <p style="color:#475569; font-size:0.92rem; margin-bottom:0.75rem;">
-                        Your payment was successful. All purchased items are ready for download.
-                    </p>
-
-                    <div class="stk-receipt-badge">
-                        <i class="bi bi-receipt"></i> Receipt: <strong>KV-${Date.now().toString().slice(-8)}</strong>
-                    </div>
-
-                    <div style="text-align:left; margin:1.25rem 0; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:1.25rem;">
-                        <h4 style="font-size:0.95rem; font-weight:700; margin-bottom:0.75rem; color:#1e293b;">Download Purchased Files:</h4>
-                        <ul style="list-style:none; padding:0; margin:0;">
-                            ${Cart.get().map(item => `
-                                <li style="display:flex; justify-content:space-between; align-items:center; padding:0.5rem 0; border-bottom:1px solid #edf2f7;">
-                                    <span style="font-size:0.85rem; font-weight:500; color:#334155;">${escapeHtml(item.title)}</span>
-                                    <a href="/download.html?id=${item.id}" class="btn-primary" style="padding:5px 12px; font-size:0.75rem; display:inline-flex; align-items:center; gap:0.25rem; border-radius:6px; background:var(--kv-gold); color:var(--kv-primary); text-decoration:none; font-weight:700;">
-                                        <i class="bi bi-download"></i> Download
-                                    </a>
-                                </li>
-                            `).join('')}
-                        </ul>
-                    </div>
-
-                    <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:0.85rem; margin-top:1rem; font-size:0.85rem; color:#166534; text-align:left;">
-                        <i class="bi bi-envelope-check-fill" style="margin-right:0.35rem;"></i>
-                        <strong>A backup copy has also been sent to your email!</strong> Check your inbox or spam folder.
-                    </div>
-
-                    <div style="margin-top: 1.25rem;">
-                        <a href="/index.html" class="stk-download-btn-primary" style="display:inline-flex; text-decoration:none; padding:0.85rem 1.5rem; border-radius:10px; width:100%; align-items:center; justify-content:center; gap:6px; background:var(--kv-gold); color:var(--kv-primary); border:none; font-weight:700; cursor:pointer;">
-                            <i class="bi bi-house"></i> Return to Homepage
-                        </a>
-                    </div>
+    // ─── SHOW PAYMENT SUCCESS ─────────────────────────────────
+    function showPaymentSuccess(data) {
+        if (!cartMpesaStatus) return;
+        
+        const cart = Cart.get();
+        cartMpesaStatus.innerHTML = `
+            <div class="stk-success-box">
+                <div class="stk-success-icon-wrap">
+                    <i class="bi bi-check-lg"></i>
                 </div>
-            `;
-        }
+                <h3 class="stk-success-title">Payment Confirmed!</h3>
+                <p style="color:#475569; font-size:0.92rem; margin-bottom:0.75rem;">
+                    Your payment was successful. All purchased items are ready for download.
+                </p>
+
+                <div class="stk-receipt-badge">
+                    <i class="bi bi-receipt"></i> Receipt: <strong>${data.mpesa_code || 'KV-' + Date.now().toString().slice(-8)}</strong>
+                </div>
+
+                <div style="text-align:left; margin:1.25rem 0; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:1.25rem;">
+                    <h4 style="font-size:0.95rem; font-weight:700; margin-bottom:0.75rem; color:#1e293b;">Download Purchased Files:</h4>
+                    <ul style="list-style:none; padding:0; margin:0;">
+                        ${cart.map(item => `
+                            <li style="display:flex; justify-content:space-between; align-items:center; padding:0.5rem 0; border-bottom:1px solid #edf2f7;">
+                                <span style="font-size:0.85rem; font-weight:500; color:#334155;">${escapeHtml(item.title)}</span>
+                                <a href="/download.html?order=${currentOrderRef}&id=${item.id}" class="btn-primary" style="padding:5px 12px; font-size:0.75rem; display:inline-flex; align-items:center; gap:0.25rem; border-radius:6px; background:var(--kv-gold); color:var(--kv-primary); text-decoration:none; font-weight:700;">
+                                    <i class="bi bi-download"></i> Download
+                                </a>
+                            </li>
+                        `).join('')}
+                    </ul>
+                </div>
+
+                <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:0.85rem; margin-top:1rem; font-size:0.85rem; color:#166534; text-align:left;">
+                    <i class="bi bi-envelope-check-fill" style="margin-right:0.35rem;"></i>
+                    <strong>A backup copy has also been sent to your email!</strong> Check your inbox or spam folder.
+                </div>
+
+                <div style="margin-top: 1.25rem; display: flex; gap: 8px; flex-wrap: wrap;">
+                    <a href="/index.html" class="stk-download-btn-primary" style="flex:1; text-decoration:none; padding:0.85rem 1.5rem; border-radius:10px; align-items:center; justify-content:center; gap:6px; background:var(--kv-gold); color:var(--kv-primary); border:none; font-weight:700; cursor:pointer; display:flex;">
+                        <i class="bi bi-house"></i> Homepage
+                    </a>
+                    <a href="/browse.html" class="stk-download-btn-primary" style="flex:1; text-decoration:none; padding:0.85rem 1.5rem; border-radius:10px; align-items:center; justify-content:center; gap:6px; background:var(--kv-gold-light); color:var(--kv-primary); border:none; font-weight:700; cursor:pointer; display:flex;">
+                        <i class="bi bi-search"></i> Browse More
+                    </a>
+                </div>
+            </div>
+        `;
     }
 
+    // ─── SHOW CART FAILED ─────────────────────────────────────
+    function showCartFailed(message) {
+        if (!cartMpesaStatus) return;
+        
+        cartMpesaStatus.innerHTML = `
+            <div class="stk-failed-box">
+                <div class="stk-failed-badge">
+                    <i class="bi bi-x-circle"></i> Payment Failed
+                </div>
+
+                <div class="stk-failed-icon-wrap">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                </div>
+
+                <h3 class="stk-failed-title">Payment Not Completed</h3>
+
+                <div class="stk-failed-msg-box">
+                    <i class="bi bi-info-circle-fill" style="margin-right: 4px;"></i>
+                    ${message || 'We could not confirm your payment. Please try again or use a different payment method.'}
+                </div>
+
+                <div class="stk-failed-actions">
+                    <button type="button" class="stk-btn-retry-mpesa" onclick="resetCartFormUI(); initiateCartCheckout();">
+                        <i class="bi bi-arrow-repeat"></i> Retry M-Pesa
+                    </button>
+                    <button type="button" class="stk-btn-alt-gateway" onclick="setCartPaymentGateway('paystack'); resetCartFormUI();">
+                        <i class="bi bi-credit-card"></i> Pay with Card
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    // ─── SHOW CART TIMEOUT ────────────────────────────────────
     function showCartTimeoutCard() {
-        clearInterval(cartProgressTimer);
-        clearTimeout(pollTimer);
         if (!cartMpesaStatus) return;
 
         cartMpesaStatus.innerHTML = `
@@ -2807,21 +2900,22 @@
 
                 <div class="stk-failed-msg-box" style="background:#fffbeb; color:#92400e; border-color:#fde68a;">
                     <i class="bi bi-info-circle-fill" style="margin-right: 4px;"></i>
-                    We didn't receive a confirmation from Safaricom yet. If you already entered your PIN on phone, click 'Check Status / Refresh' to verify.
+                    We didn't receive a confirmation from Safaricom yet. If you already entered your PIN on phone, click 'Check Status' to verify.
                 </div>
 
                 <div class="stk-failed-actions">
-                    <button type="button" class="stk-btn-retry-mpesa" onclick="location.reload()">
-                        <i class="bi bi-arrow-clockwise"></i> Check Status / Refresh Page
+                    <button type="button" class="stk-btn-retry-mpesa" onclick="startPolling('${currentOrderId}', ${cartCheckoutSessionId})">
+                        <i class="bi bi-arrow-clockwise"></i> Check Status
                     </button>
                     <button type="button" class="stk-btn-cancel" onclick="resetCartFormUI()">
-                        <i class="bi bi-arrow-left"></i> Back to Checkout Form
+                        <i class="bi bi-arrow-left"></i> Back to Checkout
                     </button>
                 </div>
             </div>
         `;
     }
 
+    // ─── RESET CART FORM UI ───────────────────────────────────
     function resetCartFormUI() {
         ++cartCheckoutSessionId;
         clearInterval(cartProgressTimer);
@@ -2950,7 +3044,6 @@
     window.openShareCartModal = openShareCartModal;
     window.closeShareCartModal = closeShareCartModal;
     window.copyCartShareLink = copyCartShareLink;
-    window.simulatePaymentSuccess = simulatePaymentSuccess;
 
 })();
 </script>
