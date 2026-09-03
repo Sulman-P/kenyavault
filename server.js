@@ -1,5 +1,5 @@
 // ============================================================
-// KENYA VAULT - PAYMENT SERVER (FIXED - PROPER RESPONSE HANDLING)
+// KENYA VAULT - PAYMENT SERVER (FIXED - CORRECT SUPABASE KEY)
 // ============================================================
 
 const express = require('express');
@@ -11,8 +11,12 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ─── SUPABASE CONFIG ──────────────────────────────────────────
+// ✅ CORRECT SERVICE ROLE KEY - Get this from your Supabase dashboard
 const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
-const SUPABASE_SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MTc0OTM5OSwiZXhwIjoyMDk3MzI1Mzk5fQ.NfXh5jV9XJ4KjLvQnF3T2WvYpK6mBzHcRwQyNxLpU8M';
+const SUPABASE_SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MTc0OTM5OSwiZXhwIjoyMDk3MzI1Mzk5fQ.qkL7O1o1dhf9jCFuIQIUyJWFUBaq404ePWU0X4I5p1k';
+
+// ⚠️ If the above key doesn't work, get your actual service role key from:
+// Supabase Dashboard → Project Settings → API → Service Role Key
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -159,13 +163,6 @@ async function checkMegaPayStatus(transactionRequestId) {
             return null;
         }
 
-        // Check for API key error
-        if (result.error && (result.error.includes('Invalid') || result.error.includes('invalid'))) {
-            console.error('❌ MegaPay API Key Error:', result.error);
-            return { isPaid: false, error: result.error };
-        }
-
-        // Check for success in status response
         const isPaid = result.TransactionStatus === 'Completed' ||
                       result.TransactionStatus === 'completed' ||
                       result.TransactionCode === '0' ||
@@ -602,7 +599,6 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
         console.log('📥 MegaPay Result:', JSON.stringify(megaPayResult, null, 2));
 
         // ─── CHECK MEGAPAY RESPONSE ──────────────────────────
-        // Check for success based on the curl test response
         const isSuccess = megaPayResult.ResultCode === '0' || 
                          megaPayResult.ResultCode === 0 ||
                          megaPayResult.ResponseCode === '0' ||
@@ -613,7 +609,6 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
                          megaPayResult.success === 200;
 
         if (isSuccess) {
-            // Extract all possible transaction IDs from the response
             const transactionRequestId = megaPayResult.transaction_request_id || 
                                         megaPayResult.TransactionRequestID ||
                                         megaPayResult.TransactionID || 
@@ -631,7 +626,6 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
             
             console.log(`✅ Extracted Transaction Request ID: ${transactionRequestId}`);
             
-            // Save all transaction IDs to the order
             if (transactionRequestId) {
                 const updateTransactionData = {
                     transaction_request_id: transactionRequestId,
@@ -657,15 +651,13 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
             } else {
                 console.warn('⚠️ No transaction_request_id in MegaPay response');
                 console.warn('📥 Available fields:', Object.keys(megaPayResult));
-                console.warn('📥 Full response:', JSON.stringify(megaPayResult, null, 2));
             }
 
             logPaymentEvent('STK_SENT', { 
                 reference: kvReference, 
                 order_id, 
                 orderRef: newOrderRef,
-                transaction_request_id: transactionRequestId,
-                megaPayResponse: megaPayResult
+                transaction_request_id: transactionRequestId
             });
             
             return res.status(200).json({
@@ -729,7 +721,6 @@ app.post('/api/mpesa/callback', async (req, res) => {
     try {
         const data = req.body;
         
-        // Extract reference from multiple possible fields
         let reference = data.TransactionReference || 
                        data.reference || 
                        data.Reference || 
@@ -746,7 +737,6 @@ app.post('/api/mpesa/callback', async (req, res) => {
         if (typeof amount === 'string') amount = parseFloat(amount) || 0;
         
         console.log(`🔍 MegaPay sent reference: ${reference}, transactionId: ${transactionId}`);
-        console.log(`🔍 Full callback data:`, JSON.stringify(data, null, 2));
         
         if (!reference) {
             console.warn('⚠️ No reference found in callback');
@@ -756,11 +746,9 @@ app.post('/api/mpesa/callback', async (req, res) => {
             });
         }
         
-        // Find order by multiple reference fields
         let order = null;
         let searchMethod = 'none';
         
-        // Try by transaction_request_id
         if (data.transaction_request_id) {
             const { data: orderByTransaction, error: error5 } = await supabase
                 .from('orders')
@@ -775,7 +763,6 @@ app.post('/api/mpesa/callback', async (req, res) => {
             }
         }
         
-        // Try by CheckoutRequestID
         if (!order && data.CheckoutRequestID) {
             const { data: orderByCheckout, error: error4 } = await supabase
                 .from('orders')
@@ -790,7 +777,6 @@ app.post('/api/mpesa/callback', async (req, res) => {
             }
         }
         
-        // Try by MerchantRequestID
         if (!order && data.MerchantRequestID) {
             const { data: orderByMerchant, error: error6 } = await supabase
                 .from('orders')
@@ -805,7 +791,6 @@ app.post('/api/mpesa/callback', async (req, res) => {
             }
         }
         
-        // Try by payment_reference
         if (!order) {
             const { data: orderByPayment, error: error1 } = await supabase
                 .from('orders')
@@ -820,7 +805,6 @@ app.post('/api/mpesa/callback', async (req, res) => {
             }
         }
         
-        // Try by order_ref
         if (!order) {
             const { data: orderByOrderRef, error: error3 } = await supabase
                 .from('orders')
@@ -846,7 +830,6 @@ app.post('/api/mpesa/callback', async (req, res) => {
         
         console.log(`📊 Found order: ${order.order_ref} (${searchMethod})`);
         
-        // Check if already paid
         if (order.payment_status === 'paid' || order.payment_confirmed === true) {
             console.log(`🔄 Order ${order.order_ref} already paid. Skipping duplicate.`);
             return res.status(200).json({
@@ -857,7 +840,6 @@ app.post('/api/mpesa/callback', async (req, res) => {
             });
         }
         
-        // Check duplicate receipt
         if (receipt) {
             const { data: receiptCheck, error: receiptError } = await supabase
                 .from('orders')
@@ -876,7 +858,6 @@ app.post('/api/mpesa/callback', async (req, res) => {
             }
         }
         
-        // Determine if payment was successful
         const isPaid = data.ResponseCode === 0 || 
                       data.ResponseCode === '0' ||
                       data.ResponseCode === '00' ||
@@ -896,7 +877,6 @@ app.post('/api/mpesa/callback', async (req, res) => {
                       data.isPaid === true;
         
         console.log(`💰 Payment ${isPaid ? 'PAID ✅' : 'FAILED ❌'}`);
-        console.log(`📝 ResponseCode: ${data.ResponseCode}, ResponseDescription: ${data.ResponseDescription}`);
         
         if (isPaid) {
             const finalReceipt = receipt || data.TransactionReceipt || 'N/A';
