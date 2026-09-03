@@ -1965,7 +1965,7 @@
 <!-- ════════════════════════════════════════ -->
 <script>
 // ════════════════════════════════════════════════════════════════
-// KENYAVAULT — CART PAGE ENGINE (UPDATED WITH REAL PAYMENT)
+// KENYAVAULT — CART PAGE ENGINE (FIXED COLUMN NAMES)
 // ════════════════════════════════════════════════════════════════
 
 (function() {
@@ -1973,7 +1973,6 @@
 
     // ─── CONFIG ──────────────────────────────────────────────────
     const API_BASE = 'https://kenyavault.onrender.com';
-    // const API_BASE = 'http://localhost:3000'; // For local testing
 
     // ─── STATE ──────────────────────────────────────────────────
     let appliedCartPromo = null;
@@ -1982,7 +1981,6 @@
     let pollTimer = null;
     let cartProgressTimer = null;
     let cartCheckoutSessionId = 0;
-    let cartPollFailures = 0;
     let _removingIds = new Set();
     let _clearAllInProgress = false;
     let currentOrderId = null;
@@ -2536,7 +2534,6 @@
     async function initiateCartCheckout() {
         clearInlineCartError();
         const session = ++cartCheckoutSessionId;
-        cartPollFailures = 0;
         const btn = document.getElementById('cartCheckoutBtn');
         const form = document.getElementById('cartCheckoutForm');
 
@@ -2582,10 +2579,11 @@
 
         try {
             // ─── 1. CREATE ORDER ────────────────────────────────
+            // Use only columns that exist in the orders table
             const orderPayload = {
                 customer_name: 'Guest User',
-                phone: sanitizedPhone || '',
-                user_email: email,
+                customer_phone: sanitizedPhone || '',
+                // The server will handle email separately
                 cart_items: cart.map(item => ({
                     id: item.id,
                     title: item.title,
@@ -2662,10 +2660,10 @@
     }
 
     // ─── POLL PAYMENT STATUS ──────────────────────────────────
-    function startPolling(orderId, sessionId) {
+    function startPollingPayment(orderId, sessionId) {
         if (sessionId !== cartCheckoutSessionId) return;
 
-        if (pollCount >= 60) { // 60 * 3 seconds = 3 minutes
+        if (pollCount >= 60) {
             clearInterval(cartProgressTimer);
             clearTimeout(pollTimer);
             showCartTimeoutCard();
@@ -2716,13 +2714,12 @@
                 }
 
                 // Continue polling
-                startPolling(orderId, sessionId);
+                startPollingPayment(orderId, sessionId);
 
             } catch (error) {
                 console.error('[KenyaVault] Polling error:', error);
-                // Retry after delay
                 setTimeout(() => {
-                    startPolling(orderId, sessionId);
+                    startPollingPayment(orderId, sessionId);
                 }, 5000);
             }
         }, 3000);
@@ -2904,7 +2901,7 @@
                 </div>
 
                 <div class="stk-failed-actions">
-                    <button type="button" class="stk-btn-retry-mpesa" onclick="startPolling('${currentOrderId}', ${cartCheckoutSessionId})">
+                    <button type="button" class="stk-btn-retry-mpesa" onclick="startPollingPayment('${currentOrderId}', ${cartCheckoutSessionId})">
                         <i class="bi bi-arrow-clockwise"></i> Check Status
                     </button>
                     <button type="button" class="stk-btn-cancel" onclick="resetCartFormUI()">
@@ -2922,7 +2919,6 @@
         clearTimeout(pollTimer);
         cartProgressTimer = null;
         pollTimer = null;
-        cartPollFailures = 0;
 
         if (cartCheckoutForm) cartCheckoutForm.style.display = 'block';
         if (cartMpesaStatus) {
@@ -3007,13 +3003,9 @@
 
     // ─── INIT ──────────────────────────────────────────────────
     document.addEventListener('DOMContentLoaded', function() {
-        // Handle shared cart
         handleSharedCart();
-
-        // Render cart
         renderCartPage();
 
-        // Auto-apply promo code if passed in URL
         const urlParams = new URLSearchParams(window.location.search);
         const promoParam = urlParams.get('coupon') || urlParams.get('promo');
         if (promoParam && Cart.get().length > 0) {
@@ -3026,7 +3018,6 @@
             }, 500);
         }
 
-        // Set default payment gateway
         setCartPaymentGateway('mpesa');
     });
 
