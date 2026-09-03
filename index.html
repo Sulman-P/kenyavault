@@ -1890,6 +1890,11 @@
     }
 
     // ─── VERIFY PAYMENT IN DATABASE ──────────────────────────
+    // Requires BOTH payment_confirmed === true AND real evidence of a
+    // completed M-PESA transaction (a receipt/transaction code and, when
+    // present, amount_paid covering the order total). A boolean flag
+    // alone is not trusted, since a backend/webhook bug could set it
+    // without a genuine completed payment.
     async function verifyPaymentInDatabase(orderRef) {
         try {
             const response = await fetch(SUPABASE_URL + '/rest/v1/orders?order_ref=eq.' + orderRef, {
@@ -1909,8 +1914,20 @@
             if (data && data.length > 0) {
                 const order = data[0];
                 console.log('[KenyaVault] Database order check:', order);
-                return { 
-                    verified: order.payment_confirmed === true, 
+
+                var receipt = order.mpesa_receipt || order.mpesa_code || order.transaction_code ||
+                    order.transaction_reference || order.payment_reference || order.receipt_number || '';
+                var amountRequired = Number(order.total_amount || order.amount || 0);
+                var amountPaidField = order.amount_paid;
+                var amountOk = true;
+                if (amountPaidField !== undefined && amountPaidField !== null && amountRequired > 0) {
+                    amountOk = Number(amountPaidField) >= amountRequired;
+                }
+
+                var reallyPaid = order.payment_confirmed === true && receipt.toString().trim().length > 0 && amountOk;
+
+                return {
+                    verified: reallyPaid,
                     order: order,
                     status: order.status,
                     payment_status: order.payment_status
@@ -2176,9 +2193,14 @@
                     clearInterval(paymentPollInterval);
                     paymentPollInterval = null;
                 }
+                // Mark the order failed so a delayed/late webhook callback
+                // can't retroactively "confirm" it after we've stopped watching.
+                updateOrderStatus(orderRefAtTimeout(), 'timeout', false);
                 showToast('Payment Timeout', 'Payment request expired. Please try again.', 'error');
             }
         }, 120000); // 2 minutes
+
+        function orderRefAtTimeout() { return currentOrderRef; }
     }
 
     function startPaymentPolling(orderRef) {
@@ -2194,6 +2216,13 @@
 
         paymentPollInterval = setInterval(async function() {
             pollCount++;
+
+            // If this order has already timed out / been superseded, stop polling.
+            if (orderRef !== currentOrderRef || paymentVerified) {
+                clearInterval(paymentPollInterval);
+                paymentPollInterval = null;
+                return;
+            }
 
             try {
                 // SECURE: Check payment status via backend API
@@ -2216,6 +2245,7 @@
                 console.log('[KenyaVault] Payment status check:', result);
 
                 // CRITICAL: Only trust if BOTH API says paid AND database confirms
+                // an actual completed transaction (receipt + amount), not just a flag.
                 var apiSaysPaid = result.isPaid === true || 
                                   result.status === 'paid' || 
                                   result.payment_confirmed === true ||
@@ -2226,8 +2256,9 @@
                     console.log('[KenyaVault] API says paid, verifying with database...');
                     const dbResult = await verifyPaymentInDatabase(orderRef);
                     
-                    if (dbResult.verified && dbResult.order && dbResult.order.payment_confirmed === true) {
-                        // ✅ SECURE: Payment is confirmed in database
+                    if (dbResult.verified) {
+                        // ✅ SECURE: Payment is confirmed in database with real
+                        // transaction evidence (not just a boolean flag).
                         clearInterval(paymentPollInterval);
                         paymentPollInterval = null;
                         if (paymentTimer) {
@@ -2247,7 +2278,7 @@
                         statusMessage.className = 'stk-status success';
                         statusMessage.innerHTML = '✅ Payment successful! Your download will begin shortly.';
 
-                        // 🔒 SECURE DOWNLOAD: Only after database confirmation
+                        // 🔒 SECURE DOWNLOAD: Only after real, verified payment
                         if (currentProduct && currentProduct.file_url) {
                             secureDownload(currentProduct);
                         }
@@ -2264,8 +2295,10 @@
                             window.location.reload();
                         }, 3000);
                     } else {
-                        // API says paid but database says NOT paid
-                        console.warn('[KenyaVault] API says paid but database says NOT paid. This may be a cancelled transaction.');
+                        // API says paid but the database doesn't show a real,
+                        // fully-evidenced transaction yet — keep waiting rather
+                        // than trusting the flag alone.
+                        console.warn('[KenyaVault] API reported paid but the database record is not yet fully confirmed (missing receipt/amount evidence). Continuing to wait.');
                         statusEl.className = 'stk-status visible pending';
                         statusEl.innerHTML = '⏳ Payment confirmation pending. Please check your M-PESA messages.';
                         statusMessage.style.display = 'block';
@@ -2289,7 +2322,7 @@
                             await updateOrderStatus(orderRef, 'failed', false);
                         }
                     }
-                } else if (result.status === 'failed' || result.status === 'cancelled' || result.isPaid === false) {
+                } else if (result.status === 'failed' || result.status === 'cancelled' || result.status === 'timeout' || result.isPaid === false) {
                     clearInterval(paymentPollInterval);
                     paymentPollInterval = null;
                     if (paymentTimer) {
@@ -2346,6 +2379,7 @@
     }
 
     async function updateOrderStatus(orderRef, status, confirmed) {
+        if (!orderRef) return;
         try {
             const response = await fetch(SUPABASE_URL + '/rest/v1/orders?order_ref=eq.' + orderRef, {
                 method: 'PATCH',
