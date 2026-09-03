@@ -2710,6 +2710,7 @@
         var salesChartInstance = null;
         var selectedSingleFile = null;
         var selectedBulkFile = null;
+        var isUploading = false;
 
         // ============================================================
         // 3. TOAST
@@ -3567,9 +3568,15 @@
         }
 
         // ============================================================
-        // HANDLE SINGLE UPLOAD — FIXED BUCKET HANDLING
+        // HANDLE SINGLE UPLOAD — FIXED DUPLICATE DETECTION
         // ============================================================
         async function handleSingleUpload() {
+            // Prevent multiple simultaneous uploads
+            if (isUploading) {
+                showToast('Info', 'Upload already in progress. Please wait.', 'warning');
+                return;
+            }
+
             var statusDiv = document.getElementById('singleUploadStatus');
             var submitBtn = document.getElementById('singleSubmitBtn');
             var form = document.getElementById('singleUploadForm');
@@ -3593,16 +3600,58 @@
                 return;
             }
 
+            isUploading = true;
             statusDiv.className = 'upload-status loading';
-            statusDiv.innerHTML = '<span class="spinner"></span> Uploading file...';
+            statusDiv.innerHTML = '<span class="spinner"></span> Checking for duplicates...';
             submitBtn.disabled = true;
-            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Checking...';
 
             try {
-                // Determine bucket based on free/paid
+                // ─── STRONG DUPLICATE CHECK ──────────────────────────
+                // Check by title (case insensitive)
+                var checkResponse = await fetch(SUPABASE_URL + '/rest/v1/resources?title=ilike.' + encodeURIComponent(title), {
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                var existing = await checkResponse.json();
+                
+                // Also check by file_name (exact match)
+                var checkFileResponse = await fetch(SUPABASE_URL + '/rest/v1/resources?file_name=eq.' + encodeURIComponent(selectedSingleFile.name), {
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                var existingByFile = await checkFileResponse.json();
+
+                // Combine results and remove duplicates by ID
+                var allExisting = [...(existing || []), ...(existingByFile || [])];
+                var uniqueExisting = [];
+                var seenIds = new Set();
+                for (var i = 0; i < allExisting.length; i++) {
+                    if (!seenIds.has(allExisting[i].id)) {
+                        seenIds.add(allExisting[i].id);
+                        uniqueExisting.push(allExisting[i]);
+                    }
+                }
+
+                if (uniqueExisting.length > 0) {
+                    var dupTitles = uniqueExisting.map(function(r) { return '"' + r.title + '" (ID: ' + r.id.slice(0, 8) + ')'; }).join(', ');
+                    throw new Error('A resource with the title "' + title + '" or file "' + selectedSingleFile.name + '" already exists.\n\nExisting: ' + dupTitles + '\n\nPlease use a different title or file.');
+                }
+
+                statusDiv.innerHTML = '<span class="spinner"></span> Uploading file...';
+
+                // ─── DETERMINE BUCKET ──────────────────────────────────
                 var bucketName = isFree ? 'kenyavault-resources' : 'private-resources';
                 var safeFilename = selectedSingleFile.name.replace(/[^a-zA-Z0-9.]/g, '_');
-                var filePath = 'resources/' + Date.now() + '_' + safeFilename;
+                var timestamp = Date.now();
+                var filePath = 'resources/' + timestamp + '_' + safeFilename;
 
                 // Upload file to Supabase Storage
                 var storageUrl = SUPABASE_URL + '/storage/v1/object/' + bucketName + '/' + filePath;
@@ -3621,48 +3670,22 @@
                     throw new Error('Failed to upload file: ' + storageResponse.status);
                 }
 
-                // ─── CRITICAL FIX: Different storage for public vs private ───
+                // ─── STORE CORRECT URL ─────────────────────────────────
                 var fileUrl;
                 if (isFree) {
-                    // Public bucket: store full public URL
                     fileUrl = SUPABASE_URL + '/storage/v1/object/public/' + bucketName + '/' + filePath;
                 } else {
-                    // Private bucket: store ONLY the path (not a public URL)
-                    fileUrl = filePath; // Just the path, server will generate signed URL
+                    fileUrl = filePath;
                 }
 
-                // CHECK FOR DUPLICATE BEFORE INSERT
-                var checkResponse = await fetch(SUPABASE_URL + '/rest/v1/resources?title=eq.' + encodeURIComponent(title) +
-                    '&file_name=eq.' + encodeURIComponent(selectedSingleFile.name), {
-                        headers: {
-                            'apikey': SUPABASE_ANON_KEY,
-                            'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
-                            'Content-Type': 'application/json'
-                        }
-                    });
-
-                var existing = await checkResponse.json();
-                if (existing && existing.length > 0) {
-                    // Delete the uploaded file
-                    try {
-                        await fetch(SUPABASE_URL + '/storage/v1/object/' + bucketName + '/' + filePath, {
-                            method: 'DELETE',
-                            headers: {
-                                'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
-                            }
-                        });
-                    } catch (delErr) {}
-                    throw new Error('A resource with this title and file already exists. Please use a different title.');
-                }
-
-                // Create resource record in database
+                // ─── CREATE RESOURCE RECORD ───────────────────────────
                 var resourceData = {
                     title: title,
                     description: description || 'Uploaded via admin panel',
                     category: category,
                     education_level: level,
                     level: level,
-                    grade: grade,
+                    grade: grade || null,
                     subject: subject,
                     price: isFree ? 0 : price,
                     is_free: isFree,
@@ -3675,9 +3698,6 @@
                     download_count: 0,
                     status: 'published'
                 };
-
-                console.log('[Admin] Creating resource with URL type:', isFree ? 'Public URL' : 'Path only (private bucket)');
-                console.log('[Admin] file_url:', fileUrl);
 
                 var createResponse = await fetch(SUPABASE_URL + '/rest/v1/resources', {
                     method: 'POST',
@@ -3710,7 +3730,7 @@
 
                 showToast('Success', 'Resource "' + title + '" uploaded to ' + bucketName);
 
-                // Reset form
+                // ─── RESET FORM ────────────────────────────────────────
                 form.reset();
                 clearSingleFile();
                 document.getElementById('singleFilePreview').style.display = 'none';
@@ -3727,6 +3747,7 @@
                 statusDiv.innerHTML = '❌ Error: ' + error.message;
                 showToast('Upload Failed', error.message, 'error');
             } finally {
+                isUploading = false;
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = '<i class="fas fa-cloud-upload-alt"></i> Upload Resource';
             }
@@ -3889,7 +3910,7 @@
                         var title = filename.replace(/\.[^.]+$/, '').replace(/[_\-]/g, ' ').trim() || 'Untitled';
 
                         // Check for duplicate
-                        var checkResponse = await fetch(SUPABASE_URL + '/rest/v1/resources?title=eq.' + encodeURIComponent(title) +
+                        var checkResponse = await fetch(SUPABASE_URL + '/rest/v1/resources?title=ilike.' + encodeURIComponent(title) +
                             '&file_name=eq.' + encodeURIComponent(filename), {
                                 headers: {
                                     'apikey': SUPABASE_ANON_KEY,
@@ -4704,6 +4725,7 @@
             console.log('[Storage] Free resources → kenyavault-resources (Public)');
             console.log('[Storage] Paid resources → private-resources (Private - signed URLs)');
             console.log('[Security] Private bucket files stored as paths, not public URLs');
+            console.log('[Duplicate] Strong duplicate detection enabled');
         }
 
         document.addEventListener('DOMContentLoaded', function() {
