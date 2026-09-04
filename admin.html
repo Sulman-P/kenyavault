@@ -3625,30 +3625,8 @@
             });
         }
 
-        function handleBulkFileSelect(file) {
-            var infoDiv = document.getElementById('bulkFileInfo');
-            if (file) {
-                selectedBulkFile = file;
-                var sizeMB = (file.size / (1024 * 1024)).toFixed(2);
-                infoDiv.style.display = 'block';
-                infoDiv.innerHTML = '📁 ' + file.name + ' (' + sizeMB + ' MB) - <span style="color:var(--kv-gold);font-weight:600;">Click Extract to preview files</span>';
-                infoDiv.style.color = 'var(--kv-text)';
-                // Show extract button
-                var extractBtn = document.createElement('button');
-                extractBtn.type = 'button';
-                extractBtn.className = 'btn-submit';
-                extractBtn.style.marginTop = '8px';
-                extractBtn.style.fontSize = '0.8rem';
-                extractBtn.style.padding = '8px 20px';
-                extractBtn.innerHTML = '<i class="fas fa-file-archive"></i> Extract & Preview Files';
-                extractBtn.onclick = function() {
-                    extractZipFile(file);
-                };
-                infoDiv.appendChild(extractBtn);
-            }
-        }
-
         // ─── EXTRACT ZIP FILE ─────────────────────────────────────
+        // CRITICAL FIX: Using ONLY resource filename for title, NOT the ZIP file name
         async function extractZipFile(file) {
             var statusDiv = document.getElementById('bulkUploadStatus');
             var previewContainer = document.getElementById('bulkPreviewContainer');
@@ -3670,6 +3648,9 @@
                 var fileNames = Object.keys(files).filter(function(name) { return !files[name].dir; });
                 var supportedExts = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'jpg', 'jpeg', 'png'];
 
+                // Store ZIP name for reference only - NOT used as title
+                var zipName = file.name.replace(/\.[^.]+$/, '');
+                
                 bulkFilesData = [];
                 bulkFileList = fileNames;
 
@@ -3678,7 +3659,19 @@
                     var fileData = files[filename];
                     var ext = filename.split('.').pop().toLowerCase();
                     var isSupported = supportedExts.includes(ext);
-                    var title = filename.replace(/\.[^.]+$/, '').replace(/[_\-]/g, ' ').trim() || 'Untitled';
+                    
+                    // FIX: Use ONLY the actual filename, remove extension and clean it
+                    var title = filename
+                        .replace(/\.[^.]+$/, '')           // Remove file extension
+                        .replace(/[_\-]/g, ' ')             // Replace underscores/dashes with spaces
+                        .replace(/\s{2,}/g, ' ')            // Remove extra spaces
+                        .replace(/^[0-9]+[_\-\s]*/, '')     // Remove leading numbers
+                        .trim();
+
+                    // If title is empty after cleaning, use a default
+                    if (!title || title.length < 2) {
+                        title = 'Resource ' + (i + 1);
+                    }
 
                     // Try to detect grade and level from filename
                     var gradeMatch = filename.match(/(?:Grade|grade|GRADE)\s*(\d{1,2})/);
@@ -3748,7 +3741,7 @@
                         index: i,
                         filename: filename,
                         ext: ext,
-                        title: title,
+                        title: title,  // FIX: Using cleaned filename, NOT ZIP name
                         category: category,
                         level: detectedLevel,
                         grade: detectedGrade,
@@ -3839,6 +3832,7 @@
                     ' onchange="window.updateBulkField(' + i + ', \'title\', this.value)" style="flex:1;min-width:120px;" />' +
                     '<span class="file-size">(' + f.fileSize + ' KB)</span>' +
                     '</div>' +
+                    '<div style="font-size:0.65rem;color:var(--kv-muted);margin-top:2px;">📄 ' + f.filename + '</div>' +
                     '</td>' +
                     '<td>' +
                     '<select ' + (!f.supported ? 'disabled' : '') + ' onchange="window.updateBulkField(' + i + ', \'category\', this.value)">' +
