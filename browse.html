@@ -248,6 +248,39 @@
         .browse-header .breadcrumb a { color: var(--kv-gold-light); }
         .browse-header .breadcrumb a:hover { text-decoration: underline; }
 
+        /* ── TERM BADGE STYLES ── */
+        .term-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 10px;
+            border-radius: 99px;
+            font-size: 0.6rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+        .term-badge--term1 {
+            background: #DBEAFE;
+            color: #1D4ED8;
+        }
+        .term-badge--term2 {
+            background: #DCFCE7;
+            color: #15803D;
+        }
+        .term-badge--term3 {
+            background: #FEF3C7;
+            color: #92400E;
+        }
+        .term-badge--allyear {
+            background: #F3E8FF;
+            color: #6D28D9;
+        }
+        .term-badge--general {
+            background: var(--kv-surface);
+            color: var(--kv-muted);
+        }
+
         /* ── FILTERS ── */
         .filters-section {
             background: var(--kv-white);
@@ -934,7 +967,7 @@
 <!-- ── SCRIPT ── -->
 <script>
 // ============================================================
-// KENYAVAULT BROWSE — WITH WORKING PAYMENT
+// KENYAVAULT BROWSE — WITH TERM BADGES
 // ============================================================
 
 (function() {
@@ -958,6 +991,43 @@
     var levelFilter = document.getElementById('levelFilter');
     var priceFilter = document.getElementById('priceFilter');
     var resultsCount = document.getElementById('resultsCount');
+
+    // ─── TERM DETECTION ────────────────────────────────────────
+    function detectTerm(resource) {
+        var title = (resource.title || '').toLowerCase();
+        var termMap = [
+            { pattern: /term\s*1/i, label: 'Term 1', css: 'term-badge--term1' },
+            { pattern: /term\s*2/i, label: 'Term 2', css: 'term-badge--term2' },
+            { pattern: /term\s*3/i, label: 'Term 3', css: 'term-badge--term3' },
+            { pattern: /\bterm\b.*\ball\s*year/i, label: 'All Year', css: 'term-badge--allyear' },
+            { pattern: /\ball\s*year/i, label: 'All Year', css: 'term-badge--allyear' },
+            { pattern: /\bterm\s*1\b/i, label: 'Term 1', css: 'term-badge--term1' },
+            { pattern: /\bterm\s*2\b/i, label: 'Term 2', css: 'term-badge--term2' },
+            { pattern: /\bterm\s*3\b/i, label: 'Term 3', css: 'term-badge--term3' }
+        ];
+
+        for (var i = 0; i < termMap.length; i++) {
+            if (termMap[i].pattern.test(title)) {
+                return termMap[i];
+            }
+        }
+        
+        // Also check if the resource has a term field directly
+        if (resource.term) {
+            var termLabel = String(resource.term).toLowerCase();
+            if (termLabel.includes('1') || termLabel.includes('one')) {
+                return { label: 'Term 1', css: 'term-badge--term1' };
+            } else if (termLabel.includes('2') || termLabel.includes('two')) {
+                return { label: 'Term 2', css: 'term-badge--term2' };
+            } else if (termLabel.includes('3') || termLabel.includes('three')) {
+                return { label: 'Term 3', css: 'term-badge--term3' };
+            } else if (termLabel.includes('all') || termLabel.includes('year')) {
+                return { label: 'All Year', css: 'term-badge--allyear' };
+            }
+        }
+
+        return { label: 'General', css: 'term-badge--general' };
+    }
 
     // ─── TOAST ──────────────────────────────────────────────
     function showToast(title, message, type) {
@@ -1029,7 +1099,7 @@
             if (allResources.length === 0) {
                 showToast('Info', 'No resources found. Please check back later.', 'info');
             } else {
-                showToast('Success', 'Loaded ' + allResources.length + ' resources.', 'success');
+                console.log('[KenyaVault] Loaded ' + allResources.length + ' resources');
             }
 
         } catch (error) {
@@ -1121,6 +1191,10 @@
         var gradeDisplay = r.grade || '';
         var downloadCount = r.download_count || r.downloads || 0;
 
+        // ─── DETECT TERM ──────────────────────────────────────
+        var termInfo = detectTerm(r);
+        var termBadgeHtml = '<span class="term-badge ' + termInfo.css + '">📅 ' + termInfo.label + '</span>';
+
         // Check if in cart
         var inCart = cart.some(function(item) { return item.id === productId; });
 
@@ -1142,6 +1216,7 @@
                     <span class="card-meta-item"><i class="bi bi-tag"></i> ${categoryDisplay}</span>
                     ${levelDisplay ? '<span class="card-meta-item"><i class="bi bi-journal-check"></i> ' + levelDisplay + '</span>' : ''}
                     ${gradeDisplay ? '<span class="card-meta-item"><i class="bi bi-house-door"></i> ' + gradeDisplay + '</span>' : ''}
+                    <span class="card-meta-item">${termBadgeHtml}</span>
                     ${downloadCount > 0 ? '<span class="card-meta-item"><i class="bi bi-download"></i> ' + downloadCount + '</span>' : ''}
                 </div>
                 <div class="card-price ${isFree ? 'free' : ''}">${priceDisplay}</div>
@@ -1467,12 +1542,10 @@
                     statusEl.className = 'stk-status visible success';
                     statusEl.innerHTML = '✅ Payment successful! Your download will begin shortly.';
 
-                    // Download the resource
                     if (currentProduct && currentProduct.file_url) {
                         window.open(currentProduct.file_url, '_blank');
                     }
 
-                    // Record transaction
                     await recordTransaction(currentProduct, orderRef);
 
                     showToast('Payment Successful', 'Your payment was confirmed!', 'success');
