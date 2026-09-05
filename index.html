@@ -133,7 +133,66 @@
             letter-spacing: 2px;
             text-transform: uppercase;
         }
-
+           /* ── ADD TO STYLES ── */
+.payment-modal .download-item-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    background: var(--kv-bg);
+    border: 1px solid var(--kv-border);
+    border-radius: var(--kv-radius-sm);
+    margin-bottom: 8px;
+    transition: var(--kv-transition);
+    cursor: pointer;
+    width: 100%;
+    font-family: inherit;
+    font-size: 0.85rem;
+    color: var(--kv-text);
+}
+.payment-modal .download-item-btn:hover {
+    background: var(--kv-green-soft);
+    border-color: var(--kv-green);
+    transform: translateY(-1px);
+}
+.payment-modal .download-item-btn .btn-icon {
+    color: var(--kv-green);
+    font-size: 1.1rem;
+}
+.payment-modal .download-item-btn .btn-title {
+    flex: 1;
+    text-align: left;
+    margin-left: 10px;
+    font-weight: 600;
+}
+.payment-modal .download-item-btn .btn-size {
+    font-size: 0.7rem;
+    color: var(--kv-muted);
+}
+.payment-modal .success-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--kv-green-soft);
+    border-radius: var(--kv-radius-sm);
+    border: 1px solid var(--kv-green);
+    margin-bottom: 16px;
+}
+.payment-modal .success-header .icon {
+    font-size: 2rem;
+    color: var(--kv-green);
+}
+.payment-modal .success-header .text {
+    font-weight: 700;
+    color: var(--kv-green);
+    font-size: 1.05rem;
+}
+.payment-modal .success-header .subtext {
+    font-size: 0.8rem;
+    color: var(--kv-muted);
+    font-weight: 400;
+}
         /* ── MAIN NAV LINKS ── */
         .nav-main-links {
             display: flex;
@@ -3053,90 +3112,161 @@
         }
     };
 
-    // ─── HANDLE SUCCESSFUL PAYMENT ──────────────────────────
-    function handleSuccessfulPayment() {
-        // Mark all cart items as purchased if this was a cart checkout
-        if (currentProduct && currentProduct._cartItems && currentProduct._cartItems.length > 0) {
-            for (var i = 0; i < currentProduct._cartItems.length; i++) {
-                var item = currentProduct._cartItems[i];
-                purchasedResources[item.id] = true;
-                // Remove from cart
-                var cartIndex = cart.findIndex(function(c) { return c.id === item.id; });
-                if (cartIndex !== -1) {
-                    cart.splice(cartIndex, 1);
-                }
-            }
-            try {
-                localStorage.setItem('kv_purchased', JSON.stringify(purchasedResources));
-                localStorage.setItem('kv_cart', JSON.stringify(cart));
-            } catch(e) {}
-            updateCartBadge();
-            renderCart();
-            
-            // Download all resources with signed URLs
-            setTimeout(function() {
-                for (var i = 0; i < currentProduct._cartItems.length; i++) {
-                    var res = allResources.find(function(r) { return r.id === currentProduct._cartItems[i].id; });
-                    if (res && res.file_url) {
-                        setTimeout(function(resource) {
-                            var url = resource.file_url;
-                            if (!url.startsWith('http')) {
-                                generateSignedUrl(url).then(function(signedUrl) {
-                                    if (signedUrl) {
-                                        window.open(signedUrl, '_blank');
-                                    }
-                                });
-                            } else {
-                                window.open(url, '_blank');
-                            }
-                        }, i * 500, res);
-                    }
-                }
-                showToast('Download Started', 'Your resources are downloading.', 'success');
-            }, 1000);
-        } else if (currentProduct && currentProduct.id) {
-            purchasedResources[currentProduct.id] = true;
-            var cartIndex = cart.findIndex(function(c) { return c.id === currentProduct.id; });
+   // ─── HANDLE SUCCESSFUL PAYMENT ──────────────────────────
+function handleSuccessfulPayment() {
+    // Store purchased items for download button
+    var purchasedItems = [];
+    
+    // Mark all cart items as purchased if this was a cart checkout
+    if (currentProduct && currentProduct._cartItems && currentProduct._cartItems.length > 0) {
+        for (var i = 0; i < currentProduct._cartItems.length; i++) {
+            var item = currentProduct._cartItems[i];
+            purchasedResources[item.id] = true;
+            purchasedItems.push(item);
+            // Remove from cart
+            var cartIndex = cart.findIndex(function(c) { return c.id === item.id; });
             if (cartIndex !== -1) {
                 cart.splice(cartIndex, 1);
             }
-            try {
-                localStorage.setItem('kv_purchased', JSON.stringify(purchasedResources));
-                localStorage.setItem('kv_cart', JSON.stringify(cart));
-            } catch(e) {}
-            updateCartBadge();
-            renderCart();
-            
-            if (currentProduct.file_url) {
-                setTimeout(function() {
-                    var url = currentProduct.file_url;
-                    if (!url.startsWith('http')) {
-                        generateSignedUrl(url).then(function(signedUrl) {
-                            if (signedUrl) {
-                                window.open(signedUrl, '_blank');
-                                showToast('Download Started', currentProduct.title + ' is downloading.', 'success');
-                            }
-                        });
-                    } else {
-                        window.open(url, '_blank');
-                        showToast('Download Started', currentProduct.title + ' is downloading.', 'success');
-                    }
-                }, 1000);
-            }
         }
-
-        showToast('Payment Successful', 'Your payment was confirmed!', 'success');
-        document.getElementById('payBtn').disabled = false;
-        document.getElementById('payBtnText').textContent = '✅ Done';
-        document.getElementById('paySpinner').style.display = 'none';
-        isProcessingPayment = false;
-
-        setTimeout(function() {
-            closePaymentModal();
-            window.location.reload();
-        }, 3000);
+        try {
+            localStorage.setItem('kv_purchased', JSON.stringify(purchasedResources));
+            localStorage.setItem('kv_cart', JSON.stringify(cart));
+        } catch(e) {}
+        updateCartBadge();
+        renderCart();
+    } else if (currentProduct && currentProduct.id) {
+        purchasedResources[currentProduct.id] = true;
+        purchasedItems.push({ id: currentProduct.id, title: currentProduct.title, file_url: currentProduct.file_url });
+        var cartIndex = cart.findIndex(function(c) { return c.id === currentProduct.id; });
+        if (cartIndex !== -1) {
+            cart.splice(cartIndex, 1);
+        }
+        try {
+            localStorage.setItem('kv_purchased', JSON.stringify(purchasedResources));
+            localStorage.setItem('kv_cart', JSON.stringify(cart));
+        } catch(e) {}
+        updateCartBadge();
+        renderCart();
     }
 
+    // Store purchased items for the download button
+    window._purchasedItems = purchasedItems;
+    window._purchasedResources = purchasedResources;
+
+    // Update modal to show download button instead of payment button
+    var payBtn = document.getElementById('payBtn');
+    var confirmBtn = document.getElementById('confirmPaymentBtn');
+    var retryBtn = document.getElementById('retryPaymentBtn');
+    var stkStatus = document.getElementById('stkStatus');
+    var paymentTimer = document.getElementById('paymentTimer');
+    var paymentStatusMessage = document.getElementById('paymentStatusMessage');
+    var modalTitle = document.querySelector('.modal-title');
+    var modalSub = document.querySelector('.modal-sub');
+    
+    // Hide payment elements
+    payBtn.style.display = 'none';
+    confirmBtn.style.display = 'none';
+    retryBtn.style.display = 'none';
+    paymentTimer.style.display = 'none';
+    paymentStatusMessage.style.display = 'none';
+    
+    // Update title and subtitle
+    modalTitle.textContent = '✅ Purchase Complete!';
+    modalSub.textContent = 'Your resource(s) are ready for download.';
+    
+    // Update status
+    stkStatus.className = 'stk-status visible success';
+    stkStatus.innerHTML = '💳 Payment confirmed successfully!';
+    stkStatus.style.display = 'block';
+    
+    // Create download area
+    var downloadArea = document.createElement('div');
+    downloadArea.id = 'downloadArea';
+    downloadArea.style.cssText = 'margin-top: 16px; padding: 16px; background: var(--kv-green-soft); border-radius: 8px; border: 1px solid var(--kv-green);';
+    
+    // Build download buttons for each item
+    var downloadButtonsHtml = `
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+            <i class="bi bi-download" style="font-size: 1.2rem; color: var(--kv-green);"></i>
+            <span style="font-weight: 700; color: var(--kv-green); font-size: 0.9rem;">Your Downloads</span>
+            <span style="font-size: 0.7rem; color: var(--kv-muted); background: var(--kv-white); padding: 2px 10px; border-radius: 99px; margin-left: auto;">${purchasedItems.length} file(s)</span>
+        </div>
+    `;
+    
+    for (var i = 0; i < purchasedItems.length; i++) {
+        var item = purchasedItems[i];
+        var title = item.title || 'Resource ' + (i + 1);
+        var fileUrl = item.file_url;
+        var isPrivate = fileUrl && !fileUrl.startsWith('http');
+        var ext = fileUrl ? fileUrl.split('.').pop().toUpperCase() : 'PDF';
+        
+        downloadButtonsHtml += `
+            <button onclick="downloadPurchasedItem('${item.id}')" 
+                    class="download-item-btn" 
+                    style="display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 14px; margin-bottom: 8px; background: var(--kv-white); border: 1px solid var(--kv-border); border-radius: 8px; cursor: pointer; transition: var(--kv-transition); font-family: inherit; font-size: 0.85rem; color: var(--kv-text);">
+                <span style="font-size: 1.2rem; color: var(--kv-green);"><i class="bi bi-file-earmark-arrow-down"></i></span>
+                <span style="flex: 1; text-align: left; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(title)}</span>
+                <span style="font-size: 0.65rem; color: var(--kv-muted); background: var(--kv-bg); padding: 2px 8px; border-radius: 4px;">${ext}</span>
+                <span style="color: var(--kv-green);"><i class="bi bi-arrow-down-circle-fill"></i></span>
+            </button>
+        `;
+    }
+    
+    // Add a "Close" button
+    downloadButtonsHtml += `
+        <button onclick="closePaymentModalAndRefresh()" 
+                class="btn-outline" 
+                style="width: 100%; padding: 10px 16px; font-size: 0.85rem; justify-content: center; border: 1px solid var(--kv-border); border-radius: 8px; background: var(--kv-white); cursor: pointer; transition: var(--kv-transition); margin-top: 4px; display: flex; align-items: center; gap: 8px;">
+            <i class="bi bi-check-circle"></i> Done - Close
+        </button>
+    `;
+    
+    downloadArea.innerHTML = downloadButtonsHtml;
+    
+    // Remove old download area if exists
+    var oldDownloadArea = document.getElementById('downloadArea');
+    if (oldDownloadArea) {
+        oldDownloadArea.remove();
+    }
+    
+    // Insert after stkStatus
+    stkStatus.parentNode.insertBefore(downloadArea, stkStatus.nextSibling);
+    
+    // Auto-download (as before) - but now user also has manual buttons
+    setTimeout(function() {
+        var downloaded = 0;
+        for (var i = 0; i < purchasedItems.length; i++) {
+            var item = purchasedItems[i];
+            var resource = allResources.find(function(r) { return r.id === item.id; });
+            if (resource && resource.file_url) {
+                var url = resource.file_url;
+                if (!url.startsWith('http')) {
+                    generateSignedUrl(url).then(function(signedUrl) {
+                        if (signedUrl) {
+                            window.open(signedUrl, '_blank');
+                            downloaded++;
+                        }
+                    });
+                } else {
+                    setTimeout(function(u) {
+                        window.open(u, '_blank');
+                        downloaded++;
+                    }, i * 500, url);
+                }
+            }
+        }
+        if (downloaded > 0) {
+            showToast('Auto-Download Started', downloaded + ' file(s) are downloading.', 'success');
+        }
+    }, 1500);
+
+    showToast('Payment Successful', 'Your payment was confirmed!', 'success');
+    document.getElementById('payBtn').disabled = false;
+    document.getElementById('payBtnText').textContent = '✅ Done';
+    document.getElementById('paySpinner').style.display = 'none';
+    isProcessingPayment = false;
+}
     // ─── START PAYMENT POLLING ────────────────────────────────
     function startPaymentPolling(orderRef) {
         var pollCount = 0;
