@@ -134,6 +134,7 @@
             text-transform: uppercase;
         }
 
+        /* ── MAIN NAV LINKS ── */
         .nav-main-links {
             display: flex;
             gap: 4px;
@@ -165,6 +166,7 @@
             opacity: 0.5;
         }
 
+        /* ── DROPDOWN ── */
         .nav-dropdown {
             display: none;
             position: absolute;
@@ -234,6 +236,7 @@
             margin: 6px 0;
         }
 
+        /* ── EXAMS DROPDOWN SPECIAL ── */
         .nav-dropdown .exam-level-group {
             margin-bottom: 6px;
         }
@@ -261,6 +264,7 @@
             background: rgba(255,255,255,0.1);
         }
 
+        /* ── SEARCH BAR ── */
         .nav-search {
             display: flex;
             align-items: center;
@@ -295,6 +299,7 @@
             margin-right: 6px;
         }
 
+        /* ── NAV ACTIONS ── */
         .nav-actions {
             display: flex;
             align-items: center;
@@ -2141,6 +2146,7 @@
     var SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
     var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
     var API_BASE_URL = 'https://kenyavault.onrender.com/api';
+    var supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     // ─── STATE ──────────────────────────────────────────────
     var allResources = [];
@@ -2635,121 +2641,28 @@
         }
     };
 
-    // ─── BULK DOWNLOAD ──────────────────────────────────────
-    window.bulkDownload = function() {
-        if (cart.length === 0) {
-            showToast('Error', 'Your cart is empty.', 'error');
-            return;
-        }
-
-        var purchasedItems = cart.filter(function(item) {
-            return purchasedResources[item.id] === true;
-        });
-
-        var freeItems = cart.filter(function(item) {
-            var resource = allResources.find(function(r) { return r.id === item.id; });
-            return resource && (resource.is_free === true || resource.price === 0);
-        });
-
-        var paidItems = cart.filter(function(item) {
-            var resource = allResources.find(function(r) { return r.id === item.id; });
-            return resource && resource.price > 0 && purchasedResources[item.id] !== true;
-        });
-
-        if (paidItems.length > 0) {
-            showToast('Info', 'You have ' + paidItems.length + ' unpaid item(s). Please checkout first.', 'warning');
-            return;
-        }
-
-        var allItems = [...purchasedItems, ...freeItems];
-        if (allItems.length === 0) {
-            showToast('Error', 'No downloadable items in cart.', 'error');
-            return;
-        }
-
-        var downloaded = 0;
-        for (var i = 0; i < allItems.length; i++) {
-            var resource = allResources.find(function(r) { return r.id === allItems[i].id; });
-            if (resource && resource.file_url) {
-                // Open in new tab with slight delay between each
-                setTimeout(function(url) {
-                    window.open(url, '_blank');
-                }, i * 300, resource.file_url);
-                downloaded++;
+    // ─── GENERATE SIGNED URL FOR PRIVATE FILES ──────────────
+    async function generateSignedUrl(filePath) {
+        try {
+            // Check if file is in private bucket
+            if (filePath && !filePath.startsWith('http')) {
+                // Generate signed URL using Supabase
+                var signedUrl = await supabase.storage
+                    .from('private-resources')
+                    .createSignedUrl(filePath, 60); // 60 seconds expiry
+                
+                if (signedUrl.error) {
+                    console.error('[KenyaVault] Signed URL error:', signedUrl.error);
+                    return null;
+                }
+                return signedUrl.data.signedUrl;
             }
+            return filePath;
+        } catch (e) {
+            console.error('[KenyaVault] Error generating signed URL:', e);
+            return null;
         }
-
-        showToast('Bulk Download', 'Downloading ' + downloaded + ' resource(s).', 'success');
-    };
-
-    // ─── CHECKOUT CART ──────────────────────────────────────
-    window.checkoutCart = function() {
-        if (cart.length === 0) {
-            showToast('Error', 'Your cart is empty.', 'error');
-            return;
-        }
-
-        // Check if all items are already purchased
-        var allPurchased = cart.every(function(item) {
-            return purchasedResources[item.id] === true;
-        });
-
-        if (allPurchased) {
-            showToast('Info', 'All items in your cart are already purchased. Use Bulk Download.', 'info');
-            return;
-        }
-
-        // Filter out already purchased items
-        var unpaidItems = cart.filter(function(item) {
-            return purchasedResources[item.id] !== true;
-        });
-
-        if (unpaidItems.length === 0) {
-            showToast('Info', 'No unpaid items in cart.', 'info');
-            return;
-        }
-
-        // Calculate total
-        var total = 0;
-        for (var i = 0; i < unpaidItems.length; i++) {
-            total += (unpaidItems[i].price || 0);
-        }
-
-        if (total <= 0) {
-            showToast('Error', 'Cannot checkout free items. Please download them directly.', 'error');
-            return;
-        }
-
-        // Set the first item as the primary product for payment
-        var firstItem = unpaidItems[0];
-        var resource = allResources.find(function(r) { return r.id === firstItem.id; });
-        if (!resource) {
-            showToast('Error', 'Resource not found.', 'error');
-            return;
-        }
-
-        // Store cart items for payment
-        currentProduct = resource;
-        currentProduct._cartItems = unpaidItems;
-        currentProduct._cartTotal = total;
-
-        document.getElementById('paymentProductTitle').textContent = 'Cart (' + unpaidItems.length + ' items)';
-        document.getElementById('paymentProductPrice').textContent = 'KES ' + Number(total).toLocaleString();
-        document.getElementById('paymentModal').classList.add('open');
-        document.getElementById('stkStatus').className = 'stk-status';
-        document.getElementById('stkStatus').textContent = '';
-        document.getElementById('stkStatus').style.display = 'none';
-        document.getElementById('paymentStatusIndicator').style.display = 'none';
-        document.getElementById('paymentStatusMessage').style.display = 'none';
-        document.getElementById('confirmPaymentBtn').style.display = 'none';
-        document.getElementById('retryPaymentBtn').style.display = 'none';
-        document.getElementById('payBtn').disabled = false;
-        document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
-        document.getElementById('paySpinner').style.display = 'none';
-        document.getElementById('paymentTimer').textContent = '';
-        document.getElementById('customerName').value = '';
-        document.getElementById('phoneInput').value = '';
-    };
+    }
 
     // ─── DOWNLOAD FUNCTIONS ──────────────────────────────────
     window.downloadFree = function(productId) {
@@ -2760,8 +2673,22 @@
         }
         
         if (resource.file_url) {
-            window.open(resource.file_url, '_blank');
-            showToast('Download Started', resource.title + ' is downloading.', 'success');
+            // For free resources, check if it's a private bucket path
+            var downloadUrl = resource.file_url;
+            if (!downloadUrl.startsWith('http')) {
+                // Generate signed URL for private files
+                generateSignedUrl(downloadUrl).then(function(signedUrl) {
+                    if (signedUrl) {
+                        window.open(signedUrl, '_blank');
+                        showToast('Download Started', resource.title + ' is downloading.', 'success');
+                    } else {
+                        showToast('Error', 'Could not generate download link. Please contact support.', 'error');
+                    }
+                });
+            } else {
+                window.open(downloadUrl, '_blank');
+                showToast('Download Started', resource.title + ' is downloading.', 'success');
+            }
         } else {
             showToast('Error', 'File not available. Please contact support.', 'error');
         }
@@ -2780,8 +2707,21 @@
         }
 
         if (resource.file_url) {
-            window.open(resource.file_url, '_blank');
-            showToast('Download Started', resource.title + ' is downloading.', 'success');
+            var downloadUrl = resource.file_url;
+            if (!downloadUrl.startsWith('http')) {
+                // Generate signed URL for private files
+                generateSignedUrl(downloadUrl).then(function(signedUrl) {
+                    if (signedUrl) {
+                        window.open(signedUrl, '_blank');
+                        showToast('Download Started', resource.title + ' is downloading.', 'success');
+                    } else {
+                        showToast('Error', 'Could not generate download link. Please contact support.', 'error');
+                    }
+                });
+            } else {
+                window.open(downloadUrl, '_blank');
+                showToast('Download Started', resource.title + ' is downloading.', 'success');
+            }
         } else {
             showToast('Error', 'File not available. Please contact support.', 'error');
         }
@@ -2800,8 +2740,20 @@
             } catch(e) {}
         }
         
-        window.open(resource.file_url, '_blank');
-        showToast('Download Started', resource.title + ' is downloading.', 'success');
+        var downloadUrl = resource.file_url;
+        if (!downloadUrl.startsWith('http')) {
+            generateSignedUrl(downloadUrl).then(function(signedUrl) {
+                if (signedUrl) {
+                    window.open(signedUrl, '_blank');
+                    showToast('Download Started', resource.title + ' is downloading.', 'success');
+                } else {
+                    showToast('Error', 'Could not generate download link. Please contact support.', 'error');
+                }
+            });
+        } else {
+            window.open(downloadUrl, '_blank');
+            showToast('Download Started', resource.title + ' is downloading.', 'success');
+        }
     }
 
     // ─── PAYMENT FUNCTIONS ──────────────────────────────────
@@ -2912,6 +2864,63 @@
         showToast('Retry', 'Please try payment again.', 'info');
     };
 
+    // ─── VERIFY PAYMENT IN DATABASE ──────────────────────────
+    async function verifyPaymentInDatabase(orderRef) {
+        try {
+            const response = await fetch(SUPABASE_URL + '/rest/v1/orders?order_ref=eq.' + orderRef, {
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (!response.ok) {
+                console.error('[KenyaVault] Failed to verify order in database:', response.status);
+                return { verified: false, order: null };
+            }
+            
+            const data = await response.json();
+            if (data && data.length > 0) {
+                const order = data[0];
+                console.log('[KenyaVault] Database order check:', order);
+
+                // Check multiple confirmation fields
+                var receipt = order.mpesa_receipt || order.mpesa_code || order.transaction_code ||
+                    order.transaction_reference || order.payment_reference || order.receipt_number || '';
+                
+                var isConfirmed = order.payment_confirmed === true || 
+                                  order.status === 'confirmed' || 
+                                  order.payment_status === 'confirmed' ||
+                                  order.payment_status === 'paid' ||
+                                  order.status === 'paid' ||
+                                  order.callback_status === 'verified';
+
+                var amountRequired = Number(order.total_amount || order.amount || 0);
+                var amountPaidField = order.amount_paid || order.amount || 0;
+                var amountOk = Number(amountPaidField) >= amountRequired;
+
+                var hasReceipt = receipt.toString().trim().length > 0;
+
+                var reallyPaid = isConfirmed && (hasReceipt || amountOk);
+
+                return {
+                    verified: reallyPaid,
+                    order: order,
+                    status: order.status,
+                    payment_status: order.payment_status,
+                    receipt: receipt,
+                    isConfirmed: isConfirmed
+                };
+            }
+            return { verified: false, order: null };
+        } catch (error) {
+            console.error('[KenyaVault] Error verifying payment in database:', error);
+            return { verified: false, order: null };
+        }
+    }
+
+    // ─── CONFIRM PAYMENT MANUALLY ─────────────────────────────
     window.confirmPaymentManually = async function() {
         if (!currentOrderRef && !currentOrderId) {
             showToast('Error', 'No active payment found. Please try again.', 'error');
@@ -2920,14 +2929,41 @@
 
         var statusEl = document.getElementById('stkStatus');
         var statusMessage = document.getElementById('paymentStatusMessage');
+        var confirmBtn = document.getElementById('confirmPaymentBtn');
+        var retryBtn = document.getElementById('retryPaymentBtn');
+        var payBtn = document.getElementById('payBtn');
         
         statusEl.className = 'stk-status visible pending';
         statusEl.innerHTML = '<span class="spinner"></span> Checking payment status...';
         statusMessage.style.display = 'block';
         statusMessage.className = 'stk-status pending';
         statusMessage.innerHTML = '⏳ Checking if your payment was received...';
+        confirmBtn.disabled = true;
+        confirmBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Checking...';
 
         try {
+            // First check the database directly
+            const dbResult = await verifyPaymentInDatabase(currentOrderRef);
+            console.log('[KenyaVault] Database verification result:', dbResult);
+
+            if (dbResult.verified) {
+                // Payment confirmed in database
+                paymentVerified = true;
+                statusEl.className = 'stk-status visible success';
+                statusEl.innerHTML = '✅ Payment confirmed! Your resource is ready.';
+                statusMessage.className = 'stk-status success';
+                statusMessage.innerHTML = '✅ Payment successful! Your download will begin shortly.';
+                document.getElementById('paymentTimer').textContent = '✅ Payment confirmed!';
+                confirmBtn.style.display = 'none';
+                retryBtn.style.display = 'none';
+                payBtn.disabled = true;
+                
+                // Mark as purchased and download
+                handleSuccessfulPayment();
+                return;
+            }
+
+            // If not verified in DB, check the API
             var response = await fetch(API_BASE_URL + '/mpesa/verify-payment', {
                 method: 'POST',
                 headers: {
@@ -2940,413 +2976,7 @@
             });
 
             var result = await response.json();
-            console.log('[KenyaVault] Manual verification result:', result);
-
-            if (result.isPaid === true || result.payment_confirmed === true || result.payment_status === 'paid') {
-                paymentVerified = true;
-                statusEl.className = 'stk-status visible success';
-                statusEl.innerHTML = '✅ Payment confirmed! Your resource is ready.';
-                statusMessage.className = 'stk-status success';
-                statusMessage.innerHTML = '✅ Payment successful! Your download will begin shortly.';
-                document.getElementById('paymentTimer').textContent = '✅ Payment confirmed!';
-                document.getElementById('confirmPaymentBtn').style.display = 'none';
-                document.getElementById('retryPaymentBtn').style.display = 'none';
-                
-                // Mark all cart items as purchased if this was a cart checkout
-                if (currentProduct && currentProduct._cartItems && currentProduct._cartItems.length > 0) {
-                    for (var i = 0; i < currentProduct._cartItems.length; i++) {
-                        var item = currentProduct._cartItems[i];
-                        purchasedResources[item.id] = true;
-                        // Remove from cart
-                        var cartIndex = cart.findIndex(function(c) { return c.id === item.id; });
-                        if (cartIndex !== -1) {
-                            cart.splice(cartIndex, 1);
-                        }
-                    }
-                    try {
-                        localStorage.setItem('kv_purchased', JSON.stringify(purchasedResources));
-                        localStorage.setItem('kv_cart', JSON.stringify(cart));
-                    } catch(e) {}
-                    updateCartBadge();
-                    renderCart();
-                } else if (currentProduct && currentProduct.id) {
-                    purchasedResources[currentProduct.id] = true;
-                    // Remove from cart
-                    var cartIndex = cart.findIndex(function(c) { return c.id === currentProduct.id; });
-                    if (cartIndex !== -1) {
-                        cart.splice(cartIndex, 1);
-                    }
-                    try {
-                        localStorage.setItem('kv_purchased', JSON.stringify(purchasedResources));
-                        localStorage.setItem('kv_cart', JSON.stringify(cart));
-                    } catch(e) {}
-                    updateCartBadge();
-                    renderCart();
-                }
-                
-                // Download the resource(s)
-                if (currentProduct && currentProduct._cartItems && currentProduct._cartItems.length > 0) {
-                    setTimeout(function() {
-                        for (var i = 0; i < currentProduct._cartItems.length; i++) {
-                            var res = allResources.find(function(r) { return r.id === currentProduct._cartItems[i].id; });
-                            if (res && res.file_url) {
-                                setTimeout(function(url) {
-                                    window.open(url, '_blank');
-                                }, i * 500, res.file_url);
-                            }
-                        }
-                        showToast('Download Started', 'Your resources are downloading.', 'success');
-                    }, 1000);
-                } else if (currentProduct && currentProduct.file_url) {
-                    setTimeout(function() {
-                        window.open(currentProduct.file_url, '_blank');
-                        showToast('Download Started', 'Your resource is downloading.', 'success');
-                    }, 1000);
-                }
-                
-                setTimeout(function() {
-                    closePaymentModal();
-                    window.location.reload();
-                }, 3000);
-                
-            } else {
-                statusEl.className = 'stk-status visible pending';
-                statusEl.innerHTML = '⏳ Payment not yet confirmed. Please check your M-PESA messages.';
-                statusMessage.className = 'stk-status pending';
-                statusMessage.innerHTML = '⏳ Payment not yet confirmed. If you entered your PIN, please wait a moment and try again.';
-                document.getElementById('confirmPaymentBtn').style.display = 'block';
-                document.getElementById('confirmPaymentBtn').innerHTML = '<i class="bi bi-arrow-clockwise"></i> Check Again';
-            }
-
-        } catch (error) {
-            console.error('[KenyaVault] Manual verification error:', error);
-            statusEl.className = 'stk-status visible error';
-            statusEl.innerHTML = '❌ Error checking payment status. Please try again.';
-            statusMessage.className = 'stk-status error';
-            statusMessage.innerHTML = '❌ ' + (error.message || 'Network error. Please try again.');
-        }
-    };
-
-    // ─── VERIFY PAYMENT IN DATABASE ──────────────────────────
-async function verifyPaymentInDatabase(orderRef) {
-    try {
-        const response = await fetch(SUPABASE_URL + '/rest/v1/orders?order_ref=eq.' + orderRef, {
-            headers: {
-                'apikey': SUPABASE_ANON_KEY,
-                'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
-                'Content-Type': 'application/json'
-            }
-        });
-        
-        if (!response.ok) {
-            console.error('[KenyaVault] Failed to verify order in database:', response.status);
-            return { verified: false, order: null };
-        }
-        
-        const data = await response.json();
-        if (data && data.length > 0) {
-            const order = data[0];
-            console.log('[KenyaVault] Database order check:', order);
-
-            // Check multiple possible payment confirmation fields
-            var receipt = order.mpesa_receipt || order.mpesa_code || order.transaction_code ||
-                order.transaction_reference || order.payment_reference || order.receipt_number || '';
-            
-            // Check if payment is confirmed via MegaPay callback or manual confirmation
-            var isConfirmed = order.payment_confirmed === true || 
-                              order.status === 'confirmed' || 
-                              order.payment_status === 'confirmed' ||
-                              order.payment_status === 'paid' ||
-                              order.status === 'paid' ||
-                              order.callback_status === 'verified';
-
-            // Check amount match
-            var amountRequired = Number(order.total_amount || order.amount || 0);
-            var amountPaidField = order.amount_paid || order.amount || 0;
-            var amountOk = Number(amountPaidField) >= amountRequired;
-
-            // Check if there's a receipt/code
-            var hasReceipt = receipt.toString().trim().length > 0;
-
-            // Payment is verified if confirmed AND (has receipt OR amount matches)
-            var reallyPaid = isConfirmed && (hasReceipt || amountOk);
-
-            return {
-                verified: reallyPaid,
-                order: order,
-                status: order.status,
-                payment_status: order.payment_status,
-                receipt: receipt,
-                isConfirmed: isConfirmed
-            };
-        }
-        return { verified: false, order: null };
-    } catch (error) {
-        console.error('[KenyaVault] Error verifying payment in database:', error);
-        return { verified: false, order: null };
-    }
-}
-
-// ─── CONFIRM PAYMENT MANUALLY ─────────────────────────────
-window.confirmPaymentManually = async function() {
-    if (!currentOrderRef && !currentOrderId) {
-        showToast('Error', 'No active payment found. Please try again.', 'error');
-        return;
-    }
-
-    var statusEl = document.getElementById('stkStatus');
-    var statusMessage = document.getElementById('paymentStatusMessage');
-    var confirmBtn = document.getElementById('confirmPaymentBtn');
-    var retryBtn = document.getElementById('retryPaymentBtn');
-    var payBtn = document.getElementById('payBtn');
-    
-    statusEl.className = 'stk-status visible pending';
-    statusEl.innerHTML = '<span class="spinner"></span> Checking payment status...';
-    statusMessage.style.display = 'block';
-    statusMessage.className = 'stk-status pending';
-    statusMessage.innerHTML = '⏳ Checking if your payment was received...';
-    confirmBtn.disabled = true;
-    confirmBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Checking...';
-
-    try {
-        // First check the database directly
-        const dbResult = await verifyPaymentInDatabase(currentOrderRef);
-        console.log('[KenyaVault] Database verification result:', dbResult);
-
-        if (dbResult.verified) {
-            // Payment confirmed in database
-            paymentVerified = true;
-            statusEl.className = 'stk-status visible success';
-            statusEl.innerHTML = '✅ Payment confirmed! Your resource is ready.';
-            statusMessage.className = 'stk-status success';
-            statusMessage.innerHTML = '✅ Payment successful! Your download will begin shortly.';
-            document.getElementById('paymentTimer').textContent = '✅ Payment confirmed!';
-            confirmBtn.style.display = 'none';
-            retryBtn.style.display = 'none';
-            payBtn.disabled = true;
-            
-            // Mark as purchased
-            if (currentProduct && currentProduct.id) {
-                purchasedResources[currentProduct.id] = true;
-                try {
-                    localStorage.setItem('kv_purchased', JSON.stringify(purchasedResources));
-                } catch(e) {}
-            }
-            
-            // Download the resource
-            if (currentProduct && currentProduct.file_url) {
-                setTimeout(function() {
-                    window.open(currentProduct.file_url, '_blank');
-                    showToast('Download Started', 'Your resource is downloading.', 'success');
-                }, 1000);
-            }
-            
-            setTimeout(function() {
-                closePaymentModal();
-                window.location.reload();
-            }, 3000);
-            return;
-        }
-
-        // If not verified in DB, check the API
-        var response = await fetch(API_BASE_URL + '/mpesa/verify-payment', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                order_ref: currentOrderRef,
-                order_id: currentOrderId
-            })
-        });
-
-        var result = await response.json();
-        console.log('[KenyaVault] API verification result:', result);
-
-        // Check if API says paid
-        var apiSaysPaid = result.isPaid === true || 
-                          result.status === 'paid' || 
-                          result.payment_confirmed === true ||
-                          result.payment_status === 'paid' ||
-                          result.payment_status === 'confirmed' ||
-                          result.callback_status === 'verified';
-
-        if (apiSaysPaid) {
-            // Try to update the order in database
-            try {
-                await fetch(SUPABASE_URL + '/rest/v1/orders?order_ref=eq.' + currentOrderRef, {
-                    method: 'PATCH',
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        payment_confirmed: true,
-                        status: 'confirmed',
-                        payment_status: 'confirmed',
-                        callback_status: 'verified',
-                        confirmed_at: new Date().toISOString(),
-                        updated_at: new Date().toISOString()
-                    })
-                });
-            } catch (updateErr) {
-                console.error('[KenyaVault] Error updating order:', updateErr);
-            }
-
-            paymentVerified = true;
-            statusEl.className = 'stk-status visible success';
-            statusEl.innerHTML = '✅ Payment confirmed! Your resource is ready.';
-            statusMessage.className = 'stk-status success';
-            statusMessage.innerHTML = '✅ Payment successful! Your download will begin shortly.';
-            document.getElementById('paymentTimer').textContent = '✅ Payment confirmed!';
-            confirmBtn.style.display = 'none';
-            retryBtn.style.display = 'none';
-            payBtn.disabled = true;
-            
-            if (currentProduct && currentProduct.id) {
-                purchasedResources[currentProduct.id] = true;
-                try {
-                    localStorage.setItem('kv_purchased', JSON.stringify(purchasedResources));
-                } catch(e) {}
-            }
-            
-            if (currentProduct && currentProduct.file_url) {
-                setTimeout(function() {
-                    window.open(currentProduct.file_url, '_blank');
-                    showToast('Download Started', 'Your resource is downloading.', 'success');
-                }, 1000);
-            }
-            
-            setTimeout(function() {
-                closePaymentModal();
-                window.location.reload();
-            }, 3000);
-            
-        } else {
-            // Payment not confirmed yet
-            statusEl.className = 'stk-status visible pending';
-            statusEl.innerHTML = '⏳ Payment not yet confirmed. Please check your M-PESA messages.';
-            statusMessage.className = 'stk-status pending';
-            statusMessage.innerHTML = '⏳ Payment is still being processed. If you entered your PIN, please wait a moment and try again.';
-            confirmBtn.style.display = 'block';
-            confirmBtn.disabled = false;
-            confirmBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Check Again';
-            retryBtn.style.display = 'block';
-            
-            // Keep polling
-            if (!paymentPollInterval) {
-                startPaymentPolling(currentOrderRef);
-            }
-        }
-
-    } catch (error) {
-        console.error('[KenyaVault] Manual verification error:', error);
-        statusEl.className = 'stk-status visible error';
-        statusEl.innerHTML = '❌ Error checking payment status. Please try again.';
-        statusMessage.className = 'stk-status error';
-        statusMessage.innerHTML = '❌ ' + (error.message || 'Network error. Please try again.');
-        confirmBtn.style.display = 'block';
-        confirmBtn.disabled = false;
-        confirmBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Check Again';
-    }
-};
-
-// ─── START PAYMENT POLLING ────────────────────────────────
-function startPaymentPolling(orderRef) {
-    var pollCount = 0;
-    var maxPolls = 60; // Increased to 60 (5 minutes)
-    var statusEl = document.getElementById('stkStatus');
-    var statusMessage = document.getElementById('paymentStatusMessage');
-    var confirmBtn = document.getElementById('confirmPaymentBtn');
-    var retryBtn = document.getElementById('retryPaymentBtn');
-
-    if (paymentPollInterval) {
-        clearInterval(paymentPollInterval);
-    }
-
-    paymentPollInterval = setInterval(async function() {
-        pollCount++;
-
-        if (orderRef !== currentOrderRef || paymentVerified) {
-            clearInterval(paymentPollInterval);
-            paymentPollInterval = null;
-            return;
-        }
-
-        try {
-            // Check database first
-            const dbResult = await verifyPaymentInDatabase(orderRef);
-            console.log('[KenyaVault] Polling DB result:', dbResult);
-
-            if (dbResult.verified) {
-                clearInterval(paymentPollInterval);
-                paymentPollInterval = null;
-                if (paymentTimer) {
-                    clearInterval(paymentTimer);
-                    paymentTimer = null;
-                }
-                if (paymentTimeout) {
-                    clearTimeout(paymentTimeout);
-                    paymentTimeout = null;
-                }
-                
-                paymentVerified = true;
-                statusEl.className = 'stk-status visible success';
-                statusEl.innerHTML = '✅ Payment confirmed! Your resource is ready.';
-                document.getElementById('paymentTimer').textContent = '✅ Payment confirmed!';
-                statusMessage.style.display = 'block';
-                statusMessage.className = 'stk-status success';
-                statusMessage.innerHTML = '✅ Payment successful! Your download will begin shortly.';
-                confirmBtn.style.display = 'none';
-                retryBtn.style.display = 'none';
-
-                if (currentProduct && currentProduct.id) {
-                    purchasedResources[currentProduct.id] = true;
-                    try {
-                        localStorage.setItem('kv_purchased', JSON.stringify(purchasedResources));
-                    } catch(e) {}
-                }
-
-                if (currentProduct && currentProduct.file_url) {
-                    setTimeout(function() {
-                        window.open(currentProduct.file_url, '_blank');
-                        showToast('Download Started', 'Your resource is downloading.', 'success');
-                    }, 1000);
-                }
-
-                showToast('Payment Successful', 'Your payment was confirmed!', 'success');
-                document.getElementById('payBtn').disabled = false;
-                document.getElementById('payBtnText').textContent = '✅ Done';
-                document.getElementById('paySpinner').style.display = 'none';
-                isProcessingPayment = false;
-
-                setTimeout(function() {
-                    closePaymentModal();
-                    window.location.reload();
-                }, 3000);
-                return;
-            }
-
-            // If not in DB, check API
-            var response = await fetch(API_BASE_URL + '/mpesa/verify-payment', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    order_ref: orderRef,
-                    order_id: currentOrderId
-                })
-            });
-
-            if (!response.ok) {
-                console.warn('[KenyaVault] Status check failed, continuing polling...');
-                return;
-            }
-
-            var result = await response.json();
-            console.log('[KenyaVault] Payment status check (poll ' + pollCount + '):', result);
+            console.log('[KenyaVault] API verification result:', result);
 
             var apiSaysPaid = result.isPaid === true || 
                               result.status === 'paid' || 
@@ -3356,9 +2986,9 @@ function startPaymentPolling(orderRef) {
                               result.callback_status === 'verified';
 
             if (apiSaysPaid) {
-                // Try to update the order
+                // Try to update the order in database
                 try {
-                    await fetch(SUPABASE_URL + '/rest/v1/orders?order_ref=eq.' + orderRef, {
+                    await fetch(SUPABASE_URL + '/rest/v1/orders?order_ref=eq.' + currentOrderRef, {
                         method: 'PATCH',
                         headers: {
                             'apikey': SUPABASE_ANON_KEY,
@@ -3374,11 +3004,167 @@ function startPaymentPolling(orderRef) {
                             updated_at: new Date().toISOString()
                         })
                     });
-                } catch (updateErr) {}
+                } catch (updateErr) {
+                    console.error('[KenyaVault] Error updating order:', updateErr);
+                }
 
                 // Now verify again
-                const dbResult2 = await verifyPaymentInDatabase(orderRef);
+                const dbResult2 = await verifyPaymentInDatabase(currentOrderRef);
                 if (dbResult2.verified) {
+                    paymentVerified = true;
+                    statusEl.className = 'stk-status visible success';
+                    statusEl.innerHTML = '✅ Payment confirmed! Your resource is ready.';
+                    statusMessage.className = 'stk-status success';
+                    statusMessage.innerHTML = '✅ Payment successful! Your download will begin shortly.';
+                    document.getElementById('paymentTimer').textContent = '✅ Payment confirmed!';
+                    confirmBtn.style.display = 'none';
+                    retryBtn.style.display = 'none';
+                    payBtn.disabled = true;
+                    
+                    handleSuccessfulPayment();
+                    return;
+                }
+            }
+
+            // Payment not confirmed yet
+            statusEl.className = 'stk-status visible pending';
+            statusEl.innerHTML = '⏳ Payment not yet confirmed. Please check your M-PESA messages.';
+            statusMessage.className = 'stk-status pending';
+            statusMessage.innerHTML = '⏳ Payment is still being processed. If you entered your PIN, please wait a moment and try again.';
+            confirmBtn.style.display = 'block';
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Check Again';
+            retryBtn.style.display = 'block';
+            
+            // Keep polling
+            if (!paymentPollInterval) {
+                startPaymentPolling(currentOrderRef);
+            }
+
+        } catch (error) {
+            console.error('[KenyaVault] Manual verification error:', error);
+            statusEl.className = 'stk-status visible error';
+            statusEl.innerHTML = '❌ Error checking payment status. Please try again.';
+            statusMessage.className = 'stk-status error';
+            statusMessage.innerHTML = '❌ ' + (error.message || 'Network error. Please try again.');
+            confirmBtn.style.display = 'block';
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Check Again';
+        }
+    };
+
+    // ─── HANDLE SUCCESSFUL PAYMENT ──────────────────────────
+    function handleSuccessfulPayment() {
+        // Mark all cart items as purchased if this was a cart checkout
+        if (currentProduct && currentProduct._cartItems && currentProduct._cartItems.length > 0) {
+            for (var i = 0; i < currentProduct._cartItems.length; i++) {
+                var item = currentProduct._cartItems[i];
+                purchasedResources[item.id] = true;
+                // Remove from cart
+                var cartIndex = cart.findIndex(function(c) { return c.id === item.id; });
+                if (cartIndex !== -1) {
+                    cart.splice(cartIndex, 1);
+                }
+            }
+            try {
+                localStorage.setItem('kv_purchased', JSON.stringify(purchasedResources));
+                localStorage.setItem('kv_cart', JSON.stringify(cart));
+            } catch(e) {}
+            updateCartBadge();
+            renderCart();
+            
+            // Download all resources with signed URLs
+            setTimeout(function() {
+                for (var i = 0; i < currentProduct._cartItems.length; i++) {
+                    var res = allResources.find(function(r) { return r.id === currentProduct._cartItems[i].id; });
+                    if (res && res.file_url) {
+                        setTimeout(function(resource) {
+                            var url = resource.file_url;
+                            if (!url.startsWith('http')) {
+                                generateSignedUrl(url).then(function(signedUrl) {
+                                    if (signedUrl) {
+                                        window.open(signedUrl, '_blank');
+                                    }
+                                });
+                            } else {
+                                window.open(url, '_blank');
+                            }
+                        }, i * 500, res);
+                    }
+                }
+                showToast('Download Started', 'Your resources are downloading.', 'success');
+            }, 1000);
+        } else if (currentProduct && currentProduct.id) {
+            purchasedResources[currentProduct.id] = true;
+            var cartIndex = cart.findIndex(function(c) { return c.id === currentProduct.id; });
+            if (cartIndex !== -1) {
+                cart.splice(cartIndex, 1);
+            }
+            try {
+                localStorage.setItem('kv_purchased', JSON.stringify(purchasedResources));
+                localStorage.setItem('kv_cart', JSON.stringify(cart));
+            } catch(e) {}
+            updateCartBadge();
+            renderCart();
+            
+            if (currentProduct.file_url) {
+                setTimeout(function() {
+                    var url = currentProduct.file_url;
+                    if (!url.startsWith('http')) {
+                        generateSignedUrl(url).then(function(signedUrl) {
+                            if (signedUrl) {
+                                window.open(signedUrl, '_blank');
+                                showToast('Download Started', currentProduct.title + ' is downloading.', 'success');
+                            }
+                        });
+                    } else {
+                        window.open(url, '_blank');
+                        showToast('Download Started', currentProduct.title + ' is downloading.', 'success');
+                    }
+                }, 1000);
+            }
+        }
+
+        showToast('Payment Successful', 'Your payment was confirmed!', 'success');
+        document.getElementById('payBtn').disabled = false;
+        document.getElementById('payBtnText').textContent = '✅ Done';
+        document.getElementById('paySpinner').style.display = 'none';
+        isProcessingPayment = false;
+
+        setTimeout(function() {
+            closePaymentModal();
+            window.location.reload();
+        }, 3000);
+    }
+
+    // ─── START PAYMENT POLLING ────────────────────────────────
+    function startPaymentPolling(orderRef) {
+        var pollCount = 0;
+        var maxPolls = 60;
+        var statusEl = document.getElementById('stkStatus');
+        var statusMessage = document.getElementById('paymentStatusMessage');
+        var confirmBtn = document.getElementById('confirmPaymentBtn');
+        var retryBtn = document.getElementById('retryPaymentBtn');
+
+        if (paymentPollInterval) {
+            clearInterval(paymentPollInterval);
+        }
+
+        paymentPollInterval = setInterval(async function() {
+            pollCount++;
+
+            if (orderRef !== currentOrderRef || paymentVerified) {
+                clearInterval(paymentPollInterval);
+                paymentPollInterval = null;
+                return;
+            }
+
+            try {
+                // Check database first
+                const dbResult = await verifyPaymentInDatabase(orderRef);
+                console.log('[KenyaVault] Polling DB result:', dbResult);
+
+                if (dbResult.verified) {
                     clearInterval(paymentPollInterval);
                     paymentPollInterval = null;
                     if (paymentTimer) {
@@ -3400,79 +3186,510 @@ function startPaymentPolling(orderRef) {
                     confirmBtn.style.display = 'none';
                     retryBtn.style.display = 'none';
 
-                    if (currentProduct && currentProduct.id) {
-                        purchasedResources[currentProduct.id] = true;
-                        try {
-                            localStorage.setItem('kv_purchased', JSON.stringify(purchasedResources));
-                        } catch(e) {}
-                    }
-
-                    if (currentProduct && currentProduct.file_url) {
-                        setTimeout(function() {
-                            window.open(currentProduct.file_url, '_blank');
-                            showToast('Download Started', 'Your resource is downloading.', 'success');
-                        }, 1000);
-                    }
-
-                    showToast('Payment Successful', 'Your payment was confirmed!', 'success');
-                    document.getElementById('payBtn').disabled = false;
-                    document.getElementById('payBtnText').textContent = '✅ Done';
-                    document.getElementById('paySpinner').style.display = 'none';
-                    isProcessingPayment = false;
-
-                    setTimeout(function() {
-                        closePaymentModal();
-                        window.location.reload();
-                    }, 3000);
+                    handleSuccessfulPayment();
                     return;
                 }
-            } else if (result.status === 'failed' || result.status === 'cancelled' || result.status === 'timeout') {
-                clearInterval(paymentPollInterval);
-                paymentPollInterval = null;
+
+                // If not in DB, check API
+                var response = await fetch(API_BASE_URL + '/mpesa/verify-payment', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        order_ref: orderRef,
+                        order_id: currentOrderId
+                    })
+                });
+
+                if (!response.ok) {
+                    console.warn('[KenyaVault] Status check failed, continuing polling...');
+                    return;
+                }
+
+                var result = await response.json();
+                console.log('[KenyaVault] Payment status check (poll ' + pollCount + '):', result);
+
+                var apiSaysPaid = result.isPaid === true || 
+                                  result.status === 'paid' || 
+                                  result.payment_confirmed === true ||
+                                  result.payment_status === 'paid' ||
+                                  result.payment_status === 'confirmed' ||
+                                  result.callback_status === 'verified';
+
+                if (apiSaysPaid) {
+                    // Try to update the order
+                    try {
+                        await fetch(SUPABASE_URL + '/rest/v1/orders?order_ref=eq.' + orderRef, {
+                            method: 'PATCH',
+                            headers: {
+                                'apikey': SUPABASE_ANON_KEY,
+                                'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                payment_confirmed: true,
+                                status: 'confirmed',
+                                payment_status: 'confirmed',
+                                callback_status: 'verified',
+                                confirmed_at: new Date().toISOString(),
+                                updated_at: new Date().toISOString()
+                            })
+                        });
+                    } catch (updateErr) {}
+
+                    // Now verify again
+                    const dbResult2 = await verifyPaymentInDatabase(orderRef);
+                    if (dbResult2.verified) {
+                        clearInterval(paymentPollInterval);
+                        paymentPollInterval = null;
+                        if (paymentTimer) {
+                            clearInterval(paymentTimer);
+                            paymentTimer = null;
+                        }
+                        if (paymentTimeout) {
+                            clearTimeout(paymentTimeout);
+                            paymentTimeout = null;
+                        }
+                        
+                        paymentVerified = true;
+                        statusEl.className = 'stk-status visible success';
+                        statusEl.innerHTML = '✅ Payment confirmed! Your resource is ready.';
+                        document.getElementById('paymentTimer').textContent = '✅ Payment confirmed!';
+                        statusMessage.style.display = 'block';
+                        statusMessage.className = 'stk-status success';
+                        statusMessage.innerHTML = '✅ Payment successful! Your download will begin shortly.';
+                        confirmBtn.style.display = 'none';
+                        retryBtn.style.display = 'none';
+
+                        handleSuccessfulPayment();
+                        return;
+                    }
+                } else if (result.status === 'failed' || result.status === 'cancelled' || result.status === 'timeout') {
+                    clearInterval(paymentPollInterval);
+                    paymentPollInterval = null;
+                    if (paymentTimer) {
+                        clearInterval(paymentTimer);
+                        paymentTimer = null;
+                    }
+                    if (paymentTimeout) {
+                        clearTimeout(paymentTimeout);
+                        paymentTimeout = null;
+                    }
+                    
+                    statusEl.className = 'stk-status visible error';
+                    statusEl.innerHTML = '❌ Payment ' + (result.status || 'failed') + '. Please try again.';
+                    statusMessage.style.display = 'block';
+                    statusMessage.className = 'stk-status error';
+                    statusMessage.innerHTML = '❌ Payment ' + (result.status || 'failed') + '. Please try again.';
+                    confirmBtn.style.display = 'none';
+                    retryBtn.style.display = 'block';
+                    document.getElementById('payBtn').disabled = false;
+                    document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
+                    document.getElementById('paySpinner').style.display = 'none';
+                    isProcessingPayment = false;
+                    showToast('Payment Failed', 'Payment was not completed. Please try again.', 'error');
+
+                } else if (pollCount >= maxPolls) {
+                    clearInterval(paymentPollInterval);
+                    paymentPollInterval = null;
+                    statusEl.className = 'stk-status visible pending';
+                    statusEl.innerHTML = '⏳ Payment is still being processed. Please check your M-PESA messages.';
+                    statusMessage.style.display = 'block';
+                    statusMessage.className = 'stk-status pending';
+                    statusMessage.innerHTML = '⏳ Payment still pending. Please check your M-PESA messages and click "I\'ve Made the Payment" to confirm.';
+                    confirmBtn.style.display = 'block';
+                    confirmBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Check Status';
+                    retryBtn.style.display = 'block';
+                    document.getElementById('payBtn').disabled = false;
+                    document.getElementById('payBtnText').textContent = '🔄 Try Again';
+                    document.getElementById('paySpinner').style.display = 'none';
+                    isProcessingPayment = false;
+                }
+
+            } catch (error) {
+                console.error('[KenyaVault] Polling error:', error);
+            }
+        }, 5000);
+    }
+
+    // ─── INITIATE PAYMENT ──────────────────────────────────
+    window.initiatePayment = async function() {
+        if (isProcessingPayment) {
+            showToast('Info', 'Please wait for current payment to complete.', 'info');
+            return;
+        }
+
+        if (!currentProduct) {
+            showToast('Error', 'No product selected.', 'error');
+            return;
+        }
+
+        var amount = currentProduct._cartTotal || currentProduct.price || 0;
+        if (amount <= 0) {
+            showToast('Error', 'This resource is free or invalid price.', 'error');
+            return;
+        }
+
+        var name = document.getElementById('customerName').value.trim();
+        var phone = document.getElementById('phoneInput').value.trim();
+
+        if (!name || name.length < 2) {
+            showToast('Error', 'Please enter your full name.', 'error');
+            return;
+        }
+
+        var phoneClean = phone.replace(/\s/g, '').replace(/^0/, '254');
+        if (phoneClean.length < 10 || !phoneClean.startsWith('254')) {
+            showToast('Error', 'Please enter a valid Safaricom phone number (e.g., 0712345678)', 'error');
+            return;
+        }
+
+        var payBtn = document.getElementById('payBtn');
+        var statusEl = document.getElementById('stkStatus');
+        var statusMessage = document.getElementById('paymentStatusMessage');
+        var confirmBtn = document.getElementById('confirmPaymentBtn');
+        var retryBtn = document.getElementById('retryPaymentBtn');
+
+        payBtn.disabled = true;
+        document.getElementById('payBtnText').textContent = 'Processing...';
+        document.getElementById('paySpinner').style.display = 'inline-block';
+        isProcessingPayment = true;
+        paymentVerified = false;
+        confirmBtn.style.display = 'none';
+        retryBtn.style.display = 'none';
+
+        statusEl.className = 'stk-status visible pending';
+        statusEl.style.display = 'block';
+        statusEl.innerHTML = '<span class="spinner"></span> Creating order...';
+
+        var orderRef = 'KV-' + Date.now().toString().slice(-8) + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
+        currentOrderRef = orderRef;
+
+        try {
+            var sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substring(2, 10);
+
+            var cartItems = currentProduct._cartItems || [];
+            var isCartCheckout = cartItems.length > 0;
+            var resourceIds = isCartCheckout ? cartItems.map(function(item) { return item.id; }) : [currentProduct.id];
+            var itemTitle = isCartCheckout ? 'Cart (' + cartItems.length + ' items)' : (currentProduct.title || 'Resource');
+
+            var orderData = {
+                order_ref: orderRef,
+                session_id: sessionId,
+                customer_name: name,
+                customer_phone: phoneClean,
+                customer_email: name.toLowerCase().replace(/\s/g, '.') + '@customer.com',
+                name: name,
+                email: name.toLowerCase().replace(/\s/g, '.') + '@customer.com',
+                phone: phoneClean,
+                amount: amount,
+                total_amount: amount,
+                item_title: itemTitle,
+                item_price: amount,
+                status: 'pending',
+                payment_status: 'pending',
+                payment_method: 'M-PESA',
+                cart_items: isCartCheckout ? cartItems : [{
+                    id: currentProduct.id,
+                    title: currentProduct.title,
+                    price: amount
+                }],
+                resource_ids: resourceIds,
+                resource_id: resourceIds[0],
+                item_count: isCartCheckout ? cartItems.length : 1,
+                cart_total: amount,
+                currency: 'KES',
+                ip_address: '0.0.0.0',
+                user_agent: navigator.userAgent || 'Unknown',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                payment_confirmed: false
+            };
+
+            console.log('[KenyaVault] Creating order:', orderData);
+
+            var orderResponse = await fetch(SUPABASE_URL + '/rest/v1/orders', {
+                method: 'POST',
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=representation'
+                },
+                body: JSON.stringify(orderData)
+            });
+
+            if (!orderResponse.ok) {
+                var errorText = await orderResponse.text();
+                console.error('Order creation error:', errorText);
+                throw new Error('Failed to create order: ' + orderResponse.status);
+            }
+
+            var orderResult = await orderResponse.json();
+            currentOrderId = orderResult[0]?.id || orderResult.id;
+
+            if (!currentOrderId) {
+                throw new Error('Order creation failed - no ID returned');
+            }
+
+            console.log('[KenyaVault] Order created:', currentOrderId, orderRef);
+            statusEl.innerHTML = '<span class="spinner"></span> Sending STK Push to ' + phoneClean + '...';
+
+            var payload = {
+                order_id: currentOrderId,
+                order_ref: orderRef,
+                phone: phoneClean,
+                amount: amount,
+                customer_name: name,
+                customer_email: name.toLowerCase().replace(/\s/g, '.') + '@customer.com',
+                resource_ids: resourceIds
+            };
+
+            console.log('[KenyaVault] Sending STK push:', payload);
+
+            var response = await fetch(API_BASE_URL + '/mpesa/stk-push', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+
+            var responseText = await response.text();
+            console.log('[KenyaVault] STK Push raw response:', responseText);
+
+            var result;
+            try {
+                result = JSON.parse(responseText);
+            } catch (e) {
+                console.error('[KenyaVault] Failed to parse response:', e);
+                throw new Error('Invalid response from payment server: ' + responseText.substring(0, 100));
+            }
+
+            if (!response.ok) {
+                throw new Error(result.error || result.message || 'Payment initiation failed (HTTP ' + response.status + ')');
+            }
+
+            if (result.success) {
+                statusEl.className = 'stk-status visible pending';
+                statusEl.innerHTML = '<span class="spinner"></span> STK Push sent to ' + phoneClean + '. Please check your phone and enter your M-PESA PIN.';
+                
+                statusMessage.style.display = 'block';
+                statusMessage.className = 'stk-status pending';
+                statusMessage.innerHTML = '⏳ Waiting for payment confirmation. Please complete the M-PESA prompt on your phone.';
+                
+                confirmBtn.style.display = 'block';
+                confirmBtn.innerHTML = '<i class="bi bi-check-circle-fill"></i> I\'ve Made the Payment';
+                
+                startPaymentTimer();
+                startPaymentPolling(currentOrderRef);
+
+            } else {
+                statusEl.className = 'stk-status visible error';
+                statusEl.innerHTML = '❌ ' + (result.error || result.message || 'Payment initiation failed. Please try again.');
+                statusMessage.style.display = 'block';
+                statusMessage.className = 'stk-status error';
+                statusMessage.innerHTML = '❌ Payment initiation failed. Please try again.';
+                retryBtn.style.display = 'block';
+                payBtn.disabled = false;
+                document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
+                document.getElementById('paySpinner').style.display = 'none';
+                isProcessingPayment = false;
+                showToast('Payment Failed', result.error || result.message || 'Please try again.', 'error');
+            }
+
+        } catch (error) {
+            console.error('[KenyaVault] Payment error:', error);
+            statusEl.className = 'stk-status visible error';
+            statusEl.innerHTML = '❌ ' + (error.message || 'Network error. Please check your connection and try again.');
+            statusMessage.style.display = 'block';
+            statusMessage.className = 'stk-status error';
+            statusMessage.innerHTML = '❌ ' + (error.message || 'Network error. Please try again.');
+            retryBtn.style.display = 'block';
+            payBtn.disabled = false;
+            document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
+            document.getElementById('paySpinner').style.display = 'none';
+            isProcessingPayment = false;
+            showToast('Payment Error', error.message || 'Network error. Please try again.', 'error');
+        }
+    };
+
+    function startPaymentTimer() {
+        var seconds = 120;
+        var timerEl = document.getElementById('paymentTimer');
+        timerEl.textContent = '⏳ Waiting for payment... ' + seconds + 's remaining';
+
+        if (paymentTimer) {
+            clearInterval(paymentTimer);
+        }
+
+        paymentTimer = setInterval(function() {
+            seconds--;
+            timerEl.textContent = '⏳ Waiting for payment... ' + seconds + 's remaining';
+            if (seconds <= 0) {
+                clearInterval(paymentTimer);
+                paymentTimer = null;
+                timerEl.textContent = '⏰ Payment time expired. Please try again.';
+            }
+        }, 1000);
+
+        if (paymentTimeout) {
+            clearTimeout(paymentTimeout);
+        }
+        paymentTimeout = setTimeout(function() {
+            if (isProcessingPayment && !paymentVerified) {
+                var statusEl = document.getElementById('stkStatus');
+                var statusMessage = document.getElementById('paymentStatusMessage');
+                var payBtn = document.getElementById('payBtn');
+                var confirmBtn = document.getElementById('confirmPaymentBtn');
+                var retryBtn = document.getElementById('retryPaymentBtn');
+                
+                statusEl.className = 'stk-status visible error';
+                statusEl.innerHTML = '⏰ Payment timed out. Please try again.';
+                statusMessage.style.display = 'block';
+                statusMessage.className = 'stk-status error';
+                statusMessage.innerHTML = '⏰ Payment timed out. Please try again.';
+                confirmBtn.style.display = 'none';
+                retryBtn.style.display = 'block';
+                payBtn.disabled = false;
+                document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
+                document.getElementById('paySpinner').style.display = 'none';
+                isProcessingPayment = false;
                 if (paymentTimer) {
                     clearInterval(paymentTimer);
                     paymentTimer = null;
                 }
-                if (paymentTimeout) {
-                    clearTimeout(paymentTimeout);
-                    paymentTimeout = null;
+                if (paymentPollInterval) {
+                    clearInterval(paymentPollInterval);
+                    paymentPollInterval = null;
                 }
-                
-                statusEl.className = 'stk-status visible error';
-                statusEl.innerHTML = '❌ Payment ' + (result.status || 'failed') + '. Please try again.';
-                statusMessage.style.display = 'block';
-                statusMessage.className = 'stk-status error';
-                statusMessage.innerHTML = '❌ Payment ' + (result.status || 'failed') + '. Please try again.';
-                confirmBtn.style.display = 'none';
-                retryBtn.style.display = 'block';
-                document.getElementById('payBtn').disabled = false;
-                document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
-                document.getElementById('paySpinner').style.display = 'none';
-                isProcessingPayment = false;
-                showToast('Payment Failed', 'Payment was not completed. Please try again.', 'error');
-
-            } else if (pollCount >= maxPolls) {
-                clearInterval(paymentPollInterval);
-                paymentPollInterval = null;
-                statusEl.className = 'stk-status visible pending';
-                statusEl.innerHTML = '⏳ Payment is still being processed. Please check your M-PESA messages.';
-                statusMessage.style.display = 'block';
-                statusMessage.className = 'stk-status pending';
-                statusMessage.innerHTML = '⏳ Payment still pending. Please check your M-PESA messages and click "I\'ve Made the Payment" to confirm.';
-                confirmBtn.style.display = 'block';
-                confirmBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Check Status';
-                retryBtn.style.display = 'block';
-                document.getElementById('payBtn').disabled = false;
-                document.getElementById('payBtnText').textContent = '🔄 Try Again';
-                document.getElementById('paySpinner').style.display = 'none';
-                isProcessingPayment = false;
+                showToast('Payment Timeout', 'Payment request expired. Please try again.', 'error');
             }
+        }, 120000);
+    }
 
-        } catch (error) {
-            console.error('[KenyaVault] Polling error:', error);
+    // ─── CHECKOUT CART ──────────────────────────────────────
+    window.checkoutCart = function() {
+        if (cart.length === 0) {
+            showToast('Error', 'Your cart is empty.', 'error');
+            return;
         }
-    }, 5000);
-}
+
+        var allPurchased = cart.every(function(item) {
+            return purchasedResources[item.id] === true;
+        });
+
+        if (allPurchased) {
+            showToast('Info', 'All items in your cart are already purchased. Use Bulk Download.', 'info');
+            return;
+        }
+
+        var unpaidItems = cart.filter(function(item) {
+            return purchasedResources[item.id] !== true;
+        });
+
+        if (unpaidItems.length === 0) {
+            showToast('Info', 'No unpaid items in cart.', 'info');
+            return;
+        }
+
+        var total = 0;
+        for (var i = 0; i < unpaidItems.length; i++) {
+            total += (unpaidItems[i].price || 0);
+        }
+
+        if (total <= 0) {
+            showToast('Error', 'Cannot checkout free items. Please download them directly.', 'error');
+            return;
+        }
+
+        var firstItem = unpaidItems[0];
+        var resource = allResources.find(function(r) { return r.id === firstItem.id; });
+        if (!resource) {
+            showToast('Error', 'Resource not found.', 'error');
+            return;
+        }
+
+        currentProduct = resource;
+        currentProduct._cartItems = unpaidItems;
+        currentProduct._cartTotal = total;
+
+        document.getElementById('paymentProductTitle').textContent = 'Cart (' + unpaidItems.length + ' items)';
+        document.getElementById('paymentProductPrice').textContent = 'KES ' + Number(total).toLocaleString();
+        document.getElementById('paymentModal').classList.add('open');
+        document.getElementById('stkStatus').className = 'stk-status';
+        document.getElementById('stkStatus').textContent = '';
+        document.getElementById('stkStatus').style.display = 'none';
+        document.getElementById('paymentStatusIndicator').style.display = 'none';
+        document.getElementById('paymentStatusMessage').style.display = 'none';
+        document.getElementById('confirmPaymentBtn').style.display = 'none';
+        document.getElementById('retryPaymentBtn').style.display = 'none';
+        document.getElementById('payBtn').disabled = false;
+        document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
+        document.getElementById('paySpinner').style.display = 'none';
+        document.getElementById('paymentTimer').textContent = '';
+        document.getElementById('customerName').value = '';
+        document.getElementById('phoneInput').value = '';
+    };
+
+    // ─── BULK DOWNLOAD ──────────────────────────────────────
+    window.bulkDownload = function() {
+        if (cart.length === 0) {
+            showToast('Error', 'Your cart is empty.', 'error');
+            return;
+        }
+
+        var purchasedItems = cart.filter(function(item) {
+            return purchasedResources[item.id] === true;
+        });
+
+        var freeItems = cart.filter(function(item) {
+            var resource = allResources.find(function(r) { return r.id === item.id; });
+            return resource && (resource.is_free === true || resource.price === 0);
+        });
+
+        var paidItems = cart.filter(function(item) {
+            var resource = allResources.find(function(r) { return r.id === item.id; });
+            return resource && resource.price > 0 && purchasedResources[item.id] !== true;
+        });
+
+        if (paidItems.length > 0) {
+            showToast('Info', 'You have ' + paidItems.length + ' unpaid item(s). Please checkout first.', 'warning');
+            return;
+        }
+
+        var allItems = [...purchasedItems, ...freeItems];
+        if (allItems.length === 0) {
+            showToast('Error', 'No downloadable items in cart.', 'error');
+            return;
+        }
+
+        var downloaded = 0;
+        for (var i = 0; i < allItems.length; i++) {
+            var resource = allResources.find(function(r) { return r.id === allItems[i].id; });
+            if (resource && resource.file_url) {
+                var url = resource.file_url;
+                if (!url.startsWith('http')) {
+                    generateSignedUrl(url).then(function(signedUrl) {
+                        if (signedUrl) {
+                            window.open(signedUrl, '_blank');
+                            downloaded++;
+                        }
+                    });
+                } else {
+                    setTimeout(function(u) {
+                        window.open(u, '_blank');
+                        downloaded++;
+                    }, i * 300, url);
+                }
+            }
+        }
+
+        setTimeout(function() {
+            showToast('Bulk Download', 'Downloading ' + downloaded + ' resource(s).', 'success');
+        }, 500);
+    };
 
     // ─── NAVBAR DROPDOWN ──────────────────────────────────────
     function setupNavbar() {
@@ -3613,6 +3830,7 @@ function startPaymentPolling(orderRef) {
     window.bulkDownload = bulkDownload;
     window.checkoutCart = checkoutCart;
     window.removeFromCart = removeFromCart;
+    window.generateSignedUrl = generateSignedUrl;
 
 })();
 </script>
