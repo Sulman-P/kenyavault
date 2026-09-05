@@ -1,0 +1,2256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes" />
+    <title>KenyaVault — Upload Resources</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700;800&family=Inter:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.min.js">
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js">
+    </script>
+    <style>
+        /* ── ROOT VARIABLES ── */
+        :root {
+            --kv-primary: #0B2F1A;
+            --kv-primary-light: #1A4A2A;
+            --kv-primary-dark: #081A0E;
+            --kv-green: #1E7A3A;
+            --kv-green-light: #4CAF6A;
+            --kv-green-soft: #E8F5EC;
+            --kv-green-pale: #F0F9F2;
+            --kv-white: #FFFFFF;
+            --kv-off-white: #FAFBFC;
+            --kv-bg: #F4F8F5;
+            --kv-surface: #F0EEEA;
+            --kv-text: #172033;
+            --kv-muted: #667085;
+            --kv-border: #DDE4E0;
+            --kv-gold: #C9971F;
+            --kv-gold-light: #E8B94A;
+            --kv-gold-pale: #F7EBD0;
+            --kv-red: #BB0000;
+            --kv-red-light: #C41E3A;
+            --kv-red-soft: #FDE8E8;
+            --kv-radius: 12px;
+            --kv-radius-sm: 8px;
+            --kv-shadow-sm: 0 1px 3px rgba(30, 122, 58, 0.06);
+            --kv-shadow-md: 0 4px 12px rgba(30, 122, 58, 0.08);
+            --kv-shadow-lg: 0 8px 32px rgba(30, 122, 58, 0.12);
+            --kv-shadow-gold: 0 8px 32px rgba(201, 151, 31, 0.25);
+            --kv-transition: all 0.25s ease;
+            --kv-max-width: 1200px;
+            --kv-safearea-bottom: env(safe-area-inset-bottom, 0px);
+            --kv-header-height: 72px;
+            --font-display: 'Sora', sans-serif;
+            --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: var(--kv-bg);
+            color: var(--kv-text);
+            font-family: var(--font-body);
+            -webkit-font-smoothing: antialiased;
+            padding-bottom: calc(20px + var(--kv-safearea-bottom));
+        }
+
+        a { text-decoration: none; color: inherit; }
+        button { cursor: pointer; border: none; background: none; font-family: inherit; }
+
+        .container {
+            max-width: var(--kv-max-width);
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        /* ── FLAG STRIPE ── */
+        .flag-stripe {
+            height: 3px;
+            width: 100%;
+            display: flex;
+            position: sticky;
+            top: 0;
+            z-index: 1001;
+        }
+        .flag-stripe .stripe-black { flex: 1; background: #000000; }
+        .flag-stripe .stripe-red { flex: 1; background: #BB0000; }
+        .flag-stripe .stripe-green { flex: 1; background: #1F7A3A; }
+        .flag-stripe .stripe-white { flex: 1; background: var(--kv-white); }
+
+        /* ── TOP BAR ── */
+        .topbar {
+            background: var(--kv-primary);
+            border-bottom: 3px solid var(--kv-gold);
+            position: sticky;
+            top: 3px;
+            z-index: 1000;
+            box-shadow: 0 2px 20px rgba(11, 35, 64, 0.2);
+        }
+        .topbar-container {
+            max-width: var(--kv-max-width);
+            margin: 0 auto;
+            padding: 0 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: var(--kv-header-height);
+            gap: 12px;
+        }
+        .topbar-logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-family: var(--font-display);
+            font-weight: 800;
+            color: var(--kv-white);
+            letter-spacing: -0.5px;
+            flex-shrink: 0;
+        }
+        .topbar-logo .logo-icon {
+            width: 42px;
+            height: 42px;
+            background: var(--kv-gold);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+            color: var(--kv-primary);
+            font-weight: 800;
+            flex-shrink: 0;
+        }
+        .topbar-logo .logo-text {
+            font-size: 1.25rem;
+            line-height: 1.1;
+        }
+        .topbar-logo .logo-text span { color: var(--kv-gold-light); }
+
+        .topbar-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .topbar-actions .badge {
+            color: rgba(255,255,255,0.7);
+            font-size: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(255,255,255,0.08);
+            padding: 6px 14px;
+            border-radius: 40px;
+        }
+        .topbar-actions .badge i { color: var(--kv-gold-light); }
+
+        .btn-back {
+            color: rgba(255,255,255,0.7);
+            padding: 6px 14px;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            transition: var(--kv-transition);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .btn-back:hover {
+            background: rgba(255,255,255,0.08);
+            color: var(--kv-white);
+        }
+
+        /* ── MAIN CONTENT ── */
+        .upload-content {
+            padding: 1.5rem 0;
+            max-width: 1560px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .upload-studio-header {
+            background: linear-gradient(135deg, var(--kv-primary) 0%, var(--kv-primary-light) 50%, #2D5A3A 100%);
+            border-radius: 16px;
+            padding: 1.75rem 2rem;
+            margin-bottom: 1.75rem;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 1.25rem;
+            box-shadow: 0 10px 25px -5px rgba(11, 35, 64, 0.15);
+        }
+        .studio-header-left { max-width: 760px; }
+        .studio-main-title {
+            margin: 0 0 0.4rem 0;
+            font-size: 1.45rem;
+            font-weight: 800;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            color: #f8fafc;
+        }
+        .studio-main-title i { color: var(--kv-gold-light); font-size: 1.6rem; }
+        .studio-sub-title {
+            margin: 0;
+            font-size: 0.9rem;
+            color: rgba(255,255,255,0.7);
+            line-height: 1.5;
+        }
+        .studio-kpi-group {
+            display: flex;
+            gap: 0.6rem;
+            flex-wrap: wrap;
+        }
+        .studio-kpi-badge {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(8px);
+            padding: 0.4rem 0.85rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: #e2e8f0;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .studio-kpi-badge i { color: var(--kv-gold-light); }
+
+        /* ── UPLOAD GRID ── */
+        .upload-grid {
+            display: grid;
+            grid-template-columns: 460px minmax(0, 1fr);
+            gap: 1.75rem;
+            align-items: start;
+        }
+
+        /* ── DRAG OVERLAY ── */
+        .window-drag-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(11, 35, 64, 0.85);
+            backdrop-filter: blur(8px);
+            z-index: 99999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s ease;
+        }
+        .window-drag-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .window-drag-box {
+            border: 3px dashed var(--kv-gold);
+            border-radius: 24px;
+            padding: 3.5rem 4.5rem;
+            text-align: center;
+            background: rgba(30, 41, 59, 0.9);
+            transform: scale(0.95);
+            transition: transform 0.25s ease;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+        .window-drag-overlay.active .window-drag-box { transform: scale(1); }
+        .window-drag-box i {
+            font-size: 4.5rem;
+            color: var(--kv-gold);
+            margin-bottom: 1rem;
+            display: inline-block;
+            animation: bounce 1.5s infinite;
+        }
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-12px); }
+        }
+
+        /* ── FORM PANEL ── */
+        .upload-form-section {
+            background: var(--kv-white);
+            border: 1px solid var(--kv-border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            box-shadow: var(--kv-shadow-sm);
+            position: sticky;
+            top: 1.5rem;
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--kv-border);
+            padding-bottom: 1rem;
+            margin-bottom: 1.25rem;
+        }
+        .panel-title-wrap {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .studio-step-badge {
+            background: var(--kv-green-soft);
+            border: 1.5px solid var(--kv-green);
+            color: var(--kv-green);
+            font-size: 0.75rem;
+            font-weight: 800;
+            padding: 0.25rem 0.6rem;
+            border-radius: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .studio-step-badge.purple {
+            background: #faf5ff;
+            border-color: #e9d5ff;
+            color: #7e22ce;
+        }
+        .panel-heading {
+            margin: 0;
+            font-size: 1.15rem;
+            font-weight: 800;
+            color: var(--kv-text);
+        }
+        .panel-subheading {
+            font-size: 0.8rem;
+            color: var(--kv-muted);
+            margin-top: 0.15rem;
+        }
+
+        /* ── FORM GRID ── */
+        .form-grid-2col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.85rem;
+            margin-bottom: 0.85rem;
+        }
+        .form-grid-2col .form-group { margin-bottom: 0; }
+        .form-group label {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: var(--kv-text);
+            margin-bottom: 0.35rem;
+        }
+        .form-group label i { color: var(--kv-green); font-size: 0.85rem; }
+        .form-group select,
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 0.55rem 0.75rem;
+            border: 1.5px solid var(--kv-border);
+            border-radius: 8px;
+            font-size: 0.85rem;
+            color: var(--kv-text);
+            background: var(--kv-white);
+            transition: all 0.2s ease;
+            outline: none;
+        }
+        .form-group select:focus,
+        .form-group input:focus,
+        .form-group textarea:focus {
+            border-color: var(--kv-green);
+            box-shadow: 0 0 0 3px rgba(30, 122, 58, 0.15);
+        }
+
+        /* ── DROPZONE ── */
+        .dropzone-container {
+            border: 2px dashed var(--kv-green);
+            border-radius: 14px;
+            padding: 1.75rem 1.25rem;
+            text-align: center;
+            background: linear-gradient(180deg, var(--kv-green-pale) 0%, var(--kv-white) 100%);
+            cursor: pointer;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            margin-top: 1.15rem;
+        }
+        .dropzone-container:hover,
+        .dropzone-container.dragging {
+            border-color: var(--kv-gold);
+            background: var(--kv-gold-pale);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px -5px rgba(201, 151, 31, 0.15);
+        }
+        .dropzone-icon-orbit {
+            width: 54px;
+            height: 54px;
+            border-radius: 50%;
+            background: var(--kv-white);
+            border: 1.5px solid var(--kv-border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 0.75rem;
+            color: var(--kv-green);
+            font-size: 1.75rem;
+            box-shadow: 0 4px 6px -1px rgba(30, 122, 58, 0.1);
+            transition: transform 0.2s ease;
+        }
+        .dropzone-container:hover .dropzone-icon-orbit {
+            transform: scale(1.1);
+            color: var(--kv-gold);
+            border-color: var(--kv-gold);
+        }
+        .dropzone-title {
+            margin: 0 0 0.25rem;
+            font-weight: 800;
+            color: var(--kv-text);
+            font-size: 0.95rem;
+        }
+        .dropzone-sub {
+            margin: 0;
+            color: var(--kv-muted);
+            font-size: 0.8rem;
+        }
+        .dropzone-pills {
+            display: flex;
+            justify-content: center;
+            gap: 0.35rem;
+            flex-wrap: wrap;
+            margin-top: 0.75rem;
+        }
+        .type-pill {
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 0.15rem 0.5rem;
+            border-radius: 6px;
+            text-transform: uppercase;
+        }
+        .type-pill.word { background: #dbeafe; color: #1d4ed8; }
+        .type-pill.pdf { background: #fee2e2; color: #b91c1c; }
+        .type-pill.ppt { background: #ffedd5; color: #c2410c; }
+        .type-pill.excel { background: #dcfce7; color: #15803d; }
+        .type-pill.zip { background: #f3e8ff; color: #7e22ce; }
+
+        .dropzone-container input[type="file"] {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        /* ── QUEUE PANEL ── */
+        .upload-preview-section {
+            background: var(--kv-white);
+            border: 1px solid var(--kv-border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            min-height: 600px;
+            box-shadow: var(--kv-shadow-sm);
+        }
+        .upload-queue-panel {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+        .queue-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--kv-border);
+            padding-bottom: 1rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+        }
+        .queue-title {
+            margin: 0;
+            font-size: 1.15rem;
+            font-weight: 800;
+            color: var(--kv-text);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .queue-title i { color: var(--kv-gold); }
+        .queue-stats-badges {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            flex-wrap: wrap;
+        }
+        .queue-stat-pill {
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 0.25rem 0.65rem;
+            border-radius: 20px;
+        }
+        .queue-stat-pill.total { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+        .queue-stat-pill.ready { background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; }
+        .queue-stat-pill.success { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+        .queue-stat-pill.error { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
+
+        /* ── BULK PRICING BAR ── */
+        .bulk-pricing-bar {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 12px 16px;
+            background: var(--kv-gold-pale);
+            border-radius: var(--kv-radius-sm);
+            border: 1px solid var(--kv-gold);
+            margin: 12px 0 16px;
+            flex-wrap: wrap;
+        }
+        .bulk-pricing-bar label {
+            font-weight: 700;
+            font-size: 0.82rem;
+            color: var(--kv-text);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .bulk-pricing-bar input[type="number"] {
+            padding: 6px 12px;
+            border: 1.5px solid var(--kv-border);
+            border-radius: var(--kv-radius-sm);
+            font-size: 0.85rem;
+            width: 120px;
+            background: var(--kv-white);
+            color: var(--kv-text);
+        }
+        .bulk-pricing-bar input[type="number"]:focus {
+            outline: none;
+            border-color: var(--kv-gold);
+        }
+        .bulk-pricing-bar .btn-apply-price {
+            padding: 6px 20px;
+            background: var(--kv-gold);
+            color: var(--kv-primary);
+            border: none;
+            border-radius: var(--kv-radius-sm);
+            font-weight: 700;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: var(--kv-transition);
+        }
+        .bulk-pricing-bar .btn-apply-price:hover {
+            background: var(--kv-gold-light);
+            transform: translateY(-1px);
+        }
+        .bulk-pricing-bar .price-hint {
+            font-size: 0.7rem;
+            color: var(--kv-muted);
+        }
+
+        /* ── QUEUE TOOLBAR ── */
+        .queue-toolbar {
+            background: var(--kv-bg);
+            border: 1px solid var(--kv-border);
+            border-radius: 12px;
+            padding: 0.75rem 1rem;
+            margin-bottom: 1rem;
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+        }
+        .queue-toolbar.visible { display: flex; }
+        .toolbar-section {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+        .toolbar-group {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            flex-wrap: wrap;
+        }
+        .toolbar-label {
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: var(--kv-muted);
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            margin-right: 0.15rem;
+        }
+        .toolbar-btn {
+            background: var(--kv-white);
+            border: 1px solid var(--kv-border);
+            border-radius: 6px;
+            padding: 0.3rem 0.6rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--kv-text);
+            cursor: pointer;
+            transition: all 0.15s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+        .toolbar-btn:hover {
+            background: var(--kv-bg);
+            border-color: var(--kv-green);
+            color: var(--kv-green);
+        }
+        .toolbar-search-wrap {
+            position: relative;
+            min-width: 220px;
+            flex-grow: 1;
+            max-width: 320px;
+        }
+        .toolbar-search-wrap i {
+            position: absolute;
+            left: 0.75rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--kv-muted);
+            font-size: 0.8rem;
+            pointer-events: none;
+        }
+        .toolbar-search-input {
+            width: 100%;
+            padding: 0.35rem 0.75rem 0.35rem 2rem;
+            border: 1px solid var(--kv-border);
+            border-radius: 6px;
+            font-size: 0.8rem;
+            outline: none;
+            background: var(--kv-white);
+            color: var(--kv-text);
+        }
+        .toolbar-search-input:focus {
+            border-color: var(--kv-green);
+            box-shadow: 0 0 0 2px rgba(30, 122, 58, 0.15);
+        }
+
+        /* ── MASTER PROGRESS ── */
+        .master-progress-wrap {
+            background: var(--kv-bg);
+            border: 1.5px solid var(--kv-border);
+            border-radius: 10px;
+            padding: 0.85rem 1.15rem;
+            margin-bottom: 1rem;
+            display: none;
+        }
+        .master-progress-wrap.visible { display: block; }
+        .master-progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: var(--kv-text);
+            margin-bottom: 0.5rem;
+        }
+        .master-progress-pct {
+            font-weight: 800;
+            color: var(--kv-green);
+        }
+        .master-progress-bar-bg {
+            width: 100%;
+            height: 8px;
+            background: var(--kv-border);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        .master-progress-bar-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, var(--kv-green), var(--kv-gold));
+            transition: width 0.2s ease;
+        }
+
+        /* ── QUEUE ITEMS ── */
+        .queue-items-container {
+            flex-grow: 1;
+            overflow-y: auto;
+            max-height: 520px;
+            margin-bottom: 1.25rem;
+            padding-right: 0.35rem;
+        }
+        .queue-placeholder {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 280px;
+            color: var(--kv-muted);
+            text-align: center;
+            background: var(--kv-bg);
+            border: 2px dashed var(--kv-border);
+            border-radius: 12px;
+            padding: 2rem;
+        }
+        .queue-placeholder i {
+            font-size: 3.5rem;
+            margin-bottom: 0.75rem;
+            color: var(--kv-border);
+        }
+
+        .queue-item {
+            background: var(--kv-white);
+            border: 1px solid var(--kv-border);
+            border-radius: 12px;
+            padding: 1rem 1.15rem;
+            margin-bottom: 0.75rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.65rem;
+            transition: all 0.2s ease;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+        }
+        .queue-item:hover {
+            border-color: var(--kv-green);
+            box-shadow: var(--kv-shadow-md);
+        }
+        .queue-item.has-duplicate {
+            border-left: 4px solid var(--kv-gold);
+            background: #fffdf5;
+        }
+
+        .queue-item-meta {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+        .queue-item-left {
+            display: flex;
+            align-items: center;
+            gap: 0.85rem;
+            overflow: hidden;
+            flex-grow: 1;
+            min-width: 240px;
+        }
+        .queue-item-icon {
+            width: 36px;
+            height: 36px;
+            flex-shrink: 0;
+        }
+        .queue-item-info {
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .queue-item-name {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: var(--kv-text);
+            margin: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .queue-item-size {
+            font-size: 0.75rem;
+            color: var(--kv-muted);
+        }
+        .queue-item-right {
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+            flex-shrink: 0;
+        }
+        .queue-item-status {
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 0.25rem 0.6rem;
+            border-radius: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .status-ready { background: #e0f2fe; color: #0369a1; }
+        .status-uploading { background: #fef3c7; color: #d97706; }
+        .status-success { background: #dcfce7; color: #15803d; }
+        .status-error { background: #fee2e2; color: #b91c1c; }
+
+        .queue-item-remove-btn {
+            background: transparent;
+            border: none;
+            color: var(--kv-muted);
+            cursor: pointer;
+            font-size: 1.1rem;
+            padding: 0.25rem;
+            line-height: 1;
+            border-radius: 6px;
+            transition: all 0.15s ease;
+        }
+        .queue-item-remove-btn:hover {
+            color: var(--kv-red);
+            background: var(--kv-red-soft);
+        }
+
+        .queue-item-title-input {
+            width: 100%;
+            padding: 0.55rem 0.85rem;
+            border: 1.5px solid var(--kv-border);
+            border-radius: 8px;
+            font-size: 0.9rem;
+            background: var(--kv-white);
+            outline: none;
+            font-weight: 600;
+            color: var(--kv-text);
+            transition: all 0.2s ease;
+        }
+        .queue-item-title-input:focus {
+            border-color: var(--kv-green);
+            box-shadow: 0 0 0 3px rgba(30, 122, 58, 0.15);
+        }
+
+        .item-override-toggle {
+            font-size: 0.75rem;
+            color: var(--kv-green);
+            cursor: pointer;
+            background: transparent;
+            border: none;
+            padding: 0;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            align-self: flex-start;
+        }
+        .item-override-toggle:hover { color: var(--kv-gold); }
+
+        .item-override-fields {
+            display: none;
+            grid-template-columns: 1fr 1.5fr;
+            gap: 0.75rem;
+            padding-top: 0.6rem;
+            border-top: 1px dashed var(--kv-border);
+        }
+        .item-override-fields.active { display: grid; }
+
+        .queue-progress-bar-container {
+            width: 100%;
+            height: 6px;
+            background: var(--kv-border);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 0.25rem;
+        }
+        .queue-progress-bar {
+            height: 100%;
+            width: 0%;
+            background: var(--kv-green);
+            border-radius: 3px;
+            transition: width 0.1s linear;
+        }
+        .queue-progress-bar.success { background: var(--kv-green); }
+        .queue-progress-bar.error { background: var(--kv-red); }
+
+        /* ── ACTION BUTTONS ── */
+        .action-buttons-row {
+            display: flex;
+            gap: 0.85rem;
+            margin-top: auto;
+            border-top: 1px solid var(--kv-border);
+            padding-top: 1.25rem;
+        }
+        .admin-btn {
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            border: none;
+            cursor: pointer;
+        }
+        .admin-btn-primary {
+            background: var(--kv-green);
+            color: var(--kv-white);
+        }
+        .admin-btn-primary:hover {
+            background: var(--kv-green-light);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(30, 122, 58, 0.25);
+        }
+        .admin-btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .admin-btn-secondary {
+            background: var(--kv-bg);
+            color: var(--kv-text);
+            border: 1px solid var(--kv-border);
+        }
+        .admin-btn-secondary:hover {
+            border-color: var(--kv-red);
+            color: var(--kv-red);
+        }
+        .admin-btn-secondary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* ── SMART DETECT BADGE ── */
+        .smart-detect-badge {
+            background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+            border: 1.5px solid #93c5fd;
+            color: #1d4ed8;
+            padding: 0.5rem 0.85rem;
+            border-radius: 10px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1.15rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 4px rgba(37, 99, 235, 0.08);
+        }
+        .smart-detect-badge:hover {
+            background: #dbeafe;
+            border-color: #60a5fa;
+            transform: translateY(-1px);
+        }
+        .smart-detect-badge.visible { display: flex; }
+
+        /* ── SUMMARY MODAL ── */
+        .summary-modal-overlay,
+        .zip-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(11, 35, 64, 0.7);
+            backdrop-filter: blur(6px);
+            z-index: 10000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+        }
+        .summary-modal-overlay.active,
+        .zip-modal-overlay.active { display: flex; }
+        .summary-card {
+            background: var(--kv-white);
+            border-radius: 20px;
+            padding: 2.25rem;
+            max-width: 520px;
+            width: 100%;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            text-align: center;
+            animation: modalPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        @keyframes modalPop {
+            0% { transform: scale(0.92); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .summary-icon-wrap {
+            width: 68px;
+            height: 68px;
+            border-radius: 50%;
+            background: #dcfce7;
+            color: #15803d;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.25rem;
+            margin: 0 auto 1.25rem;
+        }
+        .summary-stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin: 1.5rem 0;
+            background: var(--kv-bg);
+            border: 1px solid var(--kv-border);
+            border-radius: 12px;
+            padding: 1rem;
+        }
+        .summary-stat-box { text-align: center; }
+        .summary-stat-num {
+            font-size: 1.75rem;
+            font-weight: 800;
+        }
+        .summary-stat-label {
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: var(--kv-muted);
+        }
+
+        /* ── RESPONSIVE ── */
+        @media (max-width: 1100px) {
+            .upload-grid { grid-template-columns: 1fr; }
+            .upload-form-section { position: static; }
+        }
+        @media (max-width: 768px) {
+            .upload-content { padding: 1rem; }
+            .upload-studio-header { padding: 1.25rem; }
+            .form-grid-2col { grid-template-columns: 1fr; }
+            .item-override-fields { grid-template-columns: 1fr; }
+            .topbar-container { height: auto; padding: 10px 16px; flex-wrap: wrap; }
+            .topbar-logo .logo-text { font-size: 1rem; }
+            .topbar-actions .badge { font-size: 0.65rem; padding: 4px 10px; }
+            .action-buttons-row { flex-direction: column; }
+            .action-buttons-row .admin-btn { justify-content: center; }
+            .bulk-pricing-bar { flex-direction: column; align-items: stretch; }
+            .bulk-pricing-bar input[type="number"] { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ── FULLSCREEN DRAG OVERLAY ── -->
+    <div id="windowDragOverlay" class="window-drag-overlay">
+        <div class="window-drag-box">
+            <i class="bi bi-cloud-arrow-up-fill"></i>
+            <h2 style="margin: 0 0 0.5rem; font-size: 1.75rem; font-weight: 800;">Drop Files Anywhere</h2>
+            <p style="margin: 0; font-size: 1rem; color: #94a3b8;">Drop documents or ZIP packages to queue them for batch publishing</p>
+        </div>
+    </div>
+
+    <!-- ── ZIP EXTRACTION MODAL ── -->
+    <div id="zipPromptModal" class="zip-modal-overlay">
+        <div class="summary-card" style="max-width: 480px;">
+            <div class="summary-icon-wrap" style="background: #f3e8ff; color: #7c3aed;">
+                <i class="bi bi-file-earmark-zip"></i>
+            </div>
+            <h3 style="margin: 0 0 0.5rem; font-weight: 800; color: #1e293b;">ZIP Package Detected</h3>
+            <p id="zipFileNameText" style="color: #64748b; font-size: 0.9rem; margin-bottom: 1.5rem; word-break: break-all;"></p>
+            <p style="font-size: 0.9rem; color: #334155; margin-bottom: 1.5rem;">How would you like to handle this ZIP package?</p>
+            <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                <button type="button" class="admin-btn admin-btn-primary" onclick="confirmZipUnpack(true)" style="padding: 0.85rem; justify-content: center; width:100%;">
+                    <i class="bi bi-boxes"></i> Unpack &amp; Queue All Documents Inside
+                </button>
+                <button type="button" class="admin-btn admin-btn-secondary" onclick="confirmZipUnpack(false)" style="padding: 0.75rem; justify-content: center; width:100%;">
+                    <i class="bi bi-file-earmark-zip"></i> Upload As Single ZIP File
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── SUMMARY MODAL ── -->
+    <div id="summaryModal" class="summary-modal-overlay">
+        <div class="summary-card">
+            <div id="summaryIconWrap" class="summary-icon-wrap">
+                <i class="bi bi-check-lg"></i>
+            </div>
+            <h2 id="summaryTitle" style="margin: 0 0 0.5rem; font-size: 1.5rem; font-weight: 800; color: #1e293b;">Upload Complete!</h2>
+            <p id="summaryMessage" style="margin: 0; color: #64748b; font-size: 0.95rem;">Your documents have been published.</p>
+
+            <div class="summary-stats-grid">
+                <div class="summary-stat-box">
+                    <div id="summarySuccessCount" class="summary-stat-num" style="color: #16a34a;">0</div>
+                    <div class="summary-stat-label">Successful</div>
+                </div>
+                <div class="summary-stat-box">
+                    <div id="summaryErrorCount" class="summary-stat-num" style="color: #dc2626;">0</div>
+                    <div class="summary-stat-label">Failed</div>
+                </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                <button type="button" id="summaryRetryBtn" class="admin-btn" style="background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; justify-content: center; padding: 0.75rem; display: none; width:100%;" onclick="retryFailedUploads()">
+                    <i class="bi bi-arrow-clockwise"></i> Retry Failed Items
+                </button>
+                <button type="button" class="admin-btn admin-btn-secondary" onclick="closeSummaryModal()" style="justify-content: center; padding: 0.65rem; width:100%;">
+                    <i class="bi bi-plus-circle"></i> Upload Another Batch
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── TOP BAR ── -->
+    <div class="flag-stripe">
+        <div class="stripe-black"></div>
+        <div class="stripe-red"></div>
+        <div class="stripe-green"></div>
+        <div class="stripe-white"></div>
+    </div>
+
+    <div class="topbar">
+        <div class="topbar-container">
+            <a class="topbar-logo" href="index.html">
+                <div class="logo-icon">KV</div>
+                <div class="logo-text">Kenya<span>Vault</span></div>
+            </a>
+            <div class="topbar-actions">
+                <span class="badge"><i class="fas fa-upload"></i> Upload Resources</span>
+                <a href="admin.html" class="btn-back"><i class="bi bi-arrow-left"></i> Dashboard</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── MAIN CONTENT ── -->
+    <div class="container">
+        <div class="upload-content">
+
+            <div class="upload-studio-header">
+                <div class="studio-header-left">
+                    <h1 class="studio-main-title">
+                        <i class="bi bi-cloud-arrow-up-fill"></i> Document Upload Studio
+                    </h1>
+                    <p class="studio-sub-title">
+                        Bulk publish schemes, exams, lesson plans &amp; revision notes. Configure curriculum targets, drop files, unpack ZIPs, and publish instantly.
+                    </p>
+                </div>
+                <div class="studio-kpi-group">
+                    <div class="studio-kpi-badge"><i class="bi bi-hdd-network"></i> Max 100MB / File</div>
+                    <div class="studio-kpi-badge"><i class="bi bi-file-earmark-zip"></i> Auto-Unpack ZIP</div>
+                    <div class="studio-kpi-badge"><i class="bi bi-magic"></i> Smart Metadata Matcher</div>
+                </div>
+            </div>
+
+            <div class="upload-grid">
+                <!-- ─── LEFT PANEL: FORM ─── -->
+                <div class="upload-form-section">
+                    <div class="panel-header">
+                        <div class="panel-title-wrap">
+                            <span class="studio-step-badge">Step 1</span>
+                            <div>
+                                <h2 class="panel-heading">Curriculum Target</h2>
+                                <div class="panel-subheading">Batch category, level, grade, term &amp; dropzone</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Smart Auto-detect Badge -->
+                    <div id="smartDetectBadge" class="smart-detect-badge" onclick="applySmartDetection()">
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <i class="bi bi-magic"></i>
+                            <span id="smartDetectText">Curriculum match detected from filenames!</span>
+                        </div>
+                        <span style="text-decoration: underline; font-size: 0.75rem;">Apply Match &rarr;</span>
+                    </div>
+
+                    <form id="uploadForm" onsubmit="event.preventDefault();">
+                        <div class="form-grid-2col">
+                            <div class="form-group">
+                                <label for="category_id"><i class="bi bi-folder2-open"></i> Category *</label>
+                                <select id="category_id" required>
+                                    <option value="">Select Category</option>
+                                    <option value="Schemes of Work">📋 Schemes of Work</option>
+                                    <option value="Lesson Plans">📝 Lesson Plans</option>
+                                    <option value="Exams & Assessments">📝 Exams & Assessments</option>
+                                    <option value="Notes">📖 Notes</option>
+                                    <option value="Topical Questions & Revision">🎯 Topical Questions & Revision</option>
+                                    <option value="Holiday Assessments">🏖️ Holiday Assessments</option>
+                                    <option value="Past Papers">📄 Past Papers</option>
+                                    <option value="Revision Materials">🔄 Revision Materials</option>
+                                    <option value="Records of Work">📊 Records of Work</option>
+                                    <option value="Curriculum Designs">📐 Curriculum Designs</option>
+                                    <option value="Booklets">📘 Booklets</option>
+                                    <option value="Free Resources">🎁 Free Resources</option>
+                                    <option value="Other">📂 Other</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="level_id"><i class="bi bi-mortarboard"></i> Level *</label>
+                                <select id="level_id" required>
+                                    <option value="">Select Level</option>
+                                    <option value="Preprimary">Preprimary (ECD)</option>
+                                    <option value="Lower Primary">Lower Primary (Grade 1-3)</option>
+                                    <option value="Upper Primary">Upper Primary (Grade 4-6)</option>
+                                    <option value="Junior Secondary">Junior Secondary (Grade 7-9)</option>
+                                    <option value="Senior School">Senior School (Grade 10-12)</option>
+                                    <option value="Secondary">Secondary (8-4-4 Form 1-4)</option>
+                                    <option value="TVET">TVET</option>
+                                    <option value="College">College</option>
+                                    <option value="University">University</option>
+                                    <option value="General">General</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-grid-2col">
+                            <div class="form-group">
+                                <label for="grade_id"><i class="bi bi-bookmark-star"></i> Grade/Form *</label>
+                                <select id="grade_id" required>
+                                    <option value="">Select Grade/Form</option>
+                                    <optgroup label="Preprimary">
+                                        <option value="PP1">PP1</option>
+                                        <option value="PP2">PP2</option>
+                                    </optgroup>
+                                    <optgroup label="Lower Primary">
+                                        <option value="Grade 1">Grade 1</option>
+                                        <option value="Grade 2">Grade 2</option>
+                                        <option value="Grade 3">Grade 3</option>
+                                    </optgroup>
+                                    <optgroup label="Upper Primary">
+                                        <option value="Grade 4">Grade 4</option>
+                                        <option value="Grade 5">Grade 5</option>
+                                        <option value="Grade 6">Grade 6</option>
+                                    </optgroup>
+                                    <optgroup label="Junior Secondary">
+                                        <option value="Grade 7">Grade 7</option>
+                                        <option value="Grade 8">Grade 8</option>
+                                        <option value="Grade 9">Grade 9</option>
+                                    </optgroup>
+                                    <optgroup label="Senior School">
+                                        <option value="Grade 10">Grade 10</option>
+                                        <option value="Grade 11">Grade 11</option>
+                                        <option value="Grade 12">Grade 12</option>
+                                    </optgroup>
+                                    <optgroup label="8-4-4 Secondary">
+                                        <option value="Form 1">Form 1</option>
+                                        <option value="Form 2">Form 2</option>
+                                        <option value="Form 3">Form 3</option>
+                                        <option value="Form 4">Form 4</option>
+                                    </optgroup>
+                                    <optgroup label="Other">
+                                        <option value="University">University</option>
+                                        <option value="College">College</option>
+                                        <option value="TVET">TVET</option>
+                                        <option value="General">General</option>
+                                    </optgroup>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="term_id"><i class="bi bi-calendar3"></i> Term *</label>
+                                <select id="term_id" required>
+                                    <option value="">Select Term</option>
+                                    <option value="Term 1">Term 1</option>
+                                    <option value="Term 2">Term 2</option>
+                                    <option value="Term 3">Term 3</option>
+                                    <option value="All Year">All Year</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-grid-2col">
+                            <div class="form-group">
+                                <label for="price"><i class="bi bi-tag"></i> Default Price (KES) *</label>
+                                <input type="number" id="price" value="0" min="0" step="1" required
+                                       oninput="syncDefaultPriceToQueue(this.value)">
+                            </div>
+                            <div class="form-group">
+                                <label for="description"><i class="bi bi-text-paragraph"></i> Batch Note</label>
+                                <input type="text" id="description" placeholder="Applied to all files...">
+                            </div>
+                        </div>
+
+                        <div id="dropzone" class="dropzone-container">
+                            <div class="dropzone-icon-orbit">
+                                <i class="bi bi-cloud-arrow-up-fill"></i>
+                            </div>
+                            <p class="dropzone-title">Drag &amp; Drop documents or ZIP packages here</p>
+                            <p class="dropzone-sub">or click to browse files</p>
+                            <div class="dropzone-pills">
+                                <span class="type-pill word">Word</span>
+                                <span class="type-pill pdf">PDF</span>
+                                <span class="type-pill ppt">PowerPoint</span>
+                                <span class="type-pill excel">Excel</span>
+                                <span class="type-pill zip">ZIP</span>
+                            </div>
+                            <input type="file" id="fileInput" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip">
+                        </div>
+                    </form>
+                </div>
+
+                <!-- ─── RIGHT PANEL: QUEUE ─── -->
+                <div class="upload-preview-section">
+                    <div class="upload-queue-panel">
+                        <div class="queue-header">
+                            <div class="panel-title-wrap">
+                                <span class="studio-step-badge purple">Step 2</span>
+                                <div>
+                                    <h3 class="queue-title">
+                                        <i class="bi bi-collection-play-fill"></i> Upload Queue
+                                    </h3>
+                                    <div class="panel-subheading">Review titles, set prices &amp; publish</div>
+                                </div>
+                            </div>
+                            <div class="queue-stats-badges">
+                                <span id="queueTotalCount" class="queue-stat-pill total">0 Files</span>
+                                <span id="queueReadyCount" class="queue-stat-pill ready" style="display:none;">0 Ready</span>
+                                <span id="queueSuccessCount" class="queue-stat-pill success" style="display:none;">0 Uploaded</span>
+                                <span id="queueErrorCount" class="queue-stat-pill error" style="display:none;">0 Failed</span>
+                            </div>
+                        </div>
+
+                        <!-- ── BULK PRICING BAR ── -->
+                        <div id="bulkPricingBar" class="bulk-pricing-bar" style="display:none;">
+                            <label>
+                                <i class="fas fa-tags"></i> Bulk Pricing:
+                            </label>
+                            <input type="number" id="bulkPriceAll" value="0" min="0" step="1" placeholder="Enter price" />
+                            <span class="price-hint">Apply price to all files</span>
+                            <button type="button" class="btn-apply-price" onclick="applyBulkPriceToAll()">
+                                <i class="fas fa-check"></i> Apply to All
+                            </button>
+                        </div>
+
+                        <!-- ── QUEUE TOOLBAR ── -->
+                        <div id="queueToolbar" class="queue-toolbar">
+                            <div class="toolbar-section">
+                                <div class="toolbar-group">
+                                    <span class="toolbar-label"><i class="bi bi-tag-fill"></i> Price:</span>
+                                    <button type="button" class="toolbar-btn" onclick="bulkSetPrice(0)">Free</button>
+                                    <button type="button" class="toolbar-btn" onclick="bulkSetPrice(50)">50</button>
+                                    <button type="button" class="toolbar-btn" onclick="bulkSetPrice(100)">100</button>
+                                    <button type="button" class="toolbar-btn" onclick="bulkSetPrice(200)">200</button>
+                                    <button type="button" class="toolbar-btn" onclick="bulkSetPrice(500)">500</button>
+                                </div>
+                                <div class="toolbar-group">
+                                    <span class="toolbar-label"><i class="bi bi-type"></i> Titles:</span>
+                                    <button type="button" class="toolbar-btn" onclick="autoCleanAllTitles()"><i class="bi bi-stars"></i> Smart Format</button>
+                                </div>
+                            </div>
+                            <div class="toolbar-search-wrap">
+                                <i class="bi bi-search"></i>
+                                <input type="text" id="queueSearchInput" class="toolbar-search-input" placeholder="Filter files..." oninput="filterQueueItems(this.value)">
+                            </div>
+                        </div>
+
+                        <!-- ── MASTER PROGRESS ── -->
+                        <div id="masterProgressWrap" class="master-progress-wrap">
+                            <div class="master-progress-header">
+                                <span id="masterProgressText"><i class="bi bi-arrow-repeat spin"></i> Uploading batch...</span>
+                                <span id="masterProgressPercent" class="master-progress-pct">0%</span>
+                            </div>
+                            <div class="master-progress-bar-bg">
+                                <div id="masterProgressBar" class="master-progress-bar-fill"></div>
+                            </div>
+                        </div>
+
+                        <!-- ── QUEUE ITEMS ── -->
+                        <div class="queue-items-container">
+                            <div id="queuePlaceholder" class="queue-placeholder">
+                                <i class="bi bi-cloud-arrow-up"></i>
+                                <p style="margin: 0 0 0.25rem; font-weight: 800; color: #1e293b; font-size: 1.15rem;">No files in queue</p>
+                                <p style="margin: 0; font-size: 0.85rem; color: var(--kv-muted);">Drop documents or ZIP archives on the left to begin</p>
+                            </div>
+                            <div id="queueList"></div>
+                        </div>
+
+                        <!-- ── ACTION BUTTONS ── -->
+                        <div class="action-buttons-row">
+                            <button type="button" id="clearQueueBtn" class="admin-btn admin-btn-secondary" onclick="clearQueue()" disabled style="flex:1;">
+                                <i class="bi bi-x-circle"></i> Clear Queue
+                            </button>
+                            <button type="button" id="startUploadBtn" class="admin-btn admin-btn-primary" onclick="startUpload()" disabled style="flex:2.5; font-size:1rem; font-weight:800;">
+                                <i class="bi bi-cloud-upload-fill"></i> Publish All to Library
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
+        // KENYAVAULT — UPLOAD SCRIPT
+        // ============================================================
+
+        // ─── SUPABASE CONFIG ──────────────────────────────────────
+        var SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
+        var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
+        var supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // ─── STATE ──────────────────────────────────────────────
+        var uploadQueue = [];
+        var pendingZipFile = null;
+        var detectedCurriculumMatch = null;
+        var queueSearchQuery = '';
+        var isUploading = false;
+
+        // ─── ALLOWED EXTENSIONS ──────────────────────────────────
+        var allowedExtensions = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'jpg', 'jpeg', 'png', 'zip'];
+        var maxUploadSizeBytes = 104857600; // 100MB
+
+        // ─── FILE ICONS ──────────────────────────────────────────
+        var fileIcons = {
+            pdf: '<i class="bi bi-file-earmark-pdf" style="font-size:2rem;color:#dc2626;"></i>',
+            doc: '<i class="bi bi-file-earmark-word" style="font-size:2rem;color:#2563eb;"></i>',
+            docx: '<i class="bi bi-file-earmark-word" style="font-size:2rem;color:#2563eb;"></i>',
+            xls: '<i class="bi bi-file-earmark-excel" style="font-size:2rem;color:#16a34a;"></i>',
+            xlsx: '<i class="bi bi-file-earmark-excel" style="font-size:2rem;color:#16a34a;"></i>',
+            ppt: '<i class="bi bi-file-earmark-slides" style="font-size:2rem;color:#d97706;"></i>',
+            pptx: '<i class="bi bi-file-earmark-slides" style="font-size:2rem;color:#d97706;"></i>',
+            zip: '<i class="bi bi-file-earmark-zip" style="font-size:2rem;color:#7c3aed;"></i>',
+            default: '<i class="bi bi-file-earmark" style="font-size:2rem;color:#6b7280;"></i>'
+        };
+
+        // ─── DOM REFS ──────────────────────────────────────────────
+        var dropzone = document.getElementById('dropzone');
+        var fileInput = document.getElementById('fileInput');
+        var overlay = document.getElementById('windowDragOverlay');
+        var queueList = document.getElementById('queueList');
+        var placeholder = document.getElementById('queuePlaceholder');
+        var totalCountBadge = document.getElementById('queueTotalCount');
+        var readyBadge = document.getElementById('queueReadyCount');
+        var successBadge = document.getElementById('queueSuccessCount');
+        var errorBadge = document.getElementById('queueErrorCount');
+        var toolbar = document.getElementById('queueToolbar');
+        var uploadBtn = document.getElementById('startUploadBtn');
+        var clearBtn = document.getElementById('clearQueueBtn');
+        var masterWrap = document.getElementById('masterProgressWrap');
+        var masterBar = document.getElementById('masterProgressBar');
+        var masterText = document.getElementById('masterProgressText');
+        var masterPercent = document.getElementById('masterProgressPercent');
+        var bulkPricingBar = document.getElementById('bulkPricingBar');
+        var smartBadge = document.getElementById('smartDetectBadge');
+        var searchInput = document.getElementById('queueSearchInput');
+
+        // ─── TOAST ──────────────────────────────────────────────
+        function showToast(title, message, type) {
+            type = type || 'success';
+            var container = document.getElementById('toastContainer');
+            if (!container) {
+                var newContainer = document.createElement('div');
+                newContainer.id = 'toastContainer';
+                newContainer.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:99999;max-width:380px;width:100%;';
+                document.body.appendChild(newContainer);
+                container = newContainer;
+            }
+
+            var toast = document.createElement('div');
+            toast.style.cssText = 'background:var(--kv-white);border-radius:12px;padding:14px 18px;box-shadow:0 8px 32px rgba(11,35,64,0.12);border-left:4px solid ' + (type === 'success' ? '#1E7A3A' : type === 'error' ? '#BB0000' : '#C9971F') + ';margin-bottom:8px;animation:slideInRight 0.4s cubic-bezier(.34,1.56,.64,1);';
+            toast.innerHTML = '<div style="font-weight:700;font-size:.85rem;color:var(--kv-text);">' + title + '</div><div style="font-size:.8rem;color:var(--kv-muted);">' + message + '</div>';
+            container.appendChild(toast);
+
+            setTimeout(function() {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(40px)';
+                toast.style.transition = 'all .3s';
+                setTimeout(function() { if (toast.parentNode) toast.remove(); }, 300);
+            }, 5000);
+        }
+
+        // ─── FORMAT FILE SIZE ──────────────────────────────────
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            var k = 1024;
+            var sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            var i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        // ─── ESCAPE HTML ──────────────────────────────────────
+        function escapeHtml(string) {
+            if (!string) return '';
+            var entityMap = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+            return String(string).replace(/[&<>"']/g, function(s) { return entityMap[s]; });
+        }
+
+        // ─── FORMAT CLEAN TITLE ──────────────────────────────
+        function formatCleanTitle(filename) {
+            var rawName = filename.replace(/\.[^/.]+$/, '');
+            rawName = rawName.replace(/(_[a-f0-9]{8,32})+$/i, '');
+            rawName = rawName.replace(/[-_]([a-f0-9]{8,32})+$/i, '');
+            return rawName
+                .replace(/&amp;/g, '&')
+                .replace(/\bamp\b/gi, '&')
+                .replace(/_/g, ' ')
+                .replace(/-/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .replace(/\b\w/g, function(l) { return l.toUpperCase(); })
+                .replace(/\bAmp\b/g, '&');
+        }
+
+        // ─── ADD FILE TO QUEUE ──────────────────────────────────
+        function addFileToQueue(file) {
+            var fileExt = file.name.split('.').pop().toLowerCase();
+
+            if (!allowedExtensions.includes(fileExt)) {
+                showToast('Error', 'File "' + file.name + '" has unsupported extension.', 'error');
+                return;
+            }
+
+            if (file.size > maxUploadSizeBytes) {
+                showToast('Error', 'File "' + file.name + '" exceeds 100MB limit.', 'error');
+                return;
+            }
+
+            if (uploadQueue.some(function(item) { return item.file.name === file.name && item.file.size === file.size; })) {
+                return;
+            }
+
+            var cleanTitle = formatCleanTitle(file.name);
+            var defaultPrice = parseInt(document.getElementById('price').value) || 0;
+            var defaultDesc = document.getElementById('description').value || '';
+
+            var queueId = 'q_' + Math.random().toString(36).substr(2, 9);
+            var queueItem = {
+                id: queueId,
+                file: file,
+                title: cleanTitle,
+                price: defaultPrice,
+                description: defaultDesc,
+                termOverride: '',
+                status: 'ready',
+                progress: 0,
+                errorMsg: '',
+                isDuplicate: false,
+                existingDoc: null
+            };
+
+            uploadQueue.push(queueItem);
+            renderQueue();
+            checkAndSuggestHeuristic();
+            showToast('Added', file.name + ' added to queue.', 'success');
+        }
+
+        // ─── PROCESS FILES ──────────────────────────────────────
+        function processIncomingFiles(files) {
+            for (var i = 0; i < files.length; i++) {
+                var file = files[i];
+                var ext = file.name.split('.').pop().toLowerCase();
+
+                if (ext === 'zip') {
+                    pendingZipFile = file;
+                    document.getElementById('zipFileNameText').textContent = file.name;
+                    document.getElementById('zipPromptModal').classList.add('active');
+                    return;
+                } else {
+                    addFileToQueue(file);
+                }
+            }
+            renderQueue();
+            checkAndSuggestHeuristic();
+        }
+
+        // ─── CONFIRM ZIP UNPACK ──────────────────────────────────
+        function confirmZipUnpack(unpack) {
+            document.getElementById('zipPromptModal').classList.remove('active');
+            if (!pendingZipFile) return;
+
+            var zipFile = pendingZipFile;
+            pendingZipFile = null;
+
+            if (!unpack) {
+                addFileToQueue(zipFile);
+                renderQueue();
+                checkAndSuggestHeuristic();
+                return;
+            }
+
+            // Unpack ZIP
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    var zip = new JSZip();
+                    zip.loadAsync(e.target.result).then(function(zipContents) {
+                        var extractedCount = 0;
+                        var promises = [];
+
+                        zipContents.forEach(function(relativePath, zipEntry) {
+                            if (!zipEntry.dir && !relativePath.startsWith('__MACOSX/') && !relativePath.includes('/.')) {
+                                var ext = relativePath.split('.').pop().toLowerCase();
+                                if (allowedExtensions.includes(ext) && ext !== 'zip') {
+                                    promises.push(
+                                        zipEntry.async('blob').then(function(blob) {
+                                            var cleanFileName = relativePath.split('/').pop();
+                                            var extractedFile = new File([blob], cleanFileName, { type: blob.type });
+                                            addFileToQueue(extractedFile);
+                                            extractedCount++;
+                                        })
+                                    );
+                                }
+                            }
+                        });
+
+                        Promise.all(promises).then(function() {
+                            renderQueue();
+                            checkAndSuggestHeuristic();
+                            showToast('ZIP Extracted', 'Extracted ' + extractedCount + ' files from ZIP archive.', 'success');
+                        });
+                    });
+                } catch (err) {
+                    showToast('Error', 'Failed to unpack ZIP: ' + err.message, 'error');
+                    addFileToQueue(zipFile);
+                    renderQueue();
+                }
+            };
+            reader.readAsArrayBuffer(zipFile);
+        }
+
+        // ─── SMART CURRICULUM HEURISTIC ──────────────────────────
+        function parseCurriculumHeuristic(text) {
+            var catTitle = 'Schemes of Work';
+            if (/lesson\s*plan|lp\b/i.test(text)) {
+                catTitle = 'Lesson Plans';
+            } else if (/setbook|novel|play|fasihi|tamthilia/i.test(text)) {
+                catTitle = 'Booklets';
+            } else if (/notes|revision|summary|guide|study\s*notes/i.test(text)) {
+                catTitle = 'Notes';
+            } else if (/exam|assessment|test|eval|paper|mock|opener|mid\s*term|end\s*term|kcse|kjsea/i.test(text)) {
+                catTitle = 'Exams & Assessments';
+            } else if (/holiday|assignment|homework|vacation/i.test(text)) {
+                catTitle = 'Holiday Assessments';
+            } else if (/curriculum\s*design/i.test(text)) {
+                catTitle = 'Curriculum Designs';
+            } else if (/scheme|sow/i.test(text)) {
+                catTitle = 'Schemes of Work';
+            }
+
+            var gradeTitle = 'Grade 7';
+            var gm = text.match(/\b(?:grade|grd|g)[-_\s]*(1[0-2]|[1-9])\b/i);
+            if (gm) {
+                var gradeNum = parseInt(gm[1], 10);
+                if (gradeNum >= 1 && gradeNum <= 12) {
+                    gradeTitle = 'Grade ' + gradeNum;
+                }
+            } else {
+                var fm = text.match(/\b(?:form|f)[-_\s]*([1-4])\b/i);
+                if (fm) {
+                    gradeTitle = 'Form ' + fm[1];
+                } else {
+                    var pm = text.match(/\b(?:pp|pre[-_\s]*primary)[-_\s]*([1-2])\b/i);
+                    if (pm) {
+                        gradeTitle = 'PP' + pm[1];
+                    }
+                }
+            }
+
+            var termTitle = 'Term 1';
+            var tm = text.match(/\b(?:term|t)[-_\s]*([1-3]|i{1,3})\b/i);
+            if (tm) {
+                var tVal = tm[1].toLowerCase();
+                if (tVal === 'i' || tVal === '1') termTitle = 'Term 1';
+                else if (tVal === 'ii' || tVal === '2') termTitle = 'Term 2';
+                else if (tVal === 'iii' || tVal === '3') termTitle = 'Term 3';
+            }
+
+            return { categoryTitle: catTitle, gradeTitle: gradeTitle, termTitle: termTitle };
+        }
+
+        function checkAndSuggestHeuristic() {
+            if (uploadQueue.length === 0) return;
+
+            var sampleTitles = '';
+            for (var i = 0; i < Math.min(uploadQueue.length, 5); i++) {
+                sampleTitles += uploadQueue[i].title + ' ';
+            }
+
+            var match = parseCurriculumHeuristic(sampleTitles);
+
+            if (match && (!document.getElementById('category_id').value || !document.getElementById('grade_id').value)) {
+                detectedCurriculumMatch = match;
+                var text = document.getElementById('smartDetectText');
+                text.innerHTML = 'Auto-Detected: <strong>' + match.categoryTitle + ' &bull; ' + match.gradeTitle + ' &bull; ' + match.termTitle + '</strong>';
+                smartBadge.classList.add('visible');
+            }
+        }
+
+        function applySmartDetection() {
+            if (!detectedCurriculumMatch) return;
+            var match = detectedCurriculumMatch;
+
+            // Select Category
+            var catSelect = document.getElementById('category_id');
+            for (var i = 0; i < catSelect.options.length; i++) {
+                if (catSelect.options[i].text.toLowerCase().includes(match.categoryTitle.toLowerCase())) {
+                    catSelect.selectedIndex = i;
+                    break;
+                }
+            }
+
+            // Select Grade
+            var gradeSelect = document.getElementById('grade_id');
+            for (var j = 0; j < gradeSelect.options.length; j++) {
+                if (gradeSelect.options[j].text.toLowerCase().includes(match.gradeTitle.toLowerCase())) {
+                    gradeSelect.selectedIndex = j;
+                    break;
+                }
+            }
+
+            // Select Term
+            var termSelect = document.getElementById('term_id');
+            for (var k = 0; k < termSelect.options.length; k++) {
+                if (termSelect.options[k].text.toLowerCase().includes(match.termTitle.toLowerCase())) {
+                    termSelect.selectedIndex = k;
+                    break;
+                }
+            }
+
+            smartBadge.classList.remove('visible');
+            showToast('Applied', 'Curriculum metadata applied: ' + match.categoryTitle + ' > ' + match.gradeTitle + ' > ' + match.termTitle, 'success');
+        }
+
+        // ─── BULK PRICING ──────────────────────────────────────────
+        function applyBulkPriceToAll() {
+            var price = parseFloat(document.getElementById('bulkPriceAll').value) || 0;
+            if (price < 0) {
+                showToast('Error', 'Price cannot be negative.', 'error');
+                return;
+            }
+
+            var applied = 0;
+            for (var i = 0; i < uploadQueue.length; i++) {
+                if (uploadQueue[i].status === 'ready') {
+                    uploadQueue[i].price = price;
+                    applied++;
+                }
+            }
+
+            document.getElementById('price').value = price;
+            renderQueue();
+            showToast('Bulk Pricing Applied', 'Price KES ' + price.toLocaleString() + ' applied to ' + applied + ' file(s).', 'success');
+        }
+
+        function bulkSetPrice(price) {
+            document.getElementById('price').value = price;
+            document.getElementById('bulkPriceAll').value = price;
+            syncDefaultPriceToQueue(price);
+            showToast('Price Set', 'KES ' + price + ' applied to all items.', 'success');
+        }
+
+        function syncDefaultPriceToQueue(val) {
+            var p = Math.max(0, parseInt(val) || 0);
+            for (var i = 0; i < uploadQueue.length; i++) {
+                if (uploadQueue[i].status === 'ready') {
+                    uploadQueue[i].price = p;
+                }
+            }
+            renderQueue();
+        }
+
+        // ─── AUTO CLEAN TITLES ──────────────────────────────────
+        function autoCleanAllTitles() {
+            for (var i = 0; i < uploadQueue.length; i++) {
+                if (uploadQueue[i].status === 'ready') {
+                    uploadQueue[i].title = formatCleanTitle(uploadQueue[i].title);
+                }
+            }
+            renderQueue();
+            showToast('Titles Formatted', 'All titles cleaned and formatted.', 'success');
+        }
+
+        // ─── FILTER QUEUE ──────────────────────────────────────
+        function filterQueueItems(val) {
+            queueSearchQuery = (val || '').toLowerCase().trim();
+            renderQueue();
+        }
+
+        // ─── RENDER QUEUE ──────────────────────────────────────
+        function renderQueue() {
+            if (uploadQueue.length === 0) {
+                placeholder.style.display = 'flex';
+                queueList.innerHTML = '';
+                totalCountBadge.textContent = '0 Files';
+                if (readyBadge) readyBadge.style.display = 'none';
+                if (successBadge) successBadge.style.display = 'none';
+                if (errorBadge) errorBadge.style.display = 'none';
+                toolbar.style.display = 'none';
+                bulkPricingBar.style.display = 'none';
+                uploadBtn.disabled = true;
+                clearBtn.disabled = true;
+                return;
+            }
+
+            placeholder.style.display = 'none';
+            toolbar.style.display = 'flex';
+            bulkPricingBar.style.display = 'flex';
+
+            var totalBytes = 0;
+            var readyCount = 0;
+            var successCount = 0;
+            var errorCount = 0;
+
+            for (var i = 0; i < uploadQueue.length; i++) {
+                totalBytes += uploadQueue[i].file.size;
+                if (uploadQueue[i].status === 'ready') readyCount++;
+                else if (uploadQueue[i].status === 'success') successCount++;
+                else if (uploadQueue[i].status === 'error') errorCount++;
+            }
+
+            totalCountBadge.textContent = uploadQueue.length + ' Files (' + formatFileSize(totalBytes) + ')';
+
+            if (readyBadge) {
+                readyBadge.style.display = readyCount > 0 ? 'inline-block' : 'none';
+                readyBadge.textContent = readyCount + ' Ready';
+            }
+            if (successBadge) {
+                successBadge.style.display = successCount > 0 ? 'inline-block' : 'none';
+                successBadge.textContent = successCount + ' Uploaded';
+            }
+            if (errorBadge) {
+                errorBadge.style.display = errorCount > 0 ? 'inline-block' : 'none';
+                errorBadge.textContent = errorCount + ' Failed';
+            }
+
+            uploadBtn.disabled = readyCount === 0 || isUploading;
+            uploadBtn.innerHTML = '<i class="bi bi-cloud-upload-fill"></i> Publish All (' + readyCount + ' Documents)';
+            clearBtn.disabled = isUploading;
+
+            // Sync titles from DOM
+            var titleInputs = document.querySelectorAll('.queue-item-title-input');
+            for (var t = 0; t < titleInputs.length; t++) {
+                var input = titleInputs[t];
+                var qid = input.getAttribute('data-id');
+                for (var u = 0; u < uploadQueue.length; u++) {
+                    if (uploadQueue[u].id === qid) {
+                        uploadQueue[u].title = input.value;
+                        break;
+                    }
+                }
+            }
+
+            var filteredItems = queueSearchQuery ? uploadQueue.filter(function(item) {
+                return item.title.toLowerCase().includes(queueSearchQuery) || item.file.name.toLowerCase().includes(queueSearchQuery);
+            }) : uploadQueue;
+
+            if (filteredItems.length === 0 && queueSearchQuery) {
+                queueList.innerHTML = '<div style="text-align:center;padding:2rem;color:#64748b;"><i class="bi bi-search" style="font-size:2rem;color:#cbd5e1;display:block;margin-bottom:0.5rem;"></i>No files match "<strong>' + escapeHtml(queueSearchQuery) + '"</strong></div>';
+                return;
+            }
+
+            var html = '';
+            for (var f = 0; f < filteredItems.length; f++) {
+                var item = filteredItems[f];
+                var fileExt = item.file.name.split('.').pop().toLowerCase();
+                var iconHtml = fileIcons[fileExt] || fileIcons.default;
+
+                var statusClass = 'status-ready';
+                var statusText = 'Ready';
+                if (item.status === 'uploading') {
+                    statusClass = 'status-uploading';
+                    statusText = 'Uploading ' + item.progress + '%';
+                } else if (item.status === 'success') {
+                    statusClass = 'status-success';
+                    statusText = 'Uploaded';
+                } else if (item.status === 'error') {
+                    statusClass = 'status-error';
+                    statusText = 'Failed';
+                }
+
+                var sizeText = formatFileSize(item.file.size);
+                var isDup = item.isDuplicate && item.status === 'ready';
+
+                html += '<div class="queue-item ' + (isDup ? 'has-duplicate' : '') + '" id="item_' + item.id + '">';
+                html += '  <div class="queue-item-meta">';
+                html += '    <div class="queue-item-left">';
+                html += '      <div class="queue-item-icon">' + iconHtml + '</div>';
+                html += '      <div class="queue-item-info">';
+                html += '        <p class="queue-item-name" title="' + escapeHtml(item.file.name) + '">' + escapeHtml(item.file.name) + '</p>';
+                html += '        <span class="queue-item-size">' + sizeText + ' &bull; Price: KES ' + item.price + '</span>';
+                html += '      </div>';
+                html += '    </div>';
+                html += '    <div class="queue-item-right">';
+                html += '      <span class="queue-item-status ' + statusClass + '">' + statusText + '</span>';
+                if (item.status === 'ready') {
+                    html += '      <button type="button" class="queue-item-remove-btn" onclick="removeFromQueue(\'' + item.id + '\')" title="Remove"><i class="bi bi-trash3"></i></button>';
+                }
+                html += '    </div>';
+                html += '  </div>';
+
+                if (isDup) {
+                    html += '  <div style="font-size:0.75rem;color:#b45309;font-weight:600;display:flex;align-items:center;justify-content:space-between;background:#fef3c7;padding:0.4rem 0.75rem;border-radius:8px;border:1px solid #fde68a;">';
+                    html += '    <span><i class="bi bi-exclamation-triangle-fill"></i> Potential duplicate found</span>';
+                    html += '    <button type="button" class="toolbar-btn" style="padding:0.15rem 0.5rem;font-size:0.7rem;" onclick="removeFromQueue(\'' + item.id + '\')">Skip</button>';
+                    html += '  </div>';
+                }
+
+                if (item.status === 'ready') {
+                    html += '  <div class="queue-item-title-group">';
+                    html += '    <input type="text" id="title_' + item.id + '" data-id="' + item.id + '" class="queue-item-title-input" value="' + escapeHtml(item.title) + '" oninput="updateQueueItemTitle(\'' + item.id + '\', this.value)" placeholder="Enter document title...">';
+                    html += '  </div>';
+                    html += '  <button type="button" class="item-override-toggle" onclick="toggleItemOverrides(\'' + item.id + '\')">';
+                    html += '    <i class="bi bi-sliders2"></i> Customize Price &amp; Note';
+                    html += '  </button>';
+                    html += '  <div id="overrides_' + item.id + '" class="item-override-fields">';
+                    html += '    <div>';
+                    html += '      <label style="font-size:0.7rem;font-weight:700;color:var(--kv-muted);">Price (KES)</label>';
+                    html += '      <input type="number" class="queue-item-title-input" value="' + item.price + '" onchange="updateItemPrice(\'' + item.id + '\', this.value)" min="0">';
+                    html += '    </div>';
+                    html += '    <div>';
+                    html += '      <label style="font-size:0.7rem;font-weight:700;color:var(--kv-muted);">Note</label>';
+                    html += '      <input type="text" class="queue-item-title-input" value="' + escapeHtml(item.description) + '" onchange="updateItemDesc(\'' + item.id + '\', this.value)" placeholder="Specific note...">';
+                    html += '    </div>';
+                    html += '  </div>';
+                } else {
+                    html += '  <div style="font-size:0.85rem;font-weight:600;color:var(--kv-text);">Title: ' + escapeHtml(item.title) + '</div>';
+                }
+
+                if (item.status === 'error') {
+                    html += '  <div style="color:#dc2626;font-size:0.8rem;font-weight:600;margin-top:0.25rem;">';
+                    html += '    <i class="bi bi-exclamation-triangle"></i> ' + escapeHtml(item.errorMsg);
+                    html += '  </div>';
+                }
+
+                html += '  <div class="queue-progress-bar-container" style="display:' + (item.status === 'uploading' || item.status === 'success' || item.status === 'error' ? 'block' : 'none') + ';">';
+                html += '    <div class="queue-progress-bar ' + (item.status === 'success' ? 'success' : '') + (item.status === 'error' ? 'error' : '') + '" style="width:' + item.progress + '%;"></div>';
+                html += '  </div>';
+                html += '</div>';
+            }
+
+            queueList.innerHTML = html;
+        }
+
+        // ─── QUEUE ITEM ACTIONS ──────────────────────────────────
+        function updateQueueItemTitle(id, newTitle) {
+            for (var i = 0; i < uploadQueue.length; i++) {
+                if (uploadQueue[i].id === id) {
+                    uploadQueue[i].title = newTitle;
+                    break;
+                }
+            }
+        }
+
+        function updateItemPrice(id, newPrice) {
+            for (var i = 0; i < uploadQueue.length; i++) {
+                if (uploadQueue[i].id === id) {
+                    uploadQueue[i].price = Math.max(0, parseInt(newPrice) || 0);
+                    renderQueue();
+                    break;
+                }
+            }
+        }
+
+        function updateItemDesc(id, newDesc) {
+            for (var i = 0; i < uploadQueue.length; i++) {
+                if (uploadQueue[i].id === id) {
+                    uploadQueue[i].description = newDesc;
+                    break;
+                }
+            }
+        }
+
+        function toggleItemOverrides(id) {
+            var el = document.getElementById('overrides_' + id);
+            if (el) el.classList.toggle('active');
+        }
+
+        function removeFromQueue(id) {
+            uploadQueue = uploadQueue.filter(function(item) { return item.id !== id; });
+            renderQueue();
+        }
+
+        function clearQueue() {
+            if (isUploading) return;
+            uploadQueue = [];
+            renderQueue();
+        }
+
+        // ─── UPLOAD ENGINE ──────────────────────────────────────
+        async function startUpload() {
+            var cat = document.getElementById('category_id').value;
+            var level = document.getElementById('level_id').value;
+            var grade = document.getElementById('grade_id').value;
+            var term = document.getElementById('term_id').value;
+            var defaultDesc = document.getElementById('description').value;
+
+            if (!cat || !level || !grade || !term) {
+                showToast('Error', 'Please select Category, Level, Grade, and Term first.', 'error');
+                return;
+            }
+
+            var readyItems = uploadQueue.filter(function(item) { return item.status === 'ready'; });
+            if (readyItems.length === 0) {
+                showToast('Error', 'No documents ready for upload.', 'error');
+                return;
+            }
+
+            isUploading = true;
+            disableControls(true);
+
+            // Master Progress
+            masterWrap.classList.add('visible');
+            var completedCount = 0;
+            var totalCount = readyItems.length;
+            var successCount = 0;
+            var errorCount = 0;
+
+            var updateMasterProgress = function() {
+                var pct = Math.round((completedCount / totalCount) * 100);
+                masterBar.style.width = pct + '%';
+                masterText.textContent = 'Uploaded ' + completedCount + ' of ' + totalCount + ' file(s)...';
+                masterPercent.textContent = pct + '%';
+            };
+
+            updateMasterProgress();
+
+            // Upload each file sequentially (2 concurrent)
+            var CONCURRENCY = 2;
+            var itemIndex = 0;
+
+            var worker = async function() {
+                while (itemIndex < readyItems.length) {
+                    var currentItem = readyItems[itemIndex++];
+                    currentItem.status = 'uploading';
+                    currentItem.progress = 0;
+                    renderQueue();
+
+                    try {
+                        await uploadSingleFile(currentItem, cat, level, grade, term, currentItem.price, currentItem.description || defaultDesc);
+                        currentItem.status = 'success';
+                        currentItem.progress = 100;
+                        successCount++;
+                    } catch (errorText) {
+                        currentItem.status = 'error';
+                        currentItem.progress = 100;
+                        currentItem.errorMsg = errorText;
+                        errorCount++;
+                    }
+
+                    completedCount++;
+                    updateMasterProgress();
+                    renderQueue();
+                }
+            };
+
+            var workers = [];
+            for (var w = 0; w < Math.min(CONCURRENCY, readyItems.length); w++) {
+                workers.push(worker());
+            }
+
+            await Promise.all(workers);
+
+            isUploading = false;
+            disableControls(false);
+
+            // Show Summary
+            showSummaryModal(successCount, errorCount);
+        }
+
+        function disableControls(disable) {
+            document.getElementById('category_id').disabled = disable;
+            document.getElementById('level_id').disabled = disable;
+            document.getElementById('grade_id').disabled = disable;
+            document.getElementById('term_id').disabled = disable;
+            document.getElementById('price').disabled = disable;
+            document.getElementById('description').disabled = disable;
+            uploadBtn.disabled = disable;
+            clearBtn.disabled = disable;
+
+            if (disable) {
+                dropzone.style.pointerEvents = 'none';
+                dropzone.style.opacity = '0.6';
+            } else {
+                dropzone.style.pointerEvents = 'auto';
+                dropzone.style.opacity = '1';
+            }
+        }
+
+        async function uploadSingleFile(item, cat, level, grade, term, price, description) {
+            // Determine bucket
+            var isFree = price === 0;
+            var bucketName = isFree ? 'kenyavault-resources' : 'private-resources';
+
+            // Prepare file
+            var safeFilename = item.file.name.replace(/[^a-zA-Z0-9.]/g, '_');
+            var timestamp = Date.now();
+            var filePath = 'resources/' + timestamp + '_' + safeFilename;
+
+            // Upload to storage
+            var storageUrl = SUPABASE_URL + '/storage/v1/object/' + bucketName + '/' + filePath;
+            var storageResponse = await fetch(storageUrl, {
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                    'Content-Type': item.file.type || 'application/octet-stream'
+                },
+                body: item.file
+            });
+
+            if (!storageResponse.ok) {
+                var errText = await storageResponse.text();
+                throw new Error('Storage upload failed: ' + storageResponse.status);
+            }
+
+            var fileUrl;
+            if (isFree) {
+                fileUrl = SUPABASE_URL + '/storage/v1/object/public/' + bucketName + '/' + filePath;
+            } else {
+                fileUrl = filePath;
+            }
+
+            // Create resource record
+            var resourceData = {
+                title: item.title || item.file.name.replace(/\.[^.]+$/, '').replace(/[_\-]/g, ' ').trim(),
+                description: description || 'Uploaded via bulk upload',
+                category: cat,
+                education_level: level,
+                level: level,
+                grade: grade || null,
+                subject: 'General',
+                price: isFree ? 0 : price,
+                is_free: isFree,
+                file_name: item.file.name,
+                file_url: fileUrl,
+                file_path: filePath,
+                bucket: bucketName,
+                term: term,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                download_count: 0,
+                status: 'published'
+            };
+
+            var createResponse = await fetch(SUPABASE_URL + '/rest/v1/resources', {
+                method: 'POST',
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(resourceData)
+            });
+
+            if (!createResponse.ok) {
+                var errText = await createResponse.text();
+                // Try to clean up storage
+                try {
+                    await fetch(SUPABASE_URL + '/storage/v1/object/' + bucketName + '/' + filePath, {
+                        method: 'DELETE',
+                        headers: { 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY }
+                    });
+                } catch (delErr) {}
+                throw new Error('Record creation failed: ' + createResponse.status);
+            }
+
+            return true;
+        }
+
+        // ─── SHOW SUMMARY MODAL ──────────────────────────────────
+        function showSummaryModal(successCount, errorCount) {
+            document.getElementById('summarySuccessCount').textContent = successCount;
+            document.getElementById('summaryErrorCount').textContent = errorCount;
+
+            var iconWrap = document.getElementById('summaryIconWrap');
+            var retryBtn = document.getElementById('summaryRetryBtn');
+            var title = document.getElementById('summaryTitle');
+
+            if (errorCount === 0) {
+                iconWrap.style.background = '#dcfce7';
+                iconWrap.style.color = '#15803d';
+                iconWrap.innerHTML = '<i class="bi bi-check-lg"></i>';
+                title.textContent = 'All Documents Uploaded Successfully!';
+                retryBtn.style.display = 'none';
+            } else {
+                iconWrap.style.background = '#fef3c7';
+                iconWrap.style.color = '#d97706';
+                iconWrap.innerHTML = '<i class="bi bi-exclamation-triangle-fill"></i>';
+                title.textContent = 'Upload Batch Finished with Notices';
+                retryBtn.style.display = 'flex';
+            }
+
+            document.getElementById('summaryModal').classList.add('active');
+        }
+
+        function closeSummaryModal() {
+            document.getElementById('summaryModal').classList.remove('active');
+            masterWrap.classList.remove('visible');
+            uploadQueue = uploadQueue.filter(function(item) { return item.status !== 'success'; });
+            renderQueue();
+        }
+
+        function retryFailedUploads() {
+            document.getElementById('summaryModal').classList.remove('active');
+            for (var i = 0; i < uploadQueue.length; i++) {
+                if (uploadQueue[i].status === 'error') {
+                    uploadQueue[i].status = 'ready';
+                    uploadQueue[i].progress = 0;
+                    uploadQueue[i].errorMsg = '';
+                }
+            }
+            renderQueue();
+            startUpload();
+        }
+
+        // ─── SETUP EVENT LISTENERS ──────────────────────────────
+        function setupDragAndDrop() {
+            dropzone.addEventListener('click', function(e) {
+                if (e.target !== fileInput) {
+                    fileInput.click();
+                }
+            });
+
+            var dragCounter = 0;
+            window.addEventListener('dragenter', function(e) {
+                e.preventDefault();
+                dragCounter++;
+                overlay.classList.add('active');
+            });
+            window.addEventListener('dragleave', function(e) {
+                e.preventDefault();
+                dragCounter--;
+                if (dragCounter <= 0) {
+                    dragCounter = 0;
+                    overlay.classList.remove('active');
+                }
+            });
+            window.addEventListener('dragover', function(e) {
+                e.preventDefault();
+            });
+            window.addEventListener('drop', function(e) {
+                e.preventDefault();
+                dragCounter = 0;
+                overlay.classList.remove('active');
+                var files = e.dataTransfer.files;
+                if (files && files.length > 0) {
+                    processIncomingFiles(files);
+                }
+            });
+
+            fileInput.addEventListener('change', function(e) {
+                var files = e.target.files;
+                if (files && files.length > 0) {
+                    processIncomingFiles(files);
+                }
+                fileInput.value = '';
+            });
+        }
+
+        // ─── INIT ──────────────────────────────────────────────
+        document.addEventListener('DOMContentLoaded', function() {
+            setupDragAndDrop();
+
+            // Close modals on overlay click
+            document.querySelectorAll('.zip-modal-overlay, .summary-modal-overlay').forEach(function(el) {
+                el.addEventListener('click', function(e) {
+                    if (e.target === this) {
+                        if (this.id === 'zipPromptModal') {
+                            this.classList.remove('active');
+                            pendingZipFile = null;
+                        } else if (this.id === 'summaryModal') {
+                            closeSummaryModal();
+                        }
+                    }
+                });
+            });
+
+            renderQueue();
+        });
+
+        // ─── EXPOSE GLOBALS ──────────────────────────────────────
+        window.addFileToQueue = addFileToQueue;
+        window.processIncomingFiles = processIncomingFiles;
+        window.confirmZipUnpack = confirmZipUnpack;
+        window.applySmartDetection = applySmartDetection;
+        window.applyBulkPriceToAll = applyBulkPriceToAll;
+        window.bulkSetPrice = bulkSetPrice;
+        window.autoCleanAllTitles = autoCleanAllTitles;
+        window.filterQueueItems = filterQueueItems;
+        window.removeFromQueue = removeFromQueue;
+        window.clearQueue = clearQueue;
+        window.startUpload = startUpload;
+        window.closeSummaryModal = closeSummaryModal;
+        window.retryFailedUploads = retryFailedUploads;
+        window.updateQueueItemTitle = updateQueueItemTitle;
+        window.updateItemPrice = updateItemPrice;
+        window.updateItemDesc = updateItemDesc;
+        window.toggleItemOverrides = toggleItemOverrides;
+        window.syncDefaultPriceToQueue = syncDefaultPriceToQueue;
+        window.renderQueue = renderQueue;
+    </script>
+
+</body>
+</html>
