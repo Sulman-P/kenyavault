@@ -134,6 +134,7 @@
             text-transform: uppercase;
         }
 
+        /* ── MAIN NAV LINKS ── */
         .nav-main-links {
             display: flex;
             gap: 4px;
@@ -165,6 +166,7 @@
             opacity: 0.5;
         }
 
+        /* ── DROPDOWN ── */
         .nav-dropdown {
             display: none;
             position: absolute;
@@ -234,6 +236,7 @@
             margin: 6px 0;
         }
 
+        /* ── EXAMS DROPDOWN SPECIAL ── */
         .nav-dropdown .exam-level-group {
             margin-bottom: 6px;
         }
@@ -261,6 +264,7 @@
             background: rgba(255,255,255,0.1);
         }
 
+        /* ── SEARCH BAR ── */
         .nav-search {
             display: flex;
             align-items: center;
@@ -295,6 +299,7 @@
             margin-right: 6px;
         }
 
+        /* ── NAV ACTIONS ── */
         .nav-actions {
             display: flex;
             align-items: center;
@@ -1524,6 +1529,53 @@
             cursor: not-allowed;
             transform: none;
         }
+
+        /* ── PAYMENT SUCCESS DOWNLOAD BUTTONS ── */
+        .download-item-btn {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+            padding: 10px 14px;
+            margin-bottom: 8px;
+            background: var(--kv-white);
+            border: 1px solid var(--kv-border);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: var(--kv-transition);
+            font-family: inherit;
+            font-size: 0.85rem;
+            color: var(--kv-text);
+        }
+        .download-item-btn:hover {
+            background: var(--kv-green-soft);
+            border-color: var(--kv-green);
+            transform: translateY(-1px);
+        }
+        .payment-modal .success-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            background: var(--kv-green-soft);
+            border-radius: var(--kv-radius-sm);
+            border: 1px solid var(--kv-green);
+            margin-bottom: 16px;
+        }
+        .payment-modal .success-header .icon {
+            font-size: 2rem;
+            color: var(--kv-green);
+        }
+        .payment-modal .success-header .text {
+            font-weight: 700;
+            color: var(--kv-green);
+            font-size: 1.05rem;
+        }
+        .payment-modal .success-header .subtext {
+            font-size: 0.8rem;
+            color: var(--kv-muted);
+            font-weight: 400;
+        }
     </style>
 </head>
 <body>
@@ -2131,7 +2183,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 // ============================================================
-// KENYAVAULT — COMPLETE APP WITH FIXES
+// KENYAVAULT — COMPLETE APP WITH PAYMENT FIXES
 // ============================================================
 
 (function() {
@@ -2140,7 +2192,9 @@
     // ─── CONFIG ──────────────────────────────────────────────
     var SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
     var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
-    var API_BASE_URL = 'https://kenyavault.onrender.com/api';
+    // FIX: Use the correct payment server URL
+    var API_BASE_URL = 'https://kenyavault-payment.onrender.com/api';
+    var supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     // ─── STATE ──────────────────────────────────────────────
     var allResources = [];
@@ -2154,6 +2208,7 @@
     var paymentVerified = false;
     var paymentPollInterval = null;
     var purchasedResources = {};
+    var pendingPaymentCheck = false;
 
     // ─── DOM REFS ──────────────────────────────────────────────
     var categoryGrid = document.getElementById('categoryGrid');
@@ -2314,6 +2369,18 @@
             'rar': 'bi-file-earmark-zip'
         };
         return '<i class="bi ' + (icons[ext] || 'bi-file-earmark') + '"></i>';
+    }
+
+    function escapeHtml(string) {
+        if (!string) return '';
+        var entityMap = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        };
+        return String(string).replace(/[&<>"']/g, function(s) { return entityMap[s]; });
     }
 
     // ─── CATEGORIES ────────────────────────────────────────────
@@ -2635,121 +2702,26 @@
         }
     };
 
-    // ─── BULK DOWNLOAD ──────────────────────────────────────
-    window.bulkDownload = function() {
-        if (cart.length === 0) {
-            showToast('Error', 'Your cart is empty.', 'error');
-            return;
-        }
-
-        var purchasedItems = cart.filter(function(item) {
-            return purchasedResources[item.id] === true;
-        });
-
-        var freeItems = cart.filter(function(item) {
-            var resource = allResources.find(function(r) { return r.id === item.id; });
-            return resource && (resource.is_free === true || resource.price === 0);
-        });
-
-        var paidItems = cart.filter(function(item) {
-            var resource = allResources.find(function(r) { return r.id === item.id; });
-            return resource && resource.price > 0 && purchasedResources[item.id] !== true;
-        });
-
-        if (paidItems.length > 0) {
-            showToast('Info', 'You have ' + paidItems.length + ' unpaid item(s). Please checkout first.', 'warning');
-            return;
-        }
-
-        var allItems = [...purchasedItems, ...freeItems];
-        if (allItems.length === 0) {
-            showToast('Error', 'No downloadable items in cart.', 'error');
-            return;
-        }
-
-        var downloaded = 0;
-        for (var i = 0; i < allItems.length; i++) {
-            var resource = allResources.find(function(r) { return r.id === allItems[i].id; });
-            if (resource && resource.file_url) {
-                // Open in new tab with slight delay between each
-                setTimeout(function(url) {
-                    window.open(url, '_blank');
-                }, i * 300, resource.file_url);
-                downloaded++;
+    // ─── GENERATE SIGNED URL FOR PRIVATE FILES ──────────────
+    async function generateSignedUrl(filePath) {
+        try {
+            if (filePath && !filePath.startsWith('http')) {
+                var signedUrl = await supabase.storage
+                    .from('private-resources')
+                    .createSignedUrl(filePath, 60);
+                
+                if (signedUrl.error) {
+                    console.error('[KenyaVault] Signed URL error:', signedUrl.error);
+                    return null;
+                }
+                return signedUrl.data.signedUrl;
             }
+            return filePath;
+        } catch (e) {
+            console.error('[KenyaVault] Error generating signed URL:', e);
+            return null;
         }
-
-        showToast('Bulk Download', 'Downloading ' + downloaded + ' resource(s).', 'success');
-    };
-
-    // ─── CHECKOUT CART ──────────────────────────────────────
-    window.checkoutCart = function() {
-        if (cart.length === 0) {
-            showToast('Error', 'Your cart is empty.', 'error');
-            return;
-        }
-
-        // Check if all items are already purchased
-        var allPurchased = cart.every(function(item) {
-            return purchasedResources[item.id] === true;
-        });
-
-        if (allPurchased) {
-            showToast('Info', 'All items in your cart are already purchased. Use Bulk Download.', 'info');
-            return;
-        }
-
-        // Filter out already purchased items
-        var unpaidItems = cart.filter(function(item) {
-            return purchasedResources[item.id] !== true;
-        });
-
-        if (unpaidItems.length === 0) {
-            showToast('Info', 'No unpaid items in cart.', 'info');
-            return;
-        }
-
-        // Calculate total
-        var total = 0;
-        for (var i = 0; i < unpaidItems.length; i++) {
-            total += (unpaidItems[i].price || 0);
-        }
-
-        if (total <= 0) {
-            showToast('Error', 'Cannot checkout free items. Please download them directly.', 'error');
-            return;
-        }
-
-        // Set the first item as the primary product for payment
-        var firstItem = unpaidItems[0];
-        var resource = allResources.find(function(r) { return r.id === firstItem.id; });
-        if (!resource) {
-            showToast('Error', 'Resource not found.', 'error');
-            return;
-        }
-
-        // Store cart items for payment
-        currentProduct = resource;
-        currentProduct._cartItems = unpaidItems;
-        currentProduct._cartTotal = total;
-
-        document.getElementById('paymentProductTitle').textContent = 'Cart (' + unpaidItems.length + ' items)';
-        document.getElementById('paymentProductPrice').textContent = 'KES ' + Number(total).toLocaleString();
-        document.getElementById('paymentModal').classList.add('open');
-        document.getElementById('stkStatus').className = 'stk-status';
-        document.getElementById('stkStatus').textContent = '';
-        document.getElementById('stkStatus').style.display = 'none';
-        document.getElementById('paymentStatusIndicator').style.display = 'none';
-        document.getElementById('paymentStatusMessage').style.display = 'none';
-        document.getElementById('confirmPaymentBtn').style.display = 'none';
-        document.getElementById('retryPaymentBtn').style.display = 'none';
-        document.getElementById('payBtn').disabled = false;
-        document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
-        document.getElementById('paySpinner').style.display = 'none';
-        document.getElementById('paymentTimer').textContent = '';
-        document.getElementById('customerName').value = '';
-        document.getElementById('phoneInput').value = '';
-    };
+    }
 
     // ─── DOWNLOAD FUNCTIONS ──────────────────────────────────
     window.downloadFree = function(productId) {
@@ -2760,8 +2732,20 @@
         }
         
         if (resource.file_url) {
-            window.open(resource.file_url, '_blank');
-            showToast('Download Started', resource.title + ' is downloading.', 'success');
+            var downloadUrl = resource.file_url;
+            if (!downloadUrl.startsWith('http')) {
+                generateSignedUrl(downloadUrl).then(function(signedUrl) {
+                    if (signedUrl) {
+                        window.open(signedUrl, '_blank');
+                        showToast('Download Started', resource.title + ' is downloading.', 'success');
+                    } else {
+                        showToast('Error', 'Could not generate download link. Please contact support.', 'error');
+                    }
+                });
+            } else {
+                window.open(downloadUrl, '_blank');
+                showToast('Download Started', resource.title + ' is downloading.', 'success');
+            }
         } else {
             showToast('Error', 'File not available. Please contact support.', 'error');
         }
@@ -2780,28 +2764,79 @@
         }
 
         if (resource.file_url) {
-            window.open(resource.file_url, '_blank');
-            showToast('Download Started', resource.title + ' is downloading.', 'success');
+            var downloadUrl = resource.file_url;
+            if (!downloadUrl.startsWith('http')) {
+                generateSignedUrl(downloadUrl).then(function(signedUrl) {
+                    if (signedUrl) {
+                        window.open(signedUrl, '_blank');
+                        showToast('Download Started', resource.title + ' is downloading.', 'success');
+                    } else {
+                        showToast('Error', 'Could not generate download link. Please contact support.', 'error');
+                    }
+                });
+            } else {
+                window.open(downloadUrl, '_blank');
+                showToast('Download Started', resource.title + ' is downloading.', 'success');
+            }
         } else {
             showToast('Error', 'File not available. Please contact support.', 'error');
         }
     };
 
-    function secureDownload(resource) {
-        if (!resource || !resource.file_url) {
-            showToast('Error', 'File not available. Please contact support.', 'error');
-            return;
+    // ─── VERIFY PAYMENT IN DATABASE ──────────────────────────
+    async function verifyPaymentInDatabase(orderRef) {
+        try {
+            const response = await fetch(SUPABASE_URL + '/rest/v1/orders?order_ref=eq.' + orderRef, {
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (!response.ok) {
+                console.error('[KenyaVault] Failed to verify order in database:', response.status);
+                return { verified: false, order: null };
+            }
+            
+            const data = await response.json();
+            if (data && data.length > 0) {
+                const order = data[0];
+                console.log('[KenyaVault] Database order check:', order);
+
+                var receipt = order.mpesa_receipt || order.mpesa_code || order.transaction_code ||
+                    order.transaction_reference || order.payment_reference || order.receipt_number || '';
+                
+                var isConfirmed = order.payment_confirmed === true || 
+                                  order.status === 'confirmed' || 
+                                  order.payment_status === 'confirmed' ||
+                                  order.payment_status === 'paid' ||
+                                  order.status === 'paid' ||
+                                  order.callback_status === 'verified';
+
+                var amountRequired = Number(order.total_amount || order.amount || 0);
+                var amountPaidField = order.amount_paid || order.amount || 0;
+                var amountOk = Number(amountPaidField) >= amountRequired;
+
+                var hasReceipt = receipt.toString().trim().length > 0;
+
+                var reallyPaid = isConfirmed && (hasReceipt || amountOk);
+
+                return {
+                    verified: reallyPaid,
+                    order: order,
+                    status: order.status,
+                    payment_status: order.payment_status,
+                    receipt: receipt,
+                    isConfirmed: isConfirmed,
+                    transaction_request_id: order.transaction_request_id
+                };
+            }
+            return { verified: false, order: null };
+        } catch (error) {
+            console.error('[KenyaVault] Error verifying payment in database:', error);
+            return { verified: false, order: null };
         }
-        
-        if (resource.id) {
-            purchasedResources[resource.id] = true;
-            try {
-                localStorage.setItem('kv_purchased', JSON.stringify(purchasedResources));
-            } catch(e) {}
-        }
-        
-        window.open(resource.file_url, '_blank');
-        showToast('Download Started', resource.title + ' is downloading.', 'success');
     }
 
     // ─── PAYMENT FUNCTIONS ──────────────────────────────────
@@ -2828,6 +2863,7 @@
         currentOrderRef = null;
         currentOrderId = null;
         paymentVerified = false;
+        pendingPaymentCheck = false;
         
         document.getElementById('paymentProductTitle').textContent = resource.title || 'Resource';
         document.getElementById('paymentProductPrice').textContent = 'KES ' + Number(resource.price || 0).toLocaleString();
@@ -2845,6 +2881,16 @@
         document.getElementById('paymentTimer').textContent = '';
         document.getElementById('customerName').value = '';
         document.getElementById('phoneInput').value = '';
+        
+        // Remove old download area if exists
+        var oldDownloadArea = document.getElementById('downloadArea');
+        if (oldDownloadArea) {
+            oldDownloadArea.remove();
+        }
+        
+        // Reset modal title
+        document.querySelector('.modal-title').textContent = '💳 Complete Purchase';
+        document.querySelector('.modal-sub').textContent = 'Pay securely with M-PESA via MegaPay';
         
         if (paymentTimer) {
             clearInterval(paymentTimer);
@@ -2877,9 +2923,14 @@
         isProcessingPayment = false;
         currentOrderRef = null;
         paymentVerified = false;
+        pendingPaymentCheck = false;
         document.getElementById('confirmPaymentBtn').style.display = 'none';
         document.getElementById('retryPaymentBtn').style.display = 'none';
         currentProduct = null;
+        // Show pay button again
+        document.getElementById('payBtn').style.display = 'block';
+        document.getElementById('payBtn').disabled = false;
+        document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
     };
 
     window.retryPayment = function() {
@@ -2891,8 +2942,19 @@
         document.getElementById('confirmPaymentBtn').style.display = 'none';
         document.getElementById('retryPaymentBtn').style.display = 'none';
         document.getElementById('payBtn').disabled = false;
+        document.getElementById('payBtn').style.display = 'block';
         document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
         document.getElementById('paySpinner').style.display = 'none';
+        
+        // Reset modal title
+        document.querySelector('.modal-title').textContent = '💳 Complete Purchase';
+        document.querySelector('.modal-sub').textContent = 'Pay securely with M-PESA via MegaPay';
+        
+        // Remove old download area if exists
+        var oldDownloadArea = document.getElementById('downloadArea');
+        if (oldDownloadArea) {
+            oldDownloadArea.remove();
+        }
         
         if (paymentTimer) {
             clearInterval(paymentTimer);
@@ -2909,25 +2971,261 @@
         
         isProcessingPayment = false;
         paymentVerified = false;
+        pendingPaymentCheck = false;
         showToast('Retry', 'Please try payment again.', 'info');
     };
 
+    // ─── HANDLE SUCCESSFUL PAYMENT ──────────────────────────
+    function handleSuccessfulPayment() {
+        var purchasedItems = [];
+        
+        // Mark all cart items as purchased
+        if (currentProduct && currentProduct._cartItems && currentProduct._cartItems.length > 0) {
+            for (var i = 0; i < currentProduct._cartItems.length; i++) {
+                var item = currentProduct._cartItems[i];
+                purchasedResources[item.id] = true;
+                purchasedItems.push(item);
+                var cartIndex = cart.findIndex(function(c) { return c.id === item.id; });
+                if (cartIndex !== -1) {
+                    cart.splice(cartIndex, 1);
+                }
+            }
+            try {
+                localStorage.setItem('kv_purchased', JSON.stringify(purchasedResources));
+                localStorage.setItem('kv_cart', JSON.stringify(cart));
+            } catch(e) {}
+            updateCartBadge();
+            renderCart();
+        } else if (currentProduct && currentProduct.id) {
+            purchasedResources[currentProduct.id] = true;
+            purchasedItems.push({ id: currentProduct.id, title: currentProduct.title, file_url: currentProduct.file_url });
+            var cartIndex = cart.findIndex(function(c) { return c.id === currentProduct.id; });
+            if (cartIndex !== -1) {
+                cart.splice(cartIndex, 1);
+            }
+            try {
+                localStorage.setItem('kv_purchased', JSON.stringify(purchasedResources));
+                localStorage.setItem('kv_cart', JSON.stringify(cart));
+            } catch(e) {}
+            updateCartBadge();
+            renderCart();
+        }
+
+        window._purchasedItems = purchasedItems;
+        window._purchasedResources = purchasedResources;
+
+        // Update modal
+        var payBtn = document.getElementById('payBtn');
+        var confirmBtn = document.getElementById('confirmPaymentBtn');
+        var retryBtn = document.getElementById('retryPaymentBtn');
+        var stkStatus = document.getElementById('stkStatus');
+        var paymentTimer = document.getElementById('paymentTimer');
+        var paymentStatusMessage = document.getElementById('paymentStatusMessage');
+        var modalTitle = document.querySelector('.modal-title');
+        var modalSub = document.querySelector('.modal-sub');
+        
+        payBtn.style.display = 'none';
+        confirmBtn.style.display = 'none';
+        retryBtn.style.display = 'none';
+        paymentTimer.style.display = 'none';
+        paymentStatusMessage.style.display = 'none';
+        
+        modalTitle.textContent = '✅ Purchase Complete!';
+        modalSub.textContent = 'Your resource(s) are ready for download.';
+        
+        stkStatus.className = 'stk-status visible success';
+        stkStatus.innerHTML = '💳 Payment confirmed successfully!';
+        stkStatus.style.display = 'block';
+        
+        // Create download area
+        var downloadArea = document.createElement('div');
+        downloadArea.id = 'downloadArea';
+        downloadArea.style.cssText = 'margin-top: 16px; padding: 16px; background: var(--kv-green-soft); border-radius: 8px; border: 1px solid var(--kv-green);';
+        
+        var downloadButtonsHtml = '';
+        
+        if (purchasedItems.length === 1) {
+            var item = purchasedItems[0];
+            downloadButtonsHtml += `
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                    <i class="bi bi-download" style="font-size: 1.2rem; color: var(--kv-green);"></i>
+                    <span style="font-weight: 700; color: var(--kv-green); font-size: 0.9rem;">Download Your Resource</span>
+                </div>
+                <button onclick="downloadPurchasedItem('${item.id}')" 
+                        class="download-item-btn" 
+                        style="display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 16px; margin-bottom: 8px; background: var(--kv-primary); border: none; border-radius: 8px; cursor: pointer; transition: var(--kv-transition); font-family: inherit; font-size: 0.85rem; color: white; font-weight: 600;">
+                    <span style="font-size: 1.2rem;"><i class="bi bi-file-earmark-arrow-down"></i></span>
+                    <span style="flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(item.title)}</span>
+                    <span style="background: rgba(255,255,255,0.2); padding: 2px 10px; border-radius: 4px; font-size: 0.7rem;">Download</span>
+                    <span style="font-size: 1.1rem;"><i class="bi bi-arrow-down-circle-fill"></i></span>
+                </button>
+            `;
+        } else {
+            downloadButtonsHtml += `
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                    <i class="bi bi-download" style="font-size: 1.2rem; color: var(--kv-green);"></i>
+                    <span style="font-weight: 700; color: var(--kv-green); font-size: 0.9rem;">Download All Resources</span>
+                    <span style="font-size: 0.7rem; color: var(--kv-muted); background: var(--kv-white); padding: 2px 10px; border-radius: 99px; margin-left: auto;">${purchasedItems.length} files</span>
+                </div>
+            `;
+            
+            for (var i = 0; i < purchasedItems.length; i++) {
+                var item = purchasedItems[i];
+                var ext = item.file_url ? item.file_url.split('.').pop().toUpperCase() : 'PDF';
+                downloadButtonsHtml += `
+                    <button onclick="downloadPurchasedItem('${item.id}')" 
+                            class="download-item-btn" 
+                            style="display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 14px; margin-bottom: 6px; background: var(--kv-white); border: 1px solid var(--kv-border); border-radius: 8px; cursor: pointer; transition: var(--kv-transition); font-family: inherit; font-size: 0.82rem; color: var(--kv-text);">
+                        <span style="font-size: 1.1rem; color: var(--kv-green);"><i class="bi bi-file-earmark-arrow-down"></i></span>
+                        <span style="flex: 1; text-align: left; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(item.title)}</span>
+                        <span style="font-size: 0.65rem; color: var(--kv-muted); background: var(--kv-bg); padding: 2px 8px; border-radius: 4px;">${ext}</span>
+                        <span style="color: var(--kv-primary);"><i class="bi bi-arrow-right-circle-fill"></i></span>
+                    </button>
+                `;
+            }
+        }
+        
+        downloadButtonsHtml += `
+            <button onclick="closePaymentModalAndRefresh()" 
+                    class="btn-outline" 
+                    style="width: 100%; padding: 10px 16px; font-size: 0.85rem; justify-content: center; border: 1px solid var(--kv-border); border-radius: 8px; background: var(--kv-white); cursor: pointer; transition: var(--kv-transition); margin-top: 8px; display: flex; align-items: center; gap: 8px;">
+                <i class="bi bi-check-circle"></i> Done - Close
+            </button>
+        `;
+        
+        downloadArea.innerHTML = downloadButtonsHtml;
+        
+        var oldDownloadArea = document.getElementById('downloadArea');
+        if (oldDownloadArea) {
+            oldDownloadArea.remove();
+        }
+        
+        stkStatus.parentNode.insertBefore(downloadArea, stkStatus.nextSibling);
+        
+        // Auto-download
+        var downloaded = 0;
+        for (var i = 0; i < purchasedItems.length; i++) {
+            var item = purchasedItems[i];
+            var resource = allResources.find(function(r) { return r.id === item.id; });
+            if (resource && resource.file_url) {
+                var url = resource.file_url;
+                if (!url.startsWith('http')) {
+                    generateSignedUrl(url).then(function(signedUrl) {
+                        if (signedUrl) {
+                            window.open(signedUrl, '_blank');
+                            downloaded++;
+                        }
+                    });
+                } else {
+                    setTimeout(function(u) {
+                        window.open(u, '_blank');
+                        downloaded++;
+                    }, i * 500, url);
+                }
+            }
+        }
+        
+        setTimeout(function() {
+            if (downloaded > 0) {
+                showToast('Auto-Download Started', downloaded + ' file(s) are downloading.', 'success');
+            }
+        }, 1500);
+
+        showToast('Payment Successful', 'Your payment was confirmed!', 'success');
+        document.getElementById('payBtn').disabled = false;
+        document.getElementById('payBtnText').textContent = '✅ Done';
+        document.getElementById('paySpinner').style.display = 'none';
+        isProcessingPayment = false;
+        pendingPaymentCheck = false;
+    }
+
+    // ─── CLOSE MODAL AND REFRESH ─────────────────────────────
+    window.closePaymentModalAndRefresh = function() {
+        closePaymentModal();
+        window.location.reload();
+    };
+
+    // ─── DOWNLOAD PURCHASED ITEM ──────────────────────────────
+    window.downloadPurchasedItem = function(productId) {
+        var resource = allResources.find(function(r) { return r.id === productId; });
+        if (!resource) {
+            showToast('Error', 'Resource not found.', 'error');
+            return;
+        }
+
+        if (!purchasedResources[productId]) {
+            showToast('Error', 'You have not purchased this resource.', 'error');
+            return;
+        }
+
+        if (resource.file_url) {
+            var url = resource.file_url;
+            if (!url.startsWith('http')) {
+                generateSignedUrl(url).then(function(signedUrl) {
+                    if (signedUrl) {
+                        window.open(signedUrl, '_blank');
+                        showToast('Download Started', resource.title + ' is downloading.', 'success');
+                    } else {
+                        showToast('Error', 'Could not generate download link. Please contact support.', 'error');
+                    }
+                });
+            } else {
+                window.open(url, '_blank');
+                showToast('Download Started', resource.title + ' is downloading.', 'success');
+            }
+        } else {
+            showToast('Error', 'File not available. Please contact support.', 'error');
+        }
+    };
+
+    // ─── CONFIRM PAYMENT MANUALLY ─────────────────────────────
     window.confirmPaymentManually = async function() {
         if (!currentOrderRef && !currentOrderId) {
             showToast('Error', 'No active payment found. Please try again.', 'error');
             return;
         }
 
+        if (pendingPaymentCheck) {
+            showToast('Info', 'Checking payment status... Please wait.', 'info');
+            return;
+        }
+
+        pendingPaymentCheck = true;
         var statusEl = document.getElementById('stkStatus');
         var statusMessage = document.getElementById('paymentStatusMessage');
+        var confirmBtn = document.getElementById('confirmPaymentBtn');
+        var retryBtn = document.getElementById('retryPaymentBtn');
+        var payBtn = document.getElementById('payBtn');
         
         statusEl.className = 'stk-status visible pending';
         statusEl.innerHTML = '<span class="spinner"></span> Checking payment status...';
         statusMessage.style.display = 'block';
         statusMessage.className = 'stk-status pending';
         statusMessage.innerHTML = '⏳ Checking if your payment was received...';
+        confirmBtn.disabled = true;
+        confirmBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Checking...';
 
         try {
+            // Check database directly
+            const dbResult = await verifyPaymentInDatabase(currentOrderRef);
+            console.log('[KenyaVault] Database verification result:', dbResult);
+
+            if (dbResult.verified) {
+                paymentVerified = true;
+                statusEl.className = 'stk-status visible success';
+                statusEl.innerHTML = '✅ Payment confirmed! Your resource is ready.';
+                statusMessage.className = 'stk-status success';
+                statusMessage.innerHTML = '✅ Payment successful! Your download will begin shortly.';
+                document.getElementById('paymentTimer').textContent = '✅ Payment confirmed!';
+                confirmBtn.style.display = 'none';
+                retryBtn.style.display = 'none';
+                payBtn.disabled = true;
+                pendingPaymentCheck = false;
+                handleSuccessfulPayment();
+                return;
+            }
+
+            // Check API
             var response = await fetch(API_BASE_URL + '/mpesa/verify-payment', {
                 method: 'POST',
                 headers: {
@@ -2935,87 +3233,77 @@
                 },
                 body: JSON.stringify({
                     order_ref: currentOrderRef,
-                    order_id: currentOrderId
+                    order_id: currentOrderId,
+                    transaction_request_id: dbResult.transaction_request_id || null
                 })
             });
 
             var result = await response.json();
-            console.log('[KenyaVault] Manual verification result:', result);
+            console.log('[KenyaVault] API verification result:', result);
 
-            if (result.isPaid === true || result.payment_confirmed === true || result.payment_status === 'paid') {
-                paymentVerified = true;
-                statusEl.className = 'stk-status visible success';
-                statusEl.innerHTML = '✅ Payment confirmed! Your resource is ready.';
-                statusMessage.className = 'stk-status success';
-                statusMessage.innerHTML = '✅ Payment successful! Your download will begin shortly.';
-                document.getElementById('paymentTimer').textContent = '✅ Payment confirmed!';
-                document.getElementById('confirmPaymentBtn').style.display = 'none';
-                document.getElementById('retryPaymentBtn').style.display = 'none';
-                
-                // Mark all cart items as purchased if this was a cart checkout
-                if (currentProduct && currentProduct._cartItems && currentProduct._cartItems.length > 0) {
-                    for (var i = 0; i < currentProduct._cartItems.length; i++) {
-                        var item = currentProduct._cartItems[i];
-                        purchasedResources[item.id] = true;
-                        // Remove from cart
-                        var cartIndex = cart.findIndex(function(c) { return c.id === item.id; });
-                        if (cartIndex !== -1) {
-                            cart.splice(cartIndex, 1);
-                        }
-                    }
-                    try {
-                        localStorage.setItem('kv_purchased', JSON.stringify(purchasedResources));
-                        localStorage.setItem('kv_cart', JSON.stringify(cart));
-                    } catch(e) {}
-                    updateCartBadge();
-                    renderCart();
-                } else if (currentProduct && currentProduct.id) {
-                    purchasedResources[currentProduct.id] = true;
-                    // Remove from cart
-                    var cartIndex = cart.findIndex(function(c) { return c.id === currentProduct.id; });
-                    if (cartIndex !== -1) {
-                        cart.splice(cartIndex, 1);
-                    }
-                    try {
-                        localStorage.setItem('kv_purchased', JSON.stringify(purchasedResources));
-                        localStorage.setItem('kv_cart', JSON.stringify(cart));
-                    } catch(e) {}
-                    updateCartBadge();
-                    renderCart();
+            var apiSaysPaid = result.isPaid === true || 
+                              result.status === 'paid' || 
+                              result.payment_confirmed === true ||
+                              result.payment_status === 'paid' ||
+                              result.payment_status === 'confirmed' ||
+                              result.callback_status === 'verified';
+
+            if (apiSaysPaid) {
+                // Update order in database
+                try {
+                    await fetch(SUPABASE_URL + '/rest/v1/orders?order_ref=eq.' + currentOrderRef, {
+                        method: 'PATCH',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            payment_confirmed: true,
+                            status: 'confirmed',
+                            payment_status: 'confirmed',
+                            callback_status: 'verified',
+                            confirmed_at: new Date().toISOString(),
+                            updated_at: new Date().toISOString(),
+                            mpesa_receipt: result.mpesa_receipt || result.receipt_number || '',
+                            mpesa_code: result.mpesa_code || result.transaction_id || ''
+                        })
+                    });
+                } catch (updateErr) {
+                    console.error('[KenyaVault] Error updating order:', updateErr);
                 }
-                
-                // Download the resource(s)
-                if (currentProduct && currentProduct._cartItems && currentProduct._cartItems.length > 0) {
-                    setTimeout(function() {
-                        for (var i = 0; i < currentProduct._cartItems.length; i++) {
-                            var res = allResources.find(function(r) { return r.id === currentProduct._cartItems[i].id; });
-                            if (res && res.file_url) {
-                                setTimeout(function(url) {
-                                    window.open(url, '_blank');
-                                }, i * 500, res.file_url);
-                            }
-                        }
-                        showToast('Download Started', 'Your resources are downloading.', 'success');
-                    }, 1000);
-                } else if (currentProduct && currentProduct.file_url) {
-                    setTimeout(function() {
-                        window.open(currentProduct.file_url, '_blank');
-                        showToast('Download Started', 'Your resource is downloading.', 'success');
-                    }, 1000);
+
+                // Verify again
+                const dbResult2 = await verifyPaymentInDatabase(currentOrderRef);
+                if (dbResult2.verified) {
+                    paymentVerified = true;
+                    statusEl.className = 'stk-status visible success';
+                    statusEl.innerHTML = '✅ Payment confirmed! Your resource is ready.';
+                    statusMessage.className = 'stk-status success';
+                    statusMessage.innerHTML = '✅ Payment successful! Your download will begin shortly.';
+                    document.getElementById('paymentTimer').textContent = '✅ Payment confirmed!';
+                    confirmBtn.style.display = 'none';
+                    retryBtn.style.display = 'none';
+                    payBtn.disabled = true;
+                    pendingPaymentCheck = false;
+                    handleSuccessfulPayment();
+                    return;
                 }
-                
-                setTimeout(function() {
-                    closePaymentModal();
-                    window.location.reload();
-                }, 3000);
-                
-            } else {
-                statusEl.className = 'stk-status visible pending';
-                statusEl.innerHTML = '⏳ Payment not yet confirmed. Please check your M-PESA messages.';
-                statusMessage.className = 'stk-status pending';
-                statusMessage.innerHTML = '⏳ Payment not yet confirmed. If you entered your PIN, please wait a moment and try again.';
-                document.getElementById('confirmPaymentBtn').style.display = 'block';
-                document.getElementById('confirmPaymentBtn').innerHTML = '<i class="bi bi-arrow-clockwise"></i> Check Again';
+            }
+
+            // Payment not confirmed
+            statusEl.className = 'stk-status visible pending';
+            statusEl.innerHTML = '⏳ Payment not yet confirmed. Please check your M-PESA messages.';
+            statusMessage.className = 'stk-status pending';
+            statusMessage.innerHTML = '⏳ Payment is still being processed. If you entered your PIN, please wait a moment and try again.';
+            confirmBtn.style.display = 'block';
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Check Again';
+            retryBtn.style.display = 'block';
+            pendingPaymentCheck = false;
+            
+            if (!paymentPollInterval) {
+                startPaymentPolling(currentOrderRef);
             }
 
         } catch (error) {
@@ -3024,54 +3312,196 @@
             statusEl.innerHTML = '❌ Error checking payment status. Please try again.';
             statusMessage.className = 'stk-status error';
             statusMessage.innerHTML = '❌ ' + (error.message || 'Network error. Please try again.');
+            confirmBtn.style.display = 'block';
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Check Again';
+            pendingPaymentCheck = false;
         }
     };
 
-    async function verifyPaymentInDatabase(orderRef) {
-        try {
-            const response = await fetch(SUPABASE_URL + '/rest/v1/orders?order_ref=eq.' + orderRef, {
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
-                    'Content-Type': 'application/json'
-                }
-            });
-            
-            if (!response.ok) {
-                console.error('[KenyaVault] Failed to verify order in database:', response.status);
-                return { verified: false, order: null };
-            }
-            
-            const data = await response.json();
-            if (data && data.length > 0) {
-                const order = data[0];
-                console.log('[KenyaVault] Database order check:', order);
+    // ─── START PAYMENT POLLING ────────────────────────────────
+    function startPaymentPolling(orderRef) {
+        var pollCount = 0;
+        var maxPolls = 60;
+        var statusEl = document.getElementById('stkStatus');
+        var statusMessage = document.getElementById('paymentStatusMessage');
+        var confirmBtn = document.getElementById('confirmPaymentBtn');
+        var retryBtn = document.getElementById('retryPaymentBtn');
 
-                var receipt = order.mpesa_receipt || order.mpesa_code || order.transaction_code ||
-                    order.transaction_reference || order.payment_reference || order.receipt_number || '';
-                var amountRequired = Number(order.total_amount || order.amount || 0);
-                var amountPaidField = order.amount_paid;
-                var amountOk = true;
-                if (amountPaidField !== undefined && amountPaidField !== null && amountRequired > 0) {
-                    amountOk = Number(amountPaidField) >= amountRequired;
-                }
-
-                var reallyPaid = order.payment_confirmed === true && receipt.toString().trim().length > 0 && amountOk;
-
-                return {
-                    verified: reallyPaid,
-                    order: order,
-                    status: order.status,
-                    payment_status: order.payment_status
-                };
-            }
-            return { verified: false, order: null };
-        } catch (error) {
-            console.error('[KenyaVault] Error verifying payment in database:', error);
-            return { verified: false, order: null };
+        if (paymentPollInterval) {
+            clearInterval(paymentPollInterval);
         }
+
+        paymentPollInterval = setInterval(async function() {
+            pollCount++;
+
+            if (orderRef !== currentOrderRef || paymentVerified) {
+                clearInterval(paymentPollInterval);
+                paymentPollInterval = null;
+                return;
+            }
+
+            try {
+                const dbResult = await verifyPaymentInDatabase(orderRef);
+                console.log('[KenyaVault] Polling DB result:', dbResult);
+
+                if (dbResult.verified) {
+                    clearInterval(paymentPollInterval);
+                    paymentPollInterval = null;
+                    if (paymentTimer) {
+                        clearInterval(paymentTimer);
+                        paymentTimer = null;
+                    }
+                    if (paymentTimeout) {
+                        clearTimeout(paymentTimeout);
+                        paymentTimeout = null;
+                    }
+                    
+                    paymentVerified = true;
+                    statusEl.className = 'stk-status visible success';
+                    statusEl.innerHTML = '✅ Payment confirmed! Your resource is ready.';
+                    document.getElementById('paymentTimer').textContent = '✅ Payment confirmed!';
+                    statusMessage.style.display = 'block';
+                    statusMessage.className = 'stk-status success';
+                    statusMessage.innerHTML = '✅ Payment successful! Your download will begin shortly.';
+                    confirmBtn.style.display = 'none';
+                    retryBtn.style.display = 'none';
+                    pendingPaymentCheck = false;
+
+                    handleSuccessfulPayment();
+                    return;
+                }
+
+                // Check API
+                var response = await fetch(API_BASE_URL + '/mpesa/verify-payment', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        order_ref: orderRef,
+                        order_id: currentOrderId,
+                        transaction_request_id: dbResult.transaction_request_id || null
+                    })
+                });
+
+                if (!response.ok) {
+                    console.warn('[KenyaVault] Status check failed, continuing polling...');
+                    return;
+                }
+
+                var result = await response.json();
+                console.log('[KenyaVault] Payment status check (poll ' + pollCount + '):', result);
+
+                var apiSaysPaid = result.isPaid === true || 
+                                  result.status === 'paid' || 
+                                  result.payment_confirmed === true ||
+                                  result.payment_status === 'paid' ||
+                                  result.payment_status === 'confirmed' ||
+                                  result.callback_status === 'verified';
+
+                if (apiSaysPaid) {
+                    try {
+                        await fetch(SUPABASE_URL + '/rest/v1/orders?order_ref=eq.' + orderRef, {
+                            method: 'PATCH',
+                            headers: {
+                                'apikey': SUPABASE_ANON_KEY,
+                                'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                payment_confirmed: true,
+                                status: 'confirmed',
+                                payment_status: 'confirmed',
+                                callback_status: 'verified',
+                                confirmed_at: new Date().toISOString(),
+                                updated_at: new Date().toISOString(),
+                                mpesa_receipt: result.mpesa_receipt || result.receipt_number || '',
+                                mpesa_code: result.mpesa_code || result.transaction_id || ''
+                            })
+                        });
+                    } catch (updateErr) {}
+
+                    const dbResult2 = await verifyPaymentInDatabase(orderRef);
+                    if (dbResult2.verified) {
+                        clearInterval(paymentPollInterval);
+                        paymentPollInterval = null;
+                        if (paymentTimer) {
+                            clearInterval(paymentTimer);
+                            paymentTimer = null;
+                        }
+                        if (paymentTimeout) {
+                            clearTimeout(paymentTimeout);
+                            paymentTimeout = null;
+                        }
+                        
+                        paymentVerified = true;
+                        statusEl.className = 'stk-status visible success';
+                        statusEl.innerHTML = '✅ Payment confirmed! Your resource is ready.';
+                        document.getElementById('paymentTimer').textContent = '✅ Payment confirmed!';
+                        statusMessage.style.display = 'block';
+                        statusMessage.className = 'stk-status success';
+                        statusMessage.innerHTML = '✅ Payment successful! Your download will begin shortly.';
+                        confirmBtn.style.display = 'none';
+                        retryBtn.style.display = 'none';
+                        pendingPaymentCheck = false;
+
+                        handleSuccessfulPayment();
+                        return;
+                    }
+                } else if (result.status === 'failed' || result.status === 'cancelled' || result.status === 'timeout') {
+                    clearInterval(paymentPollInterval);
+                    paymentPollInterval = null;
+                    if (paymentTimer) {
+                        clearInterval(paymentTimer);
+                        paymentTimer = null;
+                    }
+                    if (paymentTimeout) {
+                        clearTimeout(paymentTimeout);
+                        paymentTimeout = null;
+                    }
+                    
+                    statusEl.className = 'stk-status visible error';
+                    statusEl.innerHTML = '❌ Payment ' + (result.status || 'failed') + '. Please try again.';
+                    statusMessage.style.display = 'block';
+                    statusMessage.className = 'stk-status error';
+                    statusMessage.innerHTML = '❌ Payment ' + (result.status || 'failed') + '. Please try again.';
+                    confirmBtn.style.display = 'none';
+                    retryBtn.style.display = 'block';
+                    document.getElementById('payBtn').disabled = false;
+                    document.getElementById('payBtn').style.display = 'block';
+                    document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
+                    document.getElementById('paySpinner').style.display = 'none';
+                    isProcessingPayment = false;
+                    pendingPaymentCheck = false;
+                    showToast('Payment Failed', 'Payment was not completed. Please try again.', 'error');
+
+                } else if (pollCount >= maxPolls) {
+                    clearInterval(paymentPollInterval);
+                    paymentPollInterval = null;
+                    statusEl.className = 'stk-status visible pending';
+                    statusEl.innerHTML = '⏳ Payment is still being processed. Please check your M-PESA messages.';
+                    statusMessage.style.display = 'block';
+                    statusMessage.className = 'stk-status pending';
+                    statusMessage.innerHTML = '⏳ Payment still pending. Please check your M-PESA messages and click "I\'ve Made the Payment" to confirm.';
+                    confirmBtn.style.display = 'block';
+                    confirmBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Check Status';
+                    retryBtn.style.display = 'block';
+                    document.getElementById('payBtn').disabled = false;
+                    document.getElementById('payBtn').style.display = 'block';
+                    document.getElementById('payBtnText').textContent = '🔄 Try Again';
+                    document.getElementById('paySpinner').style.display = 'none';
+                    isProcessingPayment = false;
+                    pendingPaymentCheck = false;
+                }
+
+            } catch (error) {
+                console.error('[KenyaVault] Polling error:', error);
+            }
+        }, 5000);
     }
 
+    // ─── INITIATE PAYMENT ──────────────────────────────────
     window.initiatePayment = async function() {
         if (isProcessingPayment) {
             showToast('Info', 'Please wait for current payment to complete.', 'info');
@@ -3114,8 +3544,15 @@
         document.getElementById('paySpinner').style.display = 'inline-block';
         isProcessingPayment = true;
         paymentVerified = false;
+        pendingPaymentCheck = false;
         confirmBtn.style.display = 'none';
         retryBtn.style.display = 'none';
+
+        // Remove old download area
+        var oldDownloadArea = document.getElementById('downloadArea');
+        if (oldDownloadArea) {
+            oldDownloadArea.remove();
+        }
 
         statusEl.className = 'stk-status visible pending';
         statusEl.style.display = 'block';
@@ -3127,7 +3564,6 @@
         try {
             var sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substring(2, 10);
 
-            // Determine what items are being purchased
             var cartItems = currentProduct._cartItems || [];
             var isCartCheckout = cartItems.length > 0;
             var resourceIds = isCartCheckout ? cartItems.map(function(item) { return item.id; }) : [currentProduct.id];
@@ -3163,7 +3599,8 @@
                 user_agent: navigator.userAgent || 'Unknown',
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
-                payment_confirmed: false
+                payment_confirmed: false,
+                transaction_request_id: null
             };
 
             console.log('[KenyaVault] Creating order:', orderData);
@@ -3230,7 +3667,56 @@
                 throw new Error(result.error || result.message || 'Payment initiation failed (HTTP ' + response.status + ')');
             }
 
-            if (result.success) {
+            // CRITICAL: Capture the transaction_request_id from the server
+            var transactionRequestId = result.transaction_request_id || 
+                                      result.transactionId || 
+                                      result.transaction_id ||
+                                      result.TransactionID ||
+                                      result.request_id ||
+                                      null;
+            
+            if (transactionRequestId) {
+                console.log('[KenyaVault] Transaction Request ID received:', transactionRequestId);
+                // Update order with transaction_request_id
+                try {
+                    await fetch(SUPABASE_URL + '/rest/v1/orders?order_ref=eq.' + orderRef, {
+                        method: 'PATCH',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            transaction_request_id: transactionRequestId,
+                            updated_at: new Date().toISOString()
+                        })
+                    });
+                } catch (updateErr) {
+                    console.error('[KenyaVault] Error updating transaction_request_id:', updateErr);
+                }
+            } else {
+                console.warn('[KenyaVault] No transaction_request_id received from server');
+                // Check if it's in the data object
+                if (result.data && result.data.transaction_request_id) {
+                    transactionRequestId = result.data.transaction_request_id;
+                    try {
+                        await fetch(SUPABASE_URL + '/rest/v1/orders?order_ref=eq.' + orderRef, {
+                            method: 'PATCH',
+                            headers: {
+                                'apikey': SUPABASE_ANON_KEY,
+                                'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                transaction_request_id: transactionRequestId,
+                                updated_at: new Date().toISOString()
+                            })
+                        });
+                    } catch (updateErr) {}
+                }
+            }
+
+            if (result.success || result.transaction_request_id || transactionRequestId) {
                 statusEl.className = 'stk-status visible pending';
                 statusEl.innerHTML = '<span class="spinner"></span> STK Push sent to ' + phoneClean + '. Please check your phone and enter your M-PESA PIN.';
                 
@@ -3240,6 +3726,16 @@
                 
                 confirmBtn.style.display = 'block';
                 confirmBtn.innerHTML = '<i class="bi bi-check-circle-fill"></i> I\'ve Made the Payment';
+                confirmBtn.disabled = false;
+                confirmBtn.style.background = 'var(--kv-green)';
+                confirmBtn.style.color = 'white';
+                confirmBtn.style.padding = '12px 20px';
+                confirmBtn.style.borderRadius = '8px';
+                confirmBtn.style.fontWeight = '700';
+                confirmBtn.style.cursor = 'pointer';
+                confirmBtn.style.border = 'none';
+                confirmBtn.style.width = '100%';
+                confirmBtn.style.marginTop = '8px';
                 
                 startPaymentTimer();
                 startPaymentPolling(currentOrderRef);
@@ -3315,6 +3811,7 @@
                 document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
                 document.getElementById('paySpinner').style.display = 'none';
                 isProcessingPayment = false;
+                pendingPaymentCheck = false;
                 if (paymentTimer) {
                     clearInterval(paymentTimer);
                     paymentTimer = null;
@@ -3328,209 +3825,138 @@
         }, 120000);
     }
 
-    function startPaymentPolling(orderRef) {
-        var pollCount = 0;
-        var maxPolls = 30;
-        var statusEl = document.getElementById('stkStatus');
-        var statusMessage = document.getElementById('paymentStatusMessage');
-        var payBtn = document.getElementById('payBtn');
-        var confirmBtn = document.getElementById('confirmPaymentBtn');
-
-        if (paymentPollInterval) {
-            clearInterval(paymentPollInterval);
+    // ─── CHECKOUT CART ──────────────────────────────────────
+    window.checkoutCart = function() {
+        if (cart.length === 0) {
+            showToast('Error', 'Your cart is empty.', 'error');
+            return;
         }
 
-        paymentPollInterval = setInterval(async function() {
-            pollCount++;
+        var allPurchased = cart.every(function(item) {
+            return purchasedResources[item.id] === true;
+        });
 
-            if (orderRef !== currentOrderRef || paymentVerified) {
-                clearInterval(paymentPollInterval);
-                paymentPollInterval = null;
-                return;
-            }
+        if (allPurchased) {
+            showToast('Info', 'All items in your cart are already purchased. Use Bulk Download.', 'info');
+            return;
+        }
 
-            try {
-                var response = await fetch(API_BASE_URL + '/mpesa/verify-payment', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        order_ref: orderRef,
-                        order_id: currentOrderId
-                    })
-                });
+        var unpaidItems = cart.filter(function(item) {
+            return purchasedResources[item.id] !== true;
+        });
 
-                if (!response.ok) {
-                    console.warn('[KenyaVault] Status check failed, continuing polling...');
-                    return;
+        if (unpaidItems.length === 0) {
+            showToast('Info', 'No unpaid items in cart.', 'info');
+            return;
+        }
+
+        var total = 0;
+        for (var i = 0; i < unpaidItems.length; i++) {
+            total += (unpaidItems[i].price || 0);
+        }
+
+        if (total <= 0) {
+            showToast('Error', 'Cannot checkout free items. Please download them directly.', 'error');
+            return;
+        }
+
+        var firstItem = unpaidItems[0];
+        var resource = allResources.find(function(r) { return r.id === firstItem.id; });
+        if (!resource) {
+            showToast('Error', 'Resource not found.', 'error');
+            return;
+        }
+
+        currentProduct = resource;
+        currentProduct._cartItems = unpaidItems;
+        currentProduct._cartTotal = total;
+
+        document.getElementById('paymentProductTitle').textContent = 'Cart (' + unpaidItems.length + ' items)';
+        document.getElementById('paymentProductPrice').textContent = 'KES ' + Number(total).toLocaleString();
+        document.getElementById('paymentModal').classList.add('open');
+        document.getElementById('stkStatus').className = 'stk-status';
+        document.getElementById('stkStatus').textContent = '';
+        document.getElementById('stkStatus').style.display = 'none';
+        document.getElementById('paymentStatusIndicator').style.display = 'none';
+        document.getElementById('paymentStatusMessage').style.display = 'none';
+        document.getElementById('confirmPaymentBtn').style.display = 'none';
+        document.getElementById('retryPaymentBtn').style.display = 'none';
+        document.getElementById('payBtn').disabled = false;
+        document.getElementById('payBtn').style.display = 'block';
+        document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
+        document.getElementById('paySpinner').style.display = 'none';
+        document.getElementById('paymentTimer').textContent = '';
+        document.getElementById('customerName').value = '';
+        document.getElementById('phoneInput').value = '';
+        
+        // Reset modal title
+        document.querySelector('.modal-title').textContent = '💳 Complete Purchase';
+        document.querySelector('.modal-sub').textContent = 'Pay securely with M-PESA via MegaPay';
+        
+        // Remove old download area
+        var oldDownloadArea = document.getElementById('downloadArea');
+        if (oldDownloadArea) {
+            oldDownloadArea.remove();
+        }
+    };
+
+    // ─── BULK DOWNLOAD ──────────────────────────────────────
+    window.bulkDownload = function() {
+        if (cart.length === 0) {
+            showToast('Error', 'Your cart is empty.', 'error');
+            return;
+        }
+
+        var purchasedItems = cart.filter(function(item) {
+            return purchasedResources[item.id] === true;
+        });
+
+        var freeItems = cart.filter(function(item) {
+            var resource = allResources.find(function(r) { return r.id === item.id; });
+            return resource && (resource.is_free === true || resource.price === 0);
+        });
+
+        var paidItems = cart.filter(function(item) {
+            var resource = allResources.find(function(r) { return r.id === item.id; });
+            return resource && resource.price > 0 && purchasedResources[item.id] !== true;
+        });
+
+        if (paidItems.length > 0) {
+            showToast('Info', 'You have ' + paidItems.length + ' unpaid item(s). Please checkout first.', 'warning');
+            return;
+        }
+
+        var allItems = [...purchasedItems, ...freeItems];
+        if (allItems.length === 0) {
+            showToast('Error', 'No downloadable items in cart.', 'error');
+            return;
+        }
+
+        var downloaded = 0;
+        for (var i = 0; i < allItems.length; i++) {
+            var resource = allResources.find(function(r) { return r.id === allItems[i].id; });
+            if (resource && resource.file_url) {
+                var url = resource.file_url;
+                if (!url.startsWith('http')) {
+                    generateSignedUrl(url).then(function(signedUrl) {
+                        if (signedUrl) {
+                            window.open(signedUrl, '_blank');
+                            downloaded++;
+                        }
+                    });
+                } else {
+                    setTimeout(function(u) {
+                        window.open(u, '_blank');
+                        downloaded++;
+                    }, i * 300, url);
                 }
-
-                var result = await response.json();
-                console.log('[KenyaVault] Payment status check:', result);
-
-                var apiSaysPaid = result.isPaid === true || 
-                                  result.status === 'paid' || 
-                                  result.payment_confirmed === true ||
-                                  result.payment_status === 'paid';
-
-                if (apiSaysPaid) {
-                    console.log('[KenyaVault] API says paid, verifying with database...');
-                    const dbResult = await verifyPaymentInDatabase(orderRef);
-                    
-                    if (dbResult.verified) {
-                        clearInterval(paymentPollInterval);
-                        paymentPollInterval = null;
-                        if (paymentTimer) {
-                            clearInterval(paymentTimer);
-                            paymentTimer = null;
-                        }
-                        if (paymentTimeout) {
-                            clearTimeout(paymentTimeout);
-                            paymentTimeout = null;
-                        }
-                        
-                        paymentVerified = true;
-                        statusEl.className = 'stk-status visible success';
-                        statusEl.innerHTML = '✅ Payment confirmed! Your resource is ready.';
-                        document.getElementById('paymentTimer').textContent = '✅ Payment confirmed!';
-                        statusMessage.style.display = 'block';
-                        statusMessage.className = 'stk-status success';
-                        statusMessage.innerHTML = '✅ Payment successful! Your download will begin shortly.';
-                        confirmBtn.style.display = 'none';
-
-                        // Mark all cart items as purchased if this was a cart checkout
-                        if (currentProduct && currentProduct._cartItems && currentProduct._cartItems.length > 0) {
-                            for (var i = 0; i < currentProduct._cartItems.length; i++) {
-                                var item = currentProduct._cartItems[i];
-                                purchasedResources[item.id] = true;
-                                var cartIndex = cart.findIndex(function(c) { return c.id === item.id; });
-                                if (cartIndex !== -1) {
-                                    cart.splice(cartIndex, 1);
-                                }
-                            }
-                            try {
-                                localStorage.setItem('kv_purchased', JSON.stringify(purchasedResources));
-                                localStorage.setItem('kv_cart', JSON.stringify(cart));
-                            } catch(e) {}
-                            updateCartBadge();
-                            renderCart();
-                            
-                            // Download all resources
-                            setTimeout(function() {
-                                for (var i = 0; i < currentProduct._cartItems.length; i++) {
-                                    var res = allResources.find(function(r) { return r.id === currentProduct._cartItems[i].id; });
-                                    if (res && res.file_url) {
-                                        setTimeout(function(url) {
-                                            window.open(url, '_blank');
-                                        }, i * 500, res.file_url);
-                                    }
-                                }
-                                showToast('Download Started', 'Your resources are downloading.', 'success');
-                            }, 1000);
-                        } else if (currentProduct && currentProduct.id) {
-                            purchasedResources[currentProduct.id] = true;
-                            var cartIndex = cart.findIndex(function(c) { return c.id === currentProduct.id; });
-                            if (cartIndex !== -1) {
-                                cart.splice(cartIndex, 1);
-                            }
-                            try {
-                                localStorage.setItem('kv_purchased', JSON.stringify(purchasedResources));
-                                localStorage.setItem('kv_cart', JSON.stringify(cart));
-                            } catch(e) {}
-                            updateCartBadge();
-                            renderCart();
-                            
-                            if (currentProduct.file_url) {
-                                setTimeout(function() {
-                                    window.open(currentProduct.file_url, '_blank');
-                                    showToast('Download Started', 'Your resource is downloading.', 'success');
-                                }, 1000);
-                            }
-                        }
-
-                        showToast('Payment Successful', 'Your payment was confirmed!', 'success');
-                        payBtn.disabled = false;
-                        document.getElementById('payBtnText').textContent = '✅ Done';
-                        document.getElementById('paySpinner').style.display = 'none';
-                        isProcessingPayment = false;
-
-                        setTimeout(function() {
-                            closePaymentModal();
-                            window.location.reload();
-                        }, 3000);
-                    } else {
-                        console.warn('[KenyaVault] API reported paid but database not fully confirmed. Waiting.');
-                        statusEl.className = 'stk-status visible pending';
-                        statusEl.innerHTML = '⏳ Payment confirmation pending. Please check your M-PESA messages.';
-                        statusMessage.style.display = 'block';
-                        statusMessage.className = 'stk-status pending';
-                        statusMessage.innerHTML = '⏳ Payment still pending. Please check your M-PESA messages.';
-                        confirmBtn.style.display = 'block';
-                        
-                        if (pollCount >= maxPolls) {
-                            clearInterval(paymentPollInterval);
-                            paymentPollInterval = null;
-                            statusEl.className = 'stk-status visible error';
-                            statusEl.innerHTML = '❌ Payment could not be confirmed. Please try again or contact support.';
-                            statusMessage.style.display = 'block';
-                            statusMessage.className = 'stk-status error';
-                            statusMessage.innerHTML = '❌ Payment could not be confirmed. Please try again.';
-                            confirmBtn.style.display = 'none';
-                            document.getElementById('retryPaymentBtn').style.display = 'block';
-                            payBtn.disabled = false;
-                            document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
-                            document.getElementById('paySpinner').style.display = 'none';
-                            isProcessingPayment = false;
-                        }
-                    }
-                } else if (result.status === 'failed' || result.status === 'cancelled' || result.status === 'timeout') {
-                    clearInterval(paymentPollInterval);
-                    paymentPollInterval = null;
-                    if (paymentTimer) {
-                        clearInterval(paymentTimer);
-                        paymentTimer = null;
-                    }
-                    if (paymentTimeout) {
-                        clearTimeout(paymentTimeout);
-                        paymentTimeout = null;
-                    }
-                    
-                    statusEl.className = 'stk-status visible error';
-                    statusEl.innerHTML = '❌ Payment ' + (result.status || 'failed') + '. Please try again.';
-                    statusMessage.style.display = 'block';
-                    statusMessage.className = 'stk-status error';
-                    statusMessage.innerHTML = '❌ Payment ' + (result.status || 'failed') + '. Please try again.';
-                    confirmBtn.style.display = 'none';
-                    document.getElementById('retryPaymentBtn').style.display = 'block';
-                    payBtn.disabled = false;
-                    document.getElementById('payBtnText').textContent = '💳 Pay with M-PESA';
-                    document.getElementById('paySpinner').style.display = 'none';
-                    isProcessingPayment = false;
-                    showToast('Payment Failed', 'Payment was not completed. Please try again.', 'error');
-
-                } else if (pollCount >= maxPolls) {
-                    clearInterval(paymentPollInterval);
-                    paymentPollInterval = null;
-                    statusEl.className = 'stk-status visible pending';
-                    statusEl.innerHTML = '⏳ Payment is still being processed. Please check your M-PESA messages.';
-                    statusMessage.style.display = 'block';
-                    statusMessage.className = 'stk-status pending';
-                    statusMessage.innerHTML = '⏳ Payment still pending. Please check your M-PESA messages.';
-                    confirmBtn.style.display = 'block';
-                    confirmBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Check Status';
-                    document.getElementById('retryPaymentBtn').style.display = 'block';
-                    payBtn.disabled = false;
-                    document.getElementById('payBtnText').textContent = '🔄 Try Again';
-                    document.getElementById('paySpinner').style.display = 'none';
-                    isProcessingPayment = false;
-                }
-
-            } catch (error) {
-                console.error('[KenyaVault] Polling error:', error);
             }
-        }, 5000);
-    }
+        }
+
+        setTimeout(function() {
+            showToast('Bulk Download', 'Downloading ' + downloaded + ' resource(s).', 'success');
+        }, 500);
+    };
 
     // ─── NAVBAR DROPDOWN ──────────────────────────────────────
     function setupNavbar() {
@@ -3667,10 +4093,12 @@
     window.retryPayment = retryPayment;
     window.toggleCart = toggleCart;
     window.fetchResources = fetchResources;
-    window.secureDownload = secureDownload;
     window.bulkDownload = bulkDownload;
     window.checkoutCart = checkoutCart;
     window.removeFromCart = removeFromCart;
+    window.generateSignedUrl = generateSignedUrl;
+    window.downloadPurchasedItem = downloadPurchasedItem;
+    window.closePaymentModalAndRefresh = closePaymentModalAndRefresh;
 
 })();
 </script>
