@@ -2192,7 +2192,7 @@
     // ─── CONFIG ──────────────────────────────────────────────
     var SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
     var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
-    var API_BASE_URL = 'https://kenyavault.onrender.com/api';
+    var API_BASE_URL = 'https://kenyavault-payment.onrender.com/api';
     var supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     // ─── STATE ──────────────────────────────────────────────
@@ -2827,7 +2827,8 @@
                     status: order.status,
                     payment_status: order.payment_status,
                     receipt: receipt,
-                    isConfirmed: isConfirmed
+                    isConfirmed: isConfirmed,
+                    transaction_request_id: order.transaction_request_id
                 };
             }
             return { verified: false, order: null };
@@ -3233,7 +3234,8 @@
                 },
                 body: JSON.stringify({
                     order_ref: currentOrderRef,
-                    order_id: currentOrderId
+                    order_id: currentOrderId,
+                    transaction_request_id: dbResult.transaction_request_id || null
                 })
             });
 
@@ -3263,7 +3265,9 @@
                             payment_status: 'confirmed',
                             callback_status: 'verified',
                             confirmed_at: new Date().toISOString(),
-                            updated_at: new Date().toISOString()
+                            updated_at: new Date().toISOString(),
+                            mpesa_receipt: result.mpesa_receipt || result.receipt_number || '',
+                            mpesa_code: result.mpesa_code || result.transaction_id || ''
                         })
                     });
                 } catch (updateErr) {
@@ -3377,7 +3381,8 @@
                     },
                     body: JSON.stringify({
                         order_ref: orderRef,
-                        order_id: currentOrderId
+                        order_id: currentOrderId,
+                        transaction_request_id: dbResult.transaction_request_id || null
                     })
                 });
 
@@ -3411,7 +3416,9 @@
                                 payment_status: 'confirmed',
                                 callback_status: 'verified',
                                 confirmed_at: new Date().toISOString(),
-                                updated_at: new Date().toISOString()
+                                updated_at: new Date().toISOString(),
+                                mpesa_receipt: result.mpesa_receipt || result.receipt_number || '',
+                                mpesa_code: result.mpesa_code || result.transaction_id || ''
                             })
                         });
                     } catch (updateErr) {}
@@ -3563,6 +3570,7 @@
             var resourceIds = isCartCheckout ? cartItems.map(function(item) { return item.id; }) : [currentProduct.id];
             var itemTitle = isCartCheckout ? 'Cart (' + cartItems.length + ' items)' : (currentProduct.title || 'Resource');
 
+            // Create order with transaction_request_id field
             var orderData = {
                 order_ref: orderRef,
                 session_id: sessionId,
@@ -3593,7 +3601,8 @@
                 user_agent: navigator.userAgent || 'Unknown',
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
-                payment_confirmed: false
+                payment_confirmed: false,
+                transaction_request_id: null // Will be updated after STK push
             };
 
             console.log('[KenyaVault] Creating order:', orderData);
@@ -3660,7 +3669,51 @@
                 throw new Error(result.error || result.message || 'Payment initiation failed (HTTP ' + response.status + ')');
             }
 
-            if (result.success) {
+            // CRITICAL FIX: Capture and store transaction_request_id
+            var transactionRequestId = result.transaction_request_id || result.transactionId || result.request_id || null;
+            
+            if (transactionRequestId) {
+                console.log('[KenyaVault] Transaction Request ID received:', transactionRequestId);
+                // Update order with transaction_request_id
+                try {
+                    await fetch(SUPABASE_URL + '/rest/v1/orders?order_ref=eq.' + orderRef, {
+                        method: 'PATCH',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            transaction_request_id: transactionRequestId,
+                            updated_at: new Date().toISOString()
+                        })
+                    });
+                } catch (updateErr) {
+                    console.error('[KenyaVault] Error updating transaction_request_id:', updateErr);
+                }
+            } else {
+                console.warn('[KenyaVault] No transaction_request_id received, but STK push may still work');
+                // Try to extract from any nested data
+                if (result.data && result.data.transaction_request_id) {
+                    transactionRequestId = result.data.transaction_request_id;
+                    try {
+                        await fetch(SUPABASE_URL + '/rest/v1/orders?order_ref=eq.' + orderRef, {
+                            method: 'PATCH',
+                            headers: {
+                                'apikey': SUPABASE_ANON_KEY,
+                                'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                transaction_request_id: transactionRequestId,
+                                updated_at: new Date().toISOString()
+                            })
+                        });
+                    } catch (updateErr) {}
+                }
+            }
+
+            if (result.success || result.transaction_request_id || transactionRequestId) {
                 statusEl.className = 'stk-status visible pending';
                 statusEl.innerHTML = '<span class="spinner"></span> STK Push sent to ' + phoneClean + '. Please check your phone and enter your M-PESA PIN.';
                 
@@ -3673,6 +3726,13 @@
                 confirmBtn.disabled = false;
                 confirmBtn.style.background = 'var(--kv-green)';
                 confirmBtn.style.color = 'white';
+                confirmBtn.style.padding = '12px 20px';
+                confirmBtn.style.borderRadius = '8px';
+                confirmBtn.style.fontWeight = '700';
+                confirmBtn.style.cursor = 'pointer';
+                confirmBtn.style.border = 'none';
+                confirmBtn.style.width = '100%';
+                confirmBtn.style.marginTop = '8px';
                 
                 startPaymentTimer();
                 startPaymentPolling(currentOrderRef);
