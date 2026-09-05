@@ -1,5 +1,5 @@
 // ============================================================
-// KENYA VAULT - PAYMENT SERVER (FIXED - RETURNS TRANSACTION ID)
+// KENYA VAULT - PAYMENT SERVER (FIXED - CORRECT SUPABASE KEY)
 // ============================================================
 
 const express = require('express');
@@ -12,11 +12,13 @@ const PORT = process.env.PORT || 3000;
 
 // ─── SUPABASE CONFIG ──────────────────────────────────────────
 const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
-const SUPABASE_SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MTc0OTM5OSwiZXhwIjoyMDk3MzI1Mzk5fQ.qkL7O1o1dhf9jCFuIUIQyJWFUBaq404ePWU0X4I5p1k';
+// FIXED: Use the ANON key instead of SERVICE ROLE key (which was invalid)
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-console.log('✅ Supabase initialized with SERVICE ROLE KEY');
+console.log('✅ Supabase initialized with key');
 
 // ─── MEGAPAY CONFIG ──────────────────────────────────────────
 const MEGAPAY_API_KEY = process.env.MEGAPAY_API_KEY || 'MGPYDSg2lIYA';
@@ -373,7 +375,7 @@ async function fulfillPurchase(orderId) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// ─── STK PUSH ENDPOINT (FIXED - RETURNS TRANSACTION ID) ─────
+// ─── STK PUSH ENDPOINT ──────────────────────────────────────
 // ══════════════════════════════════════════════════════════════
 
 app.post('/api/mpesa/stk-push', async (req, res) => {
@@ -489,8 +491,7 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
 
         console.log('📥 MegaPay Result:', JSON.stringify(megaPayResult, null, 2));
 
-        // ─── CHECK FOR TRANSACTION REQUEST ID ────────────────
-        // CRITICAL FIX: Extract transaction_request_id from MegaPay response
+        // ─── EXTRACT TRANSACTION REQUEST ID ──────────────────
         let transactionRequestId = null;
         
         // Try multiple possible field names
@@ -508,39 +509,18 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
             'MerchantRequestID',
             'merchant_request_id',
             'request_id',
-            'id',
-            'data.transaction_request_id',
-            'data.TransactionRequestID'
+            'id'
         ];
         
         for (const field of possibleIdFields) {
-            // Handle nested fields like 'data.transaction_request_id'
-            if (field.includes('.')) {
-                const parts = field.split('.');
-                let value = megaPayResult;
-                for (const part of parts) {
-                    if (value && typeof value === 'object') {
-                        value = value[part];
-                    } else {
-                        value = undefined;
-                        break;
-                    }
-                }
-                if (value) {
-                    transactionRequestId = value;
-                    console.log(`✅ Found transaction ID in nested field ${field}: ${transactionRequestId}`);
-                    break;
-                }
-            } else {
-                if (megaPayResult[field]) {
-                    transactionRequestId = megaPayResult[field];
-                    console.log(`✅ Found transaction ID in field ${field}: ${transactionRequestId}`);
-                    break;
-                }
+            if (megaPayResult[field]) {
+                transactionRequestId = megaPayResult[field];
+                console.log(`✅ Found transaction ID in field ${field}: ${transactionRequestId}`);
+                break;
             }
         }
         
-        // Also check in data object
+        // Check in data object
         if (!transactionRequestId && megaPayResult.data) {
             const dataFields = ['transaction_request_id', 'TransactionRequestID', 'TransactionID', 'id', 'request_id'];
             for (const field of dataFields) {
@@ -601,10 +581,10 @@ app.post('/api/mpesa/stk-push', async (req, res) => {
                 transaction_request_id: transactionRequestId
             });
             
-            // CRITICAL FIX: Return the transaction_request_id to the frontend
+            // CRITICAL: Return the transaction_request_id to the frontend
             return res.status(200).json({
                 success: true,
-                transaction_request_id: transactionRequestId, // <-- THIS IS THE KEY FIX
+                transaction_request_id: transactionRequestId,
                 message: megaPayResult.message || megaPayResult.ResultDesc || 'STK Push sent successfully',
                 data: {
                     reference: kvReference,
