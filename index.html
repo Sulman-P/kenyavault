@@ -2192,6 +2192,7 @@
     // ─── CONFIG ──────────────────────────────────────────────
     var SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
     var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
+    // FIX: Use the correct payment server URL
     var API_BASE_URL = 'https://kenyavault-payment.onrender.com/api';
     var supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -3044,7 +3045,6 @@
         var downloadButtonsHtml = '';
         
         if (purchasedItems.length === 1) {
-            // Single item - show single download button
             var item = purchasedItems[0];
             downloadButtonsHtml += `
                 <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
@@ -3061,7 +3061,6 @@
                 </button>
             `;
         } else {
-            // Multiple items - show list
             downloadButtonsHtml += `
                 <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
                     <i class="bi bi-download" style="font-size: 1.2rem; color: var(--kv-green);"></i>
@@ -3146,7 +3145,7 @@
         window.location.reload();
     };
 
-    // ─── DOWNLOAD PURCHASED ITEM (Manual Download Button) ──
+    // ─── DOWNLOAD PURCHASED ITEM ──────────────────────────────
     window.downloadPurchasedItem = function(productId) {
         var resource = allResources.find(function(r) { return r.id === productId; });
         if (!resource) {
@@ -3570,7 +3569,6 @@
             var resourceIds = isCartCheckout ? cartItems.map(function(item) { return item.id; }) : [currentProduct.id];
             var itemTitle = isCartCheckout ? 'Cart (' + cartItems.length + ' items)' : (currentProduct.title || 'Resource');
 
-            // Create order with transaction_request_id field
             var orderData = {
                 order_ref: orderRef,
                 session_id: sessionId,
@@ -3602,7 +3600,7 @@
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
                 payment_confirmed: false,
-                transaction_request_id: null // Will be updated after STK push
+                transaction_request_id: null
             };
 
             console.log('[KenyaVault] Creating order:', orderData);
@@ -3669,8 +3667,13 @@
                 throw new Error(result.error || result.message || 'Payment initiation failed (HTTP ' + response.status + ')');
             }
 
-            // CRITICAL FIX: Capture and store transaction_request_id
-            var transactionRequestId = result.transaction_request_id || result.transactionId || result.request_id || null;
+            // CRITICAL: Capture the transaction_request_id from the server
+            var transactionRequestId = result.transaction_request_id || 
+                                      result.transactionId || 
+                                      result.transaction_id ||
+                                      result.TransactionID ||
+                                      result.request_id ||
+                                      null;
             
             if (transactionRequestId) {
                 console.log('[KenyaVault] Transaction Request ID received:', transactionRequestId);
@@ -3692,8 +3695,8 @@
                     console.error('[KenyaVault] Error updating transaction_request_id:', updateErr);
                 }
             } else {
-                console.warn('[KenyaVault] No transaction_request_id received, but STK push may still work');
-                // Try to extract from any nested data
+                console.warn('[KenyaVault] No transaction_request_id received from server');
+                // Check if it's in the data object
                 if (result.data && result.data.transaction_request_id) {
                     transactionRequestId = result.data.transaction_request_id;
                     try {
