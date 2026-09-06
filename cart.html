@@ -1791,7 +1791,19 @@
     const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
     const API_BASE_URL = 'https://kenyavault-payment.onrender.com/api';
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    
+    // ─── CREATE SUPABASE CLIENT ──────────────────────────────────
+    let supabase = null;
+    try {
+        if (typeof window.supabase !== 'undefined' && window.supabase.createClient) {
+            supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            console.log('✅ Supabase client initialized');
+        } else {
+            console.error('❌ Supabase library not loaded');
+        }
+    } catch (e) {
+        console.error('❌ Failed to initialize Supabase:', e);
+    }
 
     // ─── STATE ──────────────────────────────────────────────────
     let appliedCartPromo = null;
@@ -1810,6 +1822,7 @@
     let paymentVerified = false;
     let paymentPollInterval = null;
     let pendingPaymentCheck = false;
+    let cart = [];
 
     // ─── CART ENGINE ──────────────────────────────────────────
     const Cart = {
@@ -1820,22 +1833,22 @@
                 return [];
             }
         },
-        save(cart) {
+        save(cartData) {
             try {
-                localStorage.setItem('kv_cart', JSON.stringify(cart));
+                localStorage.setItem('kv_cart', JSON.stringify(cartData));
             } catch(e) {}
         },
         add(item) {
-            let cart = this.get();
-            if (!cart.some(x => parseInt(x.id) === parseInt(item.id))) {
-                cart.push(item);
-                this.save(cart);
+            let cartData = this.get();
+            if (!cartData.some(x => parseInt(x.id) === parseInt(item.id))) {
+                cartData.push(item);
+                this.save(cartData);
             }
         },
         remove(id) {
-            let cart = this.get();
-            cart = cart.filter(x => parseInt(x.id) !== parseInt(id));
-            this.save(cart);
+            let cartData = this.get();
+            cartData = cartData.filter(x => parseInt(x.id) !== parseInt(id));
+            this.save(cartData);
         },
         clear() {
             this.save([]);
@@ -1894,9 +1907,14 @@
         }, 5000);
     }
 
-    // ─── GENERATE SIGNED URL (one-time expiry) ──────────────
+    // ─── GENERATE SIGNED URL ──────────────────────────────
     async function generateOneTimeSignedUrl(filePath) {
         try {
+            if (!supabase) {
+                console.error('❌ Supabase not initialized');
+                return null;
+            }
+            
             if (filePath && !filePath.startsWith('http')) {
                 var signedUrl = await supabase.storage
                     .from('private-resources')
@@ -1915,6 +1933,90 @@
         }
     }
 
+    // ─── DOWNLOAD PURCHASED ITEM ──────────────────────────────
+    window.downloadPurchasedItem = async function(productId) {
+        console.log('🔽 Download requested for:', productId);
+        
+        try {
+            var purchasedResources = {};
+            try {
+                var saved = localStorage.getItem('kv_purchased');
+                if (saved) {
+                    purchasedResources = JSON.parse(saved);
+                }
+            } catch(e) {}
+
+            if (!purchasedResources[productId]) {
+                showToast('Error', 'You have not purchased this resource.', 'error');
+                return;
+            }
+
+            const cartData = Cart.get();
+            var item = cartData.find(function(r) { return String(r.id) === String(productId); });
+            
+            if (!item) {
+                showToast('Error', 'Resource not found in cart.', 'error');
+                return;
+            }
+
+            var fileUrl = item.file_url || item.file_path || item.storage_path;
+            
+            if (!fileUrl && supabase) {
+                try {
+                    const { data, error } = await supabase
+                        .from('resources')
+                        .select('file_url, file_path, storage_path')
+                        .eq('id', productId)
+                        .single();
+                    
+                    if (error) {
+                        console.error('Error fetching resource:', error);
+                        showToast('Error', 'Could not find file for this resource.', 'error');
+                        return;
+                    }
+                    
+                    fileUrl = data.file_url || data.file_path || data.storage_path;
+                    
+                    if (!fileUrl) {
+                        showToast('Error', 'No file available for this resource.', 'error');
+                        return;
+                    }
+                    
+                    item.file_url = fileUrl;
+                    Cart.save(cartData);
+                    
+                } catch (fetchError) {
+                    console.error('Error:', fetchError);
+                    showToast('Error', 'Could not retrieve file. Please contact support.', 'error');
+                    return;
+                }
+            }
+            
+            if (fileUrl && !fileUrl.startsWith('http')) {
+                try {
+                    const signedUrl = await generateOneTimeSignedUrl(fileUrl);
+                    if (signedUrl) {
+                        window.open(signedUrl, '_blank');
+                        showToast('Download Started', 'Your file is downloading.', 'success');
+                    } else {
+                        showToast('Error', 'Could not generate download link. Please contact support.', 'error');
+                    }
+                } catch (e) {
+                    console.error('Download error:', e);
+                    showToast('Error', 'Failed to generate download link.', 'error');
+                }
+            } else if (fileUrl) {
+                window.open(fileUrl, '_blank');
+                showToast('Download Started', 'Your file is downloading.', 'success');
+            } else {
+                showToast('Error', 'File not available. Please contact support.', 'error');
+            }
+        } catch (error) {
+            console.error('❌ Download error:', error);
+            showToast('Error', 'Something went wrong. Please try again.', 'error');
+        }
+    };
+
     // ─── ESCAPE HTML ──────────────────────────────────────────
     function escapeHtml(string) {
         if (!string) return '';
@@ -1928,24 +2030,29 @@
         return String(string).replace(/[&<>"']/g, function(s) { return entityMap[s]; });
     }
 
+    // ─── FORMAT CURRENCY ──────────────────────────────────────
+    function formatCurrency(amount) {
+        return 'KES ' + Number(amount).toLocaleString();
+    }
+
     // ─── SHARED CART ──────────────────────────────────────────
     function getShareableCartUrl() {
-        const cart = Cart.get();
-        if (!cart || cart.length === 0) return '';
-        const ids = cart.map(x => x.id).join(',');
+        const cartData = Cart.get();
+        if (!cartData || cartData.length === 0) return '';
+        const ids = cartData.map(x => x.id).join(',');
         const origin = window.location.origin || (window.location.protocol + '//' + window.location.host);
         return `${origin}/cart.html?items=${ids}`;
     }
 
     window.openShareCartModal = function() {
-        const cart = Cart.get();
-        if (!cart || cart.length === 0) {
+        const cartData = Cart.get();
+        if (!cartData || cartData.length === 0) {
             alert('Your cart is empty. Add documents before sharing.');
             return;
         }
 
         const shareUrl = getShareableCartUrl();
-        const count = cart.length;
+        const count = cartData.length;
         const shareText = `Check out this CBC revision document pack (${count} items) on KenyaVault: ${shareUrl}`;
         const encUrl = encodeURIComponent(shareUrl);
         const encText = encodeURIComponent(shareText);
@@ -2009,10 +2116,6 @@
     }
 
     // ─── HELPERS ──────────────────────────────────────────────
-    function formatCurrency(amount) {
-        return 'KES ' + Number(amount).toLocaleString();
-    }
-
     function validateEmail(email) {
         return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
     }
@@ -2062,9 +2165,9 @@
 
     // ─── RENDER CART ──────────────────────────────────────────
     function renderCartPage() {
-        const cart = Cart.get();
+        const cartData = Cart.get();
 
-        if (!cart || cart.length === 0) {
+        if (!cartData || cartData.length === 0) {
             emptyState.style.display = 'block';
             layout.style.display = 'none';
             if (headerBadge) headerBadge.style.display = 'none';
@@ -2077,21 +2180,21 @@
 
         if (headerBadge) {
             headerBadge.style.display = 'inline-flex';
-            headerBadge.textContent = cart.length === 1 ? '1 item' : `${cart.length} items`;
+            headerBadge.textContent = cartData.length === 1 ? '1 item' : `${cartData.length} items`;
         }
 
         if (countSub) {
-            countSub.textContent = `(${cart.length} ${cart.length === 1 ? 'document' : 'documents'})`;
+            countSub.textContent = `(${cartData.length} ${cartData.length === 1 ? 'document' : 'documents'})`;
         }
 
         if (clearAllBtn) {
-            clearAllBtn.style.display = cart.length > 1 ? 'inline-flex' : 'none';
+            clearAllBtn.style.display = cartData.length > 1 ? 'inline-flex' : 'none';
         }
 
         itemsList.innerHTML = '';
         let total = 0;
 
-        cart.forEach(item => {
+        cartData.forEach(item => {
             total += parseFloat(item.price || 0);
             const iconClass = getFileColor(item.filename || '');
             const iconHtml = getFileIcon(item.filename || '');
@@ -2124,13 +2227,13 @@
     }
 
     function updateSummaryLive() {
-        const cart = Cart.get();
-        const rawSubtotal = cart.reduce((sum, i) => sum + parseFloat(i.price || 0), 0);
+        const cartData = Cart.get();
+        const rawSubtotal = cartData.reduce((sum, i) => sum + parseFloat(i.price || 0), 0);
 
-        if (summaryCount) summaryCount.textContent = cart.length;
+        if (summaryCount) summaryCount.textContent = cartData.length;
         if (summarySubtotal) summarySubtotal.textContent = formatCurrency(rawSubtotal);
 
-        if (appliedCartPromo && cart.length > 0) {
+        if (appliedCartPromo && cartData.length > 0) {
             recalculateCartDiscount(rawSubtotal);
         } else {
             if (summaryDiscountRow) summaryDiscountRow.style.display = 'none';
@@ -2174,8 +2277,8 @@
 
     window.clearAllItems = function() {
         if (_clearAllInProgress) return;
-        const cart = Cart.get();
-        if (cart.length === 0) return;
+        const cartData = Cart.get();
+        if (cartData.length === 0) return;
 
         _clearAllInProgress = true;
         if (clearAllBtn) {
@@ -2223,9 +2326,9 @@
         const code = (overrideCode || (input ? input.value : '')).trim().toUpperCase();
         const feedbackEl = document.getElementById('cartPromoFeedback');
         const applyBtn = document.getElementById('cartPromoApplyBtn');
-        const cart = Cart.get();
+        const cartData = Cart.get();
 
-        if (cart.length === 0) {
+        if (cartData.length === 0) {
             alert('Your cart is empty.');
             return;
         }
@@ -2251,7 +2354,7 @@
             }
 
             if (code === 'SAVE20' || code === 'SCHEMES20' || code === 'WELCOME') {
-                const discount = Math.round(cart.reduce((sum, i) => sum + parseFloat(i.price || 0), 0) * 0.2);
+                const discount = Math.round(cartData.reduce((sum, i) => sum + parseFloat(i.price || 0), 0) * 0.2);
                 const data = {
                     valid: true,
                     success: true,
@@ -2259,13 +2362,13 @@
                     discount_amount: discount,
                     formatted_discount_amount: formatCurrency(discount),
                     formatted_discount: '20%',
-                    final_total: cart.reduce((sum, i) => sum + parseFloat(i.price || 0), 0) - discount,
-                    formatted_final_total: formatCurrency(cart.reduce((sum, i) => sum + parseFloat(i.price || 0), 0) - discount)
+                    final_total: cartData.reduce((sum, i) => sum + parseFloat(i.price || 0), 0) - discount,
+                    formatted_final_total: formatCurrency(cartData.reduce((sum, i) => sum + parseFloat(i.price || 0), 0) - discount)
                 };
                 appliedCartPromo = data;
                 renderCartPromoState(data);
             } else if (code === 'FREE') {
-                const discount = cart.reduce((sum, i) => sum + parseFloat(i.price || 0), 0);
+                const discount = cartData.reduce((sum, i) => sum + parseFloat(i.price || 0), 0);
                 const data = {
                     valid: true,
                     success: true,
@@ -2335,8 +2438,8 @@
 
     function recalculateCartDiscount(rawSubtotal) {
         if (!appliedCartPromo) return;
-        const cart = Cart.get();
-        if (cart.length === 0) {
+        const cartData = Cart.get();
+        if (cartData.length === 0) {
             removeCartPromo();
             return;
         }
@@ -2358,8 +2461,8 @@
         if (appliedCartPromo && typeof appliedCartPromo.final_total !== 'undefined') {
             return appliedCartPromo.final_total;
         }
-        const cart = Cart.get();
-        return cart.reduce((sum, i) => sum + parseFloat(i.price || 0), 0);
+        const cartData = Cart.get();
+        return cartData.reduce((sum, i) => sum + parseFloat(i.price || 0), 0);
     }
 
     window.setCartPaymentGateway = function(gateway) {
@@ -2628,7 +2731,7 @@
         try {
             showToast('Sending Email', 'Preparing your order confirmation with attachments...', 'info');
             
-            const response = await fetch('https://kenyavault-payment.onrender.com/api/send-order-email', {
+            const response = await fetch(API_BASE_URL + '/send-order-email', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -2665,25 +2768,27 @@
     }
 
     // ─── DISPLAY DOWNLOAD BUTTONS ─────────────────────────────
-    function displayDownloadButtons(cart) {
+    function displayDownloadButtons(cartData) {
         if (cartMpesaStatus) {
             let html = `
                 <div class="stk-success-box">
                     <div class="stk-success-icon-wrap"><i class="bi bi-check-lg"></i></div>
                     <h3 class="stk-success-title">Payment Confirmed!</h3>
                     <p style="color:#475569; font-size:0.92rem; margin-bottom:0.75rem;">
-                        Your purchased items are ready. Check your email for attachments or download below.
+                        Your purchased items are ready. Click download below.
                     </p>
                     <div style="margin:1.25rem 0; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:1.25rem;">
                         <h4 style="font-size:0.95rem; font-weight:700; margin-bottom:0.75rem; color:#1e293b;">Download Purchased Files:</h4>
                         <ul style="list-style:none; padding:0; margin:0;">
             `;
             
-            cart.forEach(item => {
+            cartData.forEach(item => {
                 html += `
                     <li style="display:flex; justify-content:space-between; align-items:center; padding:0.5rem 0; border-bottom:1px solid #edf2f7;">
                         <span style="font-size:0.85rem; font-weight:500; color:#334155;">${escapeHtml(item.title)}</span>
-                        <button onclick="downloadPurchasedItem('${item.id}')" class="btn-primary" style="padding:5px 12px; font-size:0.75rem; display:inline-flex; align-items:center; gap:0.25rem; border-radius:6px; background:var(--kv-green); color:white; border:none; font-weight:700; cursor:pointer;">
+                        <button onclick="window.downloadPurchasedItem('${item.id}')" 
+                                class="btn-primary" 
+                                style="padding:5px 12px; font-size:0.75rem; display:inline-flex; align-items:center; gap:0.25rem; border-radius:6px; background:var(--kv-green); color:white; border:none; font-weight:700; cursor:pointer;">
                             <i class="bi bi-download"></i> Download
                         </button>
                     </li>
@@ -2693,7 +2798,7 @@
             html += `
                         </ul>
                         <p style="font-size:0.7rem; color:var(--kv-muted); margin-top:0.75rem; border-top:1px solid #edf2f7; padding-top:0.75rem;">
-                            <i class="bi bi-envelope"></i> Files are also sent to your email
+                            <i class="bi bi-info-circle"></i> Each link expires after the first click or 60 seconds.
                         </p>
                     </div>
                     <div style="display:flex; gap:8px; flex-wrap:wrap;">
@@ -2713,9 +2818,9 @@
 
     // ─── HANDLE SUCCESSFUL PAYMENT ──────────────────────────
     function handleSuccessfulPayment() {
-        const cart = Cart.get();
+        const cartData = Cart.get();
         
-        if (cart.length === 0) {
+        if (cartData.length === 0) {
             showToast('Info', 'Your cart is empty.', 'info');
             return;
         }
@@ -2727,7 +2832,7 @@
                 currentOrderId,
                 currentOrderRef,
                 cartEmail.value,
-                cart,
+                cartData,
                 total
             );
         }
@@ -2740,22 +2845,22 @@
             }
         } catch(e) {}
         
-        for (var i = 0; i < cart.length; i++) {
-            purchasedResources[cart[i].id] = true;
+        for (var i = 0; i < cartData.length; i++) {
+            purchasedResources[cartData[i].id] = true;
         }
         try {
             localStorage.setItem('kv_purchased', JSON.stringify(purchasedResources));
         } catch(e) {}
 
         // Display download buttons
-        displayDownloadButtons(cart);
+        displayDownloadButtons(cartData);
         
         showToast('Payment Successful', 'Your payment was confirmed!', 'success');
         
         // Auto-download first item
-        if (cart.length > 0 && cart[0].file_url) {
+        if (cartData.length > 0 && cartData[0].file_url) {
             setTimeout(function() {
-                var url = cart[0].file_url;
+                var url = cartData[0].file_url;
                 if (!url.startsWith('http')) {
                     generateOneTimeSignedUrl(url).then(function(signedUrl) {
                         if (signedUrl) {
@@ -2767,55 +2872,7 @@
                 }
             }, 1000);
         }
-        
-        setTimeout(function() {
-            // Optionally clear cart
-            // Cart.clear();
-            // renderCartPage();
-        }, 3000);
     }
-
-    // ─── DOWNLOAD PURCHASED ITEM ──────────────────────────────
-    window.downloadPurchasedItem = async function(productId) {
-        var purchasedResources = {};
-        try {
-            var saved = localStorage.getItem('kv_purchased');
-            if (saved) {
-                purchasedResources = JSON.parse(saved);
-            }
-        } catch(e) {}
-
-        if (!purchasedResources[productId]) {
-            showToast('Error', 'You have not purchased this resource.', 'error');
-            return;
-        }
-
-        const cart = Cart.get();
-        var item = cart.find(function(r) { return r.id == productId; });
-        
-        if (item && item.file_url) {
-            var url = item.file_url;
-            if (!url.startsWith('http')) {
-                try {
-                    const signedUrl = await generateOneTimeSignedUrl(url);
-                    if (signedUrl) {
-                        window.open(signedUrl, '_blank');
-                        showToast('Download Started', item.title + ' is downloading. (one‑time link)', 'success');
-                    } else {
-                        showToast('Error', 'Could not generate download link. Please contact support.', 'error');
-                    }
-                } catch (e) {
-                    console.error('[Cart] Download error:', e);
-                    showToast('Error', 'Failed to generate download link.', 'error');
-                }
-            } else {
-                window.open(url, '_blank');
-                showToast('Download Started', item.title + ' is downloading.', 'success');
-            }
-        } else {
-            showToast('Error', 'File not available. Please contact support.', 'error');
-        }
-    };
 
     // ─── START PAYMENT POLLING ────────────────────────────────
     function startPaymentPolling(orderRef) {
@@ -2862,10 +2919,7 @@
                     if (retryBtn) retryBtn.style.display = 'none';
                     if (paymentTimerEl) paymentTimerEl.textContent = '✅ Payment confirmed!';
                     pendingPaymentCheck = false;
-                    
-                    // Cart.clear(); // Uncomment to clear cart after payment
-                    // renderCartPage();
-                    
+
                     handleSuccessfulPayment();
                     return;
                 }
@@ -3092,8 +3146,8 @@
         clearInlineCartError();
         const session = ++cartCheckoutSessionId;
 
-        const cart = Cart.get();
-        if (cart.length === 0) {
+        const cartData = Cart.get();
+        if (cartData.length === 0) {
             showInlineCartError('Your cart is empty. Please add items first.');
             return;
         }
@@ -3163,12 +3217,12 @@
                 phone: sanitizedPhone || '',
                 amount: payable,
                 total_amount: payable,
-                item_title: 'Cart (' + cart.length + ' items)',
+                item_title: 'Cart (' + cartData.length + ' items)',
                 item_price: payable,
                 status: 'pending',
                 payment_status: 'pending',
                 payment_method: 'M-PESA',
-                cart_items: cart.map(function(item) {
+                cart_items: cartData.map(function(item) {
                     return {
                         id: item.id,
                         title: item.title,
@@ -3180,9 +3234,9 @@
                         grade: item.grade || ''
                     };
                 }),
-                resource_ids: cart.map(function(item) { return item.id; }),
-                resource_id: cart[0]?.id || null,
-                item_count: cart.length,
+                resource_ids: cartData.map(function(item) { return item.id; }),
+                resource_id: cartData[0]?.id || null,
+                item_count: cartData.length,
                 cart_total: payable,
                 currency: 'KES',
                 ip_address: '0.0.0.0',
@@ -3273,7 +3327,7 @@
                 amount: payable,
                 customer_name: 'Guest User',
                 customer_email: email,
-                resource_ids: cart.map(function(item) { return item.id; })
+                resource_ids: cartData.map(function(item) { return item.id; })
             };
 
             console.log('[Cart] Sending STK push to payment service:', payload);
@@ -3481,140 +3535,6 @@
     window.copyCartShareLink = copyCartShareLink;
 
 })();
-</script>
-<!-- Add this script after the existing script, or replace the downloadPurchasedItem function -->
-<script>
-// ─── OVERRIDE DOWNLOAD PURCHASED ITEM ──────────────────────
-window.downloadPurchasedItem = async function(productId) {
-    console.log('🔽 Download requested for:', productId);
-    
-    var purchasedResources = {};
-    try {
-        var saved = localStorage.getItem('kv_purchased');
-        if (saved) {
-            purchasedResources = JSON.parse(saved);
-        }
-    } catch(e) {}
-
-    if (!purchasedResources[productId]) {
-        showToast('Error', 'You have not purchased this resource.', 'error');
-        return;
-    }
-
-    const cart = Cart.get();
-    var item = cart.find(function(r) { return String(r.id) === String(productId); });
-    
-    if (!item) {
-        showToast('Error', 'Resource not found in cart.', 'error');
-        return;
-    }
-
-    // Try to get file_url from the item
-    var fileUrl = item.file_url || item.file_path || item.storage_path;
-    
-    if (!fileUrl) {
-        // If no file_url, fetch from Supabase using the resource ID
-        try {
-            const { data, error } = await supabase
-                .from('resources')
-                .select('file_url, file_path, storage_path')
-                .eq('id', productId)
-                .single();
-            
-            if (error) {
-                console.error('Error fetching resource:', error);
-                showToast('Error', 'Could not find file for this resource.', 'error');
-                return;
-            }
-            
-            fileUrl = data.file_url || data.file_path || data.storage_path;
-            
-            if (!fileUrl) {
-                showToast('Error', 'No file available for this resource.', 'error');
-                return;
-            }
-            
-            // Update the cart item with file_url for future use
-            item.file_url = fileUrl;
-            Cart.save(cart);
-            
-        } catch (fetchError) {
-            console.error('Error:', fetchError);
-            showToast('Error', 'Could not retrieve file. Please contact support.', 'error');
-            return;
-        }
-    }
-    
-    // Generate signed URL if needed
-    if (fileUrl && !fileUrl.startsWith('http')) {
-        try {
-            const signedUrl = await generateOneTimeSignedUrl(fileUrl);
-            if (signedUrl) {
-                window.open(signedUrl, '_blank');
-                showToast('Download Started', 'Your file is downloading.', 'success');
-            } else {
-                showToast('Error', 'Could not generate download link. Please contact support.', 'error');
-            }
-        } catch (e) {
-            console.error('Download error:', e);
-            showToast('Error', 'Failed to generate download link.', 'error');
-        }
-    } else if (fileUrl) {
-        window.open(fileUrl, '_blank');
-        showToast('Download Started', 'Your file is downloading.', 'success');
-    } else {
-        showToast('Error', 'File not available. Please contact support.', 'error');
-    }
-};
-
-// ─── UPDATE DISPLAY DOWNLOAD BUTTONS ─────────────────────────
-function displayDownloadButtons(cart) {
-    if (cartMpesaStatus) {
-        let html = `
-            <div class="stk-success-box">
-                <div class="stk-success-icon-wrap"><i class="bi bi-check-lg"></i></div>
-                <h3 class="stk-success-title">Payment Confirmed!</h3>
-                <p style="color:#475569; font-size:0.92rem; margin-bottom:0.75rem;">
-                    Your purchased items are ready. Click download below.
-                </p>
-                <div style="margin:1.25rem 0; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:1.25rem;">
-                    <h4 style="font-size:0.95rem; font-weight:700; margin-bottom:0.75rem; color:#1e293b;">Download Purchased Files:</h4>
-                    <ul style="list-style:none; padding:0; margin:0;">
-        `;
-        
-        cart.forEach(item => {
-            html += `
-                <li style="display:flex; justify-content:space-between; align-items:center; padding:0.5rem 0; border-bottom:1px solid #edf2f7;">
-                    <span style="font-size:0.85rem; font-weight:500; color:#334155;">${escapeHtml(item.title)}</span>
-                    <button onclick="downloadPurchasedItem('${item.id}')" 
-                            class="btn-primary" 
-                            style="padding:5px 12px; font-size:0.75rem; display:inline-flex; align-items:center; gap:0.25rem; border-radius:6px; background:var(--kv-green); color:white; border:none; font-weight:700; cursor:pointer;">
-                        <i class="bi bi-download"></i> Download
-                    </button>
-                </li>
-            `;
-        });
-        
-        html += `
-                    </ul>
-                    <p style="font-size:0.7rem; color:var(--kv-muted); margin-top:0.75rem; border-top:1px solid #edf2f7; padding-top:0.75rem;">
-                        <i class="bi bi-info-circle"></i> Each link expires after the first click or 60 seconds.
-                    </p>
-                </div>
-                <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                    <a href="index.html" class="stk-download-btn-primary" style="flex:1; text-decoration:none; padding:0.85rem 1.5rem; border-radius:10px; align-items:center; justify-content:center; gap:6px; background:var(--kv-gold); color:var(--kv-primary); border:none; font-weight:700; cursor:pointer; display:flex;">
-                        <i class="bi bi-house"></i> Homepage
-                    </a>
-                    <a href="browse.html" class="stk-download-btn-primary" style="flex:1; text-decoration:none; padding:0.85rem 1.5rem; border-radius:10px; align-items:center; justify-content:center; gap:6px; background:var(--kv-gold-light); color:var(--kv-primary); border:none; font-weight:700; cursor:pointer; display:flex;">
-                        <i class="bi bi-search"></i> Browse More
-                    </a>
-                </div>
-            </div>
-        `;
-        
-        cartMpesaStatus.innerHTML = html;
-    }
-}
 </script>
 </body>
 </html>
