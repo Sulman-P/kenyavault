@@ -1112,21 +1112,40 @@
         } catch(e) {}
     }
 
-    // ─── GENERATE SIGNED URL ──────────────────────────────────
-    async function generateSignedUrl(filePath) {
+    // ─── GENERATE FRESH SIGNED URL ──────────────────────────────
+    async function generateFreshSignedUrl(filePath) {
         try {
-            if (filePath && !filePath.startsWith('http')) {
-                var signedUrl = await supabase.storage
-                    .from('private-resources')
-                    .createSignedUrl(filePath, 60);
-                
-                if (signedUrl.error) {
-                    console.error('[Browse] Signed URL error:', signedUrl.error);
-                    return null;
+            if (!filePath) return null;
+            
+            let storagePath = filePath;
+            
+            if (filePath.includes('supabase.co/storage/v1/object/')) {
+                const match = filePath.match(/\/storage\/v1\/object\/[^\/]+\/(.+)/);
+                if (match && match[1]) {
+                    storagePath = match[1];
                 }
-                return signedUrl.data.signedUrl;
             }
-            return filePath;
+            
+            if (filePath.includes('?')) {
+                const urlObj = new URL(filePath);
+                const pathname = urlObj.pathname;
+                const pathMatch = pathname.match(/\/object\/[^\/]+\/(.+)/);
+                if (pathMatch && pathMatch[1]) {
+                    storagePath = pathMatch[1];
+                }
+            }
+            
+            const { data, error } = await supabase.storage
+                .from('private-resources')
+                .createSignedUrl(storagePath, 60);
+            
+            if (error) {
+                console.error('[Browse] Signed URL error:', error);
+                return null;
+            }
+            
+            return data.signedUrl;
+            
         } catch (e) {
             console.error('[Browse] Error generating signed URL:', e);
             return null;
@@ -1496,20 +1515,14 @@
         }
         
         if (resource.file_url) {
-            var downloadUrl = resource.file_url;
-            if (!downloadUrl.startsWith('http')) {
-                generateSignedUrl(downloadUrl).then(function(signedUrl) {
-                    if (signedUrl) {
-                        window.open(signedUrl, '_blank');
-                        showToast('Download Started', resource.title + ' is downloading.', 'success');
-                    } else {
-                        showToast('Error', 'Could not generate download link. Please contact support.', 'error');
-                    }
-                });
-            } else {
-                window.open(downloadUrl, '_blank');
-                showToast('Download Started', resource.title + ' is downloading.', 'success');
-            }
+            generateFreshSignedUrl(resource.file_url).then(function(signedUrl) {
+                if (signedUrl) {
+                    window.open(signedUrl, '_blank');
+                    showToast('Download Started', resource.title + ' is downloading. Link expires in 60 seconds.', 'success');
+                } else {
+                    showToast('Error', 'Could not generate download link. Please contact support.', 'error');
+                }
+            });
         } else {
             showToast('Error', 'File not available. Please contact support.', 'error');
         }
@@ -1523,32 +1536,26 @@
         }
 
         if (!purchasedResources[productId]) {
-            showToast('Error', 'You have not purchased this resource. Please complete payment first.', 'error');
+            showToast('Error', 'You have not purchased this resource.', 'error');
             return;
         }
 
         if (resource.file_url) {
-            var downloadUrl = resource.file_url;
-            if (!downloadUrl.startsWith('http')) {
-                generateSignedUrl(downloadUrl).then(function(signedUrl) {
-                    if (signedUrl) {
-                        window.open(signedUrl, '_blank');
-                        showToast('Download Started', resource.title + ' is downloading.', 'success');
-                    } else {
-                        showToast('Error', 'Could not generate download link. Please contact support.', 'error');
-                    }
-                });
-            } else {
-                window.open(downloadUrl, '_blank');
-                showToast('Download Started', resource.title + ' is downloading.', 'success');
-            }
+            generateFreshSignedUrl(resource.file_url).then(function(signedUrl) {
+                if (signedUrl) {
+                    window.open(signedUrl, '_blank');
+                    showToast('Download Started', resource.title + ' is downloading. Link expires in 60 seconds.', 'success');
+                } else {
+                    showToast('Error', 'Could not generate download link. Please contact support.', 'error');
+                }
+            });
         } else {
             showToast('Error', 'File not available. Please contact support.', 'error');
         }
     }
 
     // ─── DOWNLOAD PURCHASED ITEM (for modal) ──────────────────
-    window.downloadPurchasedItem = function(productId) {
+    window.downloadPurchasedItem = async function(productId) {
         var resource = allResources.find(function(r) { return r.id === productId; });
         if (!resource) {
             showToast('Error', 'Resource not found.', 'error');
@@ -1561,19 +1568,12 @@
         }
 
         if (resource.file_url) {
-            var downloadUrl = resource.file_url;
-            if (!downloadUrl.startsWith('http')) {
-                generateSignedUrl(downloadUrl).then(function(signedUrl) {
-                    if (signedUrl) {
-                        window.open(signedUrl, '_blank');
-                        showToast('Download Started', resource.title + ' is downloading.', 'success');
-                    } else {
-                        showToast('Error', 'Could not generate download link. Please contact support.', 'error');
-                    }
-                });
+            const signedUrl = await generateFreshSignedUrl(resource.file_url);
+            if (signedUrl) {
+                window.open(signedUrl, '_blank');
+                showToast('Download Started', resource.title + ' is downloading. Link expires in 60 seconds.', 'success');
             } else {
-                window.open(downloadUrl, '_blank');
-                showToast('Download Started', resource.title + ' is downloading.', 'success');
+                showToast('Error', 'Could not generate download link. Please contact support.', 'error');
             }
         } else {
             showToast('Error', 'File not available. Please contact support.', 'error');
@@ -2124,7 +2124,7 @@
         if (currentProduct && currentProduct.file_url) {
             var downloadUrl = currentProduct.file_url;
             if (!downloadUrl.startsWith('http')) {
-                generateSignedUrl(downloadUrl).then(function(signedUrl) {
+                generateFreshSignedUrl(downloadUrl).then(function(signedUrl) {
                     if (signedUrl) {
                         window.open(signedUrl, '_blank');
                         showToast('Download Started', currentProduct.title + ' is downloading.', 'success');
@@ -2461,120 +2461,7 @@
             }
         }, 120000);
     }
-      // ─── GENERATE FRESH SIGNED URL ──────────────────────────────
-async function generateFreshSignedUrl(filePath) {
-    try {
-        if (!filePath) return null;
-        
-        let storagePath = filePath;
-        
-        if (filePath.includes('supabase.co/storage/v1/object/')) {
-            const match = filePath.match(/\/storage\/v1\/object\/[^\/]+\/(.+)/);
-            if (match && match[1]) {
-                storagePath = match[1];
-            }
-        }
-        
-        if (filePath.includes('?')) {
-            const urlObj = new URL(filePath);
-            const pathname = urlObj.pathname;
-            const pathMatch = pathname.match(/\/object\/[^\/]+\/(.+)/);
-            if (pathMatch && pathMatch[1]) {
-                storagePath = pathMatch[1];
-            }
-        }
-        
-        const { data, error } = await supabase.storage
-            .from('private-resources')
-            .createSignedUrl(storagePath, 60);
-        
-        if (error) {
-            console.error('[Browse] Signed URL error:', error);
-            return null;
-        }
-        
-        return data.signedUrl;
-        
-    } catch (e) {
-        console.error('[Browse] Error generating signed URL:', e);
-        return null;
-    }
-}
 
-// ─── DOWNLOAD FREE ──────────────────────────────────────────
-function downloadFree(productId) {
-    var resource = allResources.find(function(r) { return r.id === productId; });
-    if (!resource) {
-        showToast('Error', 'Resource not found.', 'error');
-        return;
-    }
-    
-    if (resource.file_url) {
-        generateFreshSignedUrl(resource.file_url).then(function(signedUrl) {
-            if (signedUrl) {
-                window.open(signedUrl, '_blank');
-                showToast('Download Started', resource.title + ' is downloading. Link expires in 60 seconds.', 'success');
-            } else {
-                showToast('Error', 'Could not generate download link. Please contact support.', 'error');
-            }
-        });
-    } else {
-        showToast('Error', 'File not available. Please contact support.', 'error');
-    }
-}
-
-// ─── DOWNLOAD PURCHASED ─────────────────────────────────────
-function downloadPurchased(productId) {
-    var resource = allResources.find(function(r) { return r.id === productId; });
-    if (!resource) {
-        showToast('Error', 'Resource not found.', 'error');
-        return;
-    }
-
-    if (!purchasedResources[productId]) {
-        showToast('Error', 'You have not purchased this resource.', 'error');
-        return;
-    }
-
-    if (resource.file_url) {
-        generateFreshSignedUrl(resource.file_url).then(function(signedUrl) {
-            if (signedUrl) {
-                window.open(signedUrl, '_blank');
-                showToast('Download Started', resource.title + ' is downloading. Link expires in 60 seconds.', 'success');
-            } else {
-                showToast('Error', 'Could not generate download link. Please contact support.', 'error');
-            }
-        });
-    } else {
-        showToast('Error', 'File not available. Please contact support.', 'error');
-    }
-}
-
-// ─── DOWNLOAD PURCHASED ITEM ────────────────────────────────
-window.downloadPurchasedItem = async function(productId) {
-    var resource = allResources.find(function(r) { return r.id === productId; });
-    if (!resource) {
-        showToast('Error', 'Resource not found.', 'error');
-        return;
-    }
-
-    if (!purchasedResources[productId]) {
-        showToast('Error', 'You have not purchased this resource.', 'error');
-        return;
-    }
-
-    if (resource.file_url) {
-        const signedUrl = await generateFreshSignedUrl(resource.file_url);
-        if (signedUrl) {
-            window.open(signedUrl, '_blank');
-            showToast('Download Started', resource.title + ' is downloading. Link expires in 60 seconds.', 'success');
-        } else {
-            showToast('Error', 'Could not generate download link. Please contact support.', 'error');
-        }
-    } else {
-        showToast('Error', 'File not available. Please contact support.', 'error');
-    }
-};
     // ─── HAMBURGER ──────────────────────────────────────────
     function setupHamburger() {
         var hamburger = document.getElementById('hamburger');
