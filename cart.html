@@ -3482,6 +3482,139 @@
 
 })();
 </script>
+<!-- Add this script after the existing script, or replace the downloadPurchasedItem function -->
+<script>
+// ─── OVERRIDE DOWNLOAD PURCHASED ITEM ──────────────────────
+window.downloadPurchasedItem = async function(productId) {
+    console.log('🔽 Download requested for:', productId);
+    
+    var purchasedResources = {};
+    try {
+        var saved = localStorage.getItem('kv_purchased');
+        if (saved) {
+            purchasedResources = JSON.parse(saved);
+        }
+    } catch(e) {}
 
+    if (!purchasedResources[productId]) {
+        showToast('Error', 'You have not purchased this resource.', 'error');
+        return;
+    }
+
+    const cart = Cart.get();
+    var item = cart.find(function(r) { return String(r.id) === String(productId); });
+    
+    if (!item) {
+        showToast('Error', 'Resource not found in cart.', 'error');
+        return;
+    }
+
+    // Try to get file_url from the item
+    var fileUrl = item.file_url || item.file_path || item.storage_path;
+    
+    if (!fileUrl) {
+        // If no file_url, fetch from Supabase using the resource ID
+        try {
+            const { data, error } = await supabase
+                .from('resources')
+                .select('file_url, file_path, storage_path')
+                .eq('id', productId)
+                .single();
+            
+            if (error) {
+                console.error('Error fetching resource:', error);
+                showToast('Error', 'Could not find file for this resource.', 'error');
+                return;
+            }
+            
+            fileUrl = data.file_url || data.file_path || data.storage_path;
+            
+            if (!fileUrl) {
+                showToast('Error', 'No file available for this resource.', 'error');
+                return;
+            }
+            
+            // Update the cart item with file_url for future use
+            item.file_url = fileUrl;
+            Cart.save(cart);
+            
+        } catch (fetchError) {
+            console.error('Error:', fetchError);
+            showToast('Error', 'Could not retrieve file. Please contact support.', 'error');
+            return;
+        }
+    }
+    
+    // Generate signed URL if needed
+    if (fileUrl && !fileUrl.startsWith('http')) {
+        try {
+            const signedUrl = await generateOneTimeSignedUrl(fileUrl);
+            if (signedUrl) {
+                window.open(signedUrl, '_blank');
+                showToast('Download Started', 'Your file is downloading.', 'success');
+            } else {
+                showToast('Error', 'Could not generate download link. Please contact support.', 'error');
+            }
+        } catch (e) {
+            console.error('Download error:', e);
+            showToast('Error', 'Failed to generate download link.', 'error');
+        }
+    } else if (fileUrl) {
+        window.open(fileUrl, '_blank');
+        showToast('Download Started', 'Your file is downloading.', 'success');
+    } else {
+        showToast('Error', 'File not available. Please contact support.', 'error');
+    }
+};
+
+// ─── UPDATE DISPLAY DOWNLOAD BUTTONS ─────────────────────────
+function displayDownloadButtons(cart) {
+    if (cartMpesaStatus) {
+        let html = `
+            <div class="stk-success-box">
+                <div class="stk-success-icon-wrap"><i class="bi bi-check-lg"></i></div>
+                <h3 class="stk-success-title">Payment Confirmed!</h3>
+                <p style="color:#475569; font-size:0.92rem; margin-bottom:0.75rem;">
+                    Your purchased items are ready. Click download below.
+                </p>
+                <div style="margin:1.25rem 0; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:1.25rem;">
+                    <h4 style="font-size:0.95rem; font-weight:700; margin-bottom:0.75rem; color:#1e293b;">Download Purchased Files:</h4>
+                    <ul style="list-style:none; padding:0; margin:0;">
+        `;
+        
+        cart.forEach(item => {
+            html += `
+                <li style="display:flex; justify-content:space-between; align-items:center; padding:0.5rem 0; border-bottom:1px solid #edf2f7;">
+                    <span style="font-size:0.85rem; font-weight:500; color:#334155;">${escapeHtml(item.title)}</span>
+                    <button onclick="downloadPurchasedItem('${item.id}')" 
+                            class="btn-primary" 
+                            style="padding:5px 12px; font-size:0.75rem; display:inline-flex; align-items:center; gap:0.25rem; border-radius:6px; background:var(--kv-green); color:white; border:none; font-weight:700; cursor:pointer;">
+                        <i class="bi bi-download"></i> Download
+                    </button>
+                </li>
+            `;
+        });
+        
+        html += `
+                    </ul>
+                    <p style="font-size:0.7rem; color:var(--kv-muted); margin-top:0.75rem; border-top:1px solid #edf2f7; padding-top:0.75rem;">
+                        <i class="bi bi-info-circle"></i> Each link expires after the first click or 60 seconds.
+                    </p>
+                </div>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <a href="index.html" class="stk-download-btn-primary" style="flex:1; text-decoration:none; padding:0.85rem 1.5rem; border-radius:10px; align-items:center; justify-content:center; gap:6px; background:var(--kv-gold); color:var(--kv-primary); border:none; font-weight:700; cursor:pointer; display:flex;">
+                        <i class="bi bi-house"></i> Homepage
+                    </a>
+                    <a href="browse.html" class="stk-download-btn-primary" style="flex:1; text-decoration:none; padding:0.85rem 1.5rem; border-radius:10px; align-items:center; justify-content:center; gap:6px; background:var(--kv-gold-light); color:var(--kv-primary); border:none; font-weight:700; cursor:pointer; display:flex;">
+                        <i class="bi bi-search"></i> Browse More
+                    </a>
+                </div>
+            </div>
+        `;
+        
+        cartMpesaStatus.innerHTML = html;
+    }
+}
+</script>
 </body>
 </html>
