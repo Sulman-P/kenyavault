@@ -2624,14 +2624,57 @@
         }
     };
 
-    // ─── HANDLE SUCCESSFUL PAYMENT ──────────────────────────
-    function handleSuccessfulPayment() {
-        const cart = Cart.get();
+    // Add this function to your cart page
+async function sendOrderEmail(orderId, orderRef, email, items, total) {
+    try {
+        const response = await fetch('https://kenyavault-payment.onrender.com/api/send-order-email', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                orderId: orderId,
+                orderRef: orderRef,
+                email: email,
+                items: items,
+                total: total
+            })
+        });
+
+        const result = await response.json();
         
-        if (cart.length === 0) {
-            showToast('Info', 'Your cart is empty.', 'info');
-            return;
+        if (result.success) {
+            showToast('Email Sent', 'Check your email for the purchased files!', 'success');
+        } else {
+            console.error('Email sending failed:', result);
+            showToast('Email Queued', 'Your email will be sent shortly.', 'info');
         }
+    } catch (error) {
+        console.error('Error sending email:', error);
+        showToast('Email Error', 'We will send your files via email shortly.', 'warning');
+    }
+}
+
+// Modify your handleSuccessfulPayment function to send email
+  function handleSuccessfulPayment() {
+       const cart = Cart.get();
+    
+     if (cart.length === 0) {
+        showToast('Info', 'Your cart is empty.', 'info');
+        return;
+     }
+
+    // Send email with attachments
+     if (currentOrderId && currentOrderRef && cartEmail) {
+         const total = getCartPayableTotal();
+          sendOrderEmail(
+         currentOrderId,
+            currentOrderRef,
+            cartEmail.value,
+            cart,
+            total
+          );
+         }
 
         var purchasedResources = {};
         try {
