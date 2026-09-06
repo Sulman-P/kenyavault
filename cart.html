@@ -2873,7 +2873,179 @@
             }, 1000);
         }
     }
+     // ─── GENERATE FRESH SIGNED URL ──────────────────────────────
+async function generateFreshSignedUrl(filePath) {
+    try {
+        if (!filePath) return null;
+        
+        let storagePath = filePath;
+        
+        // Extract storage path from various URL formats
+        if (filePath.includes('supabase.co/storage/v1/object/')) {
+            const match = filePath.match(/\/storage\/v1\/object\/[^\/]+\/(.+)/);
+            if (match && match[1]) {
+                storagePath = match[1];
+            }
+        }
+        
+        if (filePath.includes('?')) {
+            const urlObj = new URL(filePath);
+            const pathname = urlObj.pathname;
+            const pathMatch = pathname.match(/\/object\/[^\/]+\/(.+)/);
+            if (pathMatch && pathMatch[1]) {
+                storagePath = pathMatch[1];
+            }
+        }
+        
+        // Generate fresh signed URL with 60 second expiry
+        const { data, error } = await supabase.storage
+            .from('private-resources')
+            .createSignedUrl(storagePath, 60);
+        
+        if (error) {
+            console.error('[Cart] Signed URL error:', error);
+            return null;
+        }
+        
+        return data.signedUrl;
+        
+    } catch (e) {
+        console.error('[Cart] Error generating signed URL:', e);
+        return null;
+    }
+}
 
+// ─── DOWNLOAD PURCHASED ITEM ──────────────────────────────────
+window.downloadPurchasedItem = async function(productId) {
+    console.log('🔽 Download requested for:', productId);
+    
+    try {
+        var purchasedResources = {};
+        try {
+            var saved = localStorage.getItem('kv_purchased');
+            if (saved) {
+                purchasedResources = JSON.parse(saved);
+            }
+        } catch(e) {}
+
+        if (!purchasedResources[productId]) {
+            showToast('Error', 'You have not purchased this resource.', 'error');
+            return;
+        }
+
+        const cartData = Cart.get();
+        var item = cartData.find(function(r) { return String(r.id) === String(productId); });
+        
+        if (!item) {
+            showToast('Error', 'Resource not found in cart.', 'error');
+            return;
+        }
+
+        var fileUrl = item.file_url || item.file_path || item.storage_path;
+        
+        if (!fileUrl && supabase) {
+            try {
+                const { data, error } = await supabase
+                    .from('resources')
+                    .select('file_url, file_path, storage_path')
+                    .eq('id', productId)
+                    .single();
+                
+                if (error) {
+                    console.error('Error fetching resource:', error);
+                    showToast('Error', 'Could not find file for this resource.', 'error');
+                    return;
+                }
+                
+                fileUrl = data.file_url || data.file_path || data.storage_path;
+                
+                if (!fileUrl) {
+                    showToast('Error', 'No file available for this resource.', 'error');
+                    return;
+                }
+                
+                item.file_url = fileUrl;
+                Cart.save(cartData);
+                
+            } catch (fetchError) {
+                console.error('Error:', fetchError);
+                showToast('Error', 'Could not retrieve file. Please contact support.', 'error');
+                return;
+            }
+        }
+        
+        if (fileUrl) {
+            // ─── ALWAYS GENERATE FRESH SIGNED URL ──────────────
+            const signedUrl = await generateFreshSignedUrl(fileUrl);
+            if (signedUrl) {
+                window.open(signedUrl, '_blank');
+                showToast('Download Started', item.title + ' is downloading. Link expires in 60 seconds.', 'success');
+                
+                // Track download attempt
+                console.log('✅ Fresh signed URL generated at:', new Date().toISOString());
+            } else {
+                showToast('Error', 'Could not generate download link. Please contact support.', 'error');
+            }
+        } else {
+            showToast('Error', 'File not available. Please contact support.', 'error');
+        }
+    } catch (error) {
+        console.error('❌ Download error:', error);
+        showToast('Error', 'Something went wrong. Please try again.', 'error');
+    }
+};
+
+// ─── DISPLAY DOWNLOAD BUTTONS ─────────────────────────────
+function displayDownloadButtons(cartData) {
+    if (cartMpesaStatus) {
+        let html = `
+            <div class="stk-success-box">
+                <div class="stk-success-icon-wrap"><i class="bi bi-check-lg"></i></div>
+                <h3 class="stk-success-title">Payment Confirmed!</h3>
+                <p style="color:#475569; font-size:0.92rem; margin-bottom:0.75rem;">
+                    Your purchased items are ready. Click download below.
+                </p>
+                <div style="margin:1.25rem 0; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:1.25rem;">
+                    <h4 style="font-size:0.95rem; font-weight:700; margin-bottom:0.75rem; color:#1e293b;">Download Purchased Files:</h4>
+                    <p style="font-size:0.7rem; color:var(--kv-muted); margin-bottom:0.75rem;">
+                        <i class="bi bi-info-circle"></i> Each link is valid for 60 seconds only.
+                    </p>
+                    <ul style="list-style:none; padding:0; margin:0;">
+        `;
+        
+        cartData.forEach(item => {
+            html += `
+                <li style="display:flex; justify-content:space-between; align-items:center; padding:0.5rem 0; border-bottom:1px solid #edf2f7;">
+                    <span style="font-size:0.85rem; font-weight:500; color:#334155;">${escapeHtml(item.title)}</span>
+                    <button onclick="window.downloadPurchasedItem('${item.id}')" 
+                            class="btn-primary" 
+                            style="padding:5px 12px; font-size:0.75rem; display:inline-flex; align-items:center; gap:0.25rem; border-radius:6px; background:var(--kv-green); color:white; border:none; font-weight:700; cursor:pointer;">
+                        <i class="bi bi-download"></i> Download
+                    </button>
+                </li>
+            `;
+        });
+        
+        html += `
+                    </ul>
+                    <p style="font-size:0.7rem; color:var(--kv-muted); margin-top:0.75rem; border-top:1px solid #edf2f7; padding-top:0.75rem;">
+                        <i class="bi bi-clock-history"></i> Each link expires 60 seconds after generation.
+                    </p>
+                </div>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <a href="index.html" class="stk-download-btn-primary" style="flex:1; text-decoration:none; padding:0.85rem 1.5rem; border-radius:10px; align-items:center; justify-content:center; gap:6px; background:var(--kv-gold); color:var(--kv-primary); border:none; font-weight:700; cursor:pointer; display:flex;">
+                        <i class="bi bi-house"></i> Homepage
+                    </a>
+                    <a href="browse.html" class="stk-download-btn-primary" style="flex:1; text-decoration:none; padding:0.85rem 1.5rem; border-radius:10px; align-items:center; justify-content:center; gap:6px; background:var(--kv-gold-light); color:var(--kv-primary); border:none; font-weight:700; cursor:pointer; display:flex;">
+                        <i class="bi bi-search"></i> Browse More
+                    </a>
+                </div>
+            </div>
+        `;
+        
+        cartMpesaStatus.innerHTML = html;
+     }
+  }
     // ─── START PAYMENT POLLING ────────────────────────────────
     function startPaymentPolling(orderRef) {
         var pollCount = 0;
