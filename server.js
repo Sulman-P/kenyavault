@@ -1,18 +1,21 @@
 // ============================================================
-// KENYA VAULT - PAYMENT SERVER (FIXED - CORRECT SUPABASE KEY)
+// KENYA VAULT - PAYMENT SERVER (WITH EMAIL & ATTACHMENTS)
 // ============================================================
 
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 const crypto = require('crypto');
+const nodemailer = require('nodemailer');
+const axios = require('axios');
+const archiver = require('archiver');
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ─── SUPABASE CONFIG ──────────────────────────────────────────
 const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
-// FIXED: Use the ANON key instead of SERVICE ROLE key (which was invalid)
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY;
 
@@ -30,6 +33,32 @@ const MEGAPAY_CALLBACK_URL = process.env.MEGAPAY_CALLBACK_URL || 'https://kenyav
 console.log(`🔑 MegaPay API Key: ${MEGAPAY_API_KEY}`);
 console.log(`📧 MegaPay Email: ${MEGAPAY_EMAIL}`);
 console.log(`🔗 Callback URL: ${MEGAPAY_CALLBACK_URL}`);
+
+// ─── EMAIL CONFIG ─────────────────────────────────────────────
+const SMTP_HOST = process.env.SMTP_HOST || 'smtp.gmail.com';
+const SMTP_PORT = parseInt(process.env.SMTP_PORT) || 587;
+const SMTP_USER = process.env.SMTP_USER || MEGAPAY_EMAIL;
+const SMTP_PASS = process.env.SMTP_PASS;
+
+let emailTransporter = null;
+
+if (SMTP_PASS) {
+    emailTransporter = nodemailer.createTransport({
+        host: SMTP_HOST,
+        port: SMTP_PORT,
+        secure: SMTP_PORT === 465,
+        auth: {
+            user: SMTP_USER,
+            pass: SMTP_PASS
+        },
+        pool: true,
+        maxConnections: 3,
+        rateLimit: 5
+    });
+    console.log('📧 Email configured:', SMTP_HOST);
+} else {
+    console.warn('⚠️ SMTP_PASS not set - email sending disabled');
+}
 
 // ─── CORS ──────────────────────────────────────────────────────
 const allowedOrigins = [
@@ -87,8 +116,8 @@ app.use((req, res, next) => {
     next();
 });
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // ─── LOGGING ──────────────────────────────────────────────────
 app.use((req, res, next) => {
@@ -120,8 +149,273 @@ function validatePhoneNumber(phone) {
     return null;
 }
 
+function formatCurrency(amount) {
+    return 'KES ' + Number(amount).toLocaleString();
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+    return String(text).replace(/[&<>"']/g, s => map[s]);
+}
+
 function logPaymentEvent(event, data) {
     console.log(`[PAYMENT] ${event}:`, JSON.stringify(data, null, 2));
+}
+
+// ─── GET FILE ATTACHMENTS ──────────────────────────────────
+async function getFileAttachments(filePaths) {
+    const attachments = [];
+    
+    for (const filePath of filePaths) {
+        try {
+            if (!filePath) continue;
+            
+            const { data, error } = await supabase.storage
+                .from('private-resources')
+                .createSignedUrl(filePath, 300);
+            
+            if (error) throw error;
+            
+            const response = await axios.get(data.signedUrl, {
+                responseType: 'arraybuffer',
+                timeout: 30000
+            });
+            
+            const fileName = path.basename(filePath);
+            attachments.push({
+                filename: fileName,
+                content: Buffer.from(response.data),
+                contentType: response.headers['content-type'] || 'application/octet-stream'
+            });
+            
+        } catch (error) {
+            console.error(`❌ Failed to download ${filePath}:`, error.message);
+        }
+    }
+    
+    return attachments;
+}
+
+// ─── SEND ORDER EMAIL ──────────────────────────────────────
+async function sendOrderEmail(order, items, total) {
+    if (!emailTransporter) {
+        console.warn('⚠️ Email not configured - skipping');
+        return false;
+    }
+
+    try {
+        console.log(`📧 Sending email for order ${order.order_ref} to ${order.email || order.user_email}`);
+        
+        // Get file attachments
+        const filePaths = items
+            .map(item => item.file_url || item.filename || item.file_path)
+            .filter(Boolean);
+        
+        let attachments = [];
+        if (filePaths.length > 0) {
+            attachments = await getFileAttachments(filePaths);
+            
+            // If more than 3 files, create a zip
+            if (attachments.length > 3) {
+                const zipBuffer = await createZipAttachment(attachments);
+                attachments = [{
+                    filename: `kenyavault-resources-${order.order_ref}.zip`,
+                    content: zipBuffer,
+                    contentType: 'application/zip'
+                }];
+            }
+        }
+        
+        // Generate email HTML
+        const emailHtml = generateOrderEmailTemplate(order, items, total);
+        
+        // Send email
+        const mailOptions = {
+            from: `"KenyaVault" <${SMTP_USER}>`,
+            to: order.email || order.user_email,
+            subject: `📚 KenyaVault Order #${order.order_ref} - ${items.length} Resource(s)`,
+            html: emailHtml,
+            attachments: attachments
+        };
+        
+        await emailTransporter.sendMail(mailOptions);
+        
+        // Update order status
+        await supabase
+            .from('orders')
+            .update({
+                email_status: 'sent',
+                email_sent_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', order.id);
+        
+        console.log(`✅ Email sent for order ${order.order_ref}`);
+        return true;
+        
+    } catch (error) {
+        console.error('❌ Email sending error:', error);
+        
+        // Log error but don't fail the order
+        await supabase
+            .from('orders')
+            .update({
+                email_status: 'failed',
+                last_email_error: error.message,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', order.id);
+        
+        return false;
+    }
+}
+
+// ─── CREATE ZIP ATTACHMENT ─────────────────────────────────
+function createZipAttachment(attachments) {
+    return new Promise((resolve, reject) => {
+        const archive = archiver('zip', { zlib: { level: 9 } });
+        const buffers = [];
+        
+        archive.on('data', chunk => buffers.push(chunk));
+        archive.on('end', () => resolve(Buffer.concat(buffers)));
+        archive.on('error', reject);
+        
+        for (const att of attachments) {
+            archive.append(att.content, { name: att.filename });
+        }
+        
+        archive.finalize();
+    });
+}
+
+// ─── GENERATE ORDER EMAIL TEMPLATE ─────────────────────────
+function generateOrderEmailTemplate(order, items, total) {
+    const date = new Date().toLocaleDateString('en-KE', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+    });
+    
+    const itemsList = items.map(item => `
+        <tr>
+            <td style="padding: 12px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: middle;">
+                <strong style="display: block; color: #1a202c;">${escapeHtml(item.title || item.name || 'Resource')}</strong>
+                <span style="font-size: 0.8rem; color: #6b7280;">${escapeHtml(item.category || 'CBC Document')}</span>
+                ${item.education_level ? `<span style="font-size: 0.8rem; color: #6b7280;"> | ${escapeHtml(item.education_level)}</span>` : ''}
+            </td>
+            <td style="padding: 12px 10px; border-bottom: 1px solid #e5e7eb; text-align: right; color: #C9971F; font-weight: 600;">
+                ${formatCurrency(item.price || 0)}
+            </td>
+        </tr>
+    `).join('');
+
+    return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>KenyaVault Order Confirmation</title>
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+                line-height: 1.6;
+                color: #1a202c;
+                background: #f7fafc;
+            }
+            .container { max-width: 600px; margin: 20px auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+            .header { background: #0B2340; padding: 30px; text-align: center; }
+            .header h1 { color: white; font-size: 28px; font-weight: 800; margin: 0; }
+            .header h1 span { color: #C9971F; }
+            .header p { color: rgba(255,255,255,0.8); margin: 5px 0 0; font-size: 14px; }
+            .flag-bar { height: 4px; background: linear-gradient(to right, #000000 25%, #BB0000 25%, #BB0000 50%, #1F7A3A 50%, #1F7A3A 75%, #FFFFFF 75%); }
+            .content { padding: 30px; }
+            .order-details { background: #f7fafc; padding: 20px; border-radius: 8px; margin: 20px 0; }
+            .order-details p { margin: 4px 0; font-size: 14px; color: #4a5568; }
+            .order-details strong { color: #1a202c; }
+            table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+            th { background: #f7fafc; padding: 12px 10px; text-align: left; font-size: 14px; color: #4a5568; }
+            .total { padding: 15px 10px; border-top: 2px solid #C9971F; text-align: right; }
+            .total strong { font-size: 18px; color: #C9971F; }
+            .success-box { background: #f0fdf4; border: 1px solid #bbf7d0; padding: 20px; border-radius: 8px; margin: 20px 0; }
+            .success-box h3 { color: #166534; margin-bottom: 10px; }
+            .success-box ul { padding-left: 20px; color: #14532d; }
+            .btn { display: inline-block; padding: 12px 30px; background: #C9971F; color: #0B2340; text-decoration: none; border-radius: 8px; font-weight: 700; }
+            .footer { padding: 20px; text-align: center; border-top: 1px solid #e2e8f0; color: #718096; font-size: 14px; }
+            @media only screen and (max-width: 480px) {
+                .container { margin: 10px; }
+                .content { padding: 20px; }
+                .header { padding: 20px; }
+                .header h1 { font-size: 22px; }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="flag-bar"></div>
+            <div class="header">
+                <h1>Kenya<span>Vault</span></h1>
+                <p>Order Confirmation #${escapeHtml(order.order_ref)}</p>
+            </div>
+            <div class="content">
+                <h2 style="color: #0B2340; font-size: 22px;">Thank You for Your Purchase! 🎉</h2>
+                <p style="font-size: 16px; color: #4a5568; margin: 10px 0 0;">Dear ${escapeHtml(order.customer_name || 'Customer')},</p>
+                <p style="font-size: 16px; color: #4a5568; margin: 5px 0 0;">Your order has been confirmed and your documents are ready. Please find your purchased resources attached to this email.</p>
+                
+                <div class="order-details">
+                    <p><strong>📋 Order Reference:</strong> #${escapeHtml(order.order_ref)}</p>
+                    <p><strong>📅 Date:</strong> ${date}</p>
+                    <p><strong>📧 Email:</strong> ${escapeHtml(order.email || order.user_email)}</p>
+                    ${order.customer_phone ? `<p><strong>📱 Phone:</strong> ${escapeHtml(order.customer_phone)}</p>` : ''}
+                </div>
+                
+                <h3 style="color: #0B2340; margin: 20px 0 10px;">📚 Purchased Resources</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Resource</th>
+                            <th style="text-align: right;">Price</th>
+                        </tr>
+                    </thead>
+                    <tbody>${itemsList}</tbody>
+                    <tfoot>
+                        <tr class="total">
+                            <td><strong>Total Paid</strong></td>
+                            <td><strong>${formatCurrency(total)}</strong></td>
+                        </tr>
+                    </tfoot>
+                </table>
+                
+                <div class="success-box">
+                    <h3>✅ What's Next?</h3>
+                    <ul>
+                        <li>Your purchased files are <strong>attached</strong> to this email</li>
+                        <li>You can also download from your <a href="https://kenyavault.co.ke/dashboard" style="color: #C9971F; font-weight: 600;">Dashboard</a></li>
+                        <li>Need help? Reply to this email or contact <a href="mailto:support@kenyavault.com" style="color: #C9971F;">support@kenyavault.com</a></li>
+                    </ul>
+                </div>
+                
+                <div style="text-align: center; margin: 25px 0;">
+                    <a href="https://kenyavault.co.ke/browse" class="btn">🔍 Browse More Resources</a>
+                </div>
+                
+                <div class="footer">
+                    <p>© ${new Date().getFullYear()} KenyaVault. All rights reserved.</p>
+                    <p style="font-size: 12px; color: #a0aec0; margin-top: 5px;">This email contains purchased educational resources. Please keep this email secure.</p>
+                </div>
+            </div>
+        </div>
+    </body>
+    </html>
+    `;
 }
 
 // ─── ORDER CREATION ENDPOINT ────────────────────────────────
@@ -176,7 +470,8 @@ app.post('/api/create-order', async (req, res) => {
             payment_status: 'pending',
             payment_method: 'mpesa',
             created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
+            updated_at: new Date().toISOString(),
+            email_status: 'pending'
         };
         
         console.log('📝 Creating order with data:', orderData);
@@ -327,6 +622,10 @@ async function fulfillPurchase(orderId) {
             return null;
         }
         
+        // Send email with attachments
+        const total = parseFloat(order.total_amount) || 0;
+        const emailSent = await sendOrderEmail(order, items, total);
+        
         for (const item of items) {
             const resourceId = item.id || item.resource_id;
             if (!resourceId) continue;
@@ -363,7 +662,7 @@ async function fulfillPurchase(orderId) {
             })
             .eq('id', orderId);
             
-        logPaymentEvent('PURCHASE_FULFILLED', { order_id: orderId, items: items.length });
+        logPaymentEvent('PURCHASE_FULFILLED', { order_id: orderId, items: items.length, email_sent: emailSent });
         console.log(`✅ Purchase fulfilled for order ${orderId}`);
         
         return resourceUrls.length > 0 ? resourceUrls[0] : null;
@@ -1416,6 +1715,7 @@ app.get('/api/health', (req, res) => {
         timestamp: new Date().toISOString(),
         services: {
             megapay: 'configured',
+            email: emailTransporter ? 'configured' : 'disabled',
             callback_url: MEGAPAY_CALLBACK_URL,
             background_verification: 'running (every 30s)',
             supabase: 'connected'
@@ -1453,6 +1753,7 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`📍 Health: http://localhost:${PORT}/api/health`);
     console.log(`📞 MegaPay API: ${MEGAPAY_INITIATE_URL}`);
     console.log(`🔗 Callback URL: ${MEGAPAY_CALLBACK_URL}`);
+    console.log(`📧 Email: ${emailTransporter ? 'CONFIGURED ✅' : 'DISABLED ⚠️'}`);
     console.log(`⏰ Payment timeout: 3 minutes`);
     console.log(`✅ Server is ready!`);
 });
