@@ -2678,29 +2678,53 @@
         }
     };
 
-    // ─── GENERATE SIGNED URL FOR PRIVATE FILES ──────────────
-    async function generateSignedUrl(filePath) {
+    // ─── GENERATE FRESH SIGNED URL ──────────────────────────────
+    async function generateFreshSignedUrl(filePath) {
         try {
-            if (filePath && !filePath.startsWith('http')) {
-                var signedUrl = await supabase.storage
-                    .from('private-resources')
-                    .createSignedUrl(filePath, 60);
-                
-                if (signedUrl.error) {
-                    console.error('[KenyaVault] Signed URL error:', signedUrl.error);
-                    return null;
+            if (!filePath) return null;
+            
+            // If it's already a full URL, extract the storage path
+            let storagePath = filePath;
+            
+            // Check if it's a Supabase storage URL
+            if (filePath.includes('supabase.co/storage/v1/object/')) {
+                // Extract the path after the bucket
+                const match = filePath.match(/\/storage\/v1\/object\/[^\/]+\/(.+)/);
+                if (match && match[1]) {
+                    storagePath = match[1];
                 }
-                return signedUrl.data.signedUrl;
             }
-            return filePath;
+            
+            // If it's a direct Supabase URL with a token, extract the path
+            if (filePath.includes('?')) {
+                const urlObj = new URL(filePath);
+                const pathname = urlObj.pathname;
+                const pathMatch = pathname.match(/\/object\/[^\/]+\/(.+)/);
+                if (pathMatch && pathMatch[1]) {
+                    storagePath = pathMatch[1];
+                }
+            }
+            
+            // Generate a fresh signed URL that expires in 60 seconds
+            const { data, error } = await supabase.storage
+                .from('private-resources')
+                .createSignedUrl(storagePath, 60);
+            
+            if (error) {
+                console.error('[Index] Signed URL error:', error);
+                return null;
+            }
+            
+            return data.signedUrl;
+            
         } catch (e) {
-            console.error('[KenyaVault] Error generating signed URL:', e);
+            console.error('[Index] Error generating signed URL:', e);
             return null;
         }
     }
 
-    // ─── DOWNLOAD FUNCTIONS ──────────────────────────────────
-    window.downloadFree = function(productId) {
+    // ─── DOWNLOAD FREE RESOURCE ──────────────────────────────────
+    window.downloadFree = async function(productId) {
         var resource = allResources.find(function(r) { return r.id === productId; });
         if (!resource) {
             showToast('Error', 'Resource not found.', 'error');
@@ -2708,26 +2732,21 @@
         }
         
         if (resource.file_url) {
-            var downloadUrl = resource.file_url;
-            if (!downloadUrl.startsWith('http')) {
-                generateSignedUrl(downloadUrl).then(function(signedUrl) {
-                    if (signedUrl) {
-                        window.open(signedUrl, '_blank');
-                        showToast('Download Started', resource.title + ' is downloading.', 'success');
-                    } else {
-                        showToast('Error', 'Could not generate download link. Please contact support.', 'error');
-                    }
-                });
+            // Generate fresh signed URL
+            const signedUrl = await generateFreshSignedUrl(resource.file_url);
+            if (signedUrl) {
+                window.open(signedUrl, '_blank');
+                showToast('Download Started', resource.title + ' is downloading. Link expires in 60 seconds.', 'success');
             } else {
-                window.open(downloadUrl, '_blank');
-                showToast('Download Started', resource.title + ' is downloading.', 'success');
+                showToast('Error', 'Could not generate download link. Please contact support.', 'error');
             }
         } else {
             showToast('Error', 'File not available. Please contact support.', 'error');
         }
     };
 
-    window.downloadPurchased = function(productId) {
+    // ─── DOWNLOAD PURCHASED RESOURCE ─────────────────────────────
+    window.downloadPurchased = async function(productId) {
         var resource = allResources.find(function(r) { return r.id === productId; });
         if (!resource) {
             showToast('Error', 'Resource not found.', 'error');
@@ -2740,19 +2759,40 @@
         }
 
         if (resource.file_url) {
-            var downloadUrl = resource.file_url;
-            if (!downloadUrl.startsWith('http')) {
-                generateSignedUrl(downloadUrl).then(function(signedUrl) {
-                    if (signedUrl) {
-                        window.open(signedUrl, '_blank');
-                        showToast('Download Started', resource.title + ' is downloading.', 'success');
-                    } else {
-                        showToast('Error', 'Could not generate download link. Please contact support.', 'error');
-                    }
-                });
+            // Generate fresh signed URL
+            const signedUrl = await generateFreshSignedUrl(resource.file_url);
+            if (signedUrl) {
+                window.open(signedUrl, '_blank');
+                showToast('Download Started', resource.title + ' is downloading. Link expires in 60 seconds.', 'success');
             } else {
-                window.open(downloadUrl, '_blank');
-                showToast('Download Started', resource.title + ' is downloading.', 'success');
+                showToast('Error', 'Could not generate download link. Please contact support.', 'error');
+            }
+        } else {
+            showToast('Error', 'File not available. Please contact support.', 'error');
+        }
+    };
+
+    // ─── DOWNLOAD PURCHASED ITEM (from cart) ─────────────────────
+    window.downloadPurchasedItem = async function(productId) {
+        var resource = allResources.find(function(r) { return r.id === productId; });
+        if (!resource) {
+            showToast('Error', 'Resource not found.', 'error');
+            return;
+        }
+
+        if (!purchasedResources[productId]) {
+            showToast('Error', 'You have not purchased this resource.', 'error');
+            return;
+        }
+
+        if (resource.file_url) {
+            // Generate fresh signed URL
+            const signedUrl = await generateFreshSignedUrl(resource.file_url);
+            if (signedUrl) {
+                window.open(signedUrl, '_blank');
+                showToast('Download Started', resource.title + ' is downloading. Link expires in 60 seconds.', 'success');
+            } else {
+                showToast('Error', 'Could not generate download link. Please contact support.', 'error');
             }
         } else {
             showToast('Error', 'File not available. Please contact support.', 'error');
@@ -3019,7 +3059,7 @@
                     <i class="bi bi-download" style="font-size: 1.2rem; color: var(--kv-green);"></i>
                     <span style="font-weight: 700; color: var(--kv-green); font-size: 0.9rem;">Download Your Resource</span>
                 </div>
-                <button onclick="downloadPurchasedItem('${item.id}')" 
+                <button onclick="window.downloadPurchasedItem('${item.id}')" 
                         class="download-item-btn" 
                         style="display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 16px; margin-bottom: 8px; background: var(--kv-primary); border: none; border-radius: 8px; cursor: pointer; transition: var(--kv-transition); font-family: inherit; font-size: 0.85rem; color: white; font-weight: 600;">
                     <span style="font-size: 1.2rem;"><i class="bi bi-file-earmark-arrow-down"></i></span>
@@ -3041,7 +3081,7 @@
                 var item = purchasedItems[i];
                 var ext = item.file_url ? item.file_url.split('.').pop().toUpperCase() : 'PDF';
                 downloadButtonsHtml += `
-                    <button onclick="downloadPurchasedItem('${item.id}')" 
+                    <button onclick="window.downloadPurchasedItem('${item.id}')" 
                             class="download-item-btn" 
                             style="display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 14px; margin-bottom: 6px; background: var(--kv-white); border: 1px solid var(--kv-border); border-radius: 8px; cursor: pointer; transition: var(--kv-transition); font-family: inherit; font-size: 0.82rem; color: var(--kv-text);">
                         <span style="font-size: 1.1rem; color: var(--kv-green);"><i class="bi bi-file-earmark-arrow-down"></i></span>
@@ -3077,7 +3117,7 @@
             if (resource && resource.file_url) {
                 var url = resource.file_url;
                 if (!url.startsWith('http')) {
-                    generateSignedUrl(url).then(function(signedUrl) {
+                    generateFreshSignedUrl(url).then(function(signedUrl) {
                         if (signedUrl) {
                             window.open(signedUrl, '_blank');
                             downloaded++;
@@ -3110,39 +3150,6 @@
     window.closePaymentModalAndRefresh = function() {
         closePaymentModal();
         window.location.reload();
-    };
-
-    // ─── DOWNLOAD PURCHASED ITEM ──────────────────────────────
-    window.downloadPurchasedItem = function(productId) {
-        var resource = allResources.find(function(r) { return r.id === productId; });
-        if (!resource) {
-            showToast('Error', 'Resource not found.', 'error');
-            return;
-        }
-
-        if (!purchasedResources[productId]) {
-            showToast('Error', 'You have not purchased this resource.', 'error');
-            return;
-        }
-
-        if (resource.file_url) {
-            var url = resource.file_url;
-            if (!url.startsWith('http')) {
-                generateSignedUrl(url).then(function(signedUrl) {
-                    if (signedUrl) {
-                        window.open(signedUrl, '_blank');
-                        showToast('Download Started', resource.title + ' is downloading.', 'success');
-                    } else {
-                        showToast('Error', 'Could not generate download link. Please contact support.', 'error');
-                    }
-                });
-            } else {
-                window.open(url, '_blank');
-                showToast('Download Started', resource.title + ' is downloading.', 'success');
-            }
-        } else {
-            showToast('Error', 'File not available. Please contact support.', 'error');
-        }
     };
 
     // ─── CONFIRM PAYMENT MANUALLY ─────────────────────────────
@@ -3874,7 +3881,7 @@
             if (resource && resource.file_url) {
                 var url = resource.file_url;
                 if (!url.startsWith('http')) {
-                    generateSignedUrl(url).then(function(signedUrl) {
+                    generateFreshSignedUrl(url).then(function(signedUrl) {
                         if (signedUrl) {
                             window.open(signedUrl, '_blank');
                             downloaded++;
@@ -4032,7 +4039,7 @@
     window.bulkDownload = bulkDownload;
     window.checkoutCart = checkoutCart;
     window.removeFromCart = removeFromCart;
-    window.generateSignedUrl = generateSignedUrl;
+    window.generateFreshSignedUrl = generateFreshSignedUrl;
     window.downloadPurchasedItem = downloadPurchasedItem;
     window.closePaymentModalAndRefresh = closePaymentModalAndRefresh;
 
