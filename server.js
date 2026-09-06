@@ -1,12 +1,7 @@
 // ============================================================
 // KENYA VAULT - PAYMENT SERVER (WITH EMAIL & ATTACHMENTS)
 // ============================================================
-// Add this right after your imports, before any other code
-console.log('🔍 ENVIRONMENT VARIABLES CHECK:');
-console.log('SMTP_USER:', process.env.SMTP_USER ? '✅ SET' : '❌ NOT SET');
-console.log('SMTP_PASS:', process.env.SMTP_PASS ? '✅ SET' : '❌ NOT SET');
-console.log('SMTP_HOST:', process.env.SMTP_HOST || '❌ NOT SET (using default)');
-console.log('SUPABASE_SERVICE_ROLE_KEY:', process.env.SUPABASE_SERVICE_ROLE_KEY ? '✅ SET' : '❌ NOT SET');
+
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
@@ -18,6 +13,13 @@ const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// ─── ENVIRONMENT VARIABLES CHECK ──────────────────────────────
+console.log('🔍 ENVIRONMENT VARIABLES CHECK:');
+console.log('SMTP_USER:', process.env.SMTP_USER ? '✅ SET' : '❌ NOT SET');
+console.log('SMTP_PASS:', process.env.SMTP_PASS ? '✅ SET' : '❌ NOT SET');
+console.log('SMTP_HOST:', process.env.SMTP_HOST || '❌ NOT SET (using default)');
+console.log('SUPABASE_SERVICE_ROLE_KEY:', process.env.SUPABASE_SERVICE_ROLE_KEY ? '✅ SET' : '❌ NOT SET');
 
 // ─── SUPABASE CONFIG ──────────────────────────────────────────
 const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
@@ -1710,8 +1712,78 @@ async function verifyPendingOrders() {
     }
 }
 
+// ─── BACKGROUND VERIFICATION INTERVAL ──────────────────────
 setInterval(verifyPendingOrders, 30000);
 setTimeout(verifyPendingOrders, 5000);
+
+// ─── TEST STK PUSH ENDPOINT ──────────────────────────────────
+app.post('/api/mpesa/test-stk', async (req, res) => {
+    try {
+        const { phone, amount } = req.body;
+        
+        // Validate phone
+        let clean = phone ? phone.replace(/\D/g, '') : '';
+        let msisdn = '';
+        
+        if (clean.startsWith('0') && clean.length === 10) {
+            msisdn = '254' + clean.substring(1);
+        } else if (clean.startsWith('254') && clean.length === 12) {
+            msisdn = clean;
+        } else if (clean.length === 9 && (clean.startsWith('7') || clean.startsWith('1'))) {
+            msisdn = '254' + clean;
+        } else {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid phone format. Use 0712345678 or 254712345678'
+            });
+        }
+        
+        const testPayload = {
+            api_key: MEGAPAY_API_KEY,
+            email: MEGAPAY_EMAIL,
+            amount: amount || 1,
+            msisdn: msisdn,
+            reference: 'TEST-' + Date.now(),
+            callback_url: MEGAPAY_CALLBACK_URL
+        };
+        
+        console.log('🧪 Test Payload:', JSON.stringify(testPayload, null, 2));
+        
+        const response = await fetch(MEGAPAY_INITIATE_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify(testPayload)
+        });
+        
+        const responseText = await response.text();
+        console.log('🧪 Test Response:', responseText);
+        
+        let result;
+        try {
+            result = JSON.parse(responseText);
+        } catch(e) {
+            result = { raw: responseText };
+        }
+        
+        res.json({
+            success: true,
+            request_sent: testPayload,
+            response: result,
+            raw_response: responseText,
+            status: response.status
+        });
+        
+    } catch (error) {
+        console.error('❌ Test STK error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
 
 // ─── HEALTH CHECK ─────────────────────────────────────────
 app.get('/api/health', (req, res) => {
@@ -1731,7 +1803,8 @@ app.get('/api/health', (req, res) => {
             stk_push: 'POST /api/mpesa/stk-push',
             verify_payment: 'POST /api/mpesa/verify-payment',
             confirm_payment: 'POST /api/mpesa/confirm-payment',
-            callback: 'POST /api/mpesa/callback'
+            callback: 'POST /api/mpesa/callback',
+            test_stk: 'POST /api/mpesa/test-stk'
         }
     });
 });
@@ -1747,7 +1820,8 @@ app.get('/', (req, res) => {
             health: 'GET /api/health',
             callback: 'POST /api/mpesa/callback',
             verify_payment: 'POST /api/mpesa/verify-payment',
-            confirm_payment: 'POST /api/mpesa/confirm-payment'
+            confirm_payment: 'POST /api/mpesa/confirm-payment',
+            test_stk: 'POST /api/mpesa/test-stk'
         }
     });
 });
