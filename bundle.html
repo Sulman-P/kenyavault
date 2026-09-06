@@ -1283,22 +1283,41 @@
             setTimeout(function() { if (toast.parentNode) toast.remove(); }, 300);
         }, 5000);
     }
-        
-    // ─── GENERATE SIGNED URL ──────────────────────────────────
-    async function generateSignedUrl(filePath) {
+
+    // ─── GENERATE FRESH SIGNED URL ──────────────────────────────
+    async function generateFreshSignedUrl(filePath) {
         try {
-            if (filePath && !filePath.startsWith('http')) {
-                var signedUrl = await supabase.storage
-                    .from('private-resources')
-                    .createSignedUrl(filePath, 60);
-                
-                if (signedUrl.error) {
-                    console.error('[Bundle] Signed URL error:', signedUrl.error);
-                    return null;
+            if (!filePath) return null;
+            
+            let storagePath = filePath;
+            
+            if (filePath.includes('supabase.co/storage/v1/object/')) {
+                const match = filePath.match(/\/storage\/v1\/object\/[^\/]+\/(.+)/);
+                if (match && match[1]) {
+                    storagePath = match[1];
                 }
-                return signedUrl.data.signedUrl;
             }
-            return filePath;
+            
+            if (filePath.includes('?')) {
+                const urlObj = new URL(filePath);
+                const pathname = urlObj.pathname;
+                const pathMatch = pathname.match(/\/object\/[^\/]+\/(.+)/);
+                if (pathMatch && pathMatch[1]) {
+                    storagePath = pathMatch[1];
+                }
+            }
+            
+            const { data, error } = await supabase.storage
+                .from('private-resources')
+                .createSignedUrl(storagePath, 60);
+            
+            if (error) {
+                console.error('[Bundle] Signed URL error:', error);
+                return null;
+            }
+            
+            return data.signedUrl;
+            
         } catch (e) {
             console.error('[Bundle] Error generating signed URL:', e);
             return null;
@@ -1402,6 +1421,28 @@
             "'": '&#39;'
         };
         return String(string).replace(/[&<>"']/g, function(s) { return entityMap[s]; });
+    }
+
+    // ─── CART ENGINE ───────────────────────────────────────────
+    function getCartEngine() {
+        return {
+            get() {
+                try { return JSON.parse(localStorage.getItem('kv_cart') || '[]'); } catch(e) { return []; }
+            },
+            save(cart) {
+                try { localStorage.setItem('kv_cart', JSON.stringify(cart)); } catch(e) {}
+            },
+            add(item) {
+                let cart = this.get();
+                if (!cart.some(x => parseInt(x.id) === parseInt(item.id))) {
+                    cart.push(item);
+                    this.save(cart);
+                }
+            },
+            clear() {
+                this.save([]);
+            }
+        };
     }
 
     // ─── VERIFY PAYMENT IN DATABASE ──────────────────────────
@@ -1655,174 +1696,6 @@
         }
     };
 
-    // ─── HANDLE SUCCESSFUL PAYMENT ──────────────────────────
-    function handleSuccessfulPayment() {
-        if (!currentBundleItems || currentBundleItems.length === 0) {
-            showToast('Error', 'No items in bundle.', 'error');
-            return;
-        }
-
-        // Get all items from the bundle
-        var purchasedItems = currentBundleItems;
-        var purchasedResources = {};
-        
-        try {
-            var saved = localStorage.getItem('kv_purchased');
-            if (saved) {
-                purchasedResources = JSON.parse(saved);
-            }
-        } catch(e) {}
-
-        // Mark all items as purchased
-        for (var i = 0; i < purchasedItems.length; i++) {
-            purchasedResources[purchasedItems[i].id] = true;
-        }
-        
-        try {
-            localStorage.setItem('kv_purchased', JSON.stringify(purchasedResources));
-        } catch(e) {}
-
-        // Get cart engine to clear the cart
-        var cartEngine = getCartEngine();
-        cartEngine.clear();
-
-        // Show success in payment modal
-        var statusEl = document.getElementById('stkStatus');
-        var payBtn = document.getElementById('payBtn');
-        var confirmBtn = document.getElementById('confirmPaymentBtn');
-        var retryBtn = document.getElementById('retryPaymentBtn');
-        var modalTitle = document.querySelector('.modal-title');
-        var modalSub = document.querySelector('.modal-sub');
-        var paymentTimerEl = document.getElementById('paymentTimer');
-
-        payBtn.style.display = 'none';
-        confirmBtn.style.display = 'none';
-        retryBtn.style.display = 'none';
-        if (paymentTimerEl) paymentTimerEl.style.display = 'none';
-        
-        modalTitle.textContent = '✅ Bundle Purchase Complete!';
-        modalSub.textContent = 'All ' + purchasedItems.length + ' items are ready for download.';
-        
-        statusEl.className = 'stk-status visible success';
-        statusEl.innerHTML = '💳 Payment confirmed successfully!';
-        statusEl.style.display = 'block';
-
-        // Create download area with all items
-        var downloadArea = document.createElement('div');
-        downloadArea.id = 'downloadArea';
-        downloadArea.style.cssText = 'margin-top: 16px; padding: 16px; background: var(--kv-green-soft); border-radius: 8px; border: 1px solid var(--kv-green);';
-        
-        var downloadButtonsHtml = `
-            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
-                <i class="bi bi-download" style="font-size: 1.2rem; color: var(--kv-green);"></i>
-                <span style="font-weight: 700; color: var(--kv-green); font-size: 0.9rem;">Download All Bundle Items</span>
-                <span style="font-size: 0.7rem; color: var(--kv-muted); background: var(--kv-white); padding: 2px 10px; border-radius: 99px; margin-left: auto;">${purchasedItems.length} files</span>
-            </div>
-        `;
-        
-        for (var i = 0; i < purchasedItems.length; i++) {
-            var item = purchasedItems[i];
-            var ext = item.file_url ? item.file_url.split('.').pop().toUpperCase() : 'PDF';
-            downloadButtonsHtml += `
-                <button onclick="downloadBundleItem('${item.id}')" 
-                        class="download-item-btn" 
-                        style="display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 14px; margin-bottom: 6px; background: var(--kv-white); border: 1px solid var(--kv-border); border-radius: 8px; cursor: pointer; transition: var(--kv-transition); font-family: inherit; font-size: 0.82rem; color: var(--kv-text);">
-                    <span style="font-size: 1.1rem; color: var(--kv-green);"><i class="bi bi-file-earmark-arrow-down"></i></span>
-                    <span style="flex: 1; text-align: left; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(item.title)}</span>
-                    <span style="font-size: 0.65rem; color: var(--kv-muted); background: var(--kv-bg); padding: 2px 8px; border-radius: 4px;">${ext}</span>
-                    <span style="color: var(--kv-primary);"><i class="bi bi-arrow-right-circle-fill"></i></span>
-                </button>
-            `;
-        }
-        
-        downloadButtonsHtml += `
-            <button onclick="closePaymentModalAndRefresh()" 
-                    class="btn-outline" 
-                    style="width: 100%; padding: 10px 16px; font-size: 0.85rem; justify-content: center; border: 1px solid var(--kv-border); border-radius: 8px; background: var(--kv-white); cursor: pointer; transition: var(--kv-transition); margin-top: 8px;">
-                <i class="bi bi-check-circle"></i> Done - Close
-            </button>
-        `;
-        
-        downloadArea.innerHTML = downloadButtonsHtml;
-        
-        var oldDownloadArea = document.getElementById('downloadArea');
-        if (oldDownloadArea) {
-            oldDownloadArea.remove();
-        }
-        
-        statusEl.parentNode.insertBefore(downloadArea, statusEl.nextSibling);
-
-        // Auto-download each item
-        for (var j = 0; j < purchasedItems.length; j++) {
-            var item = purchasedItems[j];
-            setTimeout(function(res) {
-                if (res.file_url) {
-                    var url = res.file_url;
-                    if (!url.startsWith('http')) {
-                        generateSignedUrl(url).then(function(signedUrl) {
-                            if (signedUrl) {
-                                window.open(signedUrl, '_blank');
-                            }
-                        });
-                    } else {
-                        window.open(url, '_blank');
-                    }
-                }
-            }, j * 800, item);
-        }
-
-        showToast('Payment Successful', 'Your bundle purchase was confirmed!', 'success');
-        isProcessingPayment = false;
-        pendingPaymentCheck = false;
-    }
-
-    // ─── DOWNLOAD BUNDLE ITEM ────────────────────────────────
-    window.downloadBundleItem = function(productId) {
-        var purchasedResources = {};
-        try {
-            var saved = localStorage.getItem('kv_purchased');
-            if (saved) {
-                purchasedResources = JSON.parse(saved);
-            }
-        } catch(e) {}
-
-        if (!purchasedResources[productId]) {
-            showToast('Error', 'You have not purchased this resource.', 'error');
-            return;
-        }
-
-        var item = currentBundleItems.find(function(r) { return r.id === productId; });
-        if (!item) {
-            showToast('Error', 'Resource not found.', 'error');
-            return;
-        }
-
-        if (item.file_url) {
-            var url = item.file_url;
-            if (!url.startsWith('http')) {
-                generateSignedUrl(url).then(function(signedUrl) {
-                    if (signedUrl) {
-                        window.open(signedUrl, '_blank');
-                        showToast('Download Started', item.title + ' is downloading.', 'success');
-                    } else {
-                        showToast('Error', 'Could not generate download link. Please contact support.', 'error');
-                    }
-                });
-            } else {
-                window.open(url, '_blank');
-                showToast('Download Started', item.title + ' is downloading.', 'success');
-            }
-        } else {
-            showToast('Error', 'File not available. Please contact support.', 'error');
-        }
-    };
-
-    // ─── CLOSE PAYMENT MODAL AND REFRESH ──────────────────────
-    window.closePaymentModalAndRefresh = function() {
-        closePaymentModal();
-        window.location.reload();
-    };
-
     // ─── START PAYMENT POLLING ────────────────────────────────
     function startPaymentPolling(orderRef) {
         var pollCount = 0;
@@ -1991,7 +1864,6 @@
                     confirmBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Check Status';
                     retryBtn.style.display = 'block';
                     document.getElementById('payBtn').disabled = false;
-                    document.getElementById('payBtn').style.display = 'block';
                     document.getElementById('payBtnText').textContent = '🔄 Try Again';
                     document.getElementById('paySpinner').style.display = 'none';
                     isProcessingPayment = false;
@@ -2598,197 +2470,151 @@
         `;
     }
 
-    // ─── CART ENGINE ───────────────────────────────────────────
-    function getCartEngine() {
-        return {
-            get() {
-                try { return JSON.parse(localStorage.getItem('kv_cart') || '[]'); } catch(e) { return []; }
-            },
-            save(cart) {
-                try { localStorage.setItem('kv_cart', JSON.stringify(cart)); } catch(e) {}
-            },
-            add(item) {
-                let cart = this.get();
-                if (!cart.some(x => parseInt(x.id) === parseInt(item.id))) {
-                    cart.push(item);
-                    this.save(cart);
-                }
-            },
-            clear() {
-                this.save([]);
+    // ─── DOWNLOAD BUNDLE ITEM ────────────────────────────────────
+    window.downloadBundleItem = async function(productId) {
+        var purchasedResources = {};
+        try {
+            var saved = localStorage.getItem('kv_purchased');
+            if (saved) {
+                purchasedResources = JSON.parse(saved);
             }
-        };
-    }
-       // ─── GENERATE FRESH SIGNED URL ──────────────────────────────
-async function generateFreshSignedUrl(filePath) {
-    try {
-        if (!filePath) return null;
-        
-        let storagePath = filePath;
-        
-        if (filePath.includes('supabase.co/storage/v1/object/')) {
-            const match = filePath.match(/\/storage\/v1\/object\/[^\/]+\/(.+)/);
-            if (match && match[1]) {
-                storagePath = match[1];
+        } catch(e) {}
+
+        if (!purchasedResources[productId]) {
+            showToast('Error', 'You have not purchased this resource.', 'error');
+            return;
+        }
+
+        var item = currentBundleItems.find(function(r) { return r.id === productId; });
+        if (!item) {
+            showToast('Error', 'Resource not found.', 'error');
+            return;
+        }
+
+        if (item.file_url) {
+            const signedUrl = await generateFreshSignedUrl(item.file_url);
+            if (signedUrl) {
+                window.open(signedUrl, '_blank');
+                showToast('Download Started', item.title + ' is downloading. Link expires in 60 seconds.', 'success');
+            } else {
+                showToast('Error', 'Could not generate download link. Please contact support.', 'error');
             }
-        }
-        
-        if (filePath.includes('?')) {
-            const urlObj = new URL(filePath);
-            const pathname = urlObj.pathname;
-            const pathMatch = pathname.match(/\/object\/[^\/]+\/(.+)/);
-            if (pathMatch && pathMatch[1]) {
-                storagePath = pathMatch[1];
-            }
-        }
-        
-        const { data, error } = await supabase.storage
-            .from('private-resources')
-            .createSignedUrl(storagePath, 60);
-        
-        if (error) {
-            console.error('[Bundle] Signed URL error:', error);
-            return null;
-        }
-        
-        return data.signedUrl;
-        
-    } catch (e) {
-        console.error('[Bundle] Error generating signed URL:', e);
-        return null;
-    }
-}
-
-// ─── DOWNLOAD BUNDLE ITEM ────────────────────────────────────
-window.downloadBundleItem = async function(productId) {
-    var purchasedResources = {};
-    try {
-        var saved = localStorage.getItem('kv_purchased');
-        if (saved) {
-            purchasedResources = JSON.parse(saved);
-        }
-    } catch(e) {}
-
-    if (!purchasedResources[productId]) {
-        showToast('Error', 'You have not purchased this resource.', 'error');
-        return;
-    }
-
-    var item = currentBundleItems.find(function(r) { return r.id === productId; });
-    if (!item) {
-        showToast('Error', 'Resource not found.', 'error');
-        return;
-    }
-
-    if (item.file_url) {
-        const signedUrl = await generateFreshSignedUrl(item.file_url);
-        if (signedUrl) {
-            window.open(signedUrl, '_blank');
-            showToast('Download Started', item.title + ' is downloading. Link expires in 60 seconds.', 'success');
         } else {
-            showToast('Error', 'Could not generate download link. Please contact support.', 'error');
+            showToast('Error', 'File not available. Please contact support.', 'error');
         }
-    } else {
-        showToast('Error', 'File not available. Please contact support.', 'error');
-    }
-};
+    };
 
-// ─── HANDLE SUCCESSFUL PAYMENT ──────────────────────────────
-function handleSuccessfulPayment() {
-    if (!currentBundleItems || currentBundleItems.length === 0) {
-        showToast('Error', 'No items in bundle.', 'error');
-        return;
-    }
-
-    var purchasedItems = currentBundleItems;
-    var purchasedResources = {};
-    
-    try {
-        var saved = localStorage.getItem('kv_purchased');
-        if (saved) {
-            purchasedResources = JSON.parse(saved);
+    // ─── HANDLE SUCCESSFUL PAYMENT ──────────────────────────────
+    function handleSuccessfulPayment() {
+        if (!currentBundleItems || currentBundleItems.length === 0) {
+            showToast('Error', 'No items in bundle.', 'error');
+            return;
         }
-    } catch(e) {}
 
-    for (var i = 0; i < purchasedItems.length; i++) {
-        purchasedResources[purchasedItems[i].id] = true;
-    }
-    
-    try {
-        localStorage.setItem('kv_purchased', JSON.stringify(purchasedResources));
-    } catch(e) {}
+        var purchasedItems = currentBundleItems;
+        var purchasedResources = {};
+        
+        try {
+            var saved = localStorage.getItem('kv_purchased');
+            if (saved) {
+                purchasedResources = JSON.parse(saved);
+            }
+        } catch(e) {}
 
-    var cartEngine = getCartEngine();
-    cartEngine.clear();
+        for (var i = 0; i < purchasedItems.length; i++) {
+            purchasedResources[purchasedItems[i].id] = true;
+        }
+        
+        try {
+            localStorage.setItem('kv_purchased', JSON.stringify(purchasedResources));
+        } catch(e) {}
 
-    var statusEl = document.getElementById('stkStatus');
-    var payBtn = document.getElementById('payBtn');
-    var confirmBtn = document.getElementById('confirmPaymentBtn');
-    var retryBtn = document.getElementById('retryPaymentBtn');
-    var modalTitle = document.querySelector('.modal-title');
-    var modalSub = document.querySelector('.modal-sub');
-    var paymentTimerEl = document.getElementById('paymentTimer');
+        var cartEngine = getCartEngine();
+        cartEngine.clear();
 
-    payBtn.style.display = 'none';
-    confirmBtn.style.display = 'none';
-    retryBtn.style.display = 'none';
-    if (paymentTimerEl) paymentTimerEl.style.display = 'none';
-    
-    modalTitle.textContent = '✅ Bundle Purchase Complete!';
-    modalSub.textContent = 'All ' + purchasedItems.length + ' items are ready for download.';
-    
-    statusEl.className = 'stk-status visible success';
-    statusEl.innerHTML = '💳 Payment confirmed successfully!';
-    statusEl.style.display = 'block';
+        var statusEl = document.getElementById('stkStatus');
+        var payBtn = document.getElementById('payBtn');
+        var confirmBtn = document.getElementById('confirmPaymentBtn');
+        var retryBtn = document.getElementById('retryPaymentBtn');
+        var modalTitle = document.querySelector('.modal-title');
+        var modalSub = document.querySelector('.modal-sub');
+        var paymentTimerEl = document.getElementById('paymentTimer');
 
-    var downloadArea = document.createElement('div');
-    downloadArea.id = 'downloadArea';
-    downloadArea.style.cssText = 'margin-top: 16px; padding: 16px; background: var(--kv-green-soft); border-radius: 8px; border: 1px solid var(--kv-green);';
-    
-    var downloadButtonsHtml = `
-        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
-            <i class="bi bi-download" style="font-size: 1.2rem; color: var(--kv-green);"></i>
-            <span style="font-weight: 700; color: var(--kv-green); font-size: 0.9rem;">Download All Bundle Items</span>
-            <span style="font-size: 0.7rem; color: var(--kv-muted); background: var(--kv-white); padding: 2px 10px; border-radius: 99px; margin-left: auto;">${purchasedItems.length} files</span>
-        </div>
-    `;
-    
-    for (var i = 0; i < purchasedItems.length; i++) {
-        var item = purchasedItems[i];
-        var ext = item.file_url ? item.file_url.split('.').pop().toUpperCase() : 'PDF';
+        payBtn.style.display = 'none';
+        confirmBtn.style.display = 'none';
+        retryBtn.style.display = 'none';
+        if (paymentTimerEl) paymentTimerEl.style.display = 'none';
+        
+        modalTitle.textContent = '✅ Bundle Purchase Complete!';
+        modalSub.textContent = 'All ' + purchasedItems.length + ' items are ready for download.';
+        
+        statusEl.className = 'stk-status visible success';
+        statusEl.innerHTML = '💳 Payment confirmed successfully!';
+        statusEl.style.display = 'block';
+
+        var downloadArea = document.createElement('div');
+        downloadArea.id = 'downloadArea';
+        downloadArea.style.cssText = 'margin-top: 16px; padding: 16px; background: var(--kv-green-soft); border-radius: 8px; border: 1px solid var(--kv-green);';
+        
+        var downloadButtonsHtml = `
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                <i class="bi bi-download" style="font-size: 1.2rem; color: var(--kv-green);"></i>
+                <span style="font-weight: 700; color: var(--kv-green); font-size: 0.9rem;">Download All Bundle Items</span>
+                <span style="font-size: 0.7rem; color: var(--kv-muted); background: var(--kv-white); padding: 2px 10px; border-radius: 99px; margin-left: auto;">${purchasedItems.length} files</span>
+            </div>
+        `;
+        
+        for (var i = 0; i < purchasedItems.length; i++) {
+            var item = purchasedItems[i];
+            var ext = item.file_url ? item.file_url.split('.').pop().toUpperCase() : 'PDF';
+            downloadButtonsHtml += `
+                <button onclick="window.downloadBundleItem('${item.id}')" 
+                        class="download-item-btn" 
+                        style="display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 14px; margin-bottom: 6px; background: var(--kv-white); border: 1px solid var(--kv-border); border-radius: 8px; cursor: pointer; transition: var(--kv-transition); font-family: inherit; font-size: 0.82rem; color: var(--kv-text);">
+                    <span style="font-size: 1.1rem; color: var(--kv-green);"><i class="bi bi-file-earmark-arrow-down"></i></span>
+                    <span style="flex: 1; text-align: left; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(item.title)}</span>
+                    <span style="font-size: 0.65rem; color: var(--kv-muted); background: var(--kv-bg); padding: 2px 8px; border-radius: 4px;">${ext}</span>
+                    <span style="color: var(--kv-primary);"><i class="bi bi-arrow-right-circle-fill"></i></span>
+                </button>
+            `;
+        }
+        
         downloadButtonsHtml += `
-            <button onclick="downloadBundleItem('${item.id}')" 
-                    class="download-item-btn" 
-                    style="display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 14px; margin-bottom: 6px; background: var(--kv-white); border: 1px solid var(--kv-border); border-radius: 8px; cursor: pointer; transition: var(--kv-transition); font-family: inherit; font-size: 0.82rem; color: var(--kv-text);">
-                <span style="font-size: 1.1rem; color: var(--kv-green);"><i class="bi bi-file-earmark-arrow-down"></i></span>
-                <span style="flex: 1; text-align: left; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(item.title)}</span>
-                <span style="font-size: 0.65rem; color: var(--kv-muted); background: var(--kv-bg); padding: 2px 8px; border-radius: 4px;">${ext}</span>
-                <span style="color: var(--kv-primary);"><i class="bi bi-arrow-right-circle-fill"></i></span>
+            <button onclick="closePaymentModalAndRefresh()" 
+                    class="btn-outline" 
+                    style="width: 100%; padding: 10px 16px; font-size: 0.85rem; justify-content: center; border: 1px solid var(--kv-border); border-radius: 8px; background: var(--kv-white); cursor: pointer; transition: var(--kv-transition); margin-top: 8px;">
+                <i class="bi bi-check-circle"></i> Done - Close
             </button>
         `;
-    }
-    
-    downloadButtonsHtml += `
-        <button onclick="closePaymentModalAndRefresh()" 
-                class="btn-outline" 
-                style="width: 100%; padding: 10px 16px; font-size: 0.85rem; justify-content: center; border: 1px solid var(--kv-border); border-radius: 8px; background: var(--kv-white); cursor: pointer; transition: var(--kv-transition); margin-top: 8px;">
-            <i class="bi bi-check-circle"></i> Done - Close
-        </button>
-    `;
-    
-    downloadArea.innerHTML = downloadButtonsHtml;
-    
-    var oldDownloadArea = document.getElementById('downloadArea');
-    if (oldDownloadArea) {
-        oldDownloadArea.remove();
-    }
-    
-    statusEl.parentNode.insertBefore(downloadArea, statusEl.nextSibling);
+        
+        downloadArea.innerHTML = downloadButtonsHtml;
+        
+        var oldDownloadArea = document.getElementById('downloadArea');
+        if (oldDownloadArea) {
+            oldDownloadArea.remove();
+        }
+        
+        statusEl.parentNode.insertBefore(downloadArea, statusEl.nextSibling);
 
-    showToast('Payment Successful', 'Your bundle purchase was confirmed!', 'success');
-    isProcessingPayment = false;
-    pendingPaymentCheck = false;
-}
+        // Auto-download each item using fresh signed URLs
+        for (var j = 0; j < purchasedItems.length; j++) {
+            var item = purchasedItems[j];
+            setTimeout(function(res) {
+                if (res.file_url) {
+                    generateFreshSignedUrl(res.file_url).then(function(signedUrl) {
+                        if (signedUrl) {
+                            window.open(signedUrl, '_blank');
+                        }
+                    });
+                }
+            }, j * 800, item);
+        }
+
+        showToast('Payment Successful', 'Your bundle purchase was confirmed!', 'success');
+        isProcessingPayment = false;
+        pendingPaymentCheck = false;
+    }
+
     // ─── ADD ALL TO CART ───────────────────────────────────────
     function addAllBundleToCart() {
         const cartEngine = getCartEngine();
@@ -2931,6 +2757,12 @@ function handleSuccessfulPayment() {
 
     window.onTermChange = function() {
         loadBundleMaterials();
+    };
+
+    // ─── CLOSE PAYMENT MODAL AND REFRESH ──────────────────────
+    window.closePaymentModalAndRefresh = function() {
+        closePaymentModal();
+        window.location.reload();
     };
 
     // ─── HAMBURGER MENU ────────────────────────────────────────
