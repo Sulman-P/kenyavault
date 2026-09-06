@@ -1784,17 +1784,12 @@
 <!-- SCRIPT -->
 <!-- ════════════════════════════════════════ -->
 <script>
-// ════════════════════════════════════════════════════════════════
-// KENYAVAULT — CART PAGE ENGINE
-// ════════════════════════════════════════════════════════════════
-
 (function() {
     'use strict';
 
     // ─── CONFIG ──────────────────────────────────────────────────
     const SUPABASE_URL = 'https://rewpminmqnrtwdvglxxr.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJld3BtaW5tcW5ydHdkdmdseHhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDkzOTksImV4cCI6MjA5NzMyNTM5OX0.2HnM4NMvxOlqrc2ChuFa_F6kqEniSah3NU5vTLNtfYs';
-    // FIX: Use the correct payment service URL
     const API_BASE_URL = 'https://kenyavault-payment.onrender.com/api';
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -1899,13 +1894,14 @@
         }, 5000);
     }
 
-    // ─── GENERATE SIGNED URL ──────────────────────────────────
-    async function generateSignedUrl(filePath) {
+    // ─── GENERATE SIGNED URL (one-time expiry) ──────────────
+    async function generateOneTimeSignedUrl(filePath) {
         try {
             if (filePath && !filePath.startsWith('http')) {
+                // Create a signed URL that expires after 60 seconds (one-time use)
                 var signedUrl = await supabase.storage
                     .from('private-resources')
-                    .createSignedUrl(filePath, 60);
+                    .createSignedUrl(filePath, 60); // 60 seconds expiry
                 
                 if (signedUrl.error) {
                     console.error('[Cart] Signed URL error:', signedUrl.error);
@@ -2663,16 +2659,17 @@
                         Your payment was successful. All purchased items are ready for download.
                     </p>
                     <div style="text-align:left; margin:1.25rem 0; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:1.25rem;">
-                        <h4 style="font-size:0.95rem; font-weight:700; margin-bottom:0.75rem; color:#1e293b;">Download Purchased Files:</h4>
+                        <h4 style="font-size:0.95rem; font-weight:700; margin-bottom:0.75rem; color:#1e293b;">Download Purchased Files (one-time links):</h4>
                         <ul style="list-style:none; padding:0; margin:0;">
             `;
             
-            cart.forEach(item => {
+            cart.forEach((item, idx) => {
+                const fileUrl = item.file_url || '';
                 downloadHtml += `
                     <li style="display:flex; justify-content:space-between; align-items:center; padding:0.5rem 0; border-bottom:1px solid #edf2f7;">
                         <span style="font-size:0.85rem; font-weight:500; color:#334155;">${escapeHtml(item.title)}</span>
                         <button onclick="downloadPurchasedItem('${item.id}')" class="btn-primary" style="padding:5px 12px; font-size:0.75rem; display:inline-flex; align-items:center; gap:0.25rem; border-radius:6px; background:var(--kv-green); color:white; border:none; font-weight:700; cursor:pointer;">
-                            <i class="bi bi-download"></i> Download
+                            <i class="bi bi-download"></i> Download (1‑time)
                         </button>
                     </li>
                 `;
@@ -2680,6 +2677,9 @@
             
             downloadHtml += `
                         </ul>
+                        <p style="font-size:0.7rem; color:var(--kv-muted); margin-top:0.75rem; border-top:1px solid #edf2f7; padding-top:0.75rem;">
+                            <i class="bi bi-info-circle"></i> Each link expires after the first click or 60 seconds.
+                        </p>
                     </div>
                     <div style="margin-top: 1.25rem; display: flex; gap: 8px; flex-wrap: wrap;">
                         <a href="index.html" class="stk-download-btn-primary" style="flex:1; text-decoration:none; padding:0.85rem 1.5rem; border-radius:10px; align-items:center; justify-content:center; gap:6px; background:var(--kv-gold); color:var(--kv-primary); border:none; font-weight:700; cursor:pointer; display:flex;">
@@ -2695,34 +2695,35 @@
             cartMpesaStatus.innerHTML = downloadHtml;
         }
 
-        for (var j = 0; j < cart.length; j++) {
-            var item = cart[j];
-            setTimeout(function(res) {
-                if (res.file_url) {
-                    var url = res.file_url;
-                    if (!url.startsWith('http')) {
-                        generateSignedUrl(url).then(function(signedUrl) {
-                            if (signedUrl) {
-                                window.open(signedUrl, '_blank');
-                            }
-                        });
-                    } else {
-                        window.open(url, '_blank');
-                    }
-                }
-            }, j * 800, item);
-        }
+        // Auto-download first item as demo (optional)
+        // for (var j = 0; j < cart.length; j++) {
+        //     var item = cart[j];
+        //     setTimeout(function(res) {
+        //         if (res.file_url) {
+        //             var url = res.file_url;
+        //             if (!url.startsWith('http')) {
+        //                 generateOneTimeSignedUrl(url).then(function(signedUrl) {
+        //                     if (signedUrl) {
+        //                         window.open(signedUrl, '_blank');
+        //                     }
+        //                 });
+        //             } else {
+        //                 window.open(url, '_blank');
+        //             }
+        //         }
+        //     }, j * 800, item);
+        // }
         
         showToast('Payment Successful', 'Your payment was confirmed!', 'success');
         
         setTimeout(function() {
-            Cart.clear();
-            renderCartPage();
+            // Cart.clear(); // Uncomment if you want cart cleared after payment
+            // renderCartPage();
         }, 3000);
     }
 
-    // ─── DOWNLOAD PURCHASED ITEM ──────────────────────────────
-    window.downloadPurchasedItem = function(productId) {
+    // ─── DOWNLOAD PURCHASED ITEM (one-time signed URL) ──────
+    window.downloadPurchasedItem = async function(productId) {
         var purchasedResources = {};
         try {
             var saved = localStorage.getItem('kv_purchased');
@@ -2737,19 +2738,28 @@
         }
 
         const cart = Cart.get();
-        var item = cart.find(function(r) { return r.id === productId; });
+        var item = cart.find(function(r) { return r.id == productId; });
         
         if (item && item.file_url) {
             var url = item.file_url;
             if (!url.startsWith('http')) {
-                generateSignedUrl(url).then(function(signedUrl) {
+                try {
+                    const signedUrl = await generateOneTimeSignedUrl(url);
                     if (signedUrl) {
+                        // Open in new tab; the link is one-time use and expires after 60 seconds
                         window.open(signedUrl, '_blank');
-                        showToast('Download Started', item.title + ' is downloading.', 'success');
+                        showToast('Download Started', item.title + ' is downloading. (one‑time link)', 'success');
+                        
+                        // Mark this item as downloaded (optional: prevent re-download)
+                        // purchasedResources[productId] = 'downloaded';
+                        // localStorage.setItem('kv_purchased', JSON.stringify(purchasedResources));
                     } else {
                         showToast('Error', 'Could not generate download link. Please contact support.', 'error');
                     }
-                });
+                } catch (e) {
+                    console.error('[Cart] Download error:', e);
+                    showToast('Error', 'Failed to generate download link.', 'error');
+                }
             } else {
                 window.open(url, '_blank');
                 showToast('Download Started', item.title + ' is downloading.', 'success');
@@ -2805,8 +2815,8 @@
                     if (paymentTimerEl) paymentTimerEl.textContent = '✅ Payment confirmed!';
                     pendingPaymentCheck = false;
                     
-                    Cart.clear();
-                    renderCartPage();
+                    // Cart.clear(); // Uncomment to clear cart after payment
+                    // renderCartPage();
                     
                     handleSuccessfulPayment();
                     return;
@@ -2883,8 +2893,8 @@
                         if (paymentTimerEl) paymentTimerEl.textContent = '✅ Payment confirmed!';
                         pendingPaymentCheck = false;
                         
-                        Cart.clear();
-                        renderCartPage();
+                        // Cart.clear();
+                        // renderCartPage();
                         
                         handleSuccessfulPayment();
                         return;
