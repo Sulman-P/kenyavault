@@ -1825,7 +1825,110 @@ app.get('/', (req, res) => {
         }
     });
 });
-
+// ─── SEND ORDER EMAIL ENDPOINT ──────────────────────────────
+app.post('/api/send-order-email', async (req, res) => {
+    console.log('📧 Send order email request received!');
+    console.log('📥 Body:', req.body);
+    
+    try {
+        const { orderId, orderRef, email, items, total } = req.body;
+        
+        if (!orderId || !email || !items || items.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing required fields: orderId, email, items'
+            });
+        }
+        
+        // Fetch order details from Supabase
+        const { data: order, error: orderError } = await supabase
+            .from('orders')
+            .select('*')
+            .eq('id', orderId)
+            .single();
+        
+        if (orderError || !order) {
+            console.error('❌ Order not found:', orderError);
+            return res.status(404).json({
+                success: false,
+                error: 'Order not found'
+            });
+        }
+        
+        // Check if email is configured
+        if (!emailTransporter) {
+            console.warn('⚠️ Email not configured - returning success anyway');
+            return res.status(200).json({
+                success: true,
+                message: 'Email service not configured, but order is complete',
+                orderId: orderId,
+                attachmentsCount: 0
+            });
+        }
+        
+        // Get file paths from items
+        const filePaths = items
+            .map(item => item.file_url || item.filename || item.file_path)
+            .filter(Boolean);
+        
+        // Download files for attachment
+        let attachments = [];
+        if (filePaths.length > 0) {
+            attachments = await getFileAttachments(filePaths);
+            
+            // If more than 3 files, create a zip
+            if (attachments.length > 3) {
+                const zipBuffer = await createZipAttachment(attachments);
+                attachments = [{
+                    filename: `kenyavault-resources-${orderRef || orderId}.zip`,
+                    content: zipBuffer,
+                    contentType: 'application/zip'
+                }];
+            }
+        }
+        
+        // Generate email HTML
+        const emailHtml = generateOrderEmailTemplate(order, items, total || order.total_amount || 0);
+        
+        // Send email
+        const mailOptions = {
+            from: `"KenyaVault" <${SMTP_USER}>`,
+            to: email,
+            subject: `📚 KenyaVault Order #${orderRef || order.order_ref} - ${items.length} Resource(s)`,
+            html: emailHtml,
+            attachments: attachments
+        };
+        
+        await emailTransporter.sendMail(mailOptions);
+        
+        // Update order status
+        await supabase
+            .from('orders')
+            .update({
+                email_status: 'sent',
+                email_sent_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', orderId);
+        
+        console.log(`✅ Email sent for order ${orderRef || order.order_ref}`);
+        
+        res.json({
+            success: true,
+            message: 'Email sent successfully',
+            orderId: orderId,
+            attachmentsCount: attachments.length
+        });
+        
+    } catch (error) {
+        console.error('❌ Email sending error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to send email',
+            details: error.message
+        });
+    }
+});
 // ─── START SERVER ─────────────────────────────────────────
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 KenyaVault Payment Server running on port ${PORT}`);
