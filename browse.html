@@ -1066,7 +1066,7 @@
 <!-- ── SCRIPT ── -->
 <script>
 // ============================================================
-// KENYAVAULT BROWSE — WITH FIXED PAYMENT SYSTEM
+// KENYAVAULT BROWSE — COMPLETE FIXED VERSION
 // ============================================================
 
 (function() {
@@ -1111,19 +1111,8 @@
             }
         } catch(e) {}
     }
-     // When user clicks "Quick Buy"
-async function quickBuy(itemId) {
-    const response = await fetch(`${API_BASE_URL}/create-order`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            cart_items: [{ id: itemId }],
-            total_amount: itemPrice,
-            user_email: userEmail,
-            phone: userPhone
-        })
-    });
-    // ─── GENERATE SIGNED URL FOR PRIVATE FILES ──────────────
+
+    // ─── GENERATE SIGNED URL ──────────────────────────────────
     async function generateSignedUrl(filePath) {
         try {
             if (filePath && !filePath.startsWith('http')) {
@@ -1557,6 +1546,39 @@ async function quickBuy(itemId) {
             showToast('Error', 'File not available. Please contact support.', 'error');
         }
     }
+
+    // ─── DOWNLOAD PURCHASED ITEM (for modal) ──────────────────
+    window.downloadPurchasedItem = function(productId) {
+        var resource = allResources.find(function(r) { return r.id === productId; });
+        if (!resource) {
+            showToast('Error', 'Resource not found.', 'error');
+            return;
+        }
+
+        if (!purchasedResources[productId]) {
+            showToast('Error', 'You have not purchased this resource.', 'error');
+            return;
+        }
+
+        if (resource.file_url) {
+            var downloadUrl = resource.file_url;
+            if (!downloadUrl.startsWith('http')) {
+                generateSignedUrl(downloadUrl).then(function(signedUrl) {
+                    if (signedUrl) {
+                        window.open(signedUrl, '_blank');
+                        showToast('Download Started', resource.title + ' is downloading.', 'success');
+                    } else {
+                        showToast('Error', 'Could not generate download link. Please contact support.', 'error');
+                    }
+                });
+            } else {
+                window.open(downloadUrl, '_blank');
+                showToast('Download Started', resource.title + ' is downloading.', 'success');
+            }
+        } else {
+            showToast('Error', 'File not available. Please contact support.', 'error');
+        }
+    };
 
     // ─── VERIFY PAYMENT IN DATABASE ──────────────────────────
     async function verifyPaymentInDatabase(orderRef) {
@@ -2071,30 +2093,6 @@ async function quickBuy(itemId) {
         stkStatus.innerHTML = '💳 Payment confirmed successfully!';
         stkStatus.style.display = 'block';
 
-        if (currentProduct && currentProduct.file_url) {
-            var downloadUrl = currentProduct.file_url;
-            if (!downloadUrl.startsWith('http')) {
-                generateSignedUrl(downloadUrl).then(function(signedUrl) {
-                    if (signedUrl) {
-                        window.open(signedUrl, '_blank');
-                        showToast('Download Started', currentProduct.title + ' is downloading.', 'success');
-                    }
-                });
-            } else {
-                setTimeout(function() {
-                    window.open(downloadUrl, '_blank');
-                    showToast('Download Started', currentProduct.title + ' is downloading.', 'success');
-                }, 1000);
-            }
-        }
-
-        showToast('Payment Successful', 'Your payment was confirmed!', 'success');
-        document.getElementById('payBtn').disabled = false;
-        document.getElementById('payBtnText').textContent = '✅ Done';
-        document.getElementById('paySpinner').style.display = 'none';
-        isProcessingPayment = false;
-        pendingPaymentCheck = false;
-
         // Create download button in modal
         var downloadArea = document.createElement('div');
         downloadArea.id = 'downloadArea';
@@ -2122,6 +2120,30 @@ async function quickBuy(itemId) {
         }
         
         stkStatus.parentNode.insertBefore(downloadArea, stkStatus.nextSibling);
+
+        if (currentProduct && currentProduct.file_url) {
+            var downloadUrl = currentProduct.file_url;
+            if (!downloadUrl.startsWith('http')) {
+                generateSignedUrl(downloadUrl).then(function(signedUrl) {
+                    if (signedUrl) {
+                        window.open(signedUrl, '_blank');
+                        showToast('Download Started', currentProduct.title + ' is downloading.', 'success');
+                    }
+                });
+            } else {
+                setTimeout(function() {
+                    window.open(downloadUrl, '_blank');
+                    showToast('Download Started', currentProduct.title + ' is downloading.', 'success');
+                }, 1000);
+            }
+        }
+
+        showToast('Payment Successful', 'Your payment was confirmed!', 'success');
+        document.getElementById('payBtn').disabled = false;
+        document.getElementById('payBtnText').textContent = '✅ Done';
+        document.getElementById('paySpinner').style.display = 'none';
+        isProcessingPayment = false;
+        pendingPaymentCheck = false;
     }
 
     // ─── CLOSE MODAL AND REFRESH ─────────────────────────────
@@ -2513,7 +2535,7 @@ async function quickBuy(itemId) {
     window.toggleCart = toggleCart;
     window.fetchResources = fetchResources;
     window.closePaymentModalAndRefresh = closePaymentModalAndRefresh;
-    window.downloadPurchasedItem = downloadPurchased;
+    window.downloadPurchasedItem = downloadPurchasedItem;
 
 })();
 </script>
