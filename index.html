@@ -3893,7 +3893,126 @@
             showToast('Bulk Download', 'Downloading ' + downloaded + ' resource(s).', 'success');
         }, 500);
     };
+     // ─── GENERATE FRESH SIGNED URL ──────────────────────────────
+async function generateFreshSignedUrl(filePath) {
+    try {
+        if (!filePath) return null;
+        
+        // If it's already a full URL, extract the storage path
+        let storagePath = filePath;
+        
+        // Check if it's a Supabase storage URL
+        if (filePath.includes('supabase.co/storage/v1/object/')) {
+            // Extract the path after the bucket
+            const match = filePath.match(/\/storage\/v1\/object\/[^\/]+\/(.+)/);
+            if (match && match[1]) {
+                storagePath = match[1];
+            }
+        }
+        
+        // If it's a direct Supabase URL with a token, extract the path
+        if (filePath.includes('?')) {
+            const urlObj = new URL(filePath);
+            const pathname = urlObj.pathname;
+            const pathMatch = pathname.match(/\/object\/[^\/]+\/(.+)/);
+            if (pathMatch && pathMatch[1]) {
+                storagePath = pathMatch[1];
+            }
+        }
+        
+        // Generate a fresh signed URL that expires in 60 seconds
+        const { data, error } = await supabase.storage
+            .from('private-resources')
+            .createSignedUrl(storagePath, 60);
+        
+        if (error) {
+            console.error('[Index] Signed URL error:', error);
+            return null;
+        }
+        
+        return data.signedUrl;
+        
+    } catch (e) {
+        console.error('[Index] Error generating signed URL:', e);
+        return null;
+    }
+}
 
+// ─── DOWNLOAD FREE RESOURCE ──────────────────────────────────
+window.downloadFree = async function(productId) {
+    var resource = allResources.find(function(r) { return r.id === productId; });
+    if (!resource) {
+        showToast('Error', 'Resource not found.', 'error');
+        return;
+    }
+    
+    if (resource.file_url) {
+        // Generate fresh signed URL
+        const signedUrl = await generateFreshSignedUrl(resource.file_url);
+        if (signedUrl) {
+            window.open(signedUrl, '_blank');
+            showToast('Download Started', resource.title + ' is downloading. Link expires in 60 seconds.', 'success');
+        } else {
+            showToast('Error', 'Could not generate download link. Please contact support.', 'error');
+        }
+    } else {
+        showToast('Error', 'File not available. Please contact support.', 'error');
+    }
+};
+
+// ─── DOWNLOAD PURCHASED RESOURCE ─────────────────────────────
+window.downloadPurchased = async function(productId) {
+    var resource = allResources.find(function(r) { return r.id === productId; });
+    if (!resource) {
+        showToast('Error', 'Resource not found.', 'error');
+        return;
+    }
+
+    if (!purchasedResources[productId]) {
+        showToast('Error', 'You have not purchased this resource. Please complete payment first.', 'error');
+        return;
+    }
+
+    if (resource.file_url) {
+        // Generate fresh signed URL
+        const signedUrl = await generateFreshSignedUrl(resource.file_url);
+        if (signedUrl) {
+            window.open(signedUrl, '_blank');
+            showToast('Download Started', resource.title + ' is downloading. Link expires in 60 seconds.', 'success');
+        } else {
+            showToast('Error', 'Could not generate download link. Please contact support.', 'error');
+        }
+    } else {
+        showToast('Error', 'File not available. Please contact support.', 'error');
+    }
+};
+
+// ─── DOWNLOAD PURCHASED ITEM (from cart) ─────────────────────
+window.downloadPurchasedItem = async function(productId) {
+    var resource = allResources.find(function(r) { return r.id === productId; });
+    if (!resource) {
+        showToast('Error', 'Resource not found.', 'error');
+        return;
+    }
+
+    if (!purchasedResources[productId]) {
+        showToast('Error', 'You have not purchased this resource.', 'error');
+        return;
+    }
+
+    if (resource.file_url) {
+        // Generate fresh signed URL
+        const signedUrl = await generateFreshSignedUrl(resource.file_url);
+        if (signedUrl) {
+            window.open(signedUrl, '_blank');
+            showToast('Download Started', resource.title + ' is downloading. Link expires in 60 seconds.', 'success');
+        } else {
+            showToast('Error', 'Could not generate download link. Please contact support.', 'error');
+        }
+    } else {
+        showToast('Error', 'File not available. Please contact support.', 'error');
+    }
+  };
     // ─── NAVBAR DROPDOWN ──────────────────────────────────────
     function setupNavbar() {
         var dropdownTriggers = document.querySelectorAll('.has-dropdown');
